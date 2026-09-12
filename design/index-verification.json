@@ -1,0 +1,17 @@
+{
+  "output": "C:/Workspace/digitalbrian/design/index.html",
+  "sha256": "68ac16e5156ec62aaeb7ed4f6fad8d161e1437f23903f68108c4baaecb4c8384",
+  "contains_full_narrative": true,
+  "diagram_count": 6,
+  "toc_entries": 32,
+  "local_links": "passed",
+  "anchor_integrity": "passed",
+  "visual_review": "passed",
+  "reviewed_views": [
+    "Desktop 1440x1000 light overview",
+    "390x844 iframe mobile layout",
+    "Desktop 1440x1000 dark narrative"
+  ],
+  "theme_control": "exercised",
+  "print_dialog": "not exercised"
+}

@@ -1,0 +1,1 @@
+<nav class="application-menu" aria-label="Application menu"><span class="application-menu-name">{{ application.name }}</span>{% for item in items %}<a href="{{ item.url }}" {% if item.current %}aria-current="page"{% endif %}>{{ item.label }}</a>{% endfor %}</nav>

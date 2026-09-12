@@ -1,0 +1,72 @@
+"""Non-secret TOML configuration and mounted secrets; no dotenv secret loading."""
+
+import os
+import tomllib
+from pathlib import Path
+
+from django.core.exceptions import ImproperlyConfigured
+from django.views.decorators.debug import sensitive_variables
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def load_config():
+    path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config/local.toml"))
+    if not path.is_file():
+        raise ImproperlyConfigured("Configuration missing. Run scripts/init_local.py first.")
+    with path.open("rb") as source:
+        config = tomllib.load(source)
+    allowed = {
+        "mode",
+        "hosts",
+        "csrf_origins",
+        "secret_directory",
+        "database",
+        "trust_proxy",
+        "scanner",
+        "scan_documents",
+    }
+    if set(config) - allowed:
+        raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
+    if config.get("mode") not in {"development", "production"}:
+        raise ImproperlyConfigured("mode must be development or production.")
+    if type(config.get("scan_documents", False)) is not bool:
+        raise ImproperlyConfigured("scan_documents must be a boolean.")
+    db = config.get("database", {})
+    if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
+        raise ImproperlyConfigured("Database configuration cannot contain credentials.")
+    if not config.get("hosts") or "*" in config["hosts"]:
+        raise ImproperlyConfigured("Explicit allowed hosts are required.")
+    return config
+
+
+def admin_identity():
+    """Only the non-secret bootstrap username is accepted in .env."""
+    value = os.environ.get("SITE_ADMIN_USER_ID", "")
+    path = ROOT / ".env"
+    if path.exists():
+        seen = False
+        for raw in path.read_text(encoding="utf-8-sig").splitlines():
+            raw = raw.strip()
+            if not raw or raw.startswith("#"):
+                continue
+            key, separator, entry = raw.partition("=")
+            if not separator or key.strip() != "SITE_ADMIN_USER_ID" or seen:
+                raise ImproperlyConfigured(".env may contain only SITE_ADMIN_USER_ID once.")
+            seen = True
+            value = value or entry.strip().strip("\"'")
+    return value.strip()
+
+
+@sensitive_variables()
+def read_secret(directory, name):
+    path = Path(directory) / name
+    try:
+        if os.name != "nt" and path.stat().st_mode & 0o077:
+            raise ImproperlyConfigured("Secret files must have owner-only permissions (0600).")
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        raise ImproperlyConfigured(f"Required mounted secret is unavailable: {name}") from None
+    if not value:
+        raise ImproperlyConfigured(f"Required mounted secret is empty: {name}")
+    return value

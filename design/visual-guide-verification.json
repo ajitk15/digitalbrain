@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {
+      "file": "index.html",
+      "sha256": "21C8963348B3D9BEA01F2F514A5F8716098A29652190CC2B1F7EA7426887FEAA",
+      "wordCount": 1801,
+      "missingLinks": [],
+      "duplicateIds": [],
+      "tables": 8,
+      "sections": 10
+    },
+    {
+      "file": "full-narrative.html",
+      "sha256": "644E9F05831FE34E1812D18522F57A1CF79159947B85EAB72EDE55F5E3744965",
+      "wordCount": 11747,
+      "missingLinks": [],
+      "duplicateIds": [],
+      "tables": 10,
+      "sections": 2
+    }
+  ],
+  "browserReview": "Blocked by browser local-file URL policy; no workaround attempted",
+  "perceptualReview": "Not performed",
+  "diagramStatus": "Unchanged earlier revision; pending rebuild as documented",
+  "applicationImplementation": "None"
+}

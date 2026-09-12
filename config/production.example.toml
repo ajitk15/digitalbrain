@@ -1,0 +1,14 @@
+# Non-secret deployment settings; mount read-only and select using DIGITAL_BRAIN_CONFIG.
+mode = "production"
+hosts = ["brain.example.com"]
+csrf_origins = ["https://brain.example.com"]
+secret_directory = "/run/secrets"
+# Enable ONLY behind a trusted proxy that strips client-supplied X-Forwarded-Proto.
+trust_proxy = false
+
+[database]
+name = "digital_brain"
+user = "digital_brain_app"
+host = "postgres.internal.example.com"
+port = 5432
+sslrootcert = "/etc/ssl/certs/database-ca.pem"

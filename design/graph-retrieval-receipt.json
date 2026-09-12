@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Workspace\\digitalbrian\\design\\graph-retrieval.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\graph-retrieval.html",
+  "specification": {
+    "sha256": "a89a6f0f3ed41537709decef2a61ea9ac7b8e1c55f82ee494367b6c7d54f2d6f",
+    "bytes": 5216
+  },
+  "artifact": {
+    "sha256": "5c863e3acd751c7b684b922f7a854352fd190b6a47e58db6a83c19834d1249f0",
+    "bytes": 717782
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

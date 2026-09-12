@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "workflow",
+  "input": "C:\\Workspace\\digitalbrian\\design\\workflow.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\workflow.html",
+  "specification": {
+    "sha256": "3562f60a9c09892c380708cc3db85ee4559ed43a867b8819270a6b84534f99d8",
+    "bytes": 3541
+  },
+  "artifact": {
+    "sha256": "2a4ae59c29c1bc5759e421a7d87c839af745d857db8d0080f91f72134ac3c582",
+    "bytes": 711186
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

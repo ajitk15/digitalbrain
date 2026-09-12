@@ -1,0 +1,275 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Digital Brain | Application-isolated SaaS architecture",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "portal",
+      "type": "frontend",
+      "label": "Application workspace",
+      "sublabel": "Upload / graph / cited answers",
+      "pos": [
+        40,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "access",
+      "type": "security",
+      "label": "Identity + policy",
+      "sublabel": "SSO / MFA / application grants",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Application API",
+      "sublabel": "Enforce organization + application",
+      "pos": [
+        380,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "control",
+      "type": "backend",
+      "label": "SaaS control plane",
+      "sublabel": "Admin / billing / tenant setup",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "metadata",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "Memberships / ACLs / model profiles",
+      "pos": [
+        720,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "retrieve",
+      "type": "backend",
+      "label": "Retrieval gateway",
+      "sublabel": "One application / allowed evidence",
+      "pos": [
+        720,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "knowledge",
+      "type": "database",
+      "label": "Application knowledge",
+      "sublabel": "Private graph / vector index",
+      "pos": [
+        1060,
+        230
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "jobs",
+      "type": "messagebus",
+      "label": "Durable workflow",
+      "sublabel": "Queue / retries / job state",
+      "pos": [
+        380,
+        440
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "convert",
+      "type": "backend",
+      "label": "Ingestion sandbox",
+      "sublabel": "Scan / MarkItDown / OCR",
+      "pos": [
+        40,
+        440
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "objects",
+      "type": "database",
+      "label": "Private object store",
+      "sublabel": "Application originals + Markdown",
+      "pos": [
+        40,
+        650
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "agents",
+      "type": "backend",
+      "label": "Agent workers",
+      "sublabel": "Model profiles / compatible SDKs",
+      "pos": [
+        720,
+        440
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "publish",
+      "type": "backend",
+      "label": "Graph quality + publish",
+      "sublabel": "Scorecard / repairs / release gate",
+      "pos": [
+        1060,
+        440
+      ],
+      "size": [
+        210,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "portal",
+      "to": "api",
+      "label": "HTTPS"
+    },
+    {
+      "from": "access",
+      "to": "portal",
+      "label": "sign in",
+      "variant": "security",
+      "labelDy": 60
+    },
+    {
+      "from": "control",
+      "to": "metadata",
+      "label": "provision"
+    },
+    {
+      "from": "api",
+      "to": "metadata",
+      "label": "scope + ACL"
+    },
+    {
+      "from": "api",
+      "to": "retrieve",
+      "label": "query",
+      "labelDy": 28
+    },
+    {
+      "from": "retrieve",
+      "to": "knowledge",
+      "label": "read allowed"
+    },
+    {
+      "from": "api",
+      "to": "jobs",
+      "label": "enqueue",
+      "variant": "dashed",
+      "labelDy": 60
+    },
+    {
+      "from": "jobs",
+      "to": "convert",
+      "label": "convert job",
+      "variant": "dashed"
+    },
+    {
+      "from": "convert",
+      "to": "objects",
+      "label": "versioned write",
+      "labelDy": 60
+    },
+    {
+      "from": "jobs",
+      "to": "agents",
+      "label": "extract job",
+      "variant": "dashed"
+    },
+    {
+      "from": "agents",
+      "to": "publish",
+      "label": "staged claims"
+    },
+    {
+      "from": "publish",
+      "to": "knowledge",
+      "label": "publish version"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Ownership",
+      "items": [
+        "Organization → Portfolio → Product",
+        "Application → Code repository"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Security throughout",
+      "items": [
+        "Separate application stores, keys and context",
+        "Authorize application and source on every action"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Quality improvement loop",
+      "items": [
+        "User-selectable generation and quality models",
+        "Findings request specific missing inputs"
+      ]
+    }
+  ]
+}

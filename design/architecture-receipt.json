@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Workspace\\digitalbrian\\design\\architecture.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\architecture.html",
+  "specification": {
+    "sha256": "5af87d69073273e7fc15f6b6432d40e90b4f4a605a1fa81cd7bbb5ff54816b7f",
+    "bytes": 5332
+  },
+  "artifact": {
+    "sha256": "97f3a32927c2f9e819c12852935d41bf592af17f3dadeecaf5a5ed96f16f7001",
+    "bytes": 718625
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

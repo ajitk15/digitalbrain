@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "workflow",
+  "input": "C:\\Workspace\\digitalbrian\\design\\code-factory-workflow.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\code-factory-workflow.html",
+  "specification": {
+    "sha256": "03203ab5e85dbaf61bc8d1d4f652801ed6215d08b555cf5ae875413aed854d6b",
+    "bytes": 4377
+  },
+  "artifact": {
+    "sha256": "89e90c574cad8f2338ae5674c928c7b6e50f9e19f9975cacb6e141f02571cc31",
+    "bytes": 716613
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

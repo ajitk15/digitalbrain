@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Workspace\\digitalbrian\\design\\graph-generation.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\graph-generation.html",
+  "specification": {
+    "sha256": "a56998cc420ca78962e97161710ea0bd8fbc389fbd201507e2392bec06616ec7",
+    "bytes": 5208
+  },
+  "artifact": {
+    "sha256": "a8c0a2570d6325f731a153e108fa8f57d0a736d8965e9c0d1fc23c914bebb1bc",
+    "bytes": 717671
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

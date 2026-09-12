@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Graph retrieval | Authorized evidence to answer",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "request",
+      "type": "frontend",
+      "label": "Chat / Factory request",
+      "sublabel": "Question or analysis objective",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "policy",
+      "type": "security",
+      "label": "Authorize application",
+      "sublabel": "Membership / grants / source ACL",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "snapshot",
+      "type": "database",
+      "label": "Pin knowledge version",
+      "sublabel": "Active manifest + freshness",
+      "pos": [
+        720,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "router",
+      "type": "backend",
+      "label": "Retrieval router",
+      "sublabel": "Route + selected retrieval models",
+      "pos": [
+        1060,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "seeds",
+      "type": "backend",
+      "label": "Find entry evidence",
+      "sublabel": "Exact / vector / NaviRAG*",
+      "pos": [
+        1060,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "traverse",
+      "type": "backend",
+      "label": "Traverse graph",
+      "sublabel": "Typed hops / ACL / limits",
+      "pos": [
+        720,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "hydrate",
+      "type": "database",
+      "label": "Load source evidence",
+      "sublabel": "Markdown spans / code commits",
+      "pos": [
+        380,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "validate",
+      "type": "security",
+      "label": "Check evidence",
+      "sublabel": "Access / support / conflict / age",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "bundle",
+      "type": "backend",
+      "label": "Build context bundle",
+      "sublabel": "Rerank / deduplicate / cite IDs",
+      "pos": [
+        40,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "consume",
+      "type": "backend",
+      "label": "Answer or assess",
+      "sublabel": "User-selected answer / agent model",
+      "pos": [
+        380,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "finalcheck",
+      "type": "security",
+      "label": "Verify citations",
+      "sublabel": "Current permission + support",
+      "pos": [
+        720,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "result",
+      "type": "frontend",
+      "label": "Explain result",
+      "sublabel": "Citations / paths / unknowns",
+      "pos": [
+        1060,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "request",
+      "to": "policy",
+      "label": "selected app"
+    },
+    {
+      "from": "policy",
+      "to": "snapshot",
+      "label": "authorized scope"
+    },
+    {
+      "from": "snapshot",
+      "to": "router",
+      "label": "pinned version"
+    },
+    {
+      "from": "router",
+      "to": "seeds",
+      "label": "query route",
+      "labelDy": 65
+    },
+    {
+      "from": "seeds",
+      "to": "traverse",
+      "label": "entity seeds"
+    },
+    {
+      "from": "traverse",
+      "to": "hydrate",
+      "label": "evidence IDs"
+    },
+    {
+      "from": "hydrate",
+      "to": "validate",
+      "label": "source spans"
+    },
+    {
+      "from": "validate",
+      "to": "bundle",
+      "label": "allowed evidence",
+      "labelDy": 65
+    },
+    {
+      "from": "bundle",
+      "to": "consume",
+      "label": "grounded context"
+    },
+    {
+      "from": "consume",
+      "to": "finalcheck",
+      "label": "draft + citations"
+    },
+    {
+      "from": "finalcheck",
+      "to": "result",
+      "label": "verified output"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Graph-assisted retrieval path",
+      "items": [
+        "Passage-only questions can bypass traversal",
+        "* NaviRAG is optional for long-document navigation"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Application boundary at every step",
+      "items": [
+        "No global index, traversal or shared session",
+        "Denied or missing evidence produces an abstention"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Independent retrieval models",
+      "items": [
+        "Planner / NaviRAG / reranker / answer model",
+        "Query embeddings match the indexed model space"
+      ]
+    }
+  ]
+}

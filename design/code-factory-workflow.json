@@ -1,0 +1,211 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Code Factory | Evidence to approved fixes",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "lanes": [
+    {
+      "id": "analysis",
+      "label": "Read-only analysis"
+    },
+    {
+      "id": "approval",
+      "label": "Human decision"
+    },
+    {
+      "id": "execution",
+      "label": "Scoped execution"
+    },
+    {
+      "id": "completion",
+      "label": "Release and learning"
+    }
+  ],
+  "mainPath": [
+    "baseline",
+    "compare",
+    "plan",
+    "approve",
+    "execute",
+    "test",
+    "pr",
+    "merge"
+  ],
+  "nodes": [
+    {
+      "id": "baseline",
+      "lane": "analysis",
+      "col": 0,
+      "type": "database",
+      "label": "Pin baselines",
+      "sublabel": "Graph / code / ticket",
+      "width": 140
+    },
+    {
+      "id": "compare",
+      "lane": "analysis",
+      "col": 1,
+      "type": "backend",
+      "label": "Find deviations",
+      "sublabel": "Evidence + unknowns",
+      "width": 140
+    },
+    {
+      "id": "plan",
+      "lane": "analysis",
+      "col": 2,
+      "type": "backend",
+      "label": "Propose plan",
+      "sublabel": "Changes + tests",
+      "width": 140
+    },
+    {
+      "id": "approve",
+      "lane": "approval",
+      "col": 2,
+      "type": "security",
+      "label": "Approve plan?",
+      "sublabel": "Bound to versions",
+      "width": 140
+    },
+    {
+      "id": "revise",
+      "lane": "approval",
+      "col": 1,
+      "type": "frontend",
+      "label": "Revise or stop",
+      "sublabel": "No code changes",
+      "width": 140
+    },
+    {
+      "id": "execute",
+      "lane": "execution",
+      "col": 2,
+      "type": "backend",
+      "label": "Run agents",
+      "sublabel": "Selected agent models",
+      "width": 140
+    },
+    {
+      "id": "test",
+      "lane": "execution",
+      "col": 3,
+      "type": "security",
+      "label": "Verify patch",
+      "sublabel": "Tests + review",
+      "width": 140
+    },
+    {
+      "id": "pr",
+      "lane": "execution",
+      "col": 4,
+      "type": "backend",
+      "label": "Open review PR",
+      "sublabel": "Evidence + results",
+      "width": 140
+    },
+    {
+      "id": "merge",
+      "lane": "completion",
+      "col": 4,
+      "type": "security",
+      "label": "Merge gate",
+      "sublabel": "Repository policy",
+      "width": 140
+    },
+    {
+      "id": "refresh",
+      "lane": "completion",
+      "col": 3,
+      "type": "database",
+      "label": "Reindex + check",
+      "sublabel": "Confirm gap closure",
+      "width": 140
+    },
+    {
+      "id": "sync",
+      "lane": "completion",
+      "col": 2,
+      "type": "external",
+      "label": "Sync outcome",
+      "sublabel": "Jira / ServiceNow",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "from": "baseline",
+      "to": "compare",
+      "label": "authorized scope"
+    },
+    {
+      "from": "compare",
+      "to": "plan",
+      "label": "findings"
+    },
+    {
+      "from": "plan",
+      "to": "approve",
+      "label": "review package"
+    },
+    {
+      "from": "approve",
+      "to": "execute",
+      "label": "approved"
+    },
+    {
+      "from": "approve",
+      "to": "revise",
+      "label": "declined",
+      "role": "branch"
+    },
+    {
+      "from": "execute",
+      "to": "test",
+      "label": "patch"
+    },
+    {
+      "from": "test",
+      "to": "pr",
+      "label": "checks pass"
+    },
+    {
+      "from": "pr",
+      "to": "merge",
+      "label": "reviewed"
+    },
+    {
+      "from": "merge",
+      "to": "refresh",
+      "label": "merged commit",
+      "role": "return"
+    },
+    {
+      "from": "refresh",
+      "to": "sync",
+      "label": "verified status",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Execution contract",
+      "items": [
+        "One application per run; per-agent model profiles",
+        "Approval binds models, fallbacks, scope and versions"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Failures remain visible",
+      "items": [
+        "Failed tests return to bounded repair or escalation",
+        "Unverified or unmerged work never closes a ticket"
+      ]
+    }
+  ]
+}

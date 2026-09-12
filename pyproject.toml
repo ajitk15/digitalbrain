@@ -1,0 +1,34 @@
+[project]
+name = "digital-brain"
+version = "0.1.0"
+description = "Application-isolated enterprise knowledge platform"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "Django>=5.2.17,<5.3",
+  "django-axes>=8,<9",
+  "argon2-cffi>=25.1,<26",
+  "Pillow>=12.1,<13",
+  "psycopg[binary]>=3.2,<4",
+  "whitenoise>=6.9,<7",
+  "waitress>=3,<4",
+  "pypdf>=6.18,<7",
+  "defusedxml>=0.7.1,<1",
+  "markitdown[docx,outlook,pdf,pptx,xls,xlsx]>=0.1,<1",
+  "openai-agents>=0.22.2,<0.23",
+  "claude-agent-sdk>=0.2.152,<0.3",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.12,<1", "coverage>=7.9,<8"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = [".runtime", ".venv", "design", "staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*.py" = ["E501"]
+

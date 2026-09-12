@@ -1,0 +1,170 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Digital Brain | Document to application knowledge",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "Secure intake"
+    },
+    {
+      "id": "knowledge",
+      "label": "Knowledge production"
+    },
+    {
+      "id": "exceptions",
+      "label": "Exceptions",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "upload",
+    "scan",
+    "markdown",
+    "extract",
+    "review",
+    "publish"
+  ],
+  "nodes": [
+    {
+      "id": "upload",
+      "lane": "intake",
+      "col": 0,
+      "type": "security",
+      "label": "Authorize upload",
+      "sublabel": "Application + quota",
+      "width": 140
+    },
+    {
+      "id": "scan",
+      "lane": "intake",
+      "col": 1,
+      "type": "security",
+      "label": "Scan original",
+      "sublabel": "Quarantine",
+      "width": 140
+    },
+    {
+      "id": "markdown",
+      "lane": "intake",
+      "col": 2,
+      "type": "backend",
+      "label": "Convert + store",
+      "sublabel": "MarkItDown / OCR",
+      "width": 140
+    },
+    {
+      "id": "extract",
+      "lane": "knowledge",
+      "col": 2,
+      "type": "backend",
+      "label": "Extract graph",
+      "sublabel": "Selected models",
+      "width": 140
+    },
+    {
+      "id": "review",
+      "lane": "knowledge",
+      "col": 3,
+      "type": "security",
+      "label": "Graph quality gate",
+      "sublabel": "Checks + scorecard",
+      "width": 140
+    },
+    {
+      "id": "publish",
+      "lane": "knowledge",
+      "col": 4,
+      "type": "database",
+      "label": "Publish version",
+      "sublabel": "Graph + vectors ready",
+      "width": 140
+    },
+    {
+      "id": "reject",
+      "lane": "exceptions",
+      "col": 1,
+      "type": "security",
+      "label": "Reject unsafe file",
+      "sublabel": "Notify owner",
+      "width": 140
+    },
+    {
+      "id": "repair",
+      "lane": "exceptions",
+      "col": 3,
+      "type": "backend",
+      "label": "Improve inputs",
+      "sublabel": "Sources + fixes",
+      "width": 140
+    }
+  ],
+  "edges": [
+    {
+      "from": "upload",
+      "to": "scan",
+      "label": "accepted"
+    },
+    {
+      "from": "scan",
+      "to": "markdown",
+      "label": "clean"
+    },
+    {
+      "from": "markdown",
+      "to": "extract",
+      "label": "version ready",
+      "role": "async"
+    },
+    {
+      "from": "extract",
+      "to": "review",
+      "label": "staged claims"
+    },
+    {
+      "from": "review",
+      "to": "publish",
+      "label": "passes policy"
+    },
+    {
+      "from": "scan",
+      "to": "reject",
+      "label": "unsafe",
+      "role": "error"
+    },
+    {
+      "from": "review",
+      "to": "repair",
+      "label": "needs correction",
+      "role": "branch"
+    },
+    {
+      "from": "repair",
+      "to": "extract",
+      "label": "rebuild affected scope",
+      "role": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Durable processing",
+      "items": [
+        "Application-bound inputs and model profiles",
+        "Bounded retries; no unapproved model fallback"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Trust before visibility",
+      "items": [
+        "Every claim links to source evidence",
+        "Recheck permissions at publish and query"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Digital Brain logo v2
+
+Created using the imagegen skill and built-in image generation tool. Selected asset: digital-brain-logo-v2.png.
+
+## Prompt
+
+Use case: logo-brand.
+Design a new premium professional SaaS logo for "Digital Brain", an enterprise knowledge platform that turns documents into structured knowledge and assists software engineering. The previous literal brain outline with circuit nodes was rejected. Take a completely fresh art direction.
+Create one exceptionally refined horizontal logo on a solid warm white background. Symbol on the left: a compact original geometric lowercase db monogram, formed from two bold interlocking architectural rounded shapes, a shared upright and precisely balanced negative spaces. The abstract monogram should feel memorable, confident, engineered and simple enough for a favicon. It should subtly evoke connected information through the interlock itself. Strong silhouette, restrained geometry, optical precision. Explore clever positive and negative space rather than adding illustrative details. Single flat rich indigo symbol. Wordmark at right exactly "Digital Brain" in deep near-black navy, carefully kerned contemporary sans serif with restrained character, medium weight, editorial sophistication, not overly rounded or heavy. Excellent alignment and generous deliberate spacing between symbol and text. Logo fills about 75% of the canvas width, centered, wide horizontal canvas. Flat vector-like finish, razor-sharp clean boundaries and uniform solid colors. No brain drawing, no network nodes, no circuits, no infinity sign, no sparkles, no gradients, no shadows, no 3D, no texture, no small decorative elements, no mockups, no brand presentation board, no tagline, no additional text. Solid light background is essential so the logo is immediately readable. Deliver a single carefully art-directed finished logo, not a collection of options.

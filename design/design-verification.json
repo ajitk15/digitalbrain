@@ -1,0 +1,80 @@
+[
+  {
+    "diagram_type": "architecture",
+    "output": "C:/Workspace/digitalbrian/design/architecture.html",
+    "specification_sha256": "5af87d69073273e7fc15f6b6432d40e90b4f4a605a1fa81cd7bbb5ff54816b7f",
+    "specification_bytes": 5332,
+    "artifact_sha256": "97f3a32927c2f9e819c12852935d41bf592af17f3dadeecaf5a5ed96f16f7001",
+    "artifact_bytes": 718625,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  },
+  {
+    "diagram_type": "workflow",
+    "output": "C:/Workspace/digitalbrian/design/workflow.html",
+    "specification_sha256": "3562f60a9c09892c380708cc3db85ee4559ed43a867b8819270a6b84534f99d8",
+    "specification_bytes": 3541,
+    "artifact_sha256": "2a4ae59c29c1bc5759e421a7d87c839af745d857db8d0080f91f72134ac3c582",
+    "artifact_bytes": 711186,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  },
+  {
+    "diagram_type": "architecture",
+    "output": "C:/Workspace/digitalbrian/design/platform-applications.html",
+    "specification_sha256": "1240cc4a2f80e20917b446554d46427bac77a3f3def64cddb3159d7cba2860ae",
+    "specification_bytes": 5145,
+    "artifact_sha256": "4c713e6e76986589e4409c1b56a2f966c50b4399bfff7661a259ed7d6eaa2745",
+    "artifact_bytes": 717904,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  },
+  {
+    "diagram_type": "workflow",
+    "output": "C:/Workspace/digitalbrian/design/code-factory-workflow.html",
+    "specification_sha256": "03203ab5e85dbaf61bc8d1d4f652801ed6215d08b555cf5ae875413aed854d6b",
+    "specification_bytes": 4377,
+    "artifact_sha256": "89e90c574cad8f2338ae5674c928c7b6e50f9e19f9975cacb6e141f02571cc31",
+    "artifact_bytes": 716613,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  },
+  {
+    "diagram_type": "architecture",
+    "output": "C:/Workspace/digitalbrian/design/graph-generation.html",
+    "specification_sha256": "a56998cc420ca78962e97161710ea0bd8fbc389fbd201507e2392bec06616ec7",
+    "specification_bytes": 5208,
+    "artifact_sha256": "a8c0a2570d6325f731a153e108fa8f57d0a736d8965e9c0d1fc23c914bebb1bc",
+    "artifact_bytes": 717671,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  },
+  {
+    "diagram_type": "architecture",
+    "output": "C:/Workspace/digitalbrian/design/graph-retrieval.html",
+    "specification_sha256": "a89a6f0f3ed41537709decef2a61ea9ac7b8e1c55f82ee494367b6c7d54f2d6f",
+    "specification_bytes": 5216,
+    "artifact_sha256": "5c863e3acd751c7b684b922f7a854352fd190b6a47e58db6a83c19834d1249f0",
+    "artifact_bytes": 717782,
+    "validation": "9/9 showcase, 0 errors, 0 warnings",
+    "browser_evidence": "passed",
+    "visual_review": "passed",
+    "visual_review_scope": "Light 2048x1320 and dark 1440x900 screenshots inspected for layout, text and routes. Interactive controls not manually exercised.",
+    "correction_rounds": 1
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Workspace\\digitalbrian\\design\\platform-applications.json",
+  "output": "C:\\Workspace\\digitalbrian\\design\\platform-applications.html",
+  "specification": {
+    "sha256": "1240cc4a2f80e20917b446554d46427bac77a3f3def64cddb3159d7cba2860ae",
+    "bytes": 5145
+  },
+  "artifact": {
+    "sha256": "4c713e6e76986589e4409c1b56a2f966c50b4399bfff7661a259ed7d6eaa2745",
+    "bytes": 717904
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

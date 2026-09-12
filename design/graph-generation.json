@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Graph generation | Inside one application",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "source",
+      "type": "frontend",
+      "label": "Authorized upload",
+      "sublabel": "Application / source classification",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "convert",
+      "type": "security",
+      "label": "Scan + convert",
+      "sublabel": "Sandbox / MarkItDown / OCR",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "evidence",
+      "type": "database",
+      "label": "Evidence store",
+      "sublabel": "Original + Markdown + chunks",
+      "pos": [
+        720,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "coordinator",
+      "type": "backend",
+      "label": "Generation coordinator",
+      "sublabel": "User-selected compatible model",
+      "pos": [
+        1060,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "specialist",
+      "type": "backend",
+      "label": "Extraction specialist",
+      "sublabel": "Per-agent model + evidence spans",
+      "pos": [
+        1060,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "graphify",
+      "type": "backend",
+      "label": "Graphify adapter",
+      "sublabel": "Semantic + code structure graph",
+      "pos": [
+        720,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "resolve",
+      "type": "backend",
+      "label": "Resolve entities",
+      "sublabel": "IDs / aliases / conflicting claims",
+      "pos": [
+        380,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "quality",
+      "type": "security",
+      "label": "Graph quality gate",
+      "sublabel": "ACL / evidence / coverage / review",
+      "pos": [
+        40,
+        260
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "release",
+      "type": "backend",
+      "label": "Stage release",
+      "sublabel": "Approved application version",
+      "pos": [
+        40,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "database",
+      "label": "Graph projection",
+      "sublabel": "Entities / assertions / provenance",
+      "pos": [
+        380,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "indexes",
+      "type": "database",
+      "label": "Retrieval indexes",
+      "sublabel": "Lexical / vectors / hierarchy",
+      "pos": [
+        720,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "manifest",
+      "type": "database",
+      "label": "Active manifest",
+      "sublabel": "Atomic version pointer",
+      "pos": [
+        1060,
+        480
+      ],
+      "size": [
+        210,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "source",
+      "to": "convert",
+      "label": "accepted file"
+    },
+    {
+      "from": "convert",
+      "to": "evidence",
+      "label": "versioned write"
+    },
+    {
+      "from": "evidence",
+      "to": "coordinator",
+      "label": "scoped job"
+    },
+    {
+      "from": "coordinator",
+      "to": "specialist",
+      "label": "extract task",
+      "labelDy": 65
+    },
+    {
+      "from": "specialist",
+      "to": "graphify",
+      "label": "candidate claims"
+    },
+    {
+      "from": "graphify",
+      "to": "resolve",
+      "label": "typed graph"
+    },
+    {
+      "from": "resolve",
+      "to": "quality",
+      "label": "staged assertions"
+    },
+    {
+      "from": "quality",
+      "to": "release",
+      "label": "checks pass",
+      "labelDy": 65
+    },
+    {
+      "from": "release",
+      "to": "graph",
+      "label": "materialize"
+    },
+    {
+      "from": "graph",
+      "to": "indexes",
+      "label": "index evidence"
+    },
+    {
+      "from": "indexes",
+      "to": "manifest",
+      "label": "all stores ready"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Evidence remains authoritative",
+      "items": [
+        "Preserve source versions and precise spans",
+        "Native code analysis uses allowed paths/commits"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "No publication on failure",
+      "items": [
+        "Findings request owner corrections and rebuild",
+        "No cross-application entities, edges or context"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Model and runtime selection",
+      "items": [
+        "OpenAI / Claude SDK via compatible runtime",
+        "Separate extraction, quality and embedding models"
+      ]
+    }
+  ]
+}

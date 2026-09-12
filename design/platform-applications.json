@@ -1,0 +1,265 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Digital Brain | Isolated application knowledge",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "upload",
+      "type": "frontend",
+      "label": "Upload documents",
+      "sublabel": "Select one application",
+      "pos": [
+        40,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "markdown",
+      "type": "backend",
+      "label": "Convert + preserve",
+      "sublabel": "Private originals + Markdown",
+      "pos": [
+        380,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "build",
+      "type": "backend",
+      "label": "Build + check graph",
+      "sublabel": "Graphify / selected model profiles",
+      "pos": [
+        720,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "database",
+      "label": "Application knowledge",
+      "sublabel": "Private graph + source evidence",
+      "pos": [
+        1060,
+        40
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "gateway",
+      "type": "security",
+      "label": "Application Knowledge API",
+      "sublabel": "One application per request",
+      "pos": [
+        1060,
+        250
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "chat",
+      "type": "frontend",
+      "label": "Chat application",
+      "sublabel": "Questions / cited answers",
+      "pos": [
+        720,
+        250
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "factory",
+      "type": "backend",
+      "label": "Code Factory",
+      "sublabel": "Spec vs code / ticket analysis",
+      "pos": [
+        1060,
+        460
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "plan",
+      "type": "backend",
+      "label": "Deviation plan",
+      "sublabel": "Evidence / impact / fix proposal",
+      "pos": [
+        720,
+        460
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "approval",
+      "type": "security",
+      "label": "Plan approval",
+      "sublabel": "Scope + versions + approver",
+      "pos": [
+        380,
+        460
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "agents",
+      "type": "backend",
+      "label": "Multi-agent execution",
+      "sublabel": "Per-agent models / isolated branches",
+      "pos": [
+        380,
+        670
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "verify",
+      "type": "backend",
+      "label": "Verify + review PR",
+      "sublabel": "Tests / diff / merge permission",
+      "pos": [
+        720,
+        670
+      ],
+      "size": [
+        210,
+        76
+      ]
+    },
+    {
+      "id": "tickets",
+      "type": "external",
+      "label": "Jira / ServiceNow",
+      "sublabel": "Application-specific ticket scope",
+      "pos": [
+        1060,
+        670
+      ],
+      "size": [
+        210,
+        76
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "upload",
+      "to": "markdown",
+      "label": "accepted file"
+    },
+    {
+      "from": "markdown",
+      "to": "build",
+      "label": "Markdown"
+    },
+    {
+      "from": "build",
+      "to": "graph",
+      "label": "publish"
+    },
+    {
+      "from": "graph",
+      "to": "gateway",
+      "label": "scoped evidence",
+      "labelDy": 60
+    },
+    {
+      "from": "gateway",
+      "to": "chat",
+      "label": "retrieve"
+    },
+    {
+      "from": "gateway",
+      "to": "factory",
+      "label": "spec baseline",
+      "labelDy": 60
+    },
+    {
+      "from": "factory",
+      "to": "plan",
+      "label": "deviations"
+    },
+    {
+      "from": "plan",
+      "to": "approval",
+      "label": "review"
+    },
+    {
+      "from": "approval",
+      "to": "agents",
+      "label": "approved only",
+      "labelDy": 60
+    },
+    {
+      "from": "agents",
+      "to": "verify",
+      "label": "patch + tests"
+    },
+    {
+      "from": "tickets",
+      "to": "factory",
+      "label": "scoped tickets"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Isolated knowledge foundation",
+      "items": [
+        "Upload → Markdown → graph → store",
+        "User-selected models for each application feature"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Application security boundary",
+      "items": [
+        "Separate stores, keys, caches and agent context",
+        "Approvals bind application, plan and baselines"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Completion loop",
+      "items": [
+        "Approved merge → reindex → verify deviation",
+        "Configured connector writeback tracks results"
+      ]
+    }
+  ]
+}

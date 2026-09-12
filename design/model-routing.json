@@ -1,0 +1,36 @@
+{
+ "schema_version":1,"diagram_type":"architecture",
+ "meta":{"title":"Model selection | Any role, one application","quality_profile":"showcase","locale":"en"},
+ "components":[
+ {"id":"choose","type":"frontend","label":"Choose models","sublabel":"Application / feature / agent / run","pos":[40,40],"size":[210,76]},
+ {"id":"resolve","type":"backend","label":"Resolve model profile","sublabel":"Explicit overrides + defaults","pos":[380,40],"size":[210,76]},
+ {"id":"catalog","type":"database","label":"Model capability catalog","sublabel":"Provider / endpoint / runtime fit","pos":[720,40],"size":[210,76]},
+ {"id":"policy","type":"security","label":"Validate selection","sublabel":"Application grants / data / budget","pos":[1060,40],"size":[210,76]},
+ {"id":"freeze","type":"database","label":"Pin execution profile","sublabel":"Models / parameters / fallbacks","pos":[1060,260],"size":[210,76]},
+ {"id":"runtime","type":"backend","label":"Compatible agent runtime","sublabel":"OpenAI SDK / Claude SDK / adapter","pos":[720,260],"size":[210,76]},
+ {"id":"gateway","type":"security","label":"Model gateway","sublabel":"Scoped secrets / egress / limits","pos":[380,260],"size":[210,76]},
+ {"id":"provider","type":"external","label":"Selected model endpoint","sublabel":"Hosted / private / self-hosted","pos":[40,260],"size":[210,76]},
+ {"id":"result","type":"backend","label":"Typed model result","sublabel":"Claims / answer / patch / vectors","pos":[40,480],"size":[210,76]},
+ {"id":"verify","type":"security","label":"Verify output","sublabel":"Schema / evidence / tools / tests","pos":[380,480],"size":[210,76]},
+ {"id":"audit","type":"database","label":"Record actual model use","sublabel":"Application provenance / usage","pos":[720,480],"size":[210,76]},
+ {"id":"continue","type":"backend","label":"Continue scoped workflow","sublabel":"Publish / answer / approved fix","pos":[1060,480],"size":[210,76]}
+ ],
+ "connections":[
+ {"from":"choose","to":"resolve","label":"selection"},
+ {"from":"resolve","to":"catalog","label":"resolve capability"},
+ {"from":"catalog","to":"policy","label":"compatible choice"},
+ {"from":"policy","to":"freeze","label":"allowed profile"},
+ {"from":"freeze","to":"runtime","label":"pinned task"},
+ {"from":"runtime","to":"gateway","label":"model request"},
+ {"from":"gateway","to":"provider","label":"permitted context"},
+ {"from":"provider","to":"result","label":"response"},
+ {"from":"result","to":"verify","label":"candidate output"},
+ {"from":"verify","to":"audit","label":"result + usage"},
+ {"from":"audit","to":"continue","label":"verified result"}
+ ],
+ "cards":[
+ {"dot":"cyan","title":"Independent model choices","items":["Extraction / quality / Chat / NaviRAG / each agent","Embedding and reranking have separate slots"]},
+ {"dot":"rose","title":"Choice preserves controls","items":["No silent substitution or cross-application context","Code plans pin the approved model and fallback map"]},
+ {"dot":"amber","title":"Compatibility is explicit","items":["A model must satisfy its task and runtime contract","Embedding changes require a new compatible index"]}
+ ]
+}

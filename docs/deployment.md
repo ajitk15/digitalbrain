@@ -1,0 +1,52 @@
+# Deployment procedure
+
+The repository is a tested control-plane foundation, not a completed production deployment. Use the original design and the release gaps in non-functional.md when planning the knowledge and AI services.
+
+## Runtime and dependency integrity
+
+Use Python 3.12 and install from the committed uv.lock:
+
+```sh
+uv sync --frozen --no-dev
+```
+
+Run with a dedicated unprivileged identity. The development start-all/stop-all scripts are Windows conveniences and explicitly reject production configuration. They do not manage PostgreSQL, cloud services or future workers.
+
+## Settings
+
+Copy config/production.example.toml to the deployment configuration mount and supply real hostnames, allowed origins and PostgreSQL CA file. Set the process-level DIGITAL_BRAIN_CONFIG pointer to that file.
+
+Project secrets from the deployment secret manager into the configured directory:
+
+- django_secret_key: a unique, cryptographically generated signing key, at least 50 characters.
+- database_password: the runtime database credential.
+
+Use workload identity to retrieve/project secrets, read-only mounts, owner-only file access, and a restricted network. No .env file is needed during normal operation. SITE_ADMIN_USER_ID may be supplied for the one-time interactive bootstrap.
+
+The PostgreSQL connection requires verify-full TLS. Select a non-superuser runtime role with no schema-management rights. Use a separate migration identity for schema changes. Establish database-level audit protections and row-level security before storing production application content.
+
+## Release sequence
+
+1. Install the frozen dependencies and review the migration plan.
+2. Back up PostgreSQL and verify a recent restore exercise.
+3. With the migration identity, run python manage.py migrate --noinput.
+4. With the runtime configuration, run python manage.py check --deploy --fail-level WARNING.
+5. Run python manage.py collectstatic --noinput. Allow the service to write only its static build directory during this step; serve static assets read-only afterwards.
+6. Start python scripts/serve.py --host 127.0.0.1 --port 8000 --instance DEPLOYMENT_INSTANCE_ID through your process supervisor. Instance ID is an operational marker, not a credential.
+7. Place the listener behind a TLS reverse proxy and check readiness through the intended ingress.
+8. Verify sign-in, CSRF enforcement, permissions, audit recording and provider isolation in staging before opening traffic.
+
+If trust_proxy=true, the proxy MUST remove client-supplied X-Forwarded-Proto and set it itself. Restrict the backend listener to that proxy. Waitress clears untrusted proxy headers by default: either terminate TLS at the WSGI-facing layer or explicitly configure Waitress trusted_proxy and trusted_proxy_headers for the exact proxy in your deployment entrypoint. Do not just enable a Django header setting and assume the server trusts the proxy. Configure equivalent trusted client-IP handling before relying on IP-level lockout behind a shared proxy.
+
+Use a supervisor for process restart, graceful draining and log rotation. The 60-second channel timeout is a socket inactivity limit, not a hard execution deadline for application code. Future AI/provider calls need explicit timeout and cancellation policies.
+
+## Maintenance
+
+- Run python manage.py clearsessions daily.
+- Configure django-axes retention according to your authentication/audit policy.
+- Review dependency security updates and regenerate uv.lock through the normal change process.
+- Rotate signing/database secrets through the secret manager. Signing-key rotation currently invalidates sessions; scheduled fallback keys are not configured.
+- Restrict and rotate operator credentials. Use approved recovery procedures; do not edit .env to reset authentication.
+- Send request and audit events to separate approved retention sinks when those adapters are added.
+
+Validated locally: SQLite migrations, security regression tests, Django production-settings preflight with synthetic secrets, Windows lifecycle script start/stop/restart, and responsive sign-in rendering. Real PostgreSQL TLS, Linux service supervision, database RLS, failover and performance have not been tested here.

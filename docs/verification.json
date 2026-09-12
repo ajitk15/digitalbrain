@@ -1,0 +1,71 @@
+{
+  "status": "application-workflows-and-organization-tree",
+  "tests": {
+    "passed": 120,
+    "failed": 0,
+    "database": "SQLite"
+  },
+  "checks": {
+    "ruff": "passed",
+    "migration_drift": "none",
+    "django_deployment_defaults": "passed with synthetic mounted secrets",
+    "default_logo": "Redesigned transparent RGBA SaaS logo applied through audited branding service; PNG metadata and app startup verified"
+  },
+  "browser": {
+    "desktop": "sign-in visually reviewed",
+    "mobile_width": 390,
+    "mobile_horizontal_overflow": false,
+    "latest_live_check": "Restarted app redirects to working sign-in; authenticated tree rendering verified by Django tests, not browser visual inspection"
+  },
+  "lifecycle": {
+    "start": "passed",
+    "repeat_start": "passed",
+    "stop": "passed",
+    "repeat_stop": "passed",
+    "restart": "passed",
+    "stale_process_identity_guard": "passed"
+  },
+  "local_url": "http://127.0.0.1:8000",
+  "limitations": [
+    "Live OpenAI/Claude/GitHub calls not validated; credentials required. SDK provider calls use test doubles. Claude bundled CLI version check passed.",
+    "Code Factory implements planning, independent approval and export; isolated execution and PR automation pending",
+    "Embedding retrieval, semantic entailment scoring, Graphify integration, Jira and ServiceNow connectors pending",
+    "PostgreSQL concurrency/RLS, SSO/MFA and disaster recovery not validated"
+  ],
+  "documents": {
+    "upload": "Multi-file upload: up to 20 files / 20 MiB total; arbitrary original types accepted",
+    "authorization": "owner/contributor upload; explicit application grant required",
+    "formats": "All types accepted; successful conversion depends on MarkItDown support",
+    "max_mb": 20,
+    "production_intake": "disabled pending scanner and private storage integration",
+    "processing": "Automatic durable local queue, offline MarkItDown 0.1.7 conversion, 45-second timeout, 1M Markdown character limit",
+    "scan_required_local": false,
+    "deletion": "Owner or uploading contributor; confirmation, original removal, Knowledge removal, audit event",
+    "graph_input": "Scoped Markdown and JSON exports with source/Markdown fingerprints"
+  },
+  "navigation": "One Knowledge menu with Graph, Sources, Quality and Versions subviews; Documents retains uploads/deletion",
+  "graph": {
+    "generation": "Automatic structural graph plus opt-in selected-provider semantic enrichment; bounded evidence validation and version metadata",
+    "view": "Interactive SVG, node search, source evidence, JSON export",
+    "quality": "Source and structural coverage, provenance, empty cells, duplicate rows, isolated nodes; semantic accuracy not measured",
+    "limits": {
+      "sources": 100,
+      "rows_sections_per_source": 2000,
+      "nodes": 6000
+    },
+    "security": "Application-scoped IDs/access; stale graph content withheld immediately",
+    "versioning": "Numbered persisted snapshots; current snapshot preserved as v1; per-version views/quality/exports; unavailable if sources removed or changed",
+    "rendering_fix": "CSP explicitly allows same-origin external scripts; inline/eval remain disallowed",
+    "retrieval": "Graph endpoint/relation matching and one-hop expansion, up to eight source citations, selected graph retrieval model",
+    "failure_policy": "No automatic retry of failed/interrupted AI calls; explicit retry available"
+  },
+  "chat": {
+    "history": "Persisted conversations scoped to current user and application; legacy history migration tested",
+    "context": "Up to 8 prior turns; removed/changed sources excluded; follow-up lexical retrieval",
+    "presentation": "Chronological messages, safe Markdown subset, collapsed sources, sending status, preserved error drafts",
+    "validation": "120 tests passed; default AI routing, greetings without evidence, missing-setup/no-fallback behavior verified with mocked provider",
+    "llm": "OpenAI Agents SDK 0.22.2 and Claude Agent SDK 0.2.152; independent per-application/per-task provider/model; tools disabled",
+    "default": "AI conversation; source excerpts require explicit selection; visible missing model/key status",
+    "local_configuration_status": "MQACEKnowledge: no AI configuration or mounted OpenAI/Claude key file at diagnosis; live LLM connection not verified"
+  }
+}
