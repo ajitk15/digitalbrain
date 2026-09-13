@@ -33,3 +33,36 @@ GRAPH_GENERATION_ADVICE = (
     "Chat can stay on a cheaper model."
 )
 RECOMMENDED_GRAPH_MODEL = "claude:claude-sonnet-5"
+
+
+# Published list prices in USD per million tokens, for the models this catalog
+# offers. Shown in AI settings as a reference only: rates are entered per
+# application because a contracted price can differ from list, and what the
+# platform records must be what the operator is actually billed.
+#
+# Anthropic first-party rates, verified 2026-09-13. Amazon Bedrock and Vertex AI
+# are partner-operated and priced separately. OpenAI models are deliberately
+# absent rather than guessed - check the provider's own pricing page.
+LIST_PRICES = {
+    "claude:claude-fable-5-1": ("10.00", "50.00"),
+    "claude:claude-opus-5": ("5.00", "25.00"),
+    "claude:claude-sonnet-5": ("2.00", "10.00"),
+    "claude:claude-haiku-4-5-20251001": ("1.00", "5.00"),
+}
+
+PRICING_NOTE = (
+    "Published list prices per million tokens, for reference. Enter the price you are "
+    "actually billed: recorded costs are estimates calculated from these rates, so a "
+    "wrong rate makes every cost report wrong by the same factor."
+)
+
+
+def price_reference():
+    """Rows for the AI settings pricing table, in catalog order."""
+    rows = []
+    for _, options in MODEL_CHOICES:
+        for value, label in options:
+            if value in LIST_PRICES:
+                inputs, outputs = LIST_PRICES[value]
+                rows.append({"label": label, "input": inputs, "output": outputs})
+    return rows

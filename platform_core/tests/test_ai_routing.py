@@ -3,7 +3,7 @@ from decimal import Decimal
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from platform_core.ai import AIForm, invoke_ai
@@ -255,3 +255,39 @@ class AIRoutingTests(TestCase):
         self.assertContains(response, "gpt-5.6-luna")
         self.assertContains(response, "Hello")
         self.assertFalse(ChatMessage.objects.exists())
+
+
+class PricingReferenceTests(SimpleTestCase):
+    """The 100x-too-high rates this fixes came from having no guidance at all."""
+
+    def test_every_listed_claude_model_has_a_published_price(self):
+        from platform_core.model_catalog import LIST_PRICES, MODEL_CHOICES
+
+        claude = [v for group, options in MODEL_CHOICES for v, _ in options
+                  if group == "Claude"]
+        self.assertTrue(claude)
+        for value in claude:
+            with self.subTest(model=value):
+                self.assertIn(value, LIST_PRICES)
+
+    def test_output_always_costs_more_than_input(self):
+        from platform_core.model_catalog import LIST_PRICES
+
+        for value, (inputs, outputs) in LIST_PRICES.items():
+            with self.subTest(model=value):
+                self.assertLess(float(inputs), float(outputs))
+
+    def test_openai_models_are_absent_rather_than_guessed(self):
+        """Inventing a price would be worse than showing none."""
+        from platform_core.model_catalog import LIST_PRICES
+
+        self.assertFalse([v for v in LIST_PRICES if v.startswith("openai:")])
+
+    def test_the_reference_renders_in_order_with_both_rates(self):
+        from platform_core.model_catalog import price_reference
+
+        rows = price_reference()
+        self.assertEqual(rows[0]["label"], "Claude Fable 5.1")
+        self.assertEqual(rows[-1]["label"], "Claude Haiku 4.5")
+        self.assertEqual(rows[-1]["input"], "1.00")
+        self.assertEqual(rows[-1]["output"], "5.00")

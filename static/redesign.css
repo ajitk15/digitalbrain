@@ -707,4 +707,6 @@
   .kb-empty { display: flex; flex-direction: column; justify-content: center; }
   .kb-empty .card { border: 0; box-shadow: none; padding: 0; }
   .kb-empty h2 { font-size: var(--t-17); }
+  .price-table { margin: var(--s-3) 0; max-width: 420px; }
+  .price-table td.mono { font-variant-numeric: tabular-nums; text-align: right; }
 }

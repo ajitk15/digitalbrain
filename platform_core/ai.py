@@ -16,7 +16,12 @@ from django.views.decorators.http import require_http_methods
 from digitalbrain.configuration import read_secret
 
 from .llm_agents import completion
-from .model_catalog import GRAPH_GENERATION_ADVICE, MODEL_CHOICES
+from .model_catalog import (
+    GRAPH_GENERATION_ADVICE,
+    MODEL_CHOICES,
+    PRICING_NOTE,
+    price_reference,
+)
 from .models import AI_PURPOSES, AIConfiguration
 from .policy import application_for
 from .services import audit, record_ai_usage
@@ -399,6 +404,8 @@ def ai_settings(request, pk):
         {
             "application": app,
             "sections": sections,
+            "price_rows": price_reference(),
+            "pricing_note": PRICING_NOTE,
             "openai_secret": f"openai_{app.pk}",
             "claude_secret": f"claude_{app.pk}",
         },
