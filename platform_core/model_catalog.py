@@ -21,3 +21,15 @@ MODEL_CHOICES = [
     ),
     ("Custom", [("custom", "Custom / existing model ID")]),
 ]
+
+
+# Graph extraction is materially harder than chat: it must find relationships,
+# quote them exactly and name both entities. Small fast models produce thin or
+# rejected results, so the settings page recommends a stronger one for that task.
+GRAPH_GENERATION_ADVICE = (
+    "Graph generation needs a strong reasoning model. Claude Sonnet or a GPT-5.6 model "
+    "extracts far more usable relationships here than a small fast model such as Haiku, "
+    "which tends to return few relationships or ones that fail quote verification. "
+    "Chat can stay on a cheaper model."
+)
+RECOMMENDED_GRAPH_MODEL = "claude:claude-sonnet-5"

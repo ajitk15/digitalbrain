@@ -13,6 +13,28 @@ def application_nav(context):
     return {"application": context.get("application")}
 
 
+def settings_sections(app, grant):
+    """The settings screens this user may reach, in display order.
+
+    Single source of truth for both the Settings sub-navigation and the Settings
+    tab's own visibility. Each screen keeps its own URL and its own authorization
+    check; this only decides what to link to. Note that AI costs is gated on a
+    feature switch rather than on ownership, so a contributor can reach Settings
+    while an owner-only section list stays empty for them.
+    """
+    sections = []
+    if grant and grant.role == "owner":
+        sections.append(("AI settings", "ai-settings", {"ai-settings"}))
+    if feature_enabled("usage_reports", app):
+        sections.append(("AI costs", "usage", {"usage"}))
+    if grant and grant.role == "owner":
+        if feature_enabled("connectors", app):
+            sections.append(("Connectors", "connectors", {"connectors"}))
+        sections.append(("People & access", "application-access", {"application-access"}))
+        sections.append(("Features", "application-features", {"application-features"}))
+    return sections
+
+
 @register.inclusion_tag("application_menu.html", takes_context=True)
 def application_menu(context):
     app = context["application"]
@@ -20,25 +42,67 @@ def application_menu(context):
     grant = ApplicationGrant.objects.filter(application=app, user=request.user).first()
     current = request.resolver_match.url_name
     definitions = [
-        ("Documents", "application", None, {"application", "documents", "document-detail"}),
-        ("Knowledge", "graph", "knowledge", {"knowledge", "knowledge-detail", "graph"}),
+        (
+            "Knowledge",
+            "graph",
+            "knowledge",
+            {
+                "knowledge",
+                "knowledge-detail",
+                "graph",
+                "application",
+                "documents",
+                "document-detail",
+                "document-delete",
+            },
+        ),
         ("Chat", "chat", "chat", {"chat"}),
         ("Code Factory", "plans", "code_factory", {"plans", "plan-detail"}),
-        ("AI costs", "usage", "usage_reports", {"usage"}),
     ]
-    if grant and grant.role == "owner":
-        definitions += [
-            ("AI settings", "ai-settings", None, {"ai-settings"}),
-            ("Connectors", "connectors", "connectors", {"connectors"}),
-            ("People & access", "application-access", None, {"application-access"}),
-            ("Settings", "application-features", None, {"application-features"}),
-        ]
     items = [
-        {"label": label, "url": reverse(route, args=[app.pk]), "current": current in routes}
+        {
+            "label": label,
+            "icon": label,
+            "url": reverse(route, args=[app.pk]),
+            "current": current in routes,
+        }
         for label, route, feature, routes in definitions
         if feature is None or feature_enabled(feature, app)
     ]
+    sections = settings_sections(app, grant)
+    if sections:
+        # The label is always "Settings", never the first section's name: a
+        # contributor with usage reports on would otherwise render "AI costs" in
+        # the top menu, which is exactly what the feature-gating test forbids.
+        routes = {route for _, _, section_routes in sections for route in section_routes}
+        items.append(
+            {
+                "label": "Settings",
+                "icon": "Settings",
+                "url": reverse(sections[0][1], args=[app.pk]),
+                "current": current in routes,
+            }
+        )
     return {"application": app, "items": items}
+
+
+@register.inclusion_tag("settings_nav.html", takes_context=True)
+def settings_nav(context):
+    """Sub-navigation across the settings screens, which keep separate URLs."""
+    app = context["application"]
+    request = context["request"]
+    grant = ApplicationGrant.objects.filter(application=app, user=request.user).first()
+    current = request.resolver_match.url_name
+    return {
+        "items": [
+            {
+                "label": label,
+                "url": reverse(route, args=[app.pk]),
+                "current": current in routes,
+            }
+            for label, route, routes in settings_sections(app, grant)
+        ]
+    }
 
 
 @register.inclusion_tag("organization_tree.html", takes_context=True)

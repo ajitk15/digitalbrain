@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+import threading
 import uuid
 from pathlib import Path
 
@@ -14,13 +15,22 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .models import AIConfiguration, ChangePlan, ChatConversation, ChatTurn, KnowledgeEntry
+from .agent_runtime import streaming
+from .agent_runtime.runtime import HISTORY_TURNS, HistoryTurn
+from .models import (
+    CHAT_MODES,
+    AIConfiguration,
+    ChangePlan,
+    ChatConversation,
+    ChatMessage,
+    KnowledgeEntry,
+)
 from .policy import application_for
 from .services import audit, feature_enabled
 
@@ -46,7 +56,9 @@ class KnowledgeForm(forms.Form):
 class QuestionForm(forms.Form):
     question = forms.CharField(
         max_length=2000,
-        widget=forms.Textarea(attrs={"rows": 2}),
+        widget=forms.Textarea(
+            attrs={"rows": 2, "placeholder": "Ask a question about your documents…"}
+        ),
         label="Ask your application knowledge",
     )
 
@@ -177,21 +189,250 @@ def readable_evidence(citations):
 
 
 def conversation_context(conversation, app, user):
+    """Recent exchanges, as provider-neutral HistoryTurn values.
+
+    Returns plain values rather than model instances so a worker thread can carry
+    history without holding an ORM object bound to a request.
+    """
     if not conversation:
         return []
-    recent = list(
-        conversation.turns.filter(application=app, user=user).order_by("-created_at", "-id")[:8]
+    answers = list(
+        conversation.messages.filter(
+            application=app, user=user, role="assistant", status="complete"
+        ).order_by("-sequence")[:HISTORY_TURNS]
     )
-    # Never resend excerpts/answers backed by a removed or changed source.
-    active = {
-        str(e.pk): e.digest
-        for e in KnowledgeEntry.objects.filter(application=app, active=True).only("id", "digest")
+    if not answers:
+        return []
+    questions = {
+        message.sequence: message.body
+        for message in conversation.messages.filter(
+            application=app,
+            user=user,
+            role="user",
+            sequence__in=[answer.sequence - 1 for answer in answers],
+        )
+    }
+    # Never resend excerpts/answers backed by a removed or changed source. Look up
+    # only the cited sources rather than every source in the application.
+    cited = {c.get("id") for answer in answers for c in answer.citations}
+    active = (
+        {
+            str(e.pk): e.digest
+            for e in KnowledgeEntry.objects.filter(
+                application=app, active=True, pk__in=[c for c in cited if c]
+            ).only("id", "digest")
+        }
+        if cited
+        else {}
+    )
+    return [
+        HistoryTurn(question=questions[answer.sequence - 1], answer=answer.body)
+        for answer in reversed(answers)
+        if answer.sequence - 1 in questions
+        and all(active.get(c.get("id")) == c.get("digest") for c in answer.citations)
+    ]
+
+
+def next_sequence(conversation):
+    """Allocate the next message slot.
+
+    Called inside the caller's transaction with the conversation row locked, so two
+    concurrent sends cannot claim the same sequence.
+    """
+    last = conversation.messages.order_by("-sequence").values_list("sequence", flat=True).first()
+    return 0 if last is None else last + 1
+
+
+def record_exchange(app, user, conversation, question, answer, citations, mode, status="complete"):
+    """Persist one question and its answer as two ordered messages."""
+    sequence = next_sequence(conversation)
+    ask = ChatMessage.objects.create(
+        application=app,
+        user=user,
+        conversation=conversation,
+        role="user",
+        status="complete",
+        body=question,
+        mode=mode,
+        sequence=sequence,
+    )
+    reply = ChatMessage.objects.create(
+        application=app,
+        user=user,
+        conversation=conversation,
+        role="assistant",
+        status=status,
+        body=answer,
+        citations=citations,
+        mode=mode,
+        sequence=sequence + 1,
+        finished_at=timezone.now(),
+    )
+    return ask, reply
+
+
+def graph_version_choices(app_id):
+    """Saved graph versions a conversation may be pinned to."""
+    from .graph_ai import available_graph_versions
+
+    return available_graph_versions(app_id)
+
+
+def published_graph_version(app_id):
+    """The version graph answers use unless a conversation pins another."""
+    from .graphs import published_revision
+
+    revision = published_revision(app_id)
+    return revision.number if revision else None
+
+
+def host_login_notice(app, config):
+    """Non-empty when answers would be billed to this machine's own Claude login."""
+    from .agent_runtime.credentials import host_login_enabled
+
+    if not config or config.provider != "claude" or not host_login_enabled():
+        return ""
+    if (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file():
+        return ""
+    return (
+        "Development mode: answers use this machine's Claude Code login, "
+        "not a credential belonging to this application."
+    )
+
+
+def credential_available(config, app):
+    """Whether a run could authenticate, by mounted secret or development host login."""
+    from .agent_runtime.credentials import host_login_enabled
+
+    if (Path(settings.SECRET_DIRECTORY) / f"{config.provider}_{app.pk}").is_file():
+        return True
+    return config.provider == "claude" and host_login_enabled()
+
+
+def mode_options(ai_enabled, graph_ai_enabled):
+    """Every answer mode, each marked available or not.
+
+    Unavailable modes are still listed rather than hidden. A capability that simply
+    vanishes teaches nobody it exists; one that says "setup required" points at the
+    thing to configure.
+    """
+    reasons = {
+        "ai": "" if ai_enabled else "setup required",
+        "graph": "" if graph_ai_enabled else "setup required",
+        "search": "",
     }
     return [
-        turn
-        for turn in reversed(recent)
-        if all(active.get(c.get("id")) == c.get("digest") for c in turn.citations)
+        {
+            "value": value,
+            "label": label,
+            "note": reasons.get(value, ""),
+            "available": not reasons.get(value),
+        }
+        for value, label in CHAT_MODES
     ]
+
+
+def selectable_modes(ai_enabled, graph_ai_enabled):
+    return {
+        option["value"]
+        for option in mode_options(ai_enabled, graph_ai_enabled)
+        if option["available"]
+    }
+
+
+def available_modes(graph_ai_enabled):
+    """Modes a conversation may be switched to. Search never needs configuration."""
+    return [
+        (value, label) for value, label in CHAT_MODES if value != "graph" or graph_ai_enabled
+    ]
+
+
+def unavailable_reason(mode):
+    if mode == "graph":
+        return (
+            "Graph answers are not configured for this application. An application owner "
+            "can enable Graph retrieval in AI settings."
+        )
+    if mode == "ai":
+        return (
+            "AI answers are not configured for this application. An application owner "
+            "can enable Chat conversation in AI settings."
+        )
+    return "Choose an available answer mode."
+
+
+def requested_mode(request, graph_ai_enabled):
+    """Mode for a conversation that does not exist yet."""
+    source = request.POST if request.method == "POST" else request.GET
+    mode = source.get("mode", "ai")
+    return mode if mode in dict(available_modes(graph_ai_enabled)) else "ai"
+
+
+def wants_stream(request):
+    """True when the caller asked for the streaming JSON contract."""
+    return request.headers.get("X-Digital-Brain-Stream") == "1"
+
+
+def failure_text(error):
+    if isinstance(error, ValidationError):
+        return " ".join(error.messages)
+    return "AI credential is not configured. Ask an application owner to complete setup."
+
+
+FOLLOWUP = re.compile(r"\b(it|that|those|they|them|this|more|continue|explain)\b", re.I)
+
+
+def retrieval_query(question, history):
+    """Carry topic terms into short/pronominal follow-ups; keep new topics independent."""
+    if history and (FOLLOWUP.search(question) or len(question.split()) < 5):
+        return question + " " + " ".join(turn.question for turn in history)
+    return question
+
+
+def lexical_citations(app, question):
+    return [
+        {"id": str(entry.pk), "title": entry.title, "digest": entry.digest, "excerpt": passage}
+        for _, entry, passage in retrieve(app, question)
+    ]
+
+
+def answer_question(user, app, conversation, question, mode, graph_version=None):
+    """Produce and persist one exchange synchronously.
+
+    This is the no-JavaScript path, and the fallback whenever streaming is
+    unavailable. It raises rather than persisting a failed answer, so a provider
+    error never leaves a half-finished turn in the transcript.
+    """
+    first_exchange = conversation is None
+    history = conversation_context(conversation, app, user)
+    query = retrieval_query(question, history)
+    citations = lexical_citations(app, query)
+    answer = readable_evidence(citations)
+    if mode in {"ai", "graph"}:
+        from .ai import answer_with_ai, invoke_ai
+
+        if mode == "graph":
+            from .graph_ai import graph_citations
+
+            citations = graph_citations(app.pk, query, version=graph_version)
+            answer = invoke_ai(
+                user, app.pk, "graph_retrieval", question, citations, history=history
+            )
+        else:
+            answer = answer_with_ai(user, app.pk, question, citations, history=history)
+    with transaction.atomic():
+        access(user, app.pk, "chat")
+        access(user, app.pk, "knowledge")
+        if conversation is None:
+            conversation = ChatConversation.objects.create(
+                application=app, user=user, title=question[:120], mode=mode
+            )
+        _, reply = record_exchange(app, user, conversation, question, answer, citations, mode)
+        conversation.save(update_fields=["updated_at"])
+        audit(user, "chat.answered", reply.pk, app.product.portfolio.organization)
+    if first_exchange:
+        retitle(user, app, reply.pk, question, answer)
+    return conversation
 
 
 @login_required
@@ -217,97 +458,67 @@ def chat(request, pk):
     form = QuestionForm(request.POST or None)
     chat_config = AIConfiguration.objects.filter(application=app, purpose="chat").first()
     ai_enabled = bool(chat_config and chat_config.enabled)
-    chat_key_present = bool(
-        chat_config
-        and (Path(settings.SECRET_DIRECTORY) / f"{chat_config.provider}_{app.pk}").is_file()
-    )
+    chat_key_present = bool(chat_config) and credential_available(chat_config, app)
     graph_ai_enabled = AIConfiguration.objects.filter(
         application=app, purpose="graph_retrieval", enabled=True
     ).exists()
-    mode = request.POST.get("mode", "ai")
+    graph_versions = graph_version_choices(app.pk) if graph_ai_enabled else []
+    published_graph = published_graph_version(app.pk)
+    # Mode is a property of the conversation. A new conversation may be started in a
+    # chosen mode; sending a message can never change it, so a paid mode is never
+    # entered by accident.
+    mode = conversation.mode if conversation else requested_mode(request, graph_ai_enabled)
     if request.method == "POST" and form.is_valid():
-        if mode not in {"search", "ai", "graph"}:
-            form.add_error(None, "Choose an available answer mode.")
+        if mode not in dict(available_modes(graph_ai_enabled)):
+            form.add_error(None, unavailable_reason(mode))
         else:
             question = form.cleaned_data["question"]
-            history = conversation_context(conversation, app, request.user)
-            # Carry topic terms into short/pronominal follow-ups; keep new topics independent.
-            followup = bool(
-                re.search(
-                    r"\b(it|that|those|they|them|this|more|continue|explain)\b", question, re.I
+            if mode in {"ai", "graph"} and wants_stream(request):
+                # Streaming path: persist the exchange now and let the browser
+                # open the event stream. The synchronous branch below stays the
+                # no-JavaScript fallback and is never removed.
+                conversation, placeholder = start_answer(
+                    app, request.user, conversation, question, mode
                 )
-            )
-            retrieval_question = question
-            if history and (followup or len(question.split()) < 5):
-                retrieval_question += " " + " ".join(t.question for t in history)
-            evidence = retrieve(app, retrieval_question)
-            citations = [
-                {
-                    "id": str(entry.pk),
-                    "title": entry.title,
-                    "digest": entry.digest,
-                    "excerpt": passage,
-                }
-                for _, entry, passage in evidence
-            ]
-            answer = readable_evidence(citations)
-            if mode in {"ai", "graph"}:
-                from .ai import answer_with_ai, invoke_ai
-
-                try:
-                    if mode == "graph":
-                        from .graph_ai import graph_citations
-
-                        citations = graph_citations(pk, retrieval_question)
-                        answer = invoke_ai(
-                            request.user,
-                            pk,
-                            "graph_retrieval",
-                            question,
-                            citations,
-                            history=history,
-                        )
-                    else:
-                        answer = answer_with_ai(
-                            request.user, pk, question, citations, history=history
-                        )
-                except (ValidationError, ImproperlyConfigured) as error:
-                    text = (
-                        "AI credential is not configured. "
-                        "Ask an application owner to complete setup."
-                    )
-                    if isinstance(error, ValidationError):
-                        text = " ".join(error.messages)
-                    form.add_error(None, text)
-            if not form.errors:
-                with transaction.atomic():
-                    access(request.user, pk, "chat")
-                    access(request.user, pk, "knowledge")
-                    if conversation is None:
-                        conversation = ChatConversation.objects.create(
-                            application=app, user=request.user, title=question[:120]
-                        )
-                    turn = ChatTurn.objects.create(
-                        application=app,
-                        user=request.user,
-                        conversation=conversation,
-                        question=question,
-                        answer=answer,
-                        citations=citations,
-                        mode=mode,
-                    )
-                    conversation.save(update_fields=["updated_at"])
-                    audit(
-                        request.user, "chat.answered", turn.pk, app.product.portfolio.organization
-                    )
+                audit(
+                    request.user,
+                    "chat.answered",
+                    placeholder.pk,
+                    app.product.portfolio.organization,
+                )
+                return JsonResponse(
+                    {
+                        "conversation": str(conversation.pk),
+                        "message": str(placeholder.pk),
+                        "stream": reverse("chat-stream", args=[pk, placeholder.pk]),
+                        "stop": reverse("chat-stop", args=[pk, placeholder.pk]),
+                        "fragment": reverse("chat-message", args=[pk, placeholder.pk]),
+                    },
+                    status=201,
+                )
+            try:
+                conversation = answer_question(
+                    request.user,
+                    app,
+                    conversation,
+                    question,
+                    mode,
+                    graph_version=conversation.graph_version if conversation else None,
+                )
                 return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
-    turns = (
-        conversation.turns.filter(application=app, user=request.user).order_by("created_at", "id")
+            except (ValidationError, ImproperlyConfigured) as error:
+                form.add_error(None, failure_text(error))
+    history_messages = (
+        conversation.messages.filter(application=app, user=request.user).order_by(
+            "sequence", "created_at", "id"
+        )
         if conversation
-        else ChatTurn.objects.none()
+        else ChatMessage.objects.none()
     )
-    turn_pages = Paginator(turns, 30)
-    turn_page = turn_pages.get_page(request.GET.get("messages", turn_pages.num_pages))
+    message_pages = Paginator(history_messages, 60)
+    message_page = message_pages.get_page(
+        request.GET.get("messages", message_pages.num_pages)
+    )
     return render(
         request,
         "chat.html",
@@ -316,14 +527,355 @@ def chat(request, pk):
             "form": form,
             "conversation": conversation,
             "conversations": Paginator(conversations, 20).get_page(request.GET.get("history")),
-            "turn_page": turn_page,
+            "message_page": message_page,
             "ai_enabled": ai_enabled,
             "chat_config": chat_config,
             "chat_key_present": chat_key_present,
             "grant": grant,
             "graph_ai_enabled": graph_ai_enabled,
             "mode": mode,
+            "modes": mode_options(ai_enabled, graph_ai_enabled),
+            "graph_versions": graph_versions,
+            "published_graph": published_graph,
+            "host_login": host_login_notice(app, chat_config),
         },
+    )
+
+
+def resend(request, pk, app, conversation, question):
+    """Re-ask a question after regenerate or edit trimmed the transcript."""
+    destination = f"{reverse('chat', args=[pk])}?conversation={conversation.pk}"
+    try:
+        answer_question(
+            request.user,
+            app,
+            conversation,
+            question,
+            conversation.mode,
+            graph_version=conversation.graph_version,
+        )
+    except (ValidationError, ImproperlyConfigured) as error:
+        messages.error(request, failure_text(error))
+    return redirect(destination)
+
+
+def start_answer(app, user, conversation, question, mode):
+    """Persist the question and an empty assistant row, then hand back the placeholder.
+
+    Written before the provider is contacted so the transcript has somewhere to
+    stream into, and so a dropped connection still leaves a record of the ask.
+    """
+    with transaction.atomic():
+        if conversation is None:
+            conversation = ChatConversation.objects.create(
+                application=app, user=user, title=question[:120], mode=mode
+            )
+        sequence = next_sequence(conversation)
+        ChatMessage.objects.create(
+            application=app,
+            user=user,
+            conversation=conversation,
+            role="user",
+            status="complete",
+            body=question,
+            mode=mode,
+            sequence=sequence,
+        )
+        placeholder = ChatMessage.objects.create(
+            application=app,
+            user=user,
+            conversation=conversation,
+            role="assistant",
+            status="streaming",
+            body="",
+            mode=mode,
+            sequence=sequence + 1,
+        )
+        conversation.save(update_fields=["updated_at"])
+    return conversation, placeholder
+
+
+def finish_answer(message_id, status, body, citations, error="", provider="", model=""):
+    """Single guarded write that closes out a streaming message.
+
+    The status predicate makes this idempotent and makes a racing stop a no-op,
+    which is what lets exactly one thread own the row.
+    """
+    return ChatMessage.objects.filter(pk=message_id, status="streaming").update(
+        status=status,
+        body=body,
+        citations=citations,
+        error=error[:300],
+        provider=provider,
+        model=model,
+        finished_at=timezone.now(),
+    )
+
+
+def answer_worker(user_id, app_id, message_id, question, history, session):
+    """Own the provider call and every database write for one streamed answer.
+
+    Runs off the request thread, so it re-resolves its own objects and always
+    releases its connection.
+    """
+    from django.db import close_old_connections
+
+    from .ai import chat_configuration, stream_chat_answer
+    from .models import User
+
+    status, body, citations, error, provider, model = "failed", "", [], "", "", ""
+    try:
+        user = User.objects.get(pk=user_id)
+        app, config, token = chat_configuration(user, app_id)
+        provider, model = config.provider, config.model
+        citations_seed = lexical_citations(app, retrieval_query(question, history))
+        body, citations = stream_chat_answer(
+            user, app, config, token, question, citations_seed, history, session
+        )
+        status = "stopped" if session.stopped else "complete"
+        session.emit("citations", {"citations": public_citations(citations)})
+        if status == "complete":
+            title = retitle(user, app, message_id, question, body)
+            if title:
+                session.emit("title", {"title": title})
+    except (ValidationError, ImproperlyConfigured) as failure:
+        error = failure_text(failure)
+        session.emit("error", {"message": error})
+    except (PermissionDenied, Http404):
+        error = "Access to this application changed while the answer was in progress."
+        session.emit("error", {"message": error})
+    except Exception:
+        error = "AI response unavailable."
+        session.emit("error", {"message": error})
+    finally:
+        try:
+            if status == "failed" and not body:
+                finish_answer(message_id, "failed", "", [], error, provider, model)
+            else:
+                finish_answer(message_id, status, body, citations, error, provider, model)
+            session.emit("done", {"status": status})
+        finally:
+            session.finish()
+            close_old_connections()
+
+
+def retitle(user, app, message_id, question, answer):
+    """Replace the truncated first question with a generated name, once.
+
+    Only for the opening exchange of a conversation the user has not named
+    themselves. Any failure leaves the existing title alone.
+    """
+    from .ai import generate_title
+
+    conversation = (
+        ChatConversation.objects.filter(messages__id=message_id).distinct().first()
+    )
+    if conversation is None or conversation.title_locked:
+        return None
+    if conversation.messages.filter(role="assistant", status="complete").count() > 1:
+        return None
+    title = generate_title(user, app.pk, question, answer)
+    if not title or title == conversation.title:
+        return None
+    ChatConversation.objects.filter(pk=conversation.pk, title_locked=False).update(title=title)
+    return title
+
+
+def public_citations(citations):
+    """Citations as the browser may see them: never the digest."""
+    return [
+        {"id": c["id"], "title": c["title"], "excerpt": c["excerpt"]} for c in citations or []
+    ]
+
+
+@login_required
+@require_http_methods(["GET"])
+def chat_stream(request, pk, message_id):
+    """Server-sent events for one assistant message.
+
+    Authorization happens here, before the response is constructed: a permission
+    error raised inside the generator would arrive after the 200 headers and
+    truncate the body rather than returning 403.
+    """
+    app, _ = access(request.user, pk, "chat")
+    access(request.user, pk, "knowledge")
+    message = get_object_or_404(
+        ChatMessage,
+        pk=message_id,
+        application=app,
+        user=request.user,
+        role="assistant",
+        status="streaming",
+    )
+    history = conversation_context(message.conversation, app, request.user)
+    question = (
+        message.conversation.messages.filter(role="user", sequence=message.sequence - 1)
+        .values_list("body", flat=True)
+        .first()
+    )
+    if not question:
+        raise Http404
+    try:
+        session = streaming.open_session(message.pk)
+    except streaming.StreamCapacityError as full:
+        return JsonResponse({"error": str(full)}, status=503)
+    threading.Thread(
+        target=answer_worker,
+        args=(request.user.pk, app.pk, message.pk, question, history, session),
+        name=f"chat-answer-{message.pk}",
+        daemon=True,
+    ).start()
+    response = StreamingHttpResponse(
+        streaming.stream_frames(session), content_type="text/event-stream"
+    )
+    # No Content-Length, or waitress buffers the whole body instead of chunking.
+    response["Cache-Control"] = "no-cache, no-transform"
+    response["X-Accel-Buffering"] = "no"
+    return response
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_stop(request, pk, message_id):
+    """Ask a running answer to stop. The worker still writes the row."""
+    app, _ = access(request.user, pk, "chat")
+    message = get_object_or_404(
+        ChatMessage, pk=message_id, application=app, user=request.user, role="assistant"
+    )
+    if streaming.request_stop(message.pk):
+        return JsonResponse({"status": "stopping"}, status=202)
+    # No live stream in this process: close out an orphan left by a restart.
+    finish_answer(message.pk, "stopped", message.body, message.citations)
+    return JsonResponse({"status": "stopped"}, status=202)
+
+
+@login_required
+@require_http_methods(["GET"])
+def chat_message(request, pk, message_id):
+    """The server-rendered fragment for one finished message.
+
+    The browser swaps this in when a stream ends so provider Markdown is only
+    ever rendered by the trusted template filter, never by JavaScript.
+    """
+    app, _ = access(request.user, pk, "chat")
+    message = get_object_or_404(ChatMessage, pk=message_id, application=app, user=request.user)
+    return render(request, "_chat_message.html", {"message": message, "application": app})
+
+
+def owned_conversation(user, app, conversation_id):
+    return get_object_or_404(
+        ChatConversation, pk=conversation_id, application=app, user=user
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_conversation(request, pk, conversation_id):
+    """Rename, change mode, or delete one of the signed-in user's own conversations."""
+    app, _ = access(request.user, pk, "chat")
+    conversation = owned_conversation(request.user, app, conversation_id)
+    action = request.POST.get("action")
+    organization = app.product.portfolio.organization
+    if action == "delete":
+        with transaction.atomic():
+            audit(request.user, "chat.conversation_deleted", conversation.pk, organization)
+            conversation.delete()
+        messages.success(request, "Conversation deleted.")
+        return redirect("chat", pk=pk)
+    if action == "rename":
+        title = request.POST.get("title", "").strip()[:120]
+        if not title:
+            messages.error(request, "Enter a conversation name.")
+        else:
+            with transaction.atomic():
+                conversation.title = title
+                # A human name is never overwritten by a generated one.
+                conversation.title_locked = True
+                conversation.save(update_fields=["title", "title_locked", "updated_at"])
+                audit(request.user, "chat.conversation_renamed", conversation.pk, organization)
+    elif action == "graph-version":
+        raw = request.POST.get("graph_version", "")
+        if raw == "":
+            conversation.graph_version = None
+        else:
+            from .graph_ai import available_graph_versions
+
+            try:
+                chosen = int(raw)
+            except (TypeError, ValueError):
+                chosen = None
+            if chosen not in available_graph_versions(app.pk):
+                messages.error(request, "Choose an available graph version.")
+                return redirect(
+                    f"{reverse('chat', args=[pk])}?conversation={conversation.pk}"
+                )
+            conversation.graph_version = chosen
+        conversation.save(update_fields=["graph_version", "updated_at"])
+    elif action == "mode":
+        graph_ai_enabled = AIConfiguration.objects.filter(
+            application=app, purpose="graph_retrieval", enabled=True
+        ).exists()
+        mode = request.POST.get("mode", "")
+        if mode not in dict(available_modes(graph_ai_enabled)):
+            messages.error(request, "Choose an available answer mode.")
+        else:
+            conversation.mode = mode
+            conversation.save(update_fields=["mode", "updated_at"])
+    else:
+        raise Http404
+    return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_regenerate(request, pk, message_id):
+    """Discard an assistant answer and its question, then re-ask the same question."""
+    app, _ = access(request.user, pk, "chat")
+    access(request.user, pk, "knowledge")
+    answer = get_object_or_404(
+        ChatMessage, pk=message_id, application=app, user=request.user, role="assistant"
+    )
+    conversation = answer.conversation
+    question = (
+        conversation.messages.filter(role="user", sequence=answer.sequence - 1)
+        .values_list("body", flat=True)
+        .first()
+    )
+    if not question:
+        raise Http404
+    with transaction.atomic():
+        conversation.messages.filter(sequence__gte=answer.sequence - 1).delete()
+    return resend(request, pk, app, conversation, question)
+
+
+@login_required
+@require_http_methods(["POST"])
+def chat_edit(request, pk, message_id):
+    """Replace a question and drop everything after it, then re-ask."""
+    app, _ = access(request.user, pk, "chat")
+    access(request.user, pk, "knowledge")
+    original = get_object_or_404(
+        ChatMessage, pk=message_id, application=app, user=request.user, role="user"
+    )
+    conversation = original.conversation
+    question = request.POST.get("question", "").strip()[:2000]
+    if not question:
+        messages.error(request, "Enter a question.")
+        return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
+    with transaction.atomic():
+        conversation.messages.filter(sequence__gte=original.sequence).delete()
+    return resend(request, pk, app, conversation, question)
+
+
+class DraftForm(forms.Form):
+    requirement = forms.CharField(
+        max_length=2000,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        label="What change do you need?",
+        help_text=(
+            "An AI draft is filled into the form below for you to edit. "
+            "Nothing is submitted for you."
+        ),
     )
 
 
@@ -332,7 +884,50 @@ def chat(request, pk):
 def plans(request, pk):
     app, grant = access(request.user, pk, "code_factory")
     form = PlanForm(request.POST or None)
-    if request.method == "POST":
+    draft_form = DraftForm()
+    draft_notice = ""
+    plan_ai_enabled = AIConfiguration.objects.filter(
+        application=app, purpose="plan_drafting", enabled=True
+    ).exists()
+    if request.method == "POST" and request.POST.get("action") == "draft":
+        access(request.user, pk, "code_factory", write=True)
+        access(request.user, pk, "knowledge")
+        draft_form = DraftForm(request.POST)
+        form = PlanForm()
+        if draft_form.is_valid():
+            requirement = draft_form.cleaned_data["requirement"]
+            try:
+                from .ai import draft_plan
+
+                citations = lexical_citations(app, requirement)
+                draft = draft_plan(request.user, pk, requirement, citations)
+                form = PlanForm(
+                    initial={
+                        "title": draft["title"] or requirement[:200],
+                        "proposal": draft["proposal"],
+                        "validation": draft["validation"],
+                    }
+                )
+                sources = ", ".join(c["title"] for c in draft["citations"])
+                draft_notice = (
+                    "Draft ready. Review and edit it before submitting. "
+                    + (f"Evidence: {sources}. " if sources else "No source evidence was cited. ")
+                    + (
+                        f"{draft['rejected']} unverifiable quote(s) were dropped."
+                        if draft["rejected"]
+                        else ""
+                    )
+                )
+                audit(
+                    request.user,
+                    "plan.drafted",
+                    app.pk,
+                    app.product.portfolio.organization,
+                    details={"cited": len(draft["citations"])},
+                )
+            except (ValidationError, ImproperlyConfigured) as error:
+                draft_form.add_error(None, failure_text(error))
+    elif request.method == "POST":
         access(request.user, pk, "code_factory", write=True)
         if form.is_valid():
             with transaction.atomic():
@@ -358,6 +953,9 @@ def plans(request, pk):
             "application": app,
             "grant": grant,
             "form": form,
+            "draft_form": draft_form,
+            "draft_notice": draft_notice,
+            "plan_ai_enabled": plan_ai_enabled,
             "page": Paginator(ChangePlan.objects.filter(application=app), 20).get_page(
                 request.GET.get("page")
             ),

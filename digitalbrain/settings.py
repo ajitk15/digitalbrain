@@ -9,6 +9,9 @@ CONFIG = load_config()
 PRODUCTION = CONFIG["mode"] == "production"
 DOCUMENT_AUTO_CONVERT = True
 DOCUMENT_SCAN_REQUIRED = PRODUCTION or CONFIG.get("scan_documents", False)
+# Development only: let the bundled CLI use the operator's own Claude Code login
+# instead of a mounted per-application credential. Never true in production.
+CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not PRODUCTION
 DEBUG = False
 SECRET_DIRECTORY = CONFIG["secret_directory"]
 SECRET_KEY = read_secret(SECRET_DIRECTORY, "django_secret_key")

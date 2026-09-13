@@ -15,7 +15,7 @@ from platform_core.models import (
     AIUsage,
     ApplicationGrant,
     ChangePlan,
-    ChatTurn,
+    ChatMessage,
     Connector,
     Document,
     FeatureSwitch,
@@ -102,9 +102,9 @@ class WorkbenchTests(TestCase):
             {"question": "What is the refund deadline?", "mode": "search"},
         )
         self.assertEqual(response.status_code, 302)
-        turn = ChatTurn.objects.get()
-        self.assertEqual(turn.citations[0]["title"], "Refund policy")
-        self.assertNotIn("Secret policy", json.dumps(turn.citations))
+        answer = ChatMessage.objects.get(role="assistant")
+        self.assertEqual(answer.citations[0]["title"], "Refund policy")
+        self.assertNotIn("Secret policy", json.dumps(answer.citations))
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
         self.assertNotContains(
             self.client.get(reverse("chat", args=[self.app.pk])), "What is the refund deadline?"
@@ -114,7 +114,9 @@ class WorkbenchTests(TestCase):
         self.client.post(
             reverse("chat", args=[self.app.pk]), {"question": "unknown topic", "mode": "search"}
         )
-        self.assertIn("No matching evidence", ChatTurn.objects.get().answer)
+        self.assertIn(
+            "No matching evidence", ChatMessage.objects.get(role="assistant").body
+        )
         FeatureSwitch.objects.create(key="knowledge", enabled=False)
         self.assertEqual(self.client.get(reverse("chat", args=[self.app.pk])).status_code, 403)
 

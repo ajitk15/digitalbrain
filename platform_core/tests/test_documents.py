@@ -154,7 +154,27 @@ class DocumentTests(TestCase):
         self.assertNotContains(response, f'href="{reverse("application", args=[self.other.pk])}"')
 
     def test_shared_navigation_on_application_pages(self):
+        """Every application screen carries the breadcrumb and the same four tabs."""
         for name in ["application", "usage", "application-access", "application-features"]:
-            response = self.client.get(reverse(name, args=[self.app.pk]))
-            self.assertContains(response, 'aria-label="Breadcrumb"')
-            self.assertContains(response, ">Documents</a>")
+            with self.subTest(page=name):
+                response = self.client.get(reverse(name, args=[self.app.pk]))
+                self.assertContains(response, 'aria-label="Breadcrumb"')
+                self.assertContains(response, 'aria-label="Application menu"')
+                # Documents now lives inside Knowledge. Icons are emitted
+                # before the label precisely so these assertions keep working.
+                self.assertContains(response, ">Knowledge</a>")
+                self.assertContains(response, ">Chat</a>")
+                self.assertContains(response, ">Settings</a>")
+
+    def test_settings_screens_share_a_sub_navigation(self):
+        for name in ["usage", "application-access", "application-features"]:
+            with self.subTest(page=name):
+                response = self.client.get(reverse(name, args=[self.app.pk]))
+                self.assertContains(response, 'aria-label="Settings sections"')
+                self.assertContains(response, ">Features</a>")
+
+    def test_the_settings_tab_never_advertises_a_section_name(self):
+        """A contributor reaching Settings via AI costs must still see "Settings"."""
+        response = self.client.get(reverse("application", args=[self.app.pk]))
+        self.assertContains(response, ">Settings</a>")
+        self.assertNotContains(response, ">AI costs</a>")

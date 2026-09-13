@@ -330,6 +330,21 @@ class SecurityTests(TestCase):
             with self.subTest(name=name):
                 self.assertEqual(self.client.get(reverse(name)).status_code, 200)
 
+    def test_content_security_policy_is_exactly_the_agreed_directives(self):
+        """Pinned deliberately.
+
+        connect-src 'self' exists so the chat page can open a same-origin
+        EventSource. Nothing else may be widened without changing this test, and
+        in particular no directive may gain 'unsafe-inline' or an external origin.
+        """
+        response = self.client.get(reverse("dashboard"))
+        self.assertEqual(
+            response["Content-Security-Policy"],
+            "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; "
+            "connect-src 'self'; form-action 'self'; base-uri 'none'; "
+            "frame-ancestors 'none'",
+        )
+
     def test_form_output_escapes_resource_names(self):
         self.app.name = '<img src=x onerror="alert(1)">'
         self.app.save()

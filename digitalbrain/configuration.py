@@ -25,6 +25,7 @@ def load_config():
         "trust_proxy",
         "scanner",
         "scan_documents",
+        "claude_use_host_login",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -32,6 +33,16 @@ def load_config():
         raise ImproperlyConfigured("mode must be development or production.")
     if type(config.get("scan_documents", False)) is not bool:
         raise ImproperlyConfigured("scan_documents must be a boolean.")
+    if type(config.get("claude_use_host_login", False)) is not bool:
+        raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    if config.get("claude_use_host_login") and config.get("mode") == "production":
+        # Refused outright rather than quietly ignored: a production deployment that
+        # believes it is using per-application credentials must not be silently
+        # spending one shared identity.
+        raise ImproperlyConfigured(
+            "claude_use_host_login is a development convenience and cannot be set in "
+            "production. Mount a per-application API key or OAuth token instead."
+        )
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")

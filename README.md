@@ -57,7 +57,7 @@ Mounted secret loading follows [Django's deployment checklist](https://docs.djan
 | Branding | Selected logo by default; platform-admin image upload; bounded decoding, canonical PNG, alpha preservation, atomic replacement, cache revalidation |
 | Documents | Multi-file uploads (20 files / 20 MB total), private originals, automatic MarkItDown conversion, Markdown/graph-input export, scoped deletion; optional scanning |
 | Knowledge graph | Automatic structural graph generation, interactive exploration, evidence links, measured structural quality and numbered version history |
-| Knowledge & chat | Searchable immutable sources, citation excerpts, per-user history, optional OpenAI answers |
+| Knowledge & chat | Searchable immutable sources, verified citation excerpts, per-user conversations, streaming tool-using answers from either Agent SDK |
 | Code Factory | Immutable source-pinned plans, independent approval/rejection, approved-plan JSON export; code execution pending |
 | Connectors | Read-only GitHub issue import with deduplication and revision history |
 | Navigation | Organization tree at left; functional menus at top; current application highlighted |
@@ -90,7 +90,7 @@ The production preflight uses disposable synthetic mounted secrets and does not 
 - `design/`: original architecture narrative and diagrams.
 - `docs/`: operational instructions and implementation boundaries.
 
-React is intentionally deferred until the graph explorer or streaming chat needs it; the current management interface works without a JavaScript build or client-side permission logic.
+React is intentionally deferred: streaming chat is served as server-sent events with a small progressive-enhancement script, so the interface still works with JavaScript disabled and needs no build step or client-side permission logic.
 
 ## Documents and simplified navigation
 

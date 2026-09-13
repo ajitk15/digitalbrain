@@ -11,7 +11,14 @@ import claude_agent_sdk
 from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKError, ResultMessage, query
 from django.core.exceptions import ValidationError
 
-from .llm_agents import INSTRUCTIONS
+from .agent_runtime.credentials import (
+    HOST_LOGIN_PASSTHROUGH,
+    claude_environment,
+    host_login_enabled,
+)
+from .agent_runtime.prompts import INSTRUCTIONS
+from .agent_runtime.runtime import evidence_payload, recent_turns
+from .agent_runtime.usage import checked_answer, claude_usage
 
 
 async def _run(
@@ -20,14 +27,15 @@ async def _run(
     # The CLI gets an empty workspace/settings home; it cannot inherit another app's session.
     with tempfile.TemporaryDirectory(prefix="digital-brain-agent-") as directory:
         safe_names = {"SYSTEMROOT", "WINDIR", "PATH", "PATHEXT", "COMSPEC", "TEMP", "TMP", "LANG"}
-        env = {key: "" for key in os.environ if key.upper() not in safe_names}
+        host_login = host_login_enabled() and not str(token or "").strip()
+        keep = safe_names | (HOST_LOGIN_PASSTHROUGH if host_login else set())
+        env = {key: "" for key in os.environ if key.upper() not in keep}
+        # An API key and an OAuth token are read from different variables; under host
+        # login neither is set and the CLI falls through to the stored session.
+        env.update(claude_environment(token))
         env.update(
             {
-                "ANTHROPIC_API_KEY": token,
                 "ANTHROPIC_BASE_URL": "https://api.anthropic.com",
-                "CLAUDE_CONFIG_DIR": directory,
-                "HOME": directory,
-                "USERPROFILE": directory,
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
                 "DISABLE_TELEMETRY": "1",
                 "CLAUDE_CODE_ENABLE_TELEMETRY": "0",
@@ -38,6 +46,10 @@ async def _run(
                 "CLAUDE_CODE_MAX_RETRIES": "0",
             }
         )
+        if not host_login:
+            env.update(
+                {"CLAUDE_CONFIG_DIR": directory, "HOME": directory, "USERPROFILE": directory}
+            )
         bundled_cli = (
             Path(claude_agent_sdk.__file__).parent
             / "_bundled"
@@ -65,14 +77,10 @@ async def _run(
         prompt = json.dumps(
             {
                 "conversation": [
-                    {"question": t.question, "answer": t.answer[:4000]}
-                    for t in (history or [])[-8:]
+                    {"question": t.question, "answer": t.answer} for t in recent_turns(history)
                 ],
                 "question": question,
-                "evidence": [
-                    {"source": i + 1, "id": c.get("id"), "title": c["title"], "text": c["excerpt"]}
-                    for i, c in enumerate(citations)
-                ],
+                "evidence": evidence_payload(citations),
             }
         )
         result = None
@@ -80,24 +88,14 @@ async def _run(
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, ResultMessage):
                     result = message
-        if result is None or result.is_error or not isinstance(result.usage, dict):
+        if result is None or result.is_error:
             raise ValueError("No successful result")
-        usage = result.usage
-        for key in ("input_tokens", "output_tokens"):
-            if type(usage.get(key)) is not int or not 0 <= usage[key] <= 1000000:
-                raise ValueError("Missing token counts")
-        inputs = usage["input_tokens"]
-        for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
-            value = usage.get(key, 0)
-            if type(value) is not int or not 0 <= value <= 1000000:
-                raise ValueError("Invalid cache tokens")
-            inputs += value
-        answer = result.result
-        if not isinstance(answer, str) or not answer.strip() or len(answer) > 20000:
-            raise ValueError("Invalid answer")
+        inputs, outputs = claude_usage(result.usage)
+        answer = checked_answer(result.result)
+        # Anthropic exposes no transport request ID here, so receipts carry a local run ID.
         return {
             "id": f"claude-{uuid.uuid4()}",
-            "usage": {"prompt_tokens": inputs, "completion_tokens": usage["output_tokens"]},
+            "usage": {"prompt_tokens": inputs, "completion_tokens": outputs},
         }, answer
 
 

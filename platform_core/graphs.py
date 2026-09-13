@@ -6,16 +6,19 @@ import re
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Max
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
-from .services import feature_enabled
+from .services import audit, feature_enabled
 from .workbench import access
 
 MAX_NODES = 6000
@@ -219,9 +222,10 @@ def rebuild(app_id):
         return False
     entries = list(sources_for(app_id)[:MAX_SOURCES])
     data, quality = build_graph(entries, sources_for(app_id).count())
-    config = AIConfiguration.objects.filter(
-        application_id=app_id, purpose="graph_generation", enabled=True
-    ).first()
+    # AI enrichment runs only for a run someone asked for, with the model they
+    # chose. A background rebuild keeps the structural graph current and never
+    # incurs provider charges on its own.
+    config = requested_configuration(graph)
     if config and entries:
         from .graph_ai import enrich_graph
 
@@ -251,14 +255,69 @@ def rebuild(app_id):
             or 0
         ) + 1
         revision = GraphRevision.objects.create(
-            application_id=app_id, number=number, fingerprint=before, data=data, quality=quality
+            application_id=app_id,
+            number=number,
+            fingerprint=before,
+            data=data,
+            quality=quality,
+            provider=config.provider if config else "",
+            model=config.model if config else "",
         )
         locked.data, locked.quality = data, quality
         locked.fingerprint = before
         locked.version = revision.pk
         locked.status = "ready"
+        # The request is spent; a later automatic rebuild must not repeat a paid run.
+        locked.requested_provider = ""
+        locked.requested_model = ""
         locked.save()
     return True
+
+
+def requested_configuration(graph):
+    """The AI settings for this run, or None when no enrichment was requested.
+
+    Falls back to the application's saved graph model when a run was requested
+    without naming one.
+    """
+    if not graph.requested_model:
+        return None
+    config = AIConfiguration.objects.filter(
+        application_id=graph.application_id, purpose="graph_generation", enabled=True
+    ).first()
+    if config is None:
+        return None
+    # A per-run choice overrides the saved default without changing it.
+    config.provider = graph.requested_provider or config.provider
+    config.model = graph.requested_model
+    if graph.requested_by_id:
+        config.configured_by_id = graph.requested_by_id
+    return config
+
+
+def published_revision(app_id):
+    """The newest published snapshot, or None."""
+    return (
+        GraphRevision.objects.filter(application_id=app_id, published_at__isnull=False)
+        .order_by("-published_at", "-number")
+        .first()
+    )
+
+
+def publish_revision(user, app_id, number):
+    """Make one snapshot the answer for chat and Code Factory."""
+    revision = GraphRevision.objects.filter(application_id=app_id, number=number).first()
+    if revision is None:
+        raise ValidationError("That graph version does not exist.")
+    if not revision_readable(revision, app_id):
+        raise ValidationError(
+            "This version's source evidence has changed, so it cannot be published. "
+            "Generate a new version."
+        )
+    revision.published_at = timezone.now()
+    revision.published_by = user
+    revision.save(update_fields=["published_at", "published_by"])
+    return revision
 
 
 def process_next_graph():
@@ -306,13 +365,86 @@ def revision_readable(revision, app_id):
     )
 
 
+def queue_generation(request, app, pk):
+    """Queue a graph run, optionally enriched with a chosen model.
+
+    The model is a per-run choice: it does not change the application's saved
+    graph settings, and it is recorded on the snapshot it produces.
+    """
+    choice = request.POST.get("model_choice", "structural")
+    if choice == "structural":
+        provider, model = "", ""
+    else:
+        known = {value for _, group in MODEL_CHOICES for value, _ in group if value != "custom"}
+        if choice not in known:
+            messages.error(request, "Choose an available model.")
+            return redirect("graph", pk=pk)
+        provider, model = choice.split(":", 1)
+        config = AIConfiguration.objects.filter(
+            application=app, purpose="graph_generation", enabled=True
+        ).first()
+        if config is None:
+            messages.error(
+                request,
+                "Enable Graph generation in AI settings before generating an enriched graph.",
+            )
+            return redirect("graph", pk=pk)
+    graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
+    KnowledgeGraph.objects.filter(pk=graph.pk).update(
+        status="queued",
+        fingerprint="",
+        requested_provider=provider,
+        requested_model=model,
+        requested_by=request.user,
+    )
+    audit(
+        request.user,
+        "graph.generation_requested",
+        app.pk,
+        app.product.portfolio.organization,
+        details={"provider": provider, "model": model or "structural only"},
+    )
+    messages.success(
+        request,
+        f"Graph generation queued using {model}. Provider charges may apply. "
+        "Publish the new version when you are happy with it."
+        if model
+        else "Structural graph generation queued. No AI model is used and nothing is charged.",
+    )
+    return redirect("graph", pk=pk)
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def graph_view(request, pk):
     app, grant = access(request.user, pk, "knowledge")
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
-        if request.POST.get("action") != "retry":
+        action = request.POST.get("action")
+        if action == "publish":
+            number = request.POST.get("version", "")
+            try:
+                revision = publish_revision(request.user, pk, int(number))
+            except (TypeError, ValueError):
+                return HttpResponse("Invalid graph version.", status=400)
+            except ValidationError as error:
+                messages.error(request, " ".join(error.messages))
+                return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
+            audit(
+                request.user,
+                "graph.published",
+                app.pk,
+                app.product.portfolio.organization,
+                details={"version": revision.number},
+            )
+            messages.success(
+                request,
+                f"Version {revision.number} published. Chat and Code Factory now answer from it.",
+            )
+            return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
+        if action == "generate":
+            return queue_generation(request, app, pk)
+        if action != "retry":
             return HttpResponse("Unknown graph action.", status=400)
         target = KnowledgeGraph.objects.filter(application=app, status__in=["failed", "building"])
         if target.filter(status="building").exists():
@@ -367,9 +499,35 @@ def graph_view(request, pk):
         )
         response["Content-Disposition"] = f'attachment; filename="graph-{app.pk}.json"'
         return response
+    published = published_revision(pk)
+    # The Sources rail reuses the documents screen's own gating rather than
+    # reimplementing it, so one set of rules governs both places.
+    from .documents import intake_enabled
+
+    can_upload = bool(
+        intake_enabled()
+        and feature_enabled("document_uploads", app)
+        and grant.role in {"owner", "contributor"}
+    )
+    recent_documents = list(
+        Document.objects.filter(application=app)
+        .exclude(status="deleted")
+        .order_by("-created_at")[:12]
+    )
+    document_total = (
+        Document.objects.filter(application=app).exclude(status="deleted").count()
+    )
     tab = request.GET.get("tab", "graph")
     if tab not in {"graph", "quality", "versions"}:
         tab = "graph"
+    panel = request.GET.get("panel", "health")
+    if panel not in {"health", "evaluation"}:
+        panel = "health"
+    health = None
+    if graph and current:
+        from .graph_quality import health_report
+
+        health = health_report(graph.data, graph.quality)
     return render(
         request,
         "graph.html",
@@ -385,6 +543,18 @@ def graph_view(request, pk):
                 GraphRevision.objects.filter(application=app).defer("data"), 20
             ).get_page(request.GET.get("page")),
             "source_count": sources_for(pk).count(),
+            "published": published,
+            "is_published": bool(selected and selected.published_at),
+            "model_choices": MODEL_CHOICES,
+            "graph_ai_configured": AIConfiguration.objects.filter(
+                application=app, purpose="graph_generation", enabled=True
+            ).exists(),
+            "generating": bool(active_graph and active_graph.status in {"queued", "building"}),
+            "panel": panel,
+            "health": health,
+            "can_upload": can_upload,
+            "recent_documents": recent_documents,
+            "document_total": document_total,
             "pending_documents": Document.objects.filter(
                 application=app, status__in=["queued", "converting"]
             ).count(),
