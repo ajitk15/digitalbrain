@@ -7,6 +7,7 @@ from django.http import HttpResponse
 from django.shortcuts import redirect
 
 from .observability import request_id_context
+from .services import begin_feature_cache, end_feature_cache
 
 logger = logging.getLogger("digitalbrain.requests")
 
@@ -19,6 +20,7 @@ class RequestContextMiddleware:
         request_id = str(uuid.uuid4())
         request.request_id = request_id
         token = request_id_context.set(request_id)
+        features = begin_feature_cache()
         started = time.perf_counter()
         try:
             try:
@@ -50,6 +52,7 @@ class RequestContextMiddleware:
             )
             return response
         finally:
+            end_feature_cache(features)
             request_id_context.reset(token)
 
 

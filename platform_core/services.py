@@ -1,6 +1,7 @@
 """Transactional writes for administration and immutable AI usage receipts."""
 
 import hashlib
+from contextvars import ContextVar
 from decimal import Decimal
 
 from django.conf import settings
@@ -41,14 +42,64 @@ def audit(user, action, resource, organization=None, details=None):
     )
 
 
+#: Feature answers memoised for the life of one request.
+#:
+#: feature_enabled runs two queries and is asked the same questions repeatedly
+#: while a page renders - the navigation, the view and several template tags all
+#: consult it - which put 16 of a documents page's 28 queries into feature
+#: lookups alone. The cache is per request, so a switch still takes effect on the
+#: very next one and the "re-checked on every request" rule is untouched. Outside
+#: a request (the worker, a shell, a streaming thread) the ContextVar default of
+#: None applies and every call reads the database, which is the safe direction.
+_feature_cache = ContextVar("feature_cache", default=None)
+
+
+def begin_feature_cache():
+    """Start a fresh memo. Returns a token for reset, mirroring request_id."""
+    return _feature_cache.set({})
+
+
+def end_feature_cache(token):
+    _feature_cache.reset(token)
+
+
+def all_features(application):
+    """Every feature answer for one application, in two queries rather than 2n.
+
+    Both tables are small and bounded by FEATURES, so reading them whole costs
+    less than asking six separate questions - which is what a page render did.
+    """
+    switches = {row.key: row.enabled for row in FeatureSwitch.objects.all()}
+    local = (
+        {
+            row.key: row.enabled
+            for row in ApplicationFeature.objects.filter(application=application)
+        }
+        if application is not None
+        else {}
+    )
+    return {
+        name: available and switches.get(name, True) and local.get(name, True)
+        for name, (_, available) in FEATURES.items()
+    }
+
+
 def feature_enabled(key, application):
     if key not in FEATURES or not FEATURES[key][1]:
         return False
-    global_flag = FeatureSwitch.objects.filter(key=key).first()
-    local_flag = ApplicationFeature.objects.filter(application=application, key=key).first()
-    return (global_flag is None or global_flag.enabled) and (
-        local_flag is None or local_flag.enabled
-    )
+    cache = _feature_cache.get()
+    if cache is None:
+        # No request scope: read straight through, which is the safe direction.
+        global_flag = FeatureSwitch.objects.filter(key=key).first()
+        local_flag = ApplicationFeature.objects.filter(application=application, key=key).first()
+        return (global_flag is None or global_flag.enabled) and (
+            local_flag is None or local_flag.enabled
+        )
+    app_id = getattr(application, "pk", None)
+    answers = cache.get(app_id)
+    if answers is None:
+        answers = cache[app_id] = all_features(application)
+    return answers[key]
 
 
 @transaction.atomic
