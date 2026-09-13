@@ -81,8 +81,20 @@ def headers(token):
     return value
 
 
-def _api(url, token):
-    body, _, _, _ = fetch(url, headers=headers(token))
+def _api(url, token, *, missing=None):
+    """Call the contents API.
+
+    `missing` replaces GitHub's bare "returned HTTP 404" with something the
+    reader can act on. GitHub answers 404 both for "no such thing" and for
+    "private, and you sent no credential", so the wording has to cover both
+    without asserting which - it cannot tell them apart either.
+    """
+    try:
+        body, _, _, _ = fetch(url, headers=headers(token))
+    except FetchError as failure:
+        if missing and "HTTP 404" in str(failure):
+            raise FetchError(missing) from None
+        raise
     try:
         return json.loads(body)
     except ValueError:
@@ -97,8 +109,18 @@ def _download_url(entry):
 
 
 def readme(owner, repo, token):
-    """The repository README as a single (name, url) pair."""
-    data = _api(f"{API}/repos/{owner}/{repo}/readme", token)
+    """The repository README, or None when the repository has none.
+
+    Absent is not an error here: plenty of repositories have no README, and a
+    bare repository link should still import what documentation the repository
+    does have rather than refusing outright.
+    """
+    try:
+        data = _api(f"{API}/repos/{owner}/{repo}/readme", token)
+    except FetchError as failure:
+        if "HTTP 404" in str(failure):
+            return None
+        raise
     if not isinstance(data, dict):
         raise FetchError("GitHub returned an unexpected response.")
     return [(f"{repo}-{data.get('name') or 'README.md'}", _download_url(data))]
@@ -150,7 +172,36 @@ def plan(parsed, token=""):
     """The files a GitHub link resolves to, as a list of (name, download url)."""
     kind, owner, repo, ref, path = parse(parsed)
     if kind == "repo":
-        return readme(owner, repo, token)
+        found = readme(owner, repo, token)
+        if found:
+            return found
+        # No README. Take the documentation at the repository root instead, which
+        # is what the person pasting the link wanted; failing here would leave a
+        # public repository unimportable for want of one file.
+        try:
+            return tree(owner, repo, "", "", token)
+        except FetchError:
+            # GitHub answers 404 for private and for absent alike, so ask whether
+            # the repository is visible at all before blaming its contents.
+            if not repository_exists(owner, repo, token):
+                raise FetchError(
+                    f"{owner}/{repo} could not be read. Check the name, or mount a GitHub "
+                    "credential for this application if the repository is private."
+                ) from None
+            raise FetchError(
+                f"{owner}/{repo} has no README and nothing importable at its root. "
+                "This imports " + ", ".join(DOC_SUFFIXES) + " files; link a /tree/ "
+                "directory or a /blob/ file to bring in something else."
+            ) from None
     if kind == "blob":
         return single_file(owner, repo, ref, path, token)
     return tree(owner, repo, ref, path, token)
+
+
+def repository_exists(owner, repo, token):
+    """Whether the repository is visible to us at all, for a clearer message."""
+    try:
+        _api(f"{API}/repos/{owner}/{repo}", token)
+    except FetchError:
+        return False
+    return True
