@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
@@ -263,3 +264,44 @@ class GraphPublishingTests(TestCase):
             .exclude(requested_model="")
             .exists()
         )
+
+    def test_a_version_can_be_chosen_when_starting_a_conversation(self):
+        """Otherwise the first question has to be asked against the wrong version."""
+        self.revision(1)
+        self.revision(2)
+        from platform_core.models import AIConfiguration
+
+        for purpose in ("chat", "graph_retrieval"):
+            AIConfiguration.objects.create(
+                application=self.app,
+                purpose=purpose,
+                provider="claude",
+                model="claude-sonnet-5",
+                enabled=True,
+                input_rate=Decimal("2"),
+                output_rate=Decimal("10"),
+                configured_by=self.owner,
+            )
+        page = self.client.get(reverse("chat", args=[self.app.pk]), {"new": "1"})
+        # Bound to the composer rather than disabled, so it posts with the question.
+        self.assertContains(page, 'form="chat-composer"')
+
+        with patch(
+            "platform_core.graph_ai.graph_citations", return_value=[]
+        ) as citations:
+            self.client.post(
+                reverse("chat", args=[self.app.pk]),
+                {"question": "Which services?", "mode": "graph", "graph_version": "1"},
+            )
+        conversation = ChatConversation.objects.order_by("-created_at").first()
+        self.assertEqual(conversation.graph_version, 1)
+        self.assertEqual(citations.call_args.kwargs["version"], 1)
+
+    def test_an_unavailable_version_chosen_at_start_is_ignored_not_fatal(self):
+        self.revision(1)
+        self.client.post(
+            reverse("chat", args=[self.app.pk]),
+            {"question": "Which services?", "mode": "search", "graph_version": "99"},
+        )
+        conversation = ChatConversation.objects.order_by("-created_at").first()
+        self.assertIsNone(conversation.graph_version)

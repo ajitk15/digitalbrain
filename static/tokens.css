@@ -139,3 +139,15 @@
   --z-skip: 10;
   --z-focus: 20;
 }
+
+/*
+ * Focus mode frees the sidebar and top bar, so full-height workspaces should grow
+ * into the space. This override MUST live here, unlayered and after :root, for
+ * two reasons: an unlayered declaration beats any layered one, so putting it in
+ * the redesign layer leaves it silently dead; and .focus-mode and :root have
+ * equal specificity on the same element, so source order decides.
+ */
+.focus-mode {
+  --h-chrome-total: var(--h-chrome-focus);
+}
+

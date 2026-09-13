@@ -344,7 +344,9 @@
   .focus-mode .breadcrumbs > a:not(.crumb-back),
   .focus-mode .breadcrumbs > span { display: none; }
   .focus-mode .shell main { padding: var(--s-2) var(--s-4) var(--s-4); max-width: none; }
-  .focus-mode { --h-chrome-total: var(--h-chrome-focus); }
+  /* The --h-chrome-total override for focus mode lives in tokens.css, not
+     here: :root is unlayered, and an unlayered declaration beats a layered
+     one whatever its specificity, so an override in this layer is dead. */
 
   /* Knowledge Base: three independently scrolling panes ----------------- */
 

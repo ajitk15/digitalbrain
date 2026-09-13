@@ -278,6 +278,20 @@ def graph_version_choices(app_id):
     return available_graph_versions(app_id)
 
 
+def new_graph_version(request, app_id, graph_ai_enabled):
+    """The graph version a conversation is being started on, if one was chosen."""
+    raw = request.POST.get("graph_version", "")
+    if not raw or not graph_ai_enabled:
+        return None
+    from .graph_ai import available_graph_versions
+
+    try:
+        chosen = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return chosen if chosen in available_graph_versions(app_id) else None
+
+
 def published_graph_version(app_id):
     """The version graph answers use unless a conversation pins another."""
     from .graphs import published_revision
@@ -425,7 +439,11 @@ def answer_question(user, app, conversation, question, mode, graph_version=None)
         access(user, app.pk, "knowledge")
         if conversation is None:
             conversation = ChatConversation.objects.create(
-                application=app, user=user, title=question[:120], mode=mode
+                application=app,
+                user=user,
+                title=question[:120],
+                mode=mode,
+                graph_version=graph_version,
             )
         _, reply = record_exchange(app, user, conversation, question, answer, citations, mode)
         conversation.save(update_fields=["updated_at"])
@@ -478,7 +496,12 @@ def chat(request, pk):
                 # open the event stream. The synchronous branch below stays the
                 # no-JavaScript fallback and is never removed.
                 conversation, placeholder = start_answer(
-                    app, request.user, conversation, question, mode
+                    app,
+                    request.user,
+                    conversation,
+                    question,
+                    mode,
+                    graph_version=new_graph_version(request, app.pk, graph_ai_enabled),
                 )
                 audit(
                     request.user,
@@ -503,7 +526,11 @@ def chat(request, pk):
                     conversation,
                     question,
                     mode,
-                    graph_version=conversation.graph_version if conversation else None,
+                    graph_version=(
+                        conversation.graph_version
+                        if conversation
+                        else new_graph_version(request, app.pk, graph_ai_enabled)
+                    ),
                 )
                 return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
             except (ValidationError, ImproperlyConfigured) as error:
@@ -559,7 +586,7 @@ def resend(request, pk, app, conversation, question):
     return redirect(destination)
 
 
-def start_answer(app, user, conversation, question, mode):
+def start_answer(app, user, conversation, question, mode, graph_version=None):
     """Persist the question and an empty assistant row, then hand back the placeholder.
 
     Written before the provider is contacted so the transcript has somewhere to
@@ -568,7 +595,11 @@ def start_answer(app, user, conversation, question, mode):
     with transaction.atomic():
         if conversation is None:
             conversation = ChatConversation.objects.create(
-                application=app, user=user, title=question[:120], mode=mode
+                application=app,
+                user=user,
+                title=question[:120],
+                mode=mode,
+                graph_version=graph_version,
             )
         sequence = next_sequence(conversation)
         ChatMessage.objects.create(
