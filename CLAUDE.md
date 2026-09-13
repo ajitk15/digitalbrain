@@ -67,6 +67,12 @@ address so DNS cannot change the answer underneath it. http/https only, no redir
 followed, 8 MB and 20 s caps, no credentials attached. Do not add a second code path
 that fetches URLs.
 
+**SharePoint reads as the application, not as the user.** `sharepoint.py` uses
+app-only client credentials, so the app registration's grant is the boundary. Under
+`Sites.Read.All` an importing user can obtain documents they could not open
+themselves - a deliberate deployment choice, stated in the Sources panel. Do not
+quietly widen it, and prefer `Sites.Selected` when asked; it needs no code change.
+
 **A link is just a document.** `link_sources.py` records a pending `Document` and the
 worker downloads it; conversion never learns URLs exist and MarkItDown is never handed
 one. Keep it that way - the offline conversion subprocess patches `socket.connect` to

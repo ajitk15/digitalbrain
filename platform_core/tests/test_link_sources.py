@@ -48,7 +48,7 @@ class LinkSubmissionTests(TestCase):
 
     def test_a_github_repo_queues_its_readme(self):
         with patch(
-            "platform_core.link_sources.plan",
+            "platform_core.link_sources.github_plan",
             return_value=[("docs-README.md", "https://raw.githubusercontent.com/a/docs/main/README.md")],
         ):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs")
@@ -57,14 +57,14 @@ class LinkSubmissionTests(TestCase):
 
     def test_a_docs_tree_queues_every_file_it_resolved(self):
         files = [(f"docs-guide{n}.md", f"https://raw.example/{n}.md") for n in range(5)]
-        with patch("platform_core.link_sources.plan", return_value=files):
+        with patch("platform_core.link_sources.github_plan", return_value=files):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs/tree/main/docs")
         self.assertEqual(len(created), 5)
         self.assertEqual(Document.objects.filter(status="pending").count(), 5)
 
     def test_a_submission_is_capped(self):
         files = [(f"f{n}.md", f"https://raw.example/{n}.md") for n in range(80)]
-        with patch("platform_core.link_sources.plan", return_value=files):
+        with patch("platform_core.link_sources.github_plan", return_value=files):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs/tree/main/docs")
         self.assertEqual(len(created), 25)
 

@@ -1,6 +1,7 @@
 """Non-secret TOML configuration and mounted secrets; no dotenv secret loading."""
 
 import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -27,6 +28,8 @@ def load_config():
         "scan_documents",
         "claude_use_host_login",
         "fetch_allow_hosts",
+        "sharepoint_tenant",
+        "sharepoint_client_id",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -36,6 +39,12 @@ def load_config():
         raise ImproperlyConfigured("scan_documents must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    for field in ("sharepoint_tenant", "sharepoint_client_id"):
+        value = config.get(field, "")
+        if not isinstance(value, str):
+            raise ImproperlyConfigured(f"{field} must be a string.")
+        if value and not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", value):
+            raise ImproperlyConfigured(f"{field} contains unexpected characters.")
     hosts = config.get("fetch_allow_hosts", [])
     if not isinstance(hosts, list) or any(not isinstance(h, str) or not h.strip() for h in hosts):
         raise ImproperlyConfigured("fetch_allow_hosts must be a list of hostnames.")

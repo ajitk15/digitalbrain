@@ -26,6 +26,8 @@ The Sources rail also accepts a pasted link, and works out what it points at:
 | `github.com/owner/repo` | the repository README |
 | a `/blob/` or `raw.githubusercontent.com` link | that one file |
 | a `/tree/` directory link | the documentation files under it, up to 25 |
+| a SharePoint or OneDrive file link | that document |
+| a SharePoint document library folder | the documents in it, up to 25 |
 
 A link becomes an ordinary document, so quarantine storage, scanning, offline MarkItDown
 conversion, the immutable knowledge source, graph regeneration and deletion all behave exactly as
@@ -36,6 +38,40 @@ Submitting does not download anything during the request: each file is recorded 
 download**, and the background worker fetches them. The rail shows every source's state —
 waiting, downloading, queued, converting, ready or failed — with where it came from and the
 reason for any failure, so a slow or dead host delays only itself.
+
+### SharePoint and OneDrive
+
+Links are resolved through Microsoft Graph's *shares* endpoint rather than by parsing SharePoint
+URLs, so whatever a user copies out of the browser works: a document library path, a
+`/:w:/r/...Doc.aspx?sourcedoc=` viewer link, a personal OneDrive sharing link, or a folder.
+
+Two things must be in place. The deployment names the app registration in TOML, which is
+non-secret:
+
+```toml
+sharepoint_tenant = 'contoso.onmicrosoft.com'
+sharepoint_client_id = '00000000-0000-0000-0000-000000000000'
+```
+
+and each application that may import mounts the client secret as
+`sharepoint_APPLICATION_UUID` in the secret directory. Mounting that secret is the
+per-application switch: an application without one cannot reach SharePoint even though the
+deployment is configured.
+
+**Read what this means for permissions.** Authentication is app-only client credentials, so the
+permission granted to the app registration is the boundary — not the permission of the person
+pasting the link. Under `Sites.Read.All` that is every site in the tenant, so a user who can
+import is able to obtain a document they could not open in SharePoint themselves. The Sources
+panel states this where links are pasted rather than only here. `Sites.Selected` narrows the app
+to sites an administrator grants individually and requires no change to this platform, because
+the restriction is applied by Entra ID; it is the safer choice where the content is sensitive.
+
+Imports are audited with the resolved item, and only owners and contributors can import at all.
+Access tokens are held in memory until shortly before they expire and are never written down.
+Graph requests go through the same hardened client as any other host, so the address, redirect,
+size and timeout rules all still apply. Document downloads read a fresh pre-authenticated
+address at download time rather than following Graph's redirect, which also means a queued item
+cannot expire before it is fetched.
 
 **Network policy.** Fetching a link means this server makes a request to an address the user
 chose, so the retriever resolves the hostname first and refuses loopback, private, link-local

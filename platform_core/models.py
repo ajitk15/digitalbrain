@@ -177,7 +177,12 @@ class Document(models.Model):
     origin = models.CharField(
         max_length=10,
         default="upload",
-        choices=[("upload", "Upload"), ("link", "Link"), ("github", "GitHub")],
+        choices=[
+            ("upload", "Upload"),
+            ("link", "Link"),
+            ("github", "GitHub"),
+            ("sharepoint", "SharePoint"),
+        ],
     )
     source_url = models.CharField(max_length=2000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

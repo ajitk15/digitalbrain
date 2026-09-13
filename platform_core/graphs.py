@@ -503,6 +503,7 @@ def graph_view(request, pk):
     # The Sources rail reuses the documents screen's own gating rather than
     # reimplementing it, so one set of rules governs both places.
     from .documents import LinkForm, intake_enabled
+    from .link_sources import sharepoint_available
 
     can_upload = bool(
         intake_enabled()
@@ -555,6 +556,7 @@ def graph_view(request, pk):
             "can_upload": can_upload,
             "recent_documents": recent_documents,
             "link_form": LinkForm(),
+            "sharepoint_ready": sharepoint_available(app),
             "document_total": document_total,
             "pending_documents": Document.objects.filter(
                 application=app, status__in=["queued", "converting"]

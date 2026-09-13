@@ -15,6 +15,10 @@ CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not
 # Internal hosts an operator permits link import to reach. Everything else is
 # held to the public-internet rule in platform_core/fetching.py.
 FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", [])]
+# Non-secret identifiers for the SharePoint app registration. The client secret
+# itself is mounted per application as sharepoint_APPLICATION_UUID.
+SHAREPOINT_TENANT = CONFIG.get("sharepoint_tenant", "")
+SHAREPOINT_CLIENT_ID = CONFIG.get("sharepoint_client_id", "")
 DEBUG = False
 SECRET_DIRECTORY = CONFIG["secret_directory"]
 SECRET_KEY = read_secret(SECRET_DIRECTORY, "django_secret_key")
