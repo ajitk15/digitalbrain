@@ -1,6 +1,6 @@
 {% load static workspace %}<!doctype html>
 <html lang="en"{% if user.is_authenticated %} data-focus-key="digital-brain.focus.{{ user.pk }}"{% endif %}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{% block title %}Digital Brain{% endblock %}</title><link rel="stylesheet" href="{% static 'tokens.css' %}"><link rel="stylesheet" href="{% static 'app.css' %}"><link rel="stylesheet" href="{% static 'redesign.css' %}"><script src="{% static 'focus.js' %}"></script><script src="{% static 'documents.js' %}" defer></script><script src="{% static 'navigation.js' %}" defer></script></head>
+<title>{% block title %}Digital Brain{% endblock %}</title><link rel="stylesheet" href="{% static 'tokens.css' %}"><link rel="stylesheet" href="{% static 'app.css' %}"><link rel="stylesheet" href="{% static 'redesign.css' %}"><script src="{% static 'focus.js' %}"></script><script src="{% static 'documents.js' %}" defer></script><script src="{% static 'copy.js' %}" defer></script><script src="{% static 'navigation.js' %}" defer></script></head>
 <body>{% if user.is_authenticated %}
 <a class="skip-link" href="#main">Skip to content</a>
 <aside class="sidebar" id="workspace-sidebar"><a class="brand" href="{% url 'dashboard' %}"><img src="{% url 'logo' %}" alt="Digital Brain"></a>

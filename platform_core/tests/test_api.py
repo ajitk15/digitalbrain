@@ -279,6 +279,29 @@ class TokenManagementTests(TestCase):
         other.refresh_from_db()
         self.assertIsNone(other.revoked_at)
 
+    def test_the_endpoints_are_shown_as_complete_copyable_urls(self):
+        """A caller should never have to assemble the origin by hand."""
+        body = self.client.get(self.url).content.decode()
+        root = f"http://testserver/api/v1/applications/{self.app.pk}"
+        self.assertIn(f'id="rest-url">{root}/graph/search/', body)
+        self.assertIn(f'id="mcp-url">{root}/mcp/', body)
+
+    def test_every_snippet_has_a_copy_button_pointing_at_it(self):
+        import re
+
+        body = self.client.get(self.url).content.decode()
+        targets = set(re.findall(r'data-copy-target="#([\w-]+)"', body))
+        self.assertEqual(targets, {"rest-url", "rest-example", "mcp-url", "mcp-config"})
+        # A button whose target is missing stays hidden, so the ids must exist.
+        for target in targets:
+            self.assertIn(f'id="{target}"', body)
+
+    def test_a_revealed_token_can_be_copied(self):
+        response = self.client.post(self.url, {"action": "create", "name": "CI", "expires": "0"})
+        body = response.content.decode()
+        self.assertIn('data-copy-target="#token-secret"', body)
+        self.assertIn(f'id="token-secret">{response.context["created"]}', body)
+
     def test_only_your_own_tokens_are_listed(self):
         prefix, _, digest = issue()
         ApiToken.objects.create(

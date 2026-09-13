@@ -6,7 +6,8 @@
 {% if created %}
 <section class="card section token-reveal"><h2><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Copy this token now</h2>
 <p class="muted">It is shown once. Only a hash is stored, so it cannot be recovered — issue a new one if you lose it.</p>
-<pre class="token-value">{{ created }}</pre>
+<div class="copy-head"><span class="panel-label">Your new token</span><button type="button" class="copy-button" data-copy-target="#token-secret" aria-label="Copy the new API token" hidden>Copy</button></div>
+<pre class="token-value" id="token-secret">{{ created }}</pre>
 </section>
 {% endif %}
 
@@ -27,14 +28,17 @@
 
 <section class="card section"><h2>Using it</h2>
 <h3 class="panel-label">REST</h3>
-<pre class="source-text">curl -H "Authorization: Bearer YOUR_TOKEN" \
-  "{{ request.scheme }}://{{ request.get_host }}{% url 'api-graph-search' application.pk %}?q=which+servers+run+under+NODE1"</pre>
+<div class="copy-row"><code class="copy-url" id="rest-url">{{ base }}{% url 'api-graph-search' application.pk %}</code><button type="button" class="copy-button" data-copy-target="#rest-url" aria-label="Copy the REST endpoint URL" hidden>Copy</button></div>
+<div class="copy-head"><span class="panel-label">Example request</span><button type="button" class="copy-button" data-copy-target="#rest-example" aria-label="Copy the example request" hidden>Copy</button></div>
+<pre class="source-text" id="rest-example">curl -H "Authorization: Bearer YOUR_TOKEN" "{{ base }}{% url 'api-graph-search' application.pk %}?q=which+servers+run+under+NODE1"</pre>
 <p class="muted">Returns matching relationships with the source document and the exact quoted evidence for each. Add <code>&amp;version=2</code> to pin a graph version; without it the latest <strong>published</strong> version answers, never a draft. Every response states the version that produced it.</p>
 <h3 class="panel-label">MCP</h3>
-<pre class="source-text">{
+<div class="copy-row"><code class="copy-url" id="mcp-url">{{ base }}{% url 'api-mcp' application.pk %}</code><button type="button" class="copy-button" data-copy-target="#mcp-url" aria-label="Copy the MCP endpoint URL" hidden>Copy</button></div>
+<div class="copy-head"><span class="panel-label">Client configuration</span><button type="button" class="copy-button" data-copy-target="#mcp-config" aria-label="Copy the MCP client configuration" hidden>Copy</button></div>
+<pre class="source-text" id="mcp-config">{
   "mcpServers": {
     "digital-brain": {
-      "url": "{{ request.scheme }}://{{ request.get_host }}{% url 'api-mcp' application.pk %}",
+      "url": "{{ base }}{% url 'api-mcp' application.pk %}",
       "headers": { "Authorization": "Bearer YOUR_TOKEN" }
     }
   }

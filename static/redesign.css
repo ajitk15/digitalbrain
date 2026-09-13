@@ -725,4 +725,46 @@
   .token-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-3); }
   .token-form label { display: block; font-size: var(--t-11); }
   .token-form input, .token-form select { width: auto; min-width: 200px; }
+  /* Copy affordances. The button is revealed by copy.js only where the
+     clipboard API works, so it is never present and inert. */
+  .copy-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-3);
+    margin-top: var(--s-4);
+  }
+  .copy-head .panel-label { margin: 0; }
+  .copy-head + .source-text, .copy-head + .token-value { margin-top: var(--s-2); }
+  .copy-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin: var(--s-2) 0;
+    padding: var(--s-2) var(--s-3);
+    background: var(--c-well);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+  }
+  .copy-url {
+    flex: 1;
+    min-width: 0;
+    font: var(--t-13) / 1.5 var(--f-mono);
+    overflow-wrap: anywhere;
+    user-select: all;
+  }
+  .copy-button {
+    flex: none;
+    font: var(--t-11) / 1 var(--f-sans);
+    font-weight: 600;
+    color: var(--c-ink-2);
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-sm);
+    padding: var(--s-2) var(--s-3);
+    cursor: pointer;
+    /* "Copied" is wider than "Copy"; a fixed floor stops the row jumping. */
+    min-width: 62px;
+  }
+  .copy-button:hover { border-color: var(--c-brand); color: var(--c-brand); }
 }

@@ -439,5 +439,8 @@ def api_tokens(request, pk):
             "grant": grant,
             "tokens": ApiToken.objects.filter(application=app, user=request.user),
             "created": created,
+            # The origin callers will use, so the page can show - and copy - a
+            # complete URL rather than a path the reader has to assemble.
+            "base": f"{request.scheme}://{request.get_host()}",
         },
     )
