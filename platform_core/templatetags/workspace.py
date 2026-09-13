@@ -24,20 +24,20 @@ def settings_sections(app, grant):
     """
     sections = []
     if grant and grant.role == "owner":
-        sections.append(("AI settings", "ai-settings", {"ai-settings"}))
+        sections.append(("AI settings", "ai-settings", {"ai-settings"}, "sliders"))
     if feature_enabled("usage_reports", app):
-        sections.append(("AI costs", "usage", {"usage"}))
+        sections.append(("AI costs", "usage", {"usage"}, "cost"))
     if grant and grant.role == "owner":
         if feature_enabled("connectors", app):
-            sections.append(("Connectors", "connectors", {"connectors"}))
-        sections.append(("People & access", "application-access", {"application-access"}))
-        sections.append(("Features", "application-features", {"application-features"}))
+            sections.append(("Connectors", "connectors", {"connectors"}, "plug"))
+        sections.append(("People & access", "application-access", {"application-access"}, "people"))
+        sections.append(("Features", "application-features", {"application-features"}, "toggle"))
         if feature_enabled("chat", app):
-            sections.append(("Chat history", "chat-settings", {"chat-settings"}))
+            sections.append(("Chat history", "chat-settings", {"chat-settings"}, "history"))
     if grant:
         # Any member with application access may hold a token; it can never do
         # more than they can.
-        sections.append(("API access", "api-tokens", {"api-tokens"}))
+        sections.append(("API access", "api-tokens", {"api-tokens"}, "key"))
     return sections
 
 
@@ -52,6 +52,7 @@ def application_menu(context):
             "Knowledge",
             "graph",
             "knowledge",
+            "graph",
             {
                 "knowledge",
                 "knowledge-detail",
@@ -62,17 +63,17 @@ def application_menu(context):
                 "document-delete",
             },
         ),
-        ("Chat", "chat", "chat", {"chat"}),
-        ("Code Factory", "plans", "code_factory", {"plans", "plan-detail"}),
+        ("Chat", "chat", "chat", "chat", {"chat"}),
+        ("Code Factory", "plans", "code_factory", "code", {"plans", "plan-detail"}),
     ]
     items = [
         {
             "label": label,
-            "icon": label,
+            "icon": name,
             "url": reverse(route, args=[app.pk]),
             "current": current in routes,
         }
-        for label, route, feature, routes in definitions
+        for label, route, feature, name, routes in definitions
         if feature is None or feature_enabled(feature, app)
     ]
     sections = settings_sections(app, grant)
@@ -80,11 +81,11 @@ def application_menu(context):
         # The label is always "Settings", never the first section's name: a
         # contributor with usage reports on would otherwise render "AI costs" in
         # the top menu, which is exactly what the feature-gating test forbids.
-        routes = {route for _, _, section_routes in sections for route in section_routes}
+        routes = {route for _, _, section_routes, _ in sections for route in section_routes}
         items.append(
             {
                 "label": "Settings",
-                "icon": "Settings",
+                "icon": "settings",
                 "url": reverse(sections[0][1], args=[app.pk]),
                 "current": current in routes,
             }
@@ -103,10 +104,11 @@ def settings_nav(context):
         "items": [
             {
                 "label": label,
+                "icon": name,
                 "url": reverse(route, args=[app.pk]),
                 "current": current in routes,
             }
-            for label, route, routes in settings_sections(app, grant)
+            for label, route, routes, name in settings_sections(app, grant)
         ]
     }
 

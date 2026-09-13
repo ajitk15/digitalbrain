@@ -874,4 +874,60 @@
   .client-tabs .tab-radio:nth-of-type(8):checked ~ .tab-panels > .tab-panel:nth-of-type(8) { display: block; }
   .client-tabs .tab-radio:nth-of-type(8):focus-visible ~ .tab-strip > label:nth-of-type(8) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
   .run-banner p { margin: 0 0 var(--s-2); }
+  /* Notices --------------------------------------------------------------
+     A notice used to be green whatever it said, so every messages.error was
+     dressed as a success. The level now picks the colour and the icon, and an
+     error is announced as an alert rather than a status. Bare `.notice` stays
+     informational: templates use it for standing explanations, which are not
+     successes either. */
+  .notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--s-3);
+    background: var(--c-info-bg);
+    border-color: var(--c-info-line);
+    color: var(--c-info);
+  }
+  .notice > svg { flex: none; margin-top: 1px; }
+  .notice-success { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .notice-error { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .notice-warning { background: var(--c-warn-bg); border-color: var(--c-warn-line); color: var(--c-warn); }
+  .notice-info { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .notice a { color: inherit; text-decoration: underline; }
+  /* Error pages ---------------------------------------------------------- */
+  .error-page { text-align: center; }
+  .error-page .muted { margin: 0 auto var(--s-5); }
+  .error-page .actions { justify-content: center; }
+  .error-mark {
+    display: inline-grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: var(--s-4);
+    border-radius: 50%;
+    background: var(--c-subtle);
+    color: var(--c-ink-3);
+  }
+  /* Icons sit inside buttons and links beside their label. */
+  .button > svg, .link-button > svg, .rail-link > svg { flex: none; }
+  .button { gap: var(--s-2); }
+  /* Icon alignment ------------------------------------------------------
+     Icons always sit beside a text label, so the containers that hold both
+     become flex rows rather than each icon being nudged individually. */
+  .tabs a, .pagination a, .list-row .link-label, .app-card .link-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+  }
+  .settings-tabs a svg, .knowledge-tabs a svg { opacity: 0.75; }
+  .settings-tabs a[aria-current] svg, .knowledge-tabs a[aria-current] svg { opacity: 1; }
+  .row-lead { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+  .row-lead svg { flex: none; color: var(--c-ink-3); }
+  .empty-icon { display: inline-flex; color: var(--c-brand); opacity: 0.55; }
+  .link-button { display: inline-flex; align-items: center; gap: var(--s-2); }
+  summary svg { vertical-align: -2px; margin-right: var(--s-2); }
+  /* A single-field settings form is a stack, not a row: the row layout the
+     token form uses left the button floating beside the help text. */
+  .card > .form-card { margin-top: 0; max-width: 420px; }
+  .card > .form-card input { max-width: 220px; }
 }

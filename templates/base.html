@@ -1,4 +1,4 @@
-{% load static workspace %}<!doctype html>
+{% load static workspace icons %}<!doctype html>
 <html lang="en"{% if user.is_authenticated %} data-focus-key="digital-brain.focus.{{ user.pk }}"{% endif %}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block title %}Digital Brain{% endblock %}</title><link rel="stylesheet" href="{% static 'tokens.css' %}"><link rel="stylesheet" href="{% static 'app.css' %}"><link rel="stylesheet" href="{% static 'redesign.css' %}"><script src="{% static 'focus.js' %}"></script><script src="{% static 'documents.js' %}" defer></script><script src="{% static 'copy.js' %}" defer></script><script src="{% static 'navigation.js' %}" defer></script></head>
 <body>{% if user.is_authenticated %}
@@ -13,5 +13,5 @@
 </nav><div class="top-actions"><a href="{% url 'password' %}">Password</a><form action="{% url 'logout' %}" method="post">{% csrf_token %}<button class="text-button">Sign out</button></form></div></header>
 {% if application %}{% application_menu %}{% endif %}
 <main id="main">{% else %}<main class="public-main">{% endif %}
-{% for message in messages %}<div class="notice" role="status">{{ message }}</div>{% endfor %}
+{% for message in messages %}<div class="notice notice-{{ message.level_tag }}" role="{% if message.level >= 40 %}alert{% else %}status{% endif %}">{% message_icon message.level_tag %}<span>{{ message }}</span></div>{% endfor %}
 {% block content %}{% endblock %}</main>{% if user.is_authenticated %}</div>{% endif %}</body></html>

@@ -1,0 +1,17 @@
+{% load icons %}
+{% comment %}
+Shared shell for the four error pages. They previously carried identical copy -
+"Please return to your workspace and try again" - which is wrong on a 404 and
+unhelpful on a 403: retrying does not create a page, and it does not grant
+access. Each page now says what happened and what will actually help.
+{% endcomment %}
+<section class="standalone card error-page">
+<span class="error-mark">{% icon icon_name 26 %}</span>
+<p class="eyebrow">DIGITAL BRAIN / {{ code }}</p>
+<h1>{{ heading }}</h1>
+<p class="muted">{{ detail }}</p>
+<div class="actions">
+<a class="button" href="{% url 'dashboard' %}">{% icon "overview" %}Go to Overview</a>
+{% if show_audit %}<a class="button secondary" href="{% url 'audit' %}">{% icon "audit" %}Audit log</a>{% endif %}
+</div>
+</section>

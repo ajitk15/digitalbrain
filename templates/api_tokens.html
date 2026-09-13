@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace %}
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
 {% block title %}API access · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}{% settings_nav %}
 <div class="page-heading"><div><h1>API access</h1><p class="muted">Query this application's published knowledge graph from your own code, or connect an MCP client. Retrieval only: these endpoints return verified graph evidence and never call a model, so they cannot spend your AI budget.</p></div></div>
@@ -15,14 +15,14 @@
 <form method="post" class="token-form">{% csrf_token %}<input type="hidden" name="action" value="create">
 <label for="token-name">Name</label><input type="text" id="token-name" name="name" maxlength="120" placeholder="e.g. Support desk integration" required>
 <label for="token-expires">Expires in</label><select id="token-expires" name="expires"><option value="30">30 days</option><option value="90" selected>90 days</option><option value="365">1 year</option><option value="0">No expiry</option></select>
-<button class="button" type="submit">Issue token</button>
+<button class="button" type="submit">{% icon "key" %}Issue token</button>
 </form>
 <p class="muted">A token acts as you, in this application only. It can never read more than you can, and revoking your access revokes it too.</p>
 </section>
 
 <section class="section"><h2>Your tokens</h2>
 <div class="table-wrap"><table><thead><tr><th>Name</th><th>Prefix</th><th>Status</th><th>Last used (UTC)</th><th>Expires</th><th>Actions</th></tr></thead><tbody>
-{% for token in tokens %}<tr><td><strong>{{ token.name }}</strong></td><td class="mono">{{ token.prefix }}…</td><td><span class="pill {% if token.active %}status-ready{% else %}status-failed{% endif %}">{{ token.state }}</span></td><td>{% if token.last_used_at %}{{ token.last_used_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}</td><td>{% if token.expires_at %}{{ token.expires_at|date:"M d, Y" }}{% else %}<span class="muted">never</span>{% endif %}</td><td>{% if token.active %}<form method="post" class="inline-form" data-confirm="Revoke {{ token.name }}? Anything using it stops working immediately.">{% csrf_token %}<input type="hidden" name="action" value="revoke"><input type="hidden" name="token" value="{{ token.pk }}"><button type="submit" class="link-button">Revoke</button></form>{% endif %}</td></tr>
+{% for token in tokens %}<tr><td><strong>{{ token.name }}</strong></td><td class="mono">{{ token.prefix }}…</td><td><span class="pill {% if token.active %}status-ready{% else %}status-failed{% endif %}">{{ token.state }}</span></td><td>{% if token.last_used_at %}{{ token.last_used_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}</td><td>{% if token.expires_at %}{{ token.expires_at|date:"M d, Y" }}{% else %}<span class="muted">never</span>{% endif %}</td><td>{% if token.active %}<form method="post" class="inline-form" data-confirm="Revoke {{ token.name }}? Anything using it stops working immediately.">{% csrf_token %}<input type="hidden" name="action" value="revoke"><input type="hidden" name="token" value="{{ token.pk }}"><button type="submit" class="link-button">{% icon "trash" 12 %}Revoke</button></form>{% endif %}</td></tr>
 {% empty %}<tr><td colspan="6" class="empty">No tokens yet.</td></tr>{% endfor %}
 </tbody></table></div></section>
 

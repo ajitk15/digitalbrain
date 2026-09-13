@@ -71,6 +71,9 @@
   --c-bad: #a13e3e;
   --c-bad-bg: #fff4f4;
   --c-bad-line: #f0d6d6;
+  --c-info: #33437d;
+  --c-info-bg: #eef1fb;
+  --c-info-line: #d8dff4;
 
   /* Graph node kinds. These are duplicated in static/graph.js (COLORS); change
      both together or the legend stops matching the canvas. */

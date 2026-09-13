@@ -1,9 +1,9 @@
-{% extends 'base.html' %}{% load workspace %}
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
 {% block title %}Chat history · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}{% settings_nav %}
 <div class="page-heading"><div><h1>Chat history</h1><p class="muted">How long this application keeps chat conversations. Cleanup runs in the background and deletes conversations that have not been touched within the window.</p></div></div>
 <section class="card section"><h2>Retention</h2>
-<form method="post" class="token-form">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">Save retention</button></form>
+<form method="post" class="form-card">{% csrf_token %}{{ form.as_p }}<button class="button" type="submit">{% icon "save" %}Save retention</button></form>
 <p class="muted">A conversation's age is measured from its last message, not from when it started, so a thread still in use is never removed. Members can also clear their own conversations at any time from Chat.</p>
 </section>
 <section class="section"><p class="muted">{{ conversation_count }} conversation(s) currently stored across all members of this application.</p></section>
