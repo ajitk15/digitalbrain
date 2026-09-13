@@ -296,3 +296,36 @@ class GraphRunTests(TestCase):
         self.assertContains(response, "data-document-pending")
         # No button that would start a second paid run while this one is live.
         self.assertNotContains(response, 'value="retry"')
+
+    def test_a_regenerate_keeps_the_last_good_graph_on_screen(self):
+        """Requesting a rebuild must not blank the workspace, or a failure strands you."""
+        from platform_core.models import GraphRevision
+
+        rebuild(self.app.pk)
+        revision = GraphRevision.objects.get(application=self.app)
+        revision.published_at = timezone.now()
+        revision.save(update_fields=["published_at"])
+        self.generate()
+        response = self.client.get(self.url)
+        # The run is reported in a banner...
+        self.assertContains(response, "run-banner")
+        self.assertContains(response, "claude-sonnet-5")
+        # ...and the published graph is still rendered beneath it, not replaced.
+        self.assertContains(response, "Generated graph")
+        self.assertContains(response, "Latest available version")
+        self.assertNotContains(response, "Return to current")
+
+    def test_a_failed_run_still_shows_the_previous_version_and_offers_retry(self):
+        from platform_core.models import GraphRevision
+
+        rebuild(self.app.pk)
+        GraphRevision.objects.filter(application=self.app).update(published_at=timezone.now())
+        self.generate()
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            status="failed", started_at=timezone.now() - timedelta(minutes=STALL_MINUTES + 1)
+        )
+        response = self.client.get(self.url)
+        self.assertContains(response, "The last graph generation failed")
+        self.assertContains(response, "nothing was lost")
+        self.assertContains(response, 'value="retry"')
+        self.assertContains(response, "Generated graph")

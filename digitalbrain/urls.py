@@ -85,6 +85,7 @@ urlpatterns = [
     path("audit/", views.audit_log, name="audit"),
     path("applications/<uuid:pk>/usage/", views.usage, name="usage"),
     path("applications/<uuid:pk>/features/", views.features, name="application-features"),
+    path("applications/<uuid:pk>/chat-settings/", views.chat_settings, name="chat-settings"),
     path("organizations/new/", views.create_organization, name="organization-new"),
     path("organizations/<uuid:pk>/", views.organization, name="organization"),
     path(

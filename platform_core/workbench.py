@@ -5,6 +5,7 @@ import json
 import re
 import threading
 import uuid
+from datetime import timedelta
 from pathlib import Path
 
 from django import forms
@@ -279,17 +280,80 @@ def graph_version_choices(app_id):
 
 
 def new_graph_version(request, app_id, graph_ai_enabled):
-    """The graph version a conversation is being started on, if one was chosen."""
-    raw = request.POST.get("graph_version", "")
-    if not raw or not graph_ai_enabled:
+    """The graph version a conversation is pinned to at the moment it starts.
+
+    A conversation freezes on the version it began with. Publishing a new graph
+    afterwards must not change what an existing conversation answers from, or a
+    thread silently becomes a mixture of two graphs and its earlier answers stop
+    being reproducible. So when the user does not choose a version we pin the one
+    published right now rather than leaving it open.
+    """
+    if not graph_ai_enabled:
         return None
     from .graph_ai import available_graph_versions
 
+    raw = request.POST.get("graph_version", "")
     try:
         chosen = int(raw)
     except (TypeError, ValueError):
-        return None
-    return chosen if chosen in available_graph_versions(app_id) else None
+        chosen = None
+    if chosen is not None and chosen in available_graph_versions(app_id):
+        return chosen
+    return published_graph_version(app_id)
+
+
+def retention_days(app):
+    """Days of chat history this application keeps; 0 means indefinitely."""
+    from .models import ChatRetention
+
+    record = ChatRetention.objects.filter(application=app).first()
+    return record.days if record else ChatRetention.DEFAULT_DAYS
+
+
+def purge_expired_conversations(app=None):
+    """Delete conversations untouched for longer than the retention window.
+
+    Keyed on updated_at, not created_at: a thread someone is still using is not
+    stale. A window of 0 disables the purge for that application.
+    """
+    from .models import Application, ChatConversation, ChatMessage
+
+    applications = [app] if app is not None else list(Application.objects.all())
+    removed = 0
+    for target in applications:
+        days = retention_days(target)
+        if not days:
+            continue
+        cutoff = timezone.now() - timedelta(days=days)
+        stale = ChatConversation.objects.filter(application=target, updated_at__lt=cutoff)
+        if not stale.exists():
+            continue
+        ChatMessage.objects.filter(conversation__in=stale).delete()
+        removed += stale.delete()[0]
+    return removed
+
+
+def clear_conversations(user, app):
+    """Delete every conversation this user holds in this application.
+
+    Scoped to the one user: a conversation is private to whoever started it, so
+    "clear all" must never reach another member's history.
+    """
+    from .models import ChatConversation, ChatMessage
+
+    conversations = ChatConversation.objects.filter(application=app, user=user)
+    count = conversations.count()
+    ChatMessage.objects.filter(conversation__in=conversations).delete()
+    conversations.delete()
+    if count:
+        audit(
+            user,
+            "chat.cleared",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"conversations": count},
+        )
+    return count
 
 
 def published_graph_version(app_id):
@@ -473,6 +537,13 @@ def chat(request, pk):
         conversation = get_object_or_404(conversations, pk=selected_id)
     elif request.method == "GET" and request.GET.get("new") != "1":
         conversation = conversations.first()
+    if request.method == "POST" and request.POST.get("action") == "clear":
+        removed = clear_conversations(request.user, app)
+        messages.success(
+            request,
+            f"Cleared {removed} conversation(s)." if removed else "You had no conversations.",
+        )
+        return redirect("chat", pk=pk)
     form = QuestionForm(request.POST or None)
     chat_config = AIConfiguration.objects.filter(application=app, purpose="chat").first()
     ai_enabled = bool(chat_config and chat_config.enabled)
@@ -563,6 +634,7 @@ def chat(request, pk):
             "mode": mode,
             "modes": mode_options(ai_enabled, graph_ai_enabled),
             "graph_versions": graph_versions,
+            "retention_days": retention_days(app),
             "published_graph": published_graph,
             "host_login": host_login_notice(app, chat_config),
         },

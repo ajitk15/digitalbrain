@@ -74,6 +74,26 @@ def process_next_document():
     return True
 
 
+_last_purge = 0.0
+
+#: Retention is measured in days; checking hourly is ample and keeps the worker's
+#: one-second loop from running a table scan on every tick.
+PURGE_INTERVAL = 3600
+
+
+def purge_chat_if_due():
+    global _last_purge
+    now = time.monotonic()
+    if now - _last_purge < PURGE_INTERVAL:
+        return
+    _last_purge = now
+    from .workbench import purge_expired_conversations
+
+    removed = purge_expired_conversations()
+    if removed:
+        logger.info("chat_conversations_purged", extra={"count": removed})
+
+
 def run_document_worker():
     while True:
         try:
@@ -83,6 +103,7 @@ def run_document_worker():
             from .graphs import process_next_graph
 
             process_next_graph()
+            purge_chat_if_due()
         except Exception:
             logger.warning("document_worker_retry")
         finally:

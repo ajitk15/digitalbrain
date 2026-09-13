@@ -252,6 +252,25 @@ class ChatConversation(models.Model):
         indexes = [models.Index(fields=["application", "user", "-updated_at"])]
 
 
+class ChatRetention(models.Model):
+    """How long an application keeps chat conversations.
+
+    Per application rather than platform-wide: retention is a data-governance
+    choice that differs between applications. `days = 0` means keep indefinitely,
+    which is why this is not a nullable integer - "0" reads unambiguously in a
+    form, whereas a blank field reads as "unset" and invites a wrong default.
+    """
+
+    DEFAULT_DAYS = 7
+
+    application = models.OneToOneField(Application, on_delete=models.CASCADE)
+    days = models.PositiveIntegerField(default=DEFAULT_DAYS)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+
+
 class ChatMessage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)

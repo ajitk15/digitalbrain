@@ -798,4 +798,15 @@
   }
   .graph-progress-facts dt { color: var(--c-ink-3); }
   .graph-progress-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .run-banner .graph-progress { margin: 0; }
+  .clear-conversations { margin-top: var(--s-3); }
+  .clear-conversations .link-button {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    color: var(--c-bad);
+    text-decoration: none;
+  }
+  .clear-conversations .link-button:hover { text-decoration: underline; }
+  .run-banner p { margin: 0 0 var(--s-2); }
 }

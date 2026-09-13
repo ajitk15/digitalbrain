@@ -4,7 +4,7 @@ import warnings
 from django import forms
 from PIL import Image, UnidentifiedImageError
 
-from .models import ApplicationGrant, User
+from .models import ApplicationGrant, ChatRetention, User
 
 
 class ResourceForm(forms.Form):
@@ -83,3 +83,26 @@ class BrandingForm(forms.Form):
         if len(result) > 4 * 1024 * 1024:
             raise forms.ValidationError("Decoded logo is too large.")
         return result
+
+
+class ChatRetentionForm(forms.ModelForm):
+    """How many days of chat history to keep. 0 keeps it indefinitely."""
+
+    class Meta:
+        model = ChatRetention
+        fields = ["days"]
+        labels = {"days": "Keep conversations for (days)"}
+        help_texts = {
+            "days": (
+                "Conversations untouched for longer than this are deleted automatically. "
+                "Enter 0 to keep them indefinitely."
+            )
+        }
+
+    def clean_days(self):
+        days = self.cleaned_data["days"]
+        # Ten years is not a policy, just a bound: past it the field is being
+        # used to mean "forever", which 0 already says clearly.
+        if days > 3650:
+            raise forms.ValidationError("Use 0 for indefinite retention rather than a huge number.")
+        return days

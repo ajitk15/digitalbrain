@@ -1,12 +1,25 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
-from platform_core.models import ApplicationGrant, ChatConversation, ChatMessage
+from platform_core.models import (
+    ApplicationGrant,
+    AuditEvent,
+    ChatConversation,
+    ChatMessage,
+    ChatRetention,
+)
 from platform_core.templatetags.chat_text import chat_text, source_chips
-from platform_core.workbench import add_knowledge, conversation_context
+from platform_core.workbench import (
+    add_knowledge,
+    conversation_context,
+    new_graph_version,
+    purge_expired_conversations,
+)
 
 from . import test_documents
 
@@ -257,3 +270,140 @@ class SourceChipTests(SimpleTestCase):
     def test_no_citations_is_not_an_error(self):
         self.assertEqual(source_chips([]), [])
         self.assertEqual(source_chips(None), [])
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class ConversationLifecycleTests(TestCase):
+    """Clearing, automatic retention, and pinning a conversation to its version."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        self.url = reverse("chat", args=[self.app.pk])
+        add_knowledge(self.owner, self.app.pk, "Policy", "Refunds expire after thirty days.")
+
+    def conversation(self, user=None, **fields):
+        return ChatConversation.objects.create(
+            application=self.app, user=user or self.owner, title="Thread", **fields
+        )
+
+    # ---- clearing ----
+
+    def test_clearing_removes_your_conversations_and_their_messages(self):
+        conversation = self.conversation()
+        ChatMessage.objects.create(
+            application=self.app,
+            user=self.owner,
+            conversation=conversation,
+            role="user",
+            body="Hello",
+            sequence=1,
+        )
+        response = self.client.post(self.url, {"action": "clear"})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(ChatConversation.objects.filter(user=self.owner).exists())
+        self.assertFalse(ChatMessage.objects.exists())
+
+    def test_clearing_never_reaches_another_members_conversations(self):
+        mine = self.conversation()
+        theirs = self.conversation(user=self.viewer)
+        self.client.post(self.url, {"action": "clear"})
+        self.assertFalse(ChatConversation.objects.filter(pk=mine.pk).exists())
+        self.assertTrue(ChatConversation.objects.filter(pk=theirs.pk).exists())
+
+    def test_clearing_is_audited(self):
+        self.conversation()
+        self.client.post(self.url, {"action": "clear"})
+        self.assertTrue(AuditEvent.objects.filter(action="chat.cleared").exists())
+
+    # ---- retention ----
+
+    def test_a_conversation_past_the_window_is_purged(self):
+        stale = self.conversation()
+        ChatConversation.objects.filter(pk=stale.pk).update(
+            updated_at=timezone.now() - timedelta(days=ChatRetention.DEFAULT_DAYS + 1)
+        )
+        self.assertEqual(purge_expired_conversations(self.app), 1)
+        self.assertFalse(ChatConversation.objects.filter(pk=stale.pk).exists())
+
+    def test_age_is_measured_from_the_last_message_not_the_start(self):
+        """A thread someone is still using is not stale."""
+        active = self.conversation()
+        ChatConversation.objects.filter(pk=active.pk).update(updated_at=timezone.now())
+        self.assertEqual(purge_expired_conversations(self.app), 0)
+        self.assertTrue(ChatConversation.objects.filter(pk=active.pk).exists())
+
+    def test_the_window_is_configurable_per_application(self):
+        ChatRetention.objects.update_or_create(application=self.app, defaults={"days": 30})
+        old = self.conversation()
+        ChatConversation.objects.filter(pk=old.pk).update(
+            updated_at=timezone.now() - timedelta(days=10)
+        )
+        self.assertEqual(purge_expired_conversations(self.app), 0)
+        ChatRetention.objects.update_or_create(application=self.app, defaults={"days": 7})
+        self.assertEqual(purge_expired_conversations(self.app), 1)
+
+    def test_zero_days_keeps_conversations_indefinitely(self):
+        ChatRetention.objects.update_or_create(application=self.app, defaults={"days": 0})
+        ancient = self.conversation()
+        ChatConversation.objects.filter(pk=ancient.pk).update(
+            updated_at=timezone.now() - timedelta(days=4000)
+        )
+        self.assertEqual(purge_expired_conversations(self.app), 0)
+
+    def test_an_owner_can_change_the_window_and_a_viewer_cannot(self):
+        settings_url = reverse("chat-settings", args=[self.app.pk])
+        self.assertEqual(
+            self.client.post(settings_url, {"days": "14"}).status_code, 302
+        )
+        self.assertEqual(ChatRetention.objects.get(application=self.app).days, 14)
+        # A member who is not an owner is refused; someone with no grant at all is
+        # not even told the application exists.
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.client.get(settings_url).status_code, 403)
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.client.get(settings_url).status_code, 404)
+
+    def test_an_absurd_window_is_refused_in_favour_of_zero(self):
+        response = self.client.post(
+            reverse("chat-settings", args=[self.app.pk]), {"days": "99999"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Use 0 for indefinite retention")
+
+    # ---- frozen graph version ----
+
+    def test_a_new_conversation_pins_the_version_published_when_it_started(self):
+        from platform_core.models import GraphRevision
+
+        GraphRevision.objects.create(
+            application=self.app,
+            number=1,
+            fingerprint="f",
+            published_at=timezone.now(),
+            data={"nodes": [], "edges": [], "sources": []},
+            quality={},
+        )
+        request = RequestFactory().post("/", {})
+        self.assertEqual(new_graph_version(request, self.app.pk, True), 1)
+
+    def test_publishing_a_newer_version_does_not_move_an_existing_conversation(self):
+        conversation = self.conversation(graph_version=1)
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.graph_version, 1)
+        # A later publish changes nothing about a conversation already under way.
+        from platform_core.models import GraphRevision
+
+        GraphRevision.objects.create(
+            application=self.app,
+            number=2,
+            fingerprint="g",
+            published_at=timezone.now(),
+            data={"nodes": [], "edges": [], "sources": []},
+            quality={},
+        )
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.graph_version, 1)

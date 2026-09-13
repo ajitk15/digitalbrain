@@ -16,6 +16,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from .forms import (
     ApplicationForm,
     BrandingForm,
+    ChatRetentionForm,
     GrantForm,
     MemberForm,
     OrganizationForm,
@@ -28,6 +29,8 @@ from .models import (
     ApplicationGrant,
     AuditEvent,
     Branding,
+    ChatConversation,
+    ChatRetention,
     FeatureSwitch,
     Organization,
     OrganizationMember,
@@ -79,6 +82,46 @@ def logo(request):
     response["Cache-Control"] = "public, max-age=0, must-revalidate"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def chat_settings(request, pk):
+    """Chat history retention for one application. Owner-only, like Features."""
+    app, grant = application_for(request.user, pk, owner=True)
+    if not feature_enabled("chat", app):
+        raise Http404
+    record, _ = ChatRetention.objects.get_or_create(application=app)
+    form = ChatRetentionForm(request.POST or None, instance=record)
+    if request.method == "POST":
+        if form.is_valid():
+            saved = form.save(commit=False)
+            saved.updated_by = request.user
+            saved.save()
+            audit(
+                request.user,
+                "chat.retention_changed",
+                app.pk,
+                app.product.portfolio.organization,
+                details={"days": saved.days},
+            )
+            messages.success(
+                request,
+                "Retention updated. Conversations are kept indefinitely."
+                if saved.days == 0
+                else f"Retention updated to {saved.days} day(s).",
+            )
+            return redirect("chat-settings", pk=pk)
+    return render(
+        request,
+        "chat_settings.html",
+        {
+            "application": app,
+            "grant": grant,
+            "form": form,
+            "conversation_count": ChatConversation.objects.filter(application=app).count(),
+        },
+    )
 
 
 @login_required

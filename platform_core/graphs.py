@@ -535,6 +535,18 @@ def graph_view(request, pk):
         selected = get_object_or_404(GraphRevision, application=app, number=int(version_number))
         current = revision_readable(selected, pk)
         graph = selected
+    # Requesting a regenerate clears the working graph's fingerprint, which used to
+    # blank this whole screen until the run finished - and strand the user if it
+    # failed. The last good version is still perfectly viewable, and the published
+    # one is what Chat answers from regardless, so keep showing it and report the
+    # run in a banner instead of replacing the workspace with it.
+    showing_fallback = False
+    if not current and selected is None:
+        fallback = published_revision(pk) or (
+            GraphRevision.objects.filter(application=app).order_by("-number").first()
+        )
+        if fallback and revision_readable(fallback, pk):
+            graph, selected, current, showing_fallback = fallback, fallback, True, True
     status = (
         "ready"
         if current
@@ -624,6 +636,10 @@ def graph_view(request, pk):
             "run_model": (active_graph.requested_model or "structural only")
             if active_graph
             else "",
+            "showing_fallback": showing_fallback,
+            "run_failed": bool(
+                active_graph and active_graph.status == "failed" and not run_in_flight(active_graph)
+            ),
             "can_retry": bool(
                 active_graph
                 and not run_in_flight(active_graph)
