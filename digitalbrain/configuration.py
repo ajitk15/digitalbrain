@@ -26,6 +26,7 @@ def load_config():
         "scanner",
         "scan_documents",
         "claude_use_host_login",
+        "fetch_allow_hosts",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -35,6 +36,13 @@ def load_config():
         raise ImproperlyConfigured("scan_documents must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    hosts = config.get("fetch_allow_hosts", [])
+    if not isinstance(hosts, list) or any(not isinstance(h, str) or not h.strip() for h in hosts):
+        raise ImproperlyConfigured("fetch_allow_hosts must be a list of hostnames.")
+    if any(h.strip() in {"*", "0.0.0.0", "::"} or h.strip().startswith("*") for h in hosts):
+        # An allow-list that allows everything is not an allow-list. Naming each
+        # internal host is the whole point of the setting.
+        raise ImproperlyConfigured("fetch_allow_hosts cannot contain a wildcard.")
     if config.get("claude_use_host_login") and config.get("mode") == "production":
         # Refused outright rather than quietly ignored: a production deployment that
         # believes it is using per-application credentials must not be silently

@@ -10,13 +10,14 @@ from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
+from .fetching import FetchError
 from .models import ApplicationGrant, Document, KnowledgeEntry
 from .policy import application_for
 from .services import audit, feature_enabled
@@ -41,11 +42,40 @@ class MultipleFileField(forms.FileField):
         return uploads
 
 
+class LinkForm(forms.Form):
+    url = forms.CharField(
+        max_length=2000,
+        label="Add from a link",
+        widget=forms.TextInput(
+            attrs={"placeholder": "Paste a web page, GitHub repo, file or docs folder"}
+        ),
+        help_text=(
+            "A page or document is imported as one source. A GitHub repository takes its "
+            "README; a /tree/ link takes the documentation files under it."
+        ),
+    )
+
+
 class DocumentForm(forms.Form):
     file = MultipleFileField(
         label="Choose documents",
         help_text="All file types. Select up to 20 files, 20 MB total per upload.",
     )
+
+
+def document_folder(app):
+    """Private, per-application storage for original bytes. Never public static."""
+    return (
+        Path(settings.BASE_DIR)
+        / ".runtime"
+        / "documents"
+        / str(app.organization_id)
+        / str(app.pk)
+    )
+
+
+def document_path(app, document_id):
+    return document_folder(app) / f"{document_id}.quarantine"
 
 
 def intake_enabled():
@@ -60,8 +90,7 @@ def store_document(actor, application_id, upload):
     if not intake_enabled() or not feature_enabled("document_uploads", app):
         raise PermissionDenied("Production document intake requires private storage integration.")
     document_id = uuid.uuid4()
-    root = Path(settings.BASE_DIR) / ".runtime" / "documents"
-    folder = root / str(app.organization_id) / str(app.pk)
+    folder = document_folder(app)
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     target = folder / f"{document_id}.quarantine"
     digest = hashlib.sha256()
@@ -119,7 +148,24 @@ def documents(request, pk):
         and feature_enabled("document_uploads", app)
     )
     form = DocumentForm(request.POST or None, request.FILES or None)
-    if request.method == "POST":
+    link_form = LinkForm(request.POST or None)
+    if request.method == "POST" and request.POST.get("action") == "link":
+        from .link_sources import submit
+
+        form = DocumentForm()
+        if link_form.is_valid():
+            try:
+                created = submit(request.user, pk, link_form.cleaned_data["url"])
+            except (FetchError, ValidationError) as failure:
+                link_form.add_error("url", " ".join(getattr(failure, "messages", [str(failure)])))
+            else:
+                messages.success(
+                    request,
+                    f"Queued {len(created)} source(s) for download. "
+                    "Progress appears beside each one.",
+                )
+                return redirect(request.POST.get("next") or "application", pk=pk)
+    elif request.method == "POST":
         if not can_upload:
             raise PermissionDenied
         if form.is_valid():
@@ -155,6 +201,7 @@ def documents(request, pk):
             "intake_enabled": intake_enabled(),
             "uploads_enabled": feature_enabled("document_uploads", app),
             "form": form,
+            "link_form": link_form,
             "query": search,
             "conversion_pending": query.filter(status__in=["queued", "converting"]).exists(),
             "document_count": Document.objects.filter(application=app)
@@ -251,13 +298,7 @@ def document_delete(request, pk, document_id):
         try:
             with transaction.atomic():
                 locked = Document.objects.select_for_update().get(pk=doc.pk)
-                target = (
-                    Path(settings.BASE_DIR)
-                    / ".runtime/documents"
-                    / str(app.organization_id)
-                    / str(app.pk)
-                    / f"{doc.pk}.quarantine"
-                )
+                target = document_path(app, doc.pk)
                 target.unlink(missing_ok=True)
                 KnowledgeEntry.objects.filter(document=locked).delete()
                 locked.status = "deleted"

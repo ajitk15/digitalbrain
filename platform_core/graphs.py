@@ -502,7 +502,7 @@ def graph_view(request, pk):
     published = published_revision(pk)
     # The Sources rail reuses the documents screen's own gating rather than
     # reimplementing it, so one set of rules governs both places.
-    from .documents import intake_enabled
+    from .documents import LinkForm, intake_enabled
 
     can_upload = bool(
         intake_enabled()
@@ -554,6 +554,7 @@ def graph_view(request, pk):
             "health": health,
             "can_upload": can_upload,
             "recent_documents": recent_documents,
+            "link_form": LinkForm(),
             "document_total": document_total,
             "pending_documents": Document.objects.filter(
                 application=app, status__in=["queued", "converting"]

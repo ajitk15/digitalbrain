@@ -625,4 +625,86 @@
   }
   #chat-send:hover { background: var(--c-ink-2); border-color: var(--c-ink-2); }
   .chat-composer textarea { font-size: var(--t-13); border-radius: var(--r-md); }
+
+  /* Sources rail: link import and per-source status --------------------- */
+
+  .upload-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-1);
+  }
+  .upload-drop svg { color: var(--c-ink-faint); }
+  .upload-drop:hover svg { color: var(--c-brand); }
+
+  .rail-link-form { margin: var(--s-4) 0; }
+  .rail-link-form > label {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    font-size: var(--t-11);
+    font-weight: 600;
+    color: var(--c-ink-3);
+    margin-bottom: var(--s-1);
+  }
+  .rail-url-row { display: flex; gap: var(--s-1); }
+  .rail-url-row input { flex: 1; min-width: 0; font-size: var(--t-12); }
+  .rail-url-row .button {
+    flex: none;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .rail-link-form small { display: block; margin-top: var(--s-1); font-size: var(--t-10); }
+  .rail-link-form code {
+    font: var(--t-10) / 1 var(--f-mono);
+    background: var(--c-brand-tint-2);
+    border-radius: var(--r-sm);
+    padding: 0 3px;
+  }
+
+  .rail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-1);
+    font-size: var(--t-12);
+  }
+
+  .doc-name { display: flex; align-items: center; gap: var(--s-1); }
+  .doc-name svg { flex: none; color: var(--c-ink-faint); }
+  .doc-name span { overflow-wrap: anywhere; }
+  .doc-origin {
+    display: block;
+    font-size: var(--t-10);
+    color: var(--c-ink-faint);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .doc-delete {
+    margin-left: auto;
+    display: inline-flex;
+    color: var(--c-ink-faint);
+  }
+  .doc-delete:hover { color: var(--c-bad); }
+  .doc-error { display: block; font-size: var(--t-10); color: var(--c-bad); margin-top: var(--s-1); }
+
+  /* Status is the whole point of the queue, so give each state its own colour. */
+  .pill.status-pending,
+  .pill.status-fetching,
+  .pill.status-queued,
+  .pill.status-converting {
+    background: var(--c-warn-bg);
+    color: var(--c-warn);
+  }
+  .pill.status-ready { background: var(--c-ok-bg); color: var(--c-ok); }
+  .pill.status-failed,
+  .pill.status-rejected { background: var(--c-bad-bg); color: var(--c-bad); }
+  .doc-failed { border-color: var(--c-bad-line); }
+  /* Before a first graph exists there are only two panes. */
+  .kb-panes-empty { grid-template-columns: var(--w-kb-rail) minmax(0, 1fr); }
+  .kb-empty { display: flex; flex-direction: column; justify-content: center; }
+  .kb-empty .card { border: 0; box-shadow: none; padding: 0; }
+  .kb-empty h2 { font-size: var(--t-17); }
 }

@@ -143,3 +143,26 @@ def organization_tree(context):
         for portfolio in org["portfolios"]:
             portfolio["products"] = list(portfolio["products"].values())
     return {"tree": list(tree.values())}
+
+
+@register.filter
+def source_label(url):
+    """A readable origin for a link-sourced document.
+
+    The stored URL is the download address, which for GitHub is a long
+    raw.githubusercontent path. What a reader wants is where it came from, so
+    GitHub collapses to owner/repo and everything else to host plus a short path.
+    """
+    from urllib.parse import urlparse
+
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").removeprefix("www.")
+    parts = [p for p in (parsed.path or "").split("/") if p]
+    if host in {"raw.githubusercontent.com", "github.com"} and len(parts) >= 2:
+        tail = parts[-1] if len(parts) > 2 else ""
+        return f"{parts[0]}/{parts[1]}" + (f" · {tail}" if tail else "")
+    if not parts:
+        return host
+    return f"{host}/{parts[-1]}" if len(parts[-1]) <= 40 else host

@@ -14,6 +14,37 @@ from .processing import convert_document
 logger = logging.getLogger(__name__)
 
 
+def process_next_link():
+    """Download one queued link. Fetching is separate from conversion so a slow
+    host delays only itself, and the rail can show downloading apart from
+    converting."""
+    from .link_sources import download
+
+    expired = timezone.now() - timedelta(minutes=5)
+    doc = (
+        Document.objects.filter(
+            Q(status="pending") | Q(status="fetching", conversion_started_at__lt=expired)
+        )
+        .select_related("application")
+        .order_by("created_at")
+        .first()
+    )
+    if doc is None:
+        return False
+    if doc.status == "fetching":
+        # A download interrupted by a restart becomes eligible again.
+        Document.objects.filter(pk=doc.pk, status="fetching").update(status="pending")
+        doc.status = "pending"
+    try:
+        download(doc)
+    except Exception:
+        Document.objects.filter(pk=doc.pk).exclude(status="deleted").update(
+            status="failed", conversion_error="The link could not be downloaded."
+        )
+        logger.warning("document_link_failed")
+    return True
+
+
 def process_next_document():
     expired = timezone.now() - timedelta(minutes=5)
     doc = (
@@ -47,6 +78,7 @@ def run_document_worker():
     while True:
         try:
             close_old_connections()
+            process_next_link()
             process_next_document()
             from .graphs import process_next_graph
 

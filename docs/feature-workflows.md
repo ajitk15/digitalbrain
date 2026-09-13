@@ -14,7 +14,47 @@ Owners and contributors can add immutable plain-text knowledge sources. Sources 
 read, or archived. Archiving excludes them from new retrieval without deleting approval evidence.
 
 All file types are accepted. Select up to 20 documents per batch, with a combined 20 MiB limit.
-Original bytes remain private and unchanged. Upload queues automatic Microsoft MarkItDown
+Original bytes remain private and unchanged.
+
+### Adding sources from a link
+
+The Sources rail also accepts a pasted link, and works out what it points at:
+
+| Pasted | Imported |
+| --- | --- |
+| Any web page or document URL | that one page or file |
+| `github.com/owner/repo` | the repository README |
+| a `/blob/` or `raw.githubusercontent.com` link | that one file |
+| a `/tree/` directory link | the documentation files under it, up to 25 |
+
+A link becomes an ordinary document, so quarantine storage, scanning, offline MarkItDown
+conversion, the immutable knowledge source, graph regeneration and deletion all behave exactly as
+they do for an upload. **MarkItDown is still never handed a URL** — the bytes are downloaded
+first and converted from disk.
+
+Submitting does not download anything during the request: each file is recorded as **Waiting to
+download**, and the background worker fetches them. The rail shows every source's state —
+waiting, downloading, queued, converting, ready or failed — with where it came from and the
+reason for any failure, so a slow or dead host delays only itself.
+
+**Network policy.** Fetching a link means this server makes a request to an address the user
+chose, so the retriever resolves the hostname first and refuses loopback, private, link-local
+(including the `169.254.169.254` cloud metadata endpoint), multicast and reserved addresses. The
+connection is then pinned to the address that was validated, so a second DNS answer cannot
+redirect it. Only `http` and `https` are accepted, redirects are never followed, responses are
+capped at 8 MB and 20 seconds, and no credential is ever attached except the application's own
+mounted GitHub token on GitHub requests.
+
+Internal hosts can be permitted individually in the deployment TOML, which is what makes an
+internal wiki importable without opening the private network:
+
+```toml
+fetch_allow_hosts = ['wiki.internal', 'docs.corp.example']
+```
+
+Wildcards are refused: an allow-list that allows everything is not one. A private repository
+imports when the application's `github_APPLICATION_UUID` token is mounted; public repositories
+need no token and use the shared unauthenticated rate limit. Upload queues automatic Microsoft MarkItDown
 conversion whenever Knowledge is enabled; no antivirus scan is required in the current local setup.
 
 The managed server hosts a single conversion worker backed by document rows in the database.

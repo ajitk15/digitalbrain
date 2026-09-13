@@ -161,15 +161,25 @@ class Document(models.Model):
         max_length=20,
         default="quarantined",
         choices=[
+            ("pending", "Waiting to download"),
+            ("fetching", "Downloading"),
             ("quarantined", "Uploaded"),
             ("queued", "Queued for conversion"),
             ("converting", "Converting to Markdown"),
             ("deleted", "Deleted"),
-            ("ready", "Ready for graph generation"),
+            ("ready", "Ready to search"),
             ("failed", "Conversion failed"),
             ("rejected", "Rejected by scanner"),
         ],
     )
+    # Where this document came from. A link-sourced document has no bytes until the
+    # worker downloads them, which is what the pending and fetching states cover.
+    origin = models.CharField(
+        max_length=10,
+        default="upload",
+        choices=[("upload", "Upload"), ("link", "Link"), ("github", "GitHub")],
+    )
+    source_url = models.CharField(max_length=2000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     conversion_started_at = models.DateTimeField(null=True, blank=True)

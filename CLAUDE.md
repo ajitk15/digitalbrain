@@ -59,6 +59,19 @@ and the chat page states plainly when answers are being billed to the machine's 
 login. A missing secret with the setting off is still an error — it must never
 quietly become "spend the operator's account".
 
+**Outbound fetches are address-checked and pinned.** `platform_core/fetching.py` is
+the only place this server retrieves a user-supplied URL. It resolves first, refuses
+private, loopback, link-local, multicast and reserved addresses unless an operator
+named the host in `fetch_allow_hosts`, then pins the connection to the validated
+address so DNS cannot change the answer underneath it. http/https only, no redirects
+followed, 8 MB and 20 s caps, no credentials attached. Do not add a second code path
+that fetches URLs.
+
+**A link is just a document.** `link_sources.py` records a pending `Document` and the
+worker downloads it; conversion never learns URLs exist and MarkItDown is never handed
+one. Keep it that way - the offline conversion subprocess patches `socket.connect` to
+raise, and that guarantee is worth more than the convenience of fetching inside it.
+
 **Usage is never silently zero.** A missing or malformed token count is an error, not a
 free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed
