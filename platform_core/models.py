@@ -427,6 +427,12 @@ class KnowledgeGraph(models.Model):
         on_delete=models.SET_NULL,
         related_name="graph_runs",
     )
+    # Progress for a run in flight. `stage` is a short human phrase written at each
+    # real transition, never a guess: a provider call is one opaque block, so the
+    # page reports the step it is actually in and how long it has been there rather
+    # than animating a percentage nobody can compute.
+    started_at = models.DateTimeField(null=True, blank=True)
+    stage = models.CharField(max_length=120, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 

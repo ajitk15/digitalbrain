@@ -26,7 +26,7 @@ class PipelineTests(TestCase):
 
     def post_files(self, *files):
         return self.client.post(
-            reverse("application", args=[self.app.pk]),
+            reverse("documents", args=[self.app.pk]),
             {"file": [SimpleUploadedFile(name, content) for name, content in files]},
         )
 

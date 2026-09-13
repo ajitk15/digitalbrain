@@ -1,0 +1,16 @@
+{% comment %}
+Live progress for a graph run. The stage text is written by rebuild() at each real
+transition, so this reports where the run actually is rather than animating a
+percentage that cannot be computed - a provider call is one opaque block.
+
+data-document-pending puts this block on the existing poll, so it refreshes itself.
+{% endcomment %}
+<div class="graph-progress" data-document-pending role="status" aria-live="polite">
+<div class="graph-progress-head"><span class="spinner" aria-hidden="true"></span><strong>{{ run.stage|default:"Queued" }}</strong></div>
+<dl class="graph-progress-facts">
+<dt>Model</dt><dd>{{ run_model }}</dd>
+<dt>Sources</dt><dd>{{ source_count }}</dd>
+<dt>Started</dt><dd>{% if run.started_at %}{{ run.started_at|timesince }} ago{% else %}just now{% endif %}</dd>
+</dl>
+<p class="muted">This page refreshes itself. Leaving it does not stop the run, and starting another is blocked until this one finishes.</p>
+</div>

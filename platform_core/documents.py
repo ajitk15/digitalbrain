@@ -138,6 +138,16 @@ def store_document(actor, application_id, upload):
         raise
 
 
+#: Where an upload or import may return to. `next` names a view, never a URL:
+#: redirect() falls back to treating an unreversible string as a location, so an
+#: unchecked value here would be an open redirect.
+RETURN_ROUTES = {"graph", "documents"}
+
+
+def return_route(request):
+    return request.POST.get("next") if request.POST.get("next") in RETURN_ROUTES else "documents"
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def documents(request, pk):
@@ -164,7 +174,7 @@ def documents(request, pk):
                     f"Queued {len(created)} source(s) for download. "
                     "Progress appears beside each one.",
                 )
-                return redirect(request.POST.get("next") or "application", pk=pk)
+                return redirect(return_route(request), pk=pk)
     elif request.method == "POST":
         if not can_upload:
             raise PermissionDenied
@@ -186,7 +196,7 @@ def documents(request, pk):
                     f"Uploaded {saved} document(s). "
                     "Markdown conversion runs automatically when Knowledge is enabled.",
                 )
-            return redirect("application", pk=pk)
+            return redirect(return_route(request), pk=pk)
     query = Document.objects.filter(application=app).exclude(status="deleted")
     search = request.GET.get("q", "").strip()[:120]
     if search:

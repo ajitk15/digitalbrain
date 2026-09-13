@@ -3,6 +3,7 @@
 import hashlib
 import json
 import re
+from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -204,6 +205,13 @@ def build_graph(entries, source_count):
     return {"nodes": list(nodes.values()), "edges": edges, "sources": source_refs}, quality
 
 
+def set_stage(app_id, stage):
+    """Record the step a run is actually in, for the page to display."""
+    KnowledgeGraph.objects.filter(application_id=app_id).update(
+        stage=stage, updated_at=timezone.now()
+    )
+
+
 def rebuild(app_id):
     before = fingerprint(app_id)
     graph, _ = KnowledgeGraph.objects.get_or_create(application_id=app_id)
@@ -211,11 +219,18 @@ def rebuild(app_id):
         return True
     if graph.status == "building" and graph.fingerprint == before:
         return False
+    # Only a run someone explicitly queued may spend money. A rebuild triggered by
+    # a source change reaches here with some other status, and must not consume a
+    # request left over from an earlier attempt - that would be a paid call nobody
+    # asked for, which is exactly what requested_* exists to prevent.
+    requested = graph.status == "queued"
     claimed = KnowledgeGraph.objects.filter(
         pk=graph.pk, status=graph.status, fingerprint=graph.fingerprint
     ).update(
         status="building",
         fingerprint=before,
+        stage="Reading sources",
+        started_at=graph.started_at or timezone.now(),
         updated_at=timezone.now(),
     )
     if not claimed:
@@ -225,17 +240,25 @@ def rebuild(app_id):
     # AI enrichment runs only for a run someone asked for, with the model they
     # chose. A background rebuild keeps the structural graph current and never
     # incurs provider charges on its own.
-    config = requested_configuration(graph)
+    config = requested_configuration(graph) if requested else None
+    if config is None and graph.requested_model and not requested:
+        # A stale request from a failed attempt: clear it so no later rebuild
+        # picks it up, and leave this one structural.
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(
+            requested_provider="", requested_model=""
+        )
     if config and entries:
         from .graph_ai import enrich_graph
 
+        set_stage(app_id, f"Extracting relationships with {config.model}")
         try:
             data, quality = enrich_graph(app_id, config, entries, data, quality)
         except Exception:
             KnowledgeGraph.objects.filter(
                 pk=graph.pk, fingerprint=before, status="building"
-            ).update(status="failed")
+            ).update(status="failed", stage="Generation failed")
             raise
+    set_stage(app_id, "Saving version")
     with transaction.atomic():
         locked = KnowledgeGraph.objects.select_for_update().get(pk=graph.pk)
         if fingerprint(app_id) != before:
@@ -270,6 +293,8 @@ def rebuild(app_id):
         # The request is spent; a later automatic rebuild must not repeat a paid run.
         locked.requested_provider = ""
         locked.requested_model = ""
+        locked.stage = ""
+        locked.started_at = None
         locked.save()
     return True
 
@@ -365,6 +390,29 @@ def revision_readable(revision, app_id):
     )
 
 
+#: How long a "building" run may go quiet before it is treated as interrupted.
+STALL_MINUTES = 2
+
+
+def run_in_flight(graph):
+    """True while a generation is queued or actively running.
+
+    A "building" row that has not been touched for STALL_MINUTES is treated as
+    interrupted rather than live, so a crashed worker cannot wedge an application
+    out of ever generating again.
+    """
+    if graph is None or graph.status not in {"queued", "building"}:
+        return False
+    if graph.status == "queued":
+        return True
+    # A newly created row defaults to "building" without any run behind it;
+    # started_at is written when a run is actually claimed, so it distinguishes
+    # a live run from a placeholder.
+    if graph.started_at is None:
+        return False
+    return graph.updated_at > timezone.now() - timedelta(minutes=STALL_MINUTES)
+
+
 def queue_generation(request, app, pk):
     """Queue a graph run, optionally enriched with a chosen model.
 
@@ -390,13 +438,27 @@ def queue_generation(request, app, pk):
             )
             return redirect("graph", pk=pk)
     graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
-    KnowledgeGraph.objects.filter(pk=graph.pk).update(
+    if run_in_flight(graph):
+        # Re-arming the row under a live run would let both finish and bill twice.
+        messages.info(
+            request,
+            "A graph generation is already running for this application. "
+            "Watch its progress below; start another once it finishes.",
+        )
+        return redirect("graph", pk=pk)
+    claimed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
         status="queued",
         fingerprint="",
+        stage="Queued",
+        started_at=timezone.now(),
         requested_provider=provider,
         requested_model=model,
         requested_by=request.user,
     )
+    if not claimed:
+        # Something else claimed the row between the check and here.
+        messages.info(request, "A graph generation was just started by someone else.")
+        return redirect("graph", pk=pk)
     audit(
         request.user,
         "graph.generation_requested",
@@ -446,15 +508,20 @@ def graph_view(request, pk):
             return queue_generation(request, app, pk)
         if action != "retry":
             return HttpResponse("Unknown graph action.", status=400)
+        if run_in_flight(KnowledgeGraph.objects.filter(application=app).first()):
+            messages.info(request, "That generation is still running. Watch its progress below.")
+            return redirect("graph", pk=pk)
         target = KnowledgeGraph.objects.filter(application=app, status__in=["failed", "building"])
         if target.filter(status="building").exists():
-            from datetime import timedelta
-
-            target = target.filter(updated_at__lt=timezone.now() - timedelta(minutes=2))
-        target.update(status="queued", fingerprint="")
+            target = target.filter(
+                updated_at__lt=timezone.now() - timedelta(minutes=STALL_MINUTES)
+            )
+        queued = target.update(status="queued", fingerprint="", stage="Queued")
         messages.success(
             request,
-            "Eligible failed or interrupted graph generation queued. Provider charges may apply.",
+            "Eligible failed or interrupted graph generation queued. Provider charges may apply."
+            if queued
+            else "There is no failed or interrupted generation to retry.",
         )
         return redirect("graph", pk=pk)
     active_graph = KnowledgeGraph.objects.filter(application=app).first()
@@ -551,6 +618,17 @@ def graph_view(request, pk):
                 application=app, purpose="graph_generation", enabled=True
             ).exists(),
             "generating": bool(active_graph and active_graph.status in {"queued", "building"}),
+            # Progress for a live run, and whether a retry is even possible: the
+            # page must not offer a button that would start a second paid run.
+            "run": active_graph if run_in_flight(active_graph) else None,
+            "run_model": (active_graph.requested_model or "structural only")
+            if active_graph
+            else "",
+            "can_retry": bool(
+                active_graph
+                and not run_in_flight(active_graph)
+                and active_graph.status in {"failed", "building"}
+            ),
             "panel": panel,
             "health": health,
             "can_upload": can_upload,

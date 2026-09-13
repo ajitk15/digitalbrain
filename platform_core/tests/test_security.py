@@ -102,7 +102,8 @@ class SecurityTests(TestCase):
     def test_cross_application_and_cross_org_hierarchy_denied(self):
         self.login(self.owner)
         self.assertEqual(
-            self.client.get(reverse("application", args=[self.app.pk])).status_code, 200
+            self.client.get(reverse("application", args=[self.app.pk]), follow=True).status_code,
+            200,
         )
         self.assertEqual(self.client.get(reverse("usage", args=[self.app_b.pk])).status_code, 404)
         response = self.client.post(
@@ -274,7 +275,7 @@ class SecurityTests(TestCase):
         self.receipt()
         self.assertEqual(AIUsage.objects.count(), 1)
         self.assertNotContains(
-            self.client.get(reverse("application", args=[self.app.pk])), ">AI costs<"
+            self.client.get(reverse("application", args=[self.app.pk]), follow=True), ">AI costs<"
         )
 
     def test_unknown_features_cannot_be_enabled(self):
@@ -321,7 +322,7 @@ class SecurityTests(TestCase):
         ]
         for url in urls:
             with self.subTest(url=url):
-                response = self.client.get(url)
+                response = self.client.get(url, follow=True)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn("no-store", response["Cache-Control"])
                 self.assertIn("frame-ancestors 'none'", response["Content-Security-Policy"])

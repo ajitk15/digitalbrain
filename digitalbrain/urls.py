@@ -93,7 +93,7 @@ urlpatterns = [
     path("organizations/<uuid:pk>/portfolios/new/", views.create_portfolio, name="portfolio-new"),
     path("portfolios/<uuid:pk>/products/new/", views.create_product, name="product-new"),
     path("products/<uuid:pk>/applications/new/", views.create_application, name="application-new"),
-    path("applications/<uuid:pk>/", documents.documents, name="application"),
+    path("applications/<uuid:pk>/", views.application_home, name="application"),
     path("applications/<uuid:pk>/documents/", documents.documents, name="documents"),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/",

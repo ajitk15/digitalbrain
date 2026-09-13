@@ -767,4 +767,35 @@
     min-width: 62px;
   }
   .copy-button:hover { border-color: var(--c-brand); color: var(--c-brand); }
+  /* Graph run progress ------------------------------------------------- */
+  .graph-progress { margin: var(--s-3) 0; max-width: 460px; }
+  .graph-progress-head {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    font-size: var(--t-15);
+  }
+  .spinner {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--c-line-strong);
+    border-top-color: var(--c-brand);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Respect a reader who has asked for less motion; the text still updates. */
+  @media (prefers-reduced-motion: reduce) {
+    .spinner { animation: none; border-top-color: var(--c-brand); }
+  }
+  .graph-progress-facts {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--s-2) var(--s-3);
+    margin: var(--s-3) 0;
+    font-size: var(--t-13);
+  }
+  .graph-progress-facts dt { color: var(--c-ink-3); }
+  .graph-progress-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 }

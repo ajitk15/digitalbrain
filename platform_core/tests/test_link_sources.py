@@ -133,7 +133,7 @@ class LinkViewTests(TestCase):
 
     def test_posting_a_link_queues_it_and_reports_back(self):
         response = self.client.post(
-            reverse("application", args=[self.app.pk]),
+            reverse("documents", args=[self.app.pk]),
             {"action": "link", "url": "https://example.com/guide"},
         )
         self.assertEqual(response.status_code, 302)
@@ -141,7 +141,7 @@ class LinkViewTests(TestCase):
 
     def test_a_rejected_link_is_reported_on_the_form_not_a_500(self):
         response = self.client.post(
-            reverse("application", args=[self.app.pk]),
+            reverse("documents", args=[self.app.pk]),
             {"action": "link", "url": "file:///etc/passwd"},
         )
         self.assertEqual(response.status_code, 200)

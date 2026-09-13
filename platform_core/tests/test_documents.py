@@ -50,7 +50,7 @@ class DocumentTests(TestCase):
 
     def upload(self, app=None):
         return self.client.post(
-            reverse("application", args=[(app or self.app).pk]),
+            reverse("documents", args=[(app or self.app).pk]),
             {
                 "file": SimpleUploadedFile(
                     "requirements.md", b"# Requirements\nKeep applications isolated."
@@ -72,7 +72,7 @@ class DocumentTests(TestCase):
         self.assertEqual(stored.read_bytes(), b"# Requirements\nKeep applications isolated.")
         self.assertTrue(AuditEvent.objects.filter(action="document.uploaded").exists())
         self.assertContains(
-            self.client.get(reverse("application", args=[self.app.pk])), "requirements.md"
+            self.client.get(reverse("documents", args=[self.app.pk])), "requirements.md"
         )
 
     def test_viewer_and_platform_admin_cannot_upload(self):
@@ -116,7 +116,7 @@ class DocumentTests(TestCase):
         ]:
             with self.subTest(name=name):
                 response = self.client.post(
-                    reverse("application", args=[self.app.pk]),
+                    reverse("documents", args=[self.app.pk]),
                     {
                         "file": SimpleUploadedFile(name, value),
                     },
@@ -147,15 +147,59 @@ class DocumentTests(TestCase):
     def test_production_intake_fails_closed_until_private_storage_is_connected(self):
         self.assertEqual(self.upload().status_code, 403)
 
+    # ---- the application opens on Knowledge ----
+
+    def test_opening_an_application_lands_on_knowledge(self):
+        response = self.client.get(reverse("application", args=[self.app.pk]))
+        self.assertRedirects(response, reverse("graph", args=[self.app.pk]))
+
+    def test_with_knowledge_switched_off_it_falls_back_to_documents(self):
+        """Knowledge is where an application opens, but not at the cost of a 403."""
+        FeatureSwitch.objects.create(key="knowledge", enabled=False)
+        response = self.client.get(reverse("application", args=[self.app.pk]))
+        self.assertRedirects(response, reverse("documents", args=[self.app.pk]))
+
+    def test_the_home_redirect_is_not_a_way_to_probe_for_applications(self):
+        """Access is decided before the redirect, so an ungranted user still sees 404."""
+        response = self.client.get(reverse("application", args=[self.other.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(
+            self.client.get(reverse("application", args=[self.app.pk])).status_code, 404
+        )
+
+    def test_an_upload_returns_to_the_pane_it_came_from(self):
+        documents_url = reverse("documents", args=[self.app.pk])
+        self.assertRedirects(self.upload(), documents_url)
+        response = self.client.post(
+            documents_url,
+            {
+                "next": "graph",
+                "file": SimpleUploadedFile("from-rail.md", b"# Rail"),
+            },
+        )
+        self.assertRedirects(response, reverse("graph", args=[self.app.pk]))
+
+    def test_a_forged_return_target_cannot_redirect_off_site(self):
+        """`next` names a view; an unreversible string would become a location."""
+        response = self.client.post(
+            reverse("documents", args=[self.app.pk]),
+            {
+                "next": "https://example.invalid/steal",
+                "file": SimpleUploadedFile("safe.md", b"# Safe"),
+            },
+        )
+        self.assertRedirects(response, reverse("documents", args=[self.app.pk]))
+
     def test_organization_has_direct_application_links(self):
         response = self.client.get(reverse("organization", args=[self.app.organization_id]))
         self.assertContains(response, reverse("application", args=[self.app.pk]))
-        self.assertContains(response, "Open documents")
+        self.assertContains(response, "Open knowledge")
         self.assertNotContains(response, f'href="{reverse("application", args=[self.other.pk])}"')
 
     def test_shared_navigation_on_application_pages(self):
         """Every application screen carries the breadcrumb and the same four tabs."""
-        for name in ["application", "usage", "application-access", "application-features"]:
+        for name in ["graph", "usage", "application-access", "application-features"]:
             with self.subTest(page=name):
                 response = self.client.get(reverse(name, args=[self.app.pk]))
                 self.assertContains(response, 'aria-label="Breadcrumb"')
@@ -175,6 +219,6 @@ class DocumentTests(TestCase):
 
     def test_the_settings_tab_never_advertises_a_section_name(self):
         """A contributor reaching Settings via AI costs must still see "Settings"."""
-        response = self.client.get(reverse("application", args=[self.app.pk]))
+        response = self.client.get(reverse("graph", args=[self.app.pk]))
         self.assertContains(response, ">Settings</a>")
         self.assertNotContains(response, ">AI costs</a>")

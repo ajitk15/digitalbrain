@@ -1,11 +1,19 @@
 import json
+from datetime import timedelta
+from decimal import Decimal
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
-from platform_core.graphs import build_graph, process_next_graph, rebuild
-from platform_core.models import ApplicationGrant, FeatureSwitch, KnowledgeGraph
+from platform_core.graphs import STALL_MINUTES, build_graph, process_next_graph, rebuild
+from platform_core.models import (
+    AIConfiguration,
+    ApplicationGrant,
+    FeatureSwitch,
+    KnowledgeGraph,
+)
 from platform_core.workbench import add_knowledge
 
 from . import test_documents
@@ -200,3 +208,91 @@ class GraphTests(TestCase):
         self.assertContains(response, 'aria-label="Knowledge views"')
         for title in ["Graph", "Sources", "Quality", "Versions"]:
             self.assertContains(response, f">{title}</a>")
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class GraphRunTests(TestCase):
+    """One run at a time, and never a paid call nobody asked for."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        GraphTests.source(self)
+        self.url = reverse("graph", args=[self.app.pk])
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="graph_generation",
+            enabled=True,
+            provider="claude",
+            model="claude-sonnet-5",
+            input_rate=Decimal("3"),
+            output_rate=Decimal("15"),
+            configured_by=self.owner,
+        )
+
+    def generate(self, choice="claude:claude-sonnet-5"):
+        return self.client.post(self.url, {"action": "generate", "model_choice": choice})
+
+    def graph(self):
+        return KnowledgeGraph.objects.get(application=self.app)
+
+    def test_a_second_generation_is_refused_while_one_is_running(self):
+        self.generate()
+        first = self.graph()
+        self.assertEqual(first.status, "queued")
+        self.generate("claude:claude-opus-5")
+        second = self.graph()
+        # The live run keeps its own model and its own start time.
+        self.assertEqual(second.requested_model, "claude-sonnet-5")
+        self.assertEqual(second.started_at, first.started_at)
+
+    def test_retry_is_refused_while_the_run_is_still_live(self):
+        self.generate()
+        KnowledgeGraph.objects.filter(application=self.app).update(status="building")
+        self.client.post(self.url, {"action": "retry"})
+        self.assertEqual(self.graph().status, "building")
+
+    def test_a_stalled_run_can_be_retried_so_a_crash_cannot_wedge_it(self):
+        self.generate()
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            status="building", updated_at=timezone.now() - timedelta(minutes=STALL_MINUTES + 1)
+        )
+        self.client.post(self.url, {"action": "retry"})
+        self.assertEqual(self.graph().status, "queued")
+
+    def test_a_failed_paid_run_is_not_repeated_when_sources_change(self):
+        """The invariant: only a run someone queued may spend money."""
+        self.generate()
+        with patch("platform_core.graph_ai.enrich_graph", side_effect=RuntimeError("provider")):
+            with self.assertRaises(RuntimeError):
+                rebuild(self.app.pk)
+        self.assertEqual(self.graph().status, "failed")
+        # A source changes, so the worker rebuilds - structurally, with no AI call.
+        GraphTests.source(self, "# Another\nA second requirement.")
+        with patch("platform_core.graph_ai.enrich_graph") as enrich:
+            rebuild(self.app.pk)
+        enrich.assert_not_called()
+        self.assertEqual(self.graph().requested_model, "")
+
+    def test_an_explicit_retry_does_repeat_the_requested_model(self):
+        self.generate()
+        with patch("platform_core.graph_ai.enrich_graph", side_effect=RuntimeError("provider")):
+            with self.assertRaises(RuntimeError):
+                rebuild(self.app.pk)
+        self.client.post(self.url, {"action": "retry"})
+        self.assertEqual(self.graph().status, "queued")
+        self.assertEqual(self.graph().requested_model, "claude-sonnet-5")
+
+    def test_the_page_reports_the_stage_the_run_is_actually_in(self):
+        self.generate()
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            status="building", stage="Extracting relationships with claude-sonnet-5"
+        )
+        response = self.client.get(self.url)
+        self.assertContains(response, "Extracting relationships with claude-sonnet-5")
+        self.assertContains(response, "data-document-pending")
+        # No button that would start a second paid run while this one is live.
+        self.assertNotContains(response, 'value="retry"')

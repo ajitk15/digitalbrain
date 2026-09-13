@@ -46,11 +46,21 @@ class AIRoutingTests(TestCase):
         )
 
     def request_enrichment(self, model="claude-sonnet-5", provider="claude"):
-        """Enrichment is opt-in: a run has to be asked for, with a chosen model."""
+        """Enrichment is opt-in: a run has to be asked for, with a chosen model.
+
+        This mirrors queue_generation, including status="queued" - that status is
+        what marks the run as explicitly requested, and only a requested run is
+        allowed to spend money.
+        """
         graph, _ = KnowledgeGraph.objects.get_or_create(application=self.app)
         KnowledgeGraph.objects.filter(pk=graph.pk).update(
-            requested_provider=provider, requested_model=model, requested_by=self.owner
+            status="queued",
+            fingerprint="",
+            requested_provider=provider,
+            requested_model=model,
+            requested_by=self.owner,
         )
+        graph.refresh_from_db()
         return graph
 
     def publish_latest(self):

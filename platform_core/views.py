@@ -83,6 +83,24 @@ def logo(request):
 
 @login_required
 @require_GET
+def application_home(request, pk):
+    """An application opens on Knowledge; documents are one rail inside it.
+
+    This stays a redirect rather than a second route onto the graph view so that
+    Knowledge keeps one canonical URL. `application_for` runs first, so a user
+    with no grant still gets 404 here and learns nothing about the application -
+    the redirect must never become a way to probe for existence.
+    """
+    app, _ = application_for(request.user, pk)
+    if feature_enabled("knowledge", app):
+        return redirect("graph", pk=pk)
+    # With Knowledge switched off there is no graph to show, and the document
+    # list is the only thing the application still has.
+    return redirect("documents", pk=pk)
+
+
+@login_required
+@require_GET
 def dashboard(request):
     return render(
         request,
