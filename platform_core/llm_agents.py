@@ -29,8 +29,22 @@ def _http_client():
     return DefaultAsyncHttpxClient(follow_redirects=False, trust_env=False)
 
 
+#: Wall clock for an interactive answer, and for a background extraction that
+#: asks for thousands of tokens over every source. See claude_agents for why the
+#: second one is not sized like the first.
+TIMEOUT = 35
+BATCH_TIMEOUT = 600
+
+
 async def _run(
-    model, question, citations, token, history, instructions=INSTRUCTIONS, max_tokens=1024
+    model,
+    question,
+    citations,
+    token,
+    history,
+    instructions=INSTRUCTIONS,
+    max_tokens=1024,
+    timeout=TIMEOUT,
 ):
     responses_api = model.startswith(RESPONSES_MODELS)
     evidence = evidence_payload(citations)
@@ -52,7 +66,7 @@ async def _run(
         organization="",
         project="",
         max_retries=0,
-        timeout=30,
+        timeout=timeout,
         http_client=_http_client(),
     ) as client:
         agent = Agent(
@@ -81,7 +95,7 @@ async def _run(
                 max_turns=1,
                 run_config=RunConfig(tracing_disabled=True, trace_include_sensitive_data=False),
             ),
-            timeout=35,
+            timeout=timeout,
         )
     if len(result.raw_responses) != 1:
         raise ValueError("Unexpected model call count")

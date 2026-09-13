@@ -58,8 +58,24 @@ def diagnosis(failure):
     )
 
 
+#: Wall clock for an interactive answer: a person is waiting on it.
+TIMEOUT = 45
+
+#: Graph extraction is a background job with nobody holding a request open, and
+#: it asks for thousands of output tokens over every source in the application.
+#: Sizing it like a chat reply is what made it fail before the model could finish.
+BATCH_TIMEOUT = 600
+
+
 async def _run(
-    model, question, citations, token, history, instructions=INSTRUCTIONS, max_tokens=1024
+    model,
+    question,
+    citations,
+    token,
+    history,
+    instructions=INSTRUCTIONS,
+    max_tokens=1024,
+    timeout=TIMEOUT,
 ):
     # The CLI gets an empty workspace/settings home; it cannot inherit another app's session.
     with tempfile.TemporaryDirectory(prefix="digital-brain-agent-") as directory:
@@ -79,7 +95,10 @@ async def _run(
                 "TRACEPARENT": "",
                 "TRACESTATE": "",
                 "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(max_tokens),
-                "API_TIMEOUT_MS": "30000",
+                # The CLI's own per-request timeout. It has to be at least the
+                # outer budget, or the inner call gives up first and the outer
+                # one never gets a chance to apply - which is what happened.
+                "API_TIMEOUT_MS": str(timeout * 1000),
                 "CLAUDE_CODE_MAX_RETRIES": "0",
             }
         )
@@ -121,7 +140,7 @@ async def _run(
             }
         )
         result = None
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(timeout):
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, ResultMessage):
                     result = message

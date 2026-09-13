@@ -17,6 +17,8 @@ MAX_EXTRACTION_SOURCES = 25
 MAX_SOURCE_CHARACTERS = 24000
 MAX_RELATIONSHIPS = 60
 EXTRACTION_TOKENS = 8192
+#: Both providers accept this as their run and transport budget for extraction.
+EXTRACTION_TIMEOUT = 600
 
 EXTRACTION_INSTRUCTIONS = (
     "Extract explicit factual relationships from the supplied evidence. "
@@ -61,6 +63,10 @@ def enrich_graph(app_id, config, entries, data, quality):
         citations,
         instructions=EXTRACTION_INSTRUCTIONS,
         max_tokens=EXTRACTION_TOKENS,
+        # Extraction is a background job over every source in the application and
+        # asks for thousands of output tokens; the interactive budget cuts it off
+        # long before the model can finish.
+        timeout=EXTRACTION_TIMEOUT,
     )
     try:
         payload = json.loads(

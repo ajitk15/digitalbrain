@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from .graph_ai import EXTRACTION_TIMEOUT
 from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
 from .services import audit, feature_enabled
@@ -399,7 +400,13 @@ def revision_readable(revision, app_id):
 
 
 #: How long a "building" run may go quiet before it is treated as interrupted.
-STALL_MINUTES = 2
+#:
+#: This MUST exceed the extraction timeout. A legitimate run makes one opaque
+#: provider call with no row updates in between, so a window shorter than that
+#: call would declare a live run dead, re-offer Retry underneath it and bill the
+#: application twice. Derived rather than written as a literal so the two cannot
+#: drift apart.
+STALL_MINUTES = EXTRACTION_TIMEOUT // 60 + 5
 
 
 def run_in_flight(graph):

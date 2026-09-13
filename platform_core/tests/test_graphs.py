@@ -7,6 +7,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from platform_core.graph_ai import EXTRACTION_TIMEOUT
 from platform_core.graphs import STALL_MINUTES, build_graph, process_next_graph, rebuild
 from platform_core.models import (
     AIConfiguration,
@@ -358,6 +359,21 @@ class GraphRunTests(TestCase):
         self.assertNotIn("/srv/secret/path", reason)
         self.assertIn("stopped unexpectedly", reason)
 
+    def test_the_stall_window_outlasts_a_full_length_run(self):
+        """A window shorter than the call would re-offer Retry mid-run and bill twice."""
+        self.assertGreater(STALL_MINUTES * 60, EXTRACTION_TIMEOUT)
+
+    def test_a_long_running_extraction_is_not_mistaken_for_a_stall(self):
+        self.generate()
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            status="building",
+            stage="Extracting relationships with claude-sonnet-5",
+            updated_at=timezone.now() - timedelta(seconds=EXTRACTION_TIMEOUT - 30),
+        )
+        response = self.client.get(self.url)
+        # Still reported as running, with no control that would start a second run.
+        self.assertContains(response, "Extracting relationships")
+        self.assertNotContains(response, 'value="retry"')
 
 class ProviderDiagnosisTests(SimpleTestCase):
     """A failure category is safe to show; the provider's own text is not."""
