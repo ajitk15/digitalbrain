@@ -240,6 +240,45 @@ class GraphApiTests(TestCase):
                 reset_throttle()
 
 
+    def notify(self, method):
+        """A JSON-RPC notification: no id, and no response is permitted."""
+        return self.client.post(
+            self.mcp_url,
+            data=json.dumps({"jsonrpc": "2.0", "method": method}),
+            content_type="application/json",
+            headers={"Authorization": f"Bearer {self.secret}"},
+        )
+
+    def test_a_notification_is_accepted_with_no_body(self):
+        """Replying to a notification hands the client a response it never asked for."""
+        response = self.notify("notifications/initialized")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.content, b"")
+
+    def test_an_unknown_notification_is_ignored_rather_than_answered(self):
+        response = self.notify("notifications/cancelled")
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.content, b"")
+
+    def test_a_notification_still_requires_a_token(self):
+        response = self.client.post(
+            self.mcp_url,
+            data=json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_ping_is_a_request_and_does_get_a_result(self):
+        payload = self.rpc("ping").json()
+        self.assertEqual(payload["id"], 1)
+        self.assertEqual(payload["result"], {})
+
+    def test_the_transport_declines_get_and_delete_as_the_spec_requires(self):
+        """No SSE stream and no session teardown here; 405 is the documented answer."""
+        headers = {"Authorization": f"Bearer {self.secret}"}
+        self.assertEqual(self.client.get(self.mcp_url, headers=headers).status_code, 405)
+        self.assertEqual(self.client.delete(self.mcp_url, headers=headers).status_code, 405)
+
 @override_settings(
     DOCUMENT_AUTO_CONVERT=False,
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
@@ -279,6 +318,55 @@ class TokenManagementTests(TestCase):
         other.refresh_from_db()
         self.assertIsNone(other.revoked_at)
 
+    def snippet(self, name):
+        body = self.client.get(self.url).content.decode()
+        return body.split(f'id="snip-{name}"')[1].split("</pre>")[0]
+
+    def test_the_vs_code_snippet_uses_the_shape_vs_code_actually_reads(self):
+        """VS Code ignores `mcpServers` and requires an explicit http type."""
+        snippet = self.snippet("vscode")
+        self.assertIn('"servers"', snippet)
+        self.assertIn('"type": "http"', snippet)
+        self.assertNotIn("mcpServers", snippet)
+        # The token is prompted for, not written into a file that gets committed.
+        self.assertIn("${input:digital-brain-token}", snippet)
+
+    def test_each_client_snippet_names_this_application_s_own_endpoint(self):
+        """A copied snippet has to work as pasted, not point at some other app."""
+        for name in ("claude-code", "claude-desktop", "vscode", "cursor", "kiro", "chatgpt"):
+            with self.subTest(client=name):
+                self.assertIn(str(self.app.pk), self.snippet(name))
+
+    def test_no_snippet_carries_a_real_token(self):
+        """These are copied and pasted into files; a live secret must never be in one."""
+        body = self.client.get(self.url).content.decode()
+        for placeholder in ("YOUR_TOKEN", "${env:", "${input:"):
+            self.assertIn(placeholder, body)
+        self.assertNotIn("dbk_", body)
+
+    def test_every_tab_has_a_panel_and_exactly_one_opens_by_default(self):
+        """A count mismatch would leave a tab that reveals the wrong panel."""
+        body = self.client.get(self.url).content.decode()
+        radios = body.count('name="connect-client"')
+        panels = body.count('<section class="tab-panel"')
+        self.assertEqual(radios, panels)
+        self.assertEqual(radios, 8)
+        # Without exactly one default the section opens with every panel hidden.
+        self.assertEqual(body.count('class="tab-radio" checked'), 1)
+
+    def test_the_tabs_carry_no_inline_script_or_handler(self):
+        """The CSP forbids both; these tabs are radio inputs and CSS only."""
+        body = self.client.get(self.url).content.decode()
+        self.assertNotIn("<script>", body)
+        self.assertNotIn("onclick", body)
+        self.assertIn('class="client-tabs"', body)
+
+    def test_the_client_tabs_do_not_reuse_the_settings_nav_class(self):
+        """`tabs` already belongs to the settings sub-nav; sharing it restyles that."""
+        body = self.client.get(self.url).content.decode()
+        self.assertIn('class="tabs settings-tabs"', body)
+        self.assertNotIn('<div class="tabs">', body)
+
     def test_the_endpoints_are_shown_as_complete_copyable_urls(self):
         """A caller should never have to assemble the origin by hand."""
         body = self.client.get(self.url).content.decode()
@@ -291,7 +379,12 @@ class TokenManagementTests(TestCase):
 
         body = self.client.get(self.url).content.decode()
         targets = set(re.findall(r'data-copy-target="#([\w-]+)"', body))
-        self.assertEqual(targets, {"rest-url", "rest-example", "mcp-url", "mcp-config"})
+        # Every endpoint and every client snippet is copyable.
+        self.assertLessEqual({"rest-url", "rest-example", "mcp-url"}, targets)
+        self.assertLessEqual(
+            {f"snip-{name}" for name in ("claude-code", "vscode", "cursor", "kiro", "curl-call")},
+            targets,
+        )
         # A button whose target is missing stays hidden, so the ids must exist.
         for target in targets:
             self.assertIn(f'id="{target}"', body)

@@ -816,5 +816,62 @@
     text-decoration: none;
   }
   .clear-conversations .link-button:hover { text-decoration: underline; }
+  /* Client tabs ---------------------------------------------------------
+     Radio inputs, not JavaScript: the CSP forbids inline script, and a real
+     radio group gives keyboard navigation and a working selection for free.
+     The radios stay in the accessibility tree (not display:none) so they can
+     still be focused and driven with the arrow keys. */
+  .client-tabs { margin: var(--s-3) 0 var(--s-5); }
+  .client-tabs .tab-radio {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .tab-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-4);
+    border-bottom: 1px solid var(--c-line);
+    margin-bottom: var(--s-4);
+  }
+  .tab-strip label {
+    padding: var(--s-2) 0;
+    margin-bottom: -1px;
+    border-bottom: 2px solid transparent;
+    font-size: var(--t-13);
+    font-weight: 600;
+    color: var(--c-ink-3);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab-strip label:hover { color: var(--c-ink-2); }
+  .tab-panel { display: none; }
+  .tab-panel > p:first-child { margin-top: 0; }
+  .client-tabs .tab-radio:nth-of-type(1):checked ~ .tab-strip > label:nth-of-type(1) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(1):checked ~ .tab-panels > .tab-panel:nth-of-type(1) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(1):focus-visible ~ .tab-strip > label:nth-of-type(1) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(2):checked ~ .tab-strip > label:nth-of-type(2) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(2):checked ~ .tab-panels > .tab-panel:nth-of-type(2) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(2):focus-visible ~ .tab-strip > label:nth-of-type(2) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(3):checked ~ .tab-strip > label:nth-of-type(3) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(3):checked ~ .tab-panels > .tab-panel:nth-of-type(3) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(3):focus-visible ~ .tab-strip > label:nth-of-type(3) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(4):checked ~ .tab-strip > label:nth-of-type(4) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(4):checked ~ .tab-panels > .tab-panel:nth-of-type(4) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(4):focus-visible ~ .tab-strip > label:nth-of-type(4) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(5):checked ~ .tab-strip > label:nth-of-type(5) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(5):checked ~ .tab-panels > .tab-panel:nth-of-type(5) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(5):focus-visible ~ .tab-strip > label:nth-of-type(5) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(6):checked ~ .tab-strip > label:nth-of-type(6) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(6):checked ~ .tab-panels > .tab-panel:nth-of-type(6) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(6):focus-visible ~ .tab-strip > label:nth-of-type(6) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(7):checked ~ .tab-strip > label:nth-of-type(7) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(7):checked ~ .tab-panels > .tab-panel:nth-of-type(7) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(7):focus-visible ~ .tab-strip > label:nth-of-type(7) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .client-tabs .tab-radio:nth-of-type(8):checked ~ .tab-strip > label:nth-of-type(8) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  .client-tabs .tab-radio:nth-of-type(8):checked ~ .tab-panels > .tab-panel:nth-of-type(8) { display: block; }
+  .client-tabs .tab-radio:nth-of-type(8):focus-visible ~ .tab-strip > label:nth-of-type(8) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
   .run-banner p { margin: 0 0 var(--s-2); }
 }

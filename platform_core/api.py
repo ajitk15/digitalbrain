@@ -16,7 +16,7 @@ version produced it so a caller can pin it deliberately afterwards.
 import json
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -181,6 +181,13 @@ def mcp(request, pk):
     except ApiError as failure:
         return error(failure)
 
+    # A notification carries no id, and JSON-RPC forbids replying to one. The
+    # Streamable HTTP transport spells out the answer: 202 with an empty body.
+    # Returning a result with a null id instead made strict clients reject the
+    # handshake, because they were handed a response to a request they never made.
+    if "id" not in body:
+        return HttpResponse(status=202)
+
     if method == "initialize":
         return rpc_result(
             request_id,
@@ -191,7 +198,7 @@ def mcp(request, pk):
             },
         )
 
-    if method in {"notifications/initialized", "ping"}:
+    if method == "ping":
         return rpc_result(request_id, {})
 
     if method == "tools/list":

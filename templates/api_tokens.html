@@ -34,8 +34,23 @@
 <p class="muted">Returns matching relationships with the source document and the exact quoted evidence for each. Add <code>&amp;version=2</code> to pin a graph version; without it the latest <strong>published</strong> version answers, never a draft. Every response states the version that produced it.</p>
 <h3 class="panel-label">MCP</h3>
 <div class="copy-row"><code class="copy-url" id="mcp-url">{{ base }}{% url 'api-mcp' application.pk %}</code><button type="button" class="copy-button" data-copy-target="#mcp-url" aria-label="Copy the MCP endpoint URL" hidden>Copy</button></div>
-<div class="copy-head"><span class="panel-label">Client configuration</span><button type="button" class="copy-button" data-copy-target="#mcp-config" aria-label="Copy the MCP client configuration" hidden>Copy</button></div>
-<pre class="source-text" id="mcp-config">{
+<p class="muted">Exposes one tool, <code>search_knowledge_graph</code>, taking a question and an optional version. Rate limit: 120 requests per minute per token.</p>
+
+<h3 class="panel-label">Connect a client</h3>
+<div class="client-tabs"><input type="radio" name="connect-client" id="tab-claude-code" class="tab-radio" checked><input type="radio" name="connect-client" id="tab-claude-desktop" class="tab-radio"><input type="radio" name="connect-client" id="tab-vscode" class="tab-radio"><input type="radio" name="connect-client" id="tab-cursor" class="tab-radio"><input type="radio" name="connect-client" id="tab-kiro" class="tab-radio"><input type="radio" name="connect-client" id="tab-chatgpt" class="tab-radio"><input type="radio" name="connect-client" id="tab-python" class="tab-radio"><input type="radio" name="connect-client" id="tab-curl" class="tab-radio">
+<div class="tab-strip"><label for="tab-claude-code">Claude Code</label><label for="tab-claude-desktop">Claude Desktop</label><label for="tab-vscode">VS Code</label><label for="tab-cursor">Cursor</label><label for="tab-kiro">Kiro</label><label for="tab-chatgpt">ChatGPT</label><label for="tab-python">Python</label><label for="tab-curl">curl</label></div>
+<div class="tab-panels">
+<section class="tab-panel" aria-label="Claude Code">
+<p class="muted">One command. Add <code>--scope user</code> to make it available in every project rather than just this one.</p>
+<div class="copy-head"><span class="panel-label">Terminal</span><button type="button" class="copy-button" data-copy-target="#snip-claude-code" aria-label="Copy the Claude Code command" hidden>Copy</button></div>
+<pre class="source-text" id="snip-claude-code">claude mcp add --transport http digital-brain \
+  {{ base }}{% url 'api-mcp' application.pk %} \
+  --header "Authorization: Bearer YOUR_TOKEN"</pre>
+</section>
+<section class="tab-panel" aria-label="Claude Desktop">
+<p class="muted">Settings &rarr; Developer &rarr; Edit Config, then restart Claude.</p>
+<div class="copy-head"><span class="panel-label">claude_desktop_config.json</span><button type="button" class="copy-button" data-copy-target="#snip-claude-desktop" aria-label="Copy the Claude Desktop configuration" hidden>Copy</button></div>
+<pre class="source-text" id="snip-claude-desktop">{
   "mcpServers": {
     "digital-brain": {
       "url": "{{ base }}{% url 'api-mcp' application.pk %}",
@@ -43,6 +58,123 @@
     }
   }
 }</pre>
-<p class="muted">Exposes one tool, <code>search_knowledge_graph</code>, taking a question and an optional version. Rate limit: 120 requests per minute per token.</p>
+</section>
+<section class="tab-panel" aria-label="VS Code">
+<p class="muted">VS Code uses <code>servers</code> and requires <code>"type": "http"</code>. The <code>mcpServers</code> shape other clients use will not connect here. Keeping the token in <code>inputs</code> means VS Code prompts for it once and stores it encrypted, instead of it sitting in a file you might commit.</p>
+<div class="copy-head"><span class="panel-label">.vscode/mcp.json</span><button type="button" class="copy-button" data-copy-target="#snip-vscode" aria-label="Copy the VS Code configuration" hidden>Copy</button></div>
+<pre class="source-text" id="snip-vscode">{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "digital-brain-token",
+      "description": "Digital Brain API token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "digital-brain": {
+      "type": "http",
+      "url": "{{ base }}{% url 'api-mcp' application.pk %}",
+      "headers": { "Authorization": "Bearer ${input:digital-brain-token}" }
+    }
+  }
+}</pre>
+</section>
+<section class="tab-panel" aria-label="Cursor">
+<p class="muted">This project: <code>.cursor/mcp.json</code>. Every project: <code>~/.cursor/mcp.json</code>. <code>${env:...}</code> keeps the token out of the file.</p>
+<div class="copy-head"><span class="panel-label">.cursor/mcp.json</span><button type="button" class="copy-button" data-copy-target="#snip-cursor" aria-label="Copy the Cursor configuration" hidden>Copy</button></div>
+<pre class="source-text" id="snip-cursor">{
+  "mcpServers": {
+    "digital-brain": {
+      "url": "{{ base }}{% url 'api-mcp' application.pk %}",
+      "headers": { "Authorization": "Bearer ${env:DIGITAL_BRAIN_TOKEN}" }
+    }
+  }
+}</pre>
+</section>
+<section class="tab-panel" aria-label="Kiro">
+<p class="muted">Workspace: <code>.kiro/settings/mcp.json</code>. User: <code>~/.kiro/settings/mcp.json</code>. Retrieval is read-only and cannot spend your AI budget, so auto-approving the single tool is safe.</p>
+<div class="copy-head"><span class="panel-label">.kiro/settings/mcp.json</span><button type="button" class="copy-button" data-copy-target="#snip-kiro" aria-label="Copy the Kiro configuration" hidden>Copy</button></div>
+<pre class="source-text" id="snip-kiro">{
+  "mcpServers": {
+    "digital-brain": {
+      "url": "{{ base }}{% url 'api-mcp' application.pk %}",
+      "headers": { "Authorization": "Bearer ${DIGITAL_BRAIN_TOKEN}" },
+      "disabled": false,
+      "autoApprove": ["search_knowledge_graph"]
+    }
+  }
+}</pre>
+</section>
+<section class="tab-panel" aria-label="ChatGPT">
+<p class="notice">OpenAI reaches this endpoint from its own servers and requires a <strong>public HTTPS</strong> URL, so a <code>localhost</code> address cannot work. Publish this application behind HTTPS first.</p>
+<p class="muted">In ChatGPT: turn on Developer mode under Settings &rarr; Security, then add the server under Settings &rarr; Connectors. From the API, pass the token as <code>authorization</code> &mdash; OpenAI discards arbitrary headers.</p>
+<div class="copy-head"><span class="panel-label">Responses API</span><button type="button" class="copy-button" data-copy-target="#snip-chatgpt" aria-label="Copy the OpenAI Responses API example" hidden>Copy</button></div>
+<pre class="source-text" id="snip-chatgpt">{
+  "model": "gpt-5.6",
+  "input": "Which servers run under NODE1?",
+  "tools": [
+    {
+      "type": "mcp",
+      "server_label": "digital-brain",
+      "server_url": "{{ base }}{% url 'api-mcp' application.pk %}",
+      "authorization": "YOUR_TOKEN",
+      "allowed_tools": ["search_knowledge_graph"],
+      "require_approval": "never"
+    }
+  ]
+}</pre>
+</section>
+<section class="tab-panel" aria-label="Python">
+<p class="muted"><code>pip install mcp</code> for the client below, or skip MCP entirely and call the REST endpoint.</p>
+<div class="copy-head"><span class="panel-label">MCP client</span><button type="button" class="copy-button" data-copy-target="#snip-python" aria-label="Copy the Python MCP example" hidden>Copy</button></div>
+<pre class="source-text" id="snip-python">import asyncio, os
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
+
+URL = "{{ base }}{% url 'api-mcp' application.pk %}"
+HEADERS = {"Authorization": f"Bearer {os.environ['DIGITAL_BRAIN_TOKEN']}"}
+
+async def main():
+    async with streamablehttp_client(URL, headers=HEADERS) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            result = await session.call_tool(
+                "search_knowledge_graph",
+                {"question": "which servers run under NODE1"},
+            )
+            payload = result.structuredContent
+            print("answered from version", payload["version"])
+            for row in payload["results"]:
+                print(row["source_title"], "-", row["evidence"])
+
+asyncio.run(main())</pre>
+<div class="copy-head"><span class="panel-label">REST, without MCP</span><button type="button" class="copy-button" data-copy-target="#snip-python-rest" aria-label="Copy the Python REST example" hidden>Copy</button></div>
+<pre class="source-text" id="snip-python-rest">import os, requests
+
+response = requests.get(
+    "{{ base }}{% url 'api-graph-search' application.pk %}",
+    params={"q": "which servers run under NODE1"},
+    headers={"Authorization": f"Bearer {os.environ['DIGITAL_BRAIN_TOKEN']}"},
+    timeout=30,
+)
+response.raise_for_status()
+print(response.json())</pre>
+</section>
+<section class="tab-panel" aria-label="curl">
+<p class="muted">MCP is JSON-RPC over POST. Useful for checking a token before wiring up a client.</p>
+<div class="copy-head"><span class="panel-label">List the tools</span><button type="button" class="copy-button" data-copy-target="#snip-curl-list" aria-label="Copy the curl tools/list example" hidden>Copy</button></div>
+<pre class="source-text" id="snip-curl-list">curl -X POST "{{ base }}{% url 'api-mcp' application.pk %}" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</pre>
+<div class="copy-head"><span class="panel-label">Call the tool</span><button type="button" class="copy-button" data-copy-target="#snip-curl-call" aria-label="Copy the curl tools/call example" hidden>Copy</button></div>
+<pre class="source-text" id="snip-curl-call">curl -X POST "{{ base }}{% url 'api-mcp' application.pk %}" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"search_knowledge_graph","arguments":{"question":"which servers run under NODE1"}}}'</pre>
+</section>
+</div>
+</div>
 </section>
 {% endblock %}
