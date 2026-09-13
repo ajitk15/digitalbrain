@@ -799,6 +799,14 @@
   .graph-progress-facts dt { color: var(--c-ink-3); }
   .graph-progress-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
   .run-banner .graph-progress { margin: 0; }
+  .failure-reason {
+    margin: 0 0 var(--s-3);
+    padding: var(--s-3);
+    background: var(--c-surface);
+    border-left: 3px solid var(--c-bad);
+    border-radius: var(--r-sm);
+    font-size: var(--t-13);
+  }
   .clear-conversations { margin-top: var(--s-3); }
   .clear-conversations .link-button {
     display: inline-flex;

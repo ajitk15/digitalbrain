@@ -2,7 +2,9 @@
 
 import asyncio
 import json
+import logging
 import os
+import re
 import tempfile
 import uuid
 from pathlib import Path
@@ -19,6 +21,41 @@ from .agent_runtime.credentials import (
 from .agent_runtime.prompts import INSTRUCTIONS
 from .agent_runtime.runtime import evidence_payload, recent_turns
 from .agent_runtime.usage import checked_answer, claude_usage
+
+logger = logging.getLogger(__name__)
+
+#: Failures a user can actually act on. The provider's own text is never shown -
+#: it may carry request details - but the *category* is safe and is the whole
+#: difference between "it failed" and "your login expired, sign in again".
+DIAGNOSES = (
+    (
+        re.compile(r"authenticat|oauth|credential|api[ _-]?key|401|unauthor", re.I),
+        "Claude rejected the credentials for this application. If this application "
+        "uses the machine's own Claude login, that session has expired - sign in "
+        "again with `claude /login`. Otherwise check the mounted API key.",
+    ),
+    (
+        re.compile(r"timeout|timed out", re.I),
+        "Claude did not respond in time. Large source sets can exceed the limit; "
+        "try again, or reduce the number of sources.",
+    ),
+    (
+        re.compile(r"model|not[ _-]?found|404", re.I),
+        "Claude did not accept the configured model. Check the model name in AI settings.",
+    ),
+)
+
+
+def diagnosis(failure):
+    """A safe, actionable sentence for a provider failure, or the generic one."""
+    text = f"{type(failure).__name__}: {failure}"
+    for pattern, message in DIAGNOSES:
+        if pattern.search(text):
+            return message
+    return (
+        "Claude response unavailable. Check the configured model, API key and runtime. "
+        "This request may have incurred provider charges; it is not retried by the application."
+    )
 
 
 async def _run(
@@ -102,8 +139,7 @@ async def _run(
 def completion(config, question, citations, token, history=None, **options):
     try:
         return asyncio.run(_run(config.model, question, citations, token, history, **options))
-    except (ClaudeSDKError, TimeoutError, OSError, ValueError, TypeError):
-        raise ValidationError(
-            "Claude response unavailable. Check the configured model, API key and runtime. "
-            "This request may have incurred provider charges; it is not retried by the application."
-        ) from None
+    except (ClaudeSDKError, TimeoutError, OSError, ValueError, TypeError) as failure:
+        # The operator needs the real text to debug; the user must never see it.
+        logger.warning("claude_completion_failed", exc_info=True)
+        raise ValidationError(diagnosis(failure)) from None

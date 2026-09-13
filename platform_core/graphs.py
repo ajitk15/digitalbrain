@@ -253,10 +253,17 @@ def rebuild(app_id):
         set_stage(app_id, f"Extracting relationships with {config.model}")
         try:
             data, quality = enrich_graph(app_id, config, entries, data, quality)
-        except Exception:
+        except Exception as failure:
+            # ValidationError messages are already sanitized for display; anything
+            # else is an internal fault and must not be echoed to the page.
+            reason = (
+                " ".join(failure.messages)
+                if isinstance(failure, ValidationError)
+                else "Graph generation stopped unexpectedly. See the server log."
+            )
             KnowledgeGraph.objects.filter(
                 pk=graph.pk, fingerprint=before, status="building"
-            ).update(status="failed", stage="Generation failed")
+            ).update(status="failed", stage="Generation failed", failure_reason=reason)
             raise
     set_stage(app_id, "Saving version")
     with transaction.atomic():
@@ -295,6 +302,7 @@ def rebuild(app_id):
         locked.requested_model = ""
         locked.stage = ""
         locked.started_at = None
+        locked.failure_reason = ""
         locked.save()
     return True
 
@@ -451,6 +459,7 @@ def queue_generation(request, app, pk):
         fingerprint="",
         stage="Queued",
         started_at=timezone.now(),
+        failure_reason="",
         requested_provider=provider,
         requested_model=model,
         requested_by=request.user,
@@ -637,6 +646,7 @@ def graph_view(request, pk):
             if active_graph
             else "",
             "showing_fallback": showing_fallback,
+            "failure_reason": active_graph.failure_reason if active_graph else "",
             "run_failed": bool(
                 active_graph and active_graph.status == "failed" and not run_in_flight(active_graph)
             ),

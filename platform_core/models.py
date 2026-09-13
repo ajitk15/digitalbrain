@@ -452,6 +452,9 @@ class KnowledgeGraph(models.Model):
     # than animating a percentage nobody can compute.
     started_at = models.DateTimeField(null=True, blank=True)
     stage = models.CharField(max_length=120, blank=True)
+    # Why the last run failed, in the sanitized wording the user may see. Kept so
+    # the page can say what to do instead of only that something went wrong.
+    failure_reason = models.TextField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 

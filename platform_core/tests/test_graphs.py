@@ -3,7 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -329,3 +329,56 @@ class GraphRunTests(TestCase):
         self.assertContains(response, "nothing was lost")
         self.assertContains(response, 'value="retry"')
         self.assertContains(response, "Generated graph")
+
+    def test_a_failure_says_what_to_do_about_it(self):
+        """"It failed" is not actionable; the reason is recorded and shown."""
+        from django.core.exceptions import ValidationError as Invalid
+
+        self.generate()
+        with patch(
+            "platform_core.graph_ai.enrich_graph",
+            side_effect=Invalid("Claude rejected the credentials for this application."),
+        ):
+            with self.assertRaises(Invalid):
+                rebuild(self.app.pk)
+        self.assertIn("rejected the credentials", self.graph().failure_reason)
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            started_at=timezone.now() - timedelta(minutes=STALL_MINUTES + 1)
+        )
+        self.assertContains(self.client.get(self.url), "rejected the credentials")
+
+    def test_an_internal_fault_is_not_echoed_to_the_page(self):
+        self.generate()
+        with patch(
+            "platform_core.graph_ai.enrich_graph", side_effect=RuntimeError("/srv/secret/path")
+        ):
+            with self.assertRaises(RuntimeError):
+                rebuild(self.app.pk)
+        reason = self.graph().failure_reason
+        self.assertNotIn("/srv/secret/path", reason)
+        self.assertIn("stopped unexpectedly", reason)
+
+
+class ProviderDiagnosisTests(SimpleTestCase):
+    """A failure category is safe to show; the provider's own text is not."""
+
+    def diagnose(self, failure):
+        from platform_core.claude_agents import diagnosis
+
+        return diagnosis(failure)
+
+    def test_an_expired_login_is_named_as_such(self):
+        from claude_agent_sdk._errors import ResultError
+
+        message = self.diagnose(
+            ResultError("Failed to authenticate: OAuth session expired and could not be refreshed")
+        )
+        self.assertIn("claude /login", message)
+        # The provider's own wording never reaches the user.
+        self.assertNotIn("OAuth session expired", message)
+
+    def test_a_timeout_says_so(self):
+        self.assertIn("did not respond in time", self.diagnose(TimeoutError("timed out")))
+
+    def test_anything_unrecognised_falls_back_to_the_generic_message(self):
+        self.assertIn("response unavailable", self.diagnose(ValueError("weird internal state")))
