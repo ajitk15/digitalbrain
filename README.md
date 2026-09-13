@@ -11,7 +11,11 @@ From this folder:
 .\stop-all.ps1
 ```
 
-Double-clickable equivalents: `start-all.cmd` and `stop-all.cmd`. An alternative port can be selected with `./start-all.ps1 -Port 8123`. Scripts require Python 3.12+ (or uv to install it); dependencies are locked in `uv.lock`. With no virtual environment, start-all uses uv to initialize one.
+Double-clickable equivalents: `start-all.cmd` and `stop-all.cmd`. Prefer these if
+PowerShell reports *"running scripts is disabled on this system"* — they pass
+`-ExecutionPolicy Bypass` for that one process, so no machine-wide setting has to
+change. To run the `.ps1` files directly instead, allow local scripts once with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. An alternative port can be selected with `./start-all.ps1 -Port 8123`. Scripts require Python 3.12+ (or uv to install it); dependencies are locked in `uv.lock`. With no virtual environment, start-all uses uv to initialize one.
 
 Start-all checks configuration, applies local migrations, collects assets, launches a hidden Waitress process on loopback, and waits for readiness. It refuses occupied ports and does not create duplicate instances. Stop-all verifies the recorded project, executable, start timestamp and instance marker before stopping the launcher and its verified Python worker. It leaves databases, files and unrelated services alone. These are local development scripts; Windows stop is immediate, not a production request-draining mechanism.
 

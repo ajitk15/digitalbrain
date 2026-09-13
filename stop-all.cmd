@@ -1,2 +1,5 @@
 @echo off
-powershell.exe -NoProfile -File "%~dp0stop-all.ps1" %*
+REM Windows defaults to the Restricted execution policy, which blocks .ps1
+REM files outright. -ExecutionPolicy Bypass applies to this one process only and
+REM changes nothing machine-wide - it is what makes this wrapper double-clickable.
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop-all.ps1" %*

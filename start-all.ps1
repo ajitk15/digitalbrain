@@ -31,7 +31,8 @@ try {
         Invoke-Checked $PythonExecutable @('scripts/init_local.py')
     }
     # Local convenience scripts must not perform production migrations implicitly.
-    Invoke-Checked $PythonExecutable @('-c', 'from digitalbrain.configuration import load_config; assert load_config()["mode"] == "development", "Use the production deployment procedure for production."')
+    # Kept in a file: cmd.exe strips the quotes out of an inline -c one-liner.
+    Invoke-Checked $PythonExecutable @('scripts/assert_development.py')
     Invoke-Checked $PythonExecutable @('manage.py', 'check', '--fail-level', 'WARNING')
     Invoke-Checked $PythonExecutable @('manage.py', 'migrate', '--noinput')
     Invoke-Checked $PythonExecutable @('manage.py', 'collectstatic', '--noinput')
