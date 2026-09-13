@@ -709,4 +709,20 @@
   .kb-empty h2 { font-size: var(--t-17); }
   .price-table { margin: var(--s-3) 0; max-width: 420px; }
   .price-table td.mono { font-variant-numeric: tabular-nums; text-align: right; }
+  /* API tokens ---------------------------------------------------------- */
+  .token-reveal { border-color: var(--c-ok-line); background: var(--c-ok-bg); }
+  .token-reveal h2 { display: flex; align-items: center; gap: var(--s-2); color: var(--c-ok); }
+  .token-value {
+    font: var(--t-13) / 1.5 var(--f-mono);
+    background: var(--c-surface);
+    border: 1px solid var(--c-ok-line);
+    border-radius: var(--r-md);
+    padding: var(--s-3);
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    user-select: all;
+  }
+  .token-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-3); }
+  .token-form label { display: block; font-size: var(--t-11); }
+  .token-form input, .token-form select { width: auto; min-width: 200px; }
 }

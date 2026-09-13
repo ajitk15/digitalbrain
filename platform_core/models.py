@@ -288,6 +288,53 @@ class ChatMessage(models.Model):
         indexes = [models.Index(fields=["conversation", "sequence"])]
 
 
+class ApiToken(models.Model):
+    """A machine credential that acts as one user within one application.
+
+    Deliberately not a new kind of principal. The token carries a user and an
+    application, and every request it makes runs the same access checks a browser
+    session would - so revoking that user's grant, disabling their account or
+    turning off a feature switch takes the token with it, and there is no second
+    permission model to drift out of step with the first.
+
+    Only a hash of the secret is stored. The value is shown once, at creation.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE, related_name="tokens")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    name = models.CharField(max_length=120)
+    #: The public half, used to find the row before verifying the secret.
+    prefix = models.CharField(max_length=16, unique=True)
+    digest = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["application", "-created_at"])]
+
+    @property
+    def active(self):
+        from django.utils import timezone as tz
+
+        if self.revoked_at:
+            return False
+        return not (self.expires_at and self.expires_at <= tz.now())
+
+    @property
+    def state(self):
+        from django.utils import timezone as tz
+
+        if self.revoked_at:
+            return "Revoked"
+        if self.expires_at and self.expires_at <= tz.now():
+            return "Expired"
+        return "Active"
+
+
 class ChangePlan(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)

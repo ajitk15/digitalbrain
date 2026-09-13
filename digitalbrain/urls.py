@@ -1,7 +1,7 @@
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from platform_core import administration, ai, connectors, documents, graphs, views, workbench
+from platform_core import administration, ai, api, connectors, documents, graphs, views, workbench
 
 urlpatterns = [
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
@@ -17,6 +17,11 @@ urlpatterns = [
         workbench.knowledge_detail,
         name="knowledge-detail",
     ),
+    # Machine-facing surfaces. Bearer-token only: no session cookie is accepted,
+    # which is what keeps them out of reach of an authenticated browser.
+    path("api/v1/applications/<uuid:pk>/graph/search/", api.graph_search, name="api-graph-search"),
+    path("api/v1/applications/<uuid:pk>/mcp/", api.mcp, name="api-mcp"),
+    path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path(
         "applications/<uuid:pk>/chat/conversations/<uuid:conversation_id>/",

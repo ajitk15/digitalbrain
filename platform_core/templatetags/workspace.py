@@ -32,6 +32,10 @@ def settings_sections(app, grant):
             sections.append(("Connectors", "connectors", {"connectors"}))
         sections.append(("People & access", "application-access", {"application-access"}))
         sections.append(("Features", "application-features", {"application-features"}))
+    if grant:
+        # Any member with application access may hold a token; it can never do
+        # more than they can.
+        sections.append(("API access", "api-tokens", {"api-tokens"}))
     return sections
 
 

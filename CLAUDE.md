@@ -59,6 +59,14 @@ and the chat page states plainly when answers are being billed to the machine's 
 login. A missing secret with the setting off is still an error — it must never
 quietly become "spend the operator's account".
 
+**API tokens are users, not a second permission model.** `api_auth.authenticate`
+returns (user, application); `api.authorize` then runs the same `access()` checks a
+session request runs. Never add a token role or a token-specific permission table -
+the point is that revoking a grant closes the token with no extra code. Bearer only
+on `/api/v1/`, cookies only on the browser routes; accepting both would make the API
+CSRF-able. Secrets are stored as a SHA-256 digest and compared with
+`hmac.compare_digest`.
+
 **Outbound fetches are address-checked and pinned.** `platform_core/fetching.py` is
 the only place this server retrieves a user-supplied URL. It resolves first, refuses
 private, loopback, link-local, multicast and reserved addresses unless an operator

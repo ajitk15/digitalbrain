@@ -10,6 +10,7 @@ from django.db import connection, transaction
 from django.db.models import Count, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
 from .forms import (
@@ -365,3 +366,78 @@ def features(request, pk=None):
             }
         )
     return render(request, "features.html", {"features": rows, "application": app})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def api_tokens(request, pk):
+    """Issue and revoke API tokens for one application.
+
+    A token acts as the user who created it, so anyone with application access may
+    hold one, and it can never reach further than they can.
+    """
+    from datetime import timedelta
+
+    from .api_auth import issue
+    from .models import ApiToken
+    from .workbench import access
+
+    app, grant = access(request.user, pk, "knowledge")
+    created = None
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create":
+            name = request.POST.get("name", "").strip()[:120]
+            if not name:
+                messages.error(request, "Name the token so you can recognise it later.")
+            else:
+                days = request.POST.get("expires", "90")
+                expires = None
+                if days.isdigit() and int(days) > 0:
+                    expires = timezone.now() + timedelta(days=min(int(days), 365))
+                prefix, secret, digest = issue()
+                ApiToken.objects.create(
+                    application=app,
+                    user=request.user,
+                    name=name,
+                    prefix=prefix,
+                    digest=digest,
+                    expires_at=expires,
+                )
+                audit(
+                    request.user,
+                    "api_token.created",
+                    app.pk,
+                    app.product.portfolio.organization,
+                    details={"name": name, "prefix": prefix},
+                )
+                # Shown once. Only the digest was stored.
+                created = secret
+        elif action == "revoke":
+            token = get_object_or_404(
+                ApiToken, pk=request.POST.get("token"), application=app, user=request.user
+            )
+            ApiToken.objects.filter(pk=token.pk, revoked_at__isnull=True).update(
+                revoked_at=timezone.now()
+            )
+            audit(
+                request.user,
+                "api_token.revoked",
+                app.pk,
+                app.product.portfolio.organization,
+                details={"name": token.name, "prefix": token.prefix},
+            )
+            messages.success(request, f"Token {token.name} revoked.")
+            return redirect("api-tokens", pk=pk)
+        else:
+            raise Http404
+    return render(
+        request,
+        "api_tokens.html",
+        {
+            "application": app,
+            "grant": grant,
+            "tokens": ApiToken.objects.filter(application=app, user=request.user),
+            "created": created,
+        },
+    )

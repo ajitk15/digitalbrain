@@ -327,6 +327,46 @@ configuration change creates a new version. Source deletion immediately withhold
 Failed or interrupted calls are not retried every worker tick. Owners/contributors can retry under
 Knowledge; interrupted runs must be at least two minutes old. Retrying may incur provider charges.
 
+## Graph retrieval API and MCP
+
+The published knowledge graph can be queried from outside the interface, at
+`/api/v1/applications/<id>/graph/search/` for REST and `/api/v1/applications/<id>/mcp/`
+for MCP. Both answer the same question and return the same verified evidence chat uses:
+matching relationships, each with its source document and the exact quoted text supporting it,
+re-verified against the live source at request time.
+
+**Retrieval only.** Neither surface calls a model, so no caller can spend the application's
+provider budget through them. What comes back is evidence, for the caller to use with whatever
+model they already run.
+
+**Versions are explicit.** A request may pin `version`; without one the latest **published**
+revision answers, never a draft. Every response states the version that produced it, so a caller
+can pin it afterwards for reproducible results.
+
+### Authorization
+
+A token is issued under **Settings → API access** and **acts as the person who issued it, inside
+one application**. This is deliberate: there is no token role and no second permission table.
+Every request re-runs the same checks a browser session runs, so revoking that user's grant,
+disabling their account or turning off the Knowledge feature closes the token immediately, and a
+token issued for one application returns 401 on any other.
+
+Only a SHA-256 digest of the secret is stored. The value is shown once at creation and cannot be
+recovered; the public prefix locates the row and the digest is then compared in constant time, so
+an unknown prefix and a wrong secret cost the same. Tokens carry an optional expiry, can be
+revoked, and record when they were last used. Each is limited to 120 requests per minute.
+
+Session cookies are never accepted on these endpoints and tokens are never accepted on the
+browser ones — mixing the two is how a token endpoint becomes reachable through an authenticated
+browser. The source digest is never returned: it is an integrity token used to verify a citation,
+not something a caller needs. Every query is audited with the token name, version and result
+count.
+
+The MCP server implements `initialize`, `tools/list` and `tools/call` as JSON-RPC over HTTP and
+exposes one tool, `search_knowledge_graph`, taking a question and an optional version. A tool
+failure comes back as a readable result with `isError` rather than a protocol error, so a model
+can react to it.
+
 ## Code Factory plans
 
 Contributors and owners submit proposed changes and validation/rollback criteria. Each immutable
