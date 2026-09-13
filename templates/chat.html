@@ -1,9 +1,10 @@
-{% extends 'base.html' %}{% load workspace static chat_text %}
+{% extends 'base.html' %}{% load workspace static %}
 {% block title %}Chat · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}
 <div class="chat-heading"><h1>Chat</h1><span class="muted">Private to you · {{ application.name }}</span></div>
 {% if not ai_enabled %}<div class="notice" role="status"><strong>LLM chat is not configured for this application.</strong> Choose a model and enable Chat conversation in AI settings. Source search is available only when you explicitly select it. {% if grant.role == 'owner' %}<a href="{% url 'ai-settings' application.pk %}">Set up AI chat</a>{% else %}Ask an application owner to complete setup.{% endif %}</div>
 {% elif not chat_key_present %}<div class="notice" role="status"><strong>{{ chat_config.get_provider_display }} / {{ chat_config.model }} is selected, but its API key file is missing.</strong> {% if grant.role == 'owner' %}<a href="{% url 'ai-settings' application.pk %}">View secure credential setup</a>{% else %}Ask an application owner to mount the API key.{% endif %} Messages cannot reach the LLM until this is configured.</div>{% endif %}
+{% if host_login %}<div class="notice" role="status"><strong>{{ host_login }}</strong> Configure a per-application API key or <code>claude setup-token</code> token in AI settings before relying on this for shared or production use.</div>{% endif %}
 <div class="chat-workspace">
 <aside class="chat-history" aria-label="Conversation history">
 <a class="button" href="{% url 'chat' application.pk %}?new=1">+ New conversation</a>
@@ -12,22 +13,27 @@
 {% if conversations.has_other_pages %}<nav class="pagination" aria-label="Conversation pages">{% if conversations.has_previous %}<a href="?history={{ conversations.previous_page_number }}{% if conversation %}&amp;conversation={{ conversation.pk }}{% else %}&amp;new=1{% endif %}">Previous</a>{% endif %}<span>{{ conversations.number }} / {{ conversations.paginator.num_pages }}</span>{% if conversations.has_next %}<a href="?history={{ conversations.next_page_number }}{% if conversation %}&amp;conversation={{ conversation.pk }}{% else %}&amp;new=1{% endif %}">Next</a>{% endif %}</nav>{% endif %}
 </aside>
 <section class="chat-panel" aria-label="Conversation">
-<header class="conversation-header"><h2>{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %}</h2><small>{% if ai_enabled %}Configured LLM: {{ chat_config.get_provider_display }} · {{ chat_config.model }}{% else %}LLM setup required{% endif %} · Application facts use source evidence</small></header>
-<div class="chat-messages" id="chat-messages" tabindex="0" aria-label="Messages">
-{% if turn_page.has_previous %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ turn_page.previous_page_number }}">Load earlier messages</a>{% endif %}
-{% for turn in turn_page %}
-<article class="chat-message chat-user"><div class="message-meta">You · {{ turn.created_at|date:"M d, H:i" }} UTC</div><div class="message-body">{{ turn.question|linebreaksbr }}</div></article>
-<article class="chat-message chat-assistant"><div class="message-meta">Digital Brain · {% if turn.mode == 'ai' %}AI answer{% elif turn.mode == 'graph' %}Graph answer{% else %}Source excerpts{% endif %}</div><div class="message-body">{{ turn.answer|chat_text }}</div>
-{% if turn.citations %}<details class="chat-sources"><summary>Sources ({{ turn.citations|length }})</summary>{% for citation in turn.citations %}<details class="evidence"><summary>[{{ forloop.counter }}] {{ citation.title }}</summary><a href="{% url 'knowledge-detail' application.pk citation.id %}">Open source</a><pre class="source-text">{{ citation.excerpt }}</pre></details>{% endfor %}</details>{% endif %}
-</article>
-{% empty %}<div class="chat-empty"><h2>What would you like to understand?</h2><p>Ask about your documents, explore a topic, then ask follow-up questions here.</p><p class="muted">Each conversation stays with you in {{ application.name }}.</p></div>{% endfor %}
-{% if turn_page.has_next %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ turn_page.next_page_number }}">Newer messages</a>{% endif %}
+<header class="conversation-header">
+<div class="conversation-title"><h2>{% if conversation %}{{ conversation.title }}{% else %}New conversation{% endif %}</h2>
+{% if conversation %}<div class="conversation-controls">
+<button type="button" class="link-button" data-rename-toggle hidden>Rename</button>
+<form method="post" action="{% url 'chat-conversation' application.pk conversation.pk %}" class="inline-form" data-confirm="Delete this conversation and all of its messages?">{% csrf_token %}<input type="hidden" name="action" value="delete"><button type="submit" class="link-button">Delete</button></form>
+</div>{% endif %}</div>
+{% if conversation %}<form method="post" action="{% url 'chat-conversation' application.pk conversation.pk %}" class="rename-form" id="rename-form">{% csrf_token %}<input type="hidden" name="action" value="rename"><label for="rename-title">Conversation name</label><input type="text" id="rename-title" name="title" maxlength="120" value="{{ conversation.title }}"><button class="button" type="submit">Save</button></form>{% endif %}
+<small>{% if ai_enabled %}Configured LLM: {{ chat_config.get_provider_display }} · {{ chat_config.model }}{% else %}LLM setup required{% endif %} · Application facts use source evidence</small>
+<div class="conversation-mode">{% if conversation %}<form method="post" action="{% url 'chat-conversation' application.pk conversation.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="mode"><label for="chat-mode">Answers</label><select name="mode" id="chat-mode">{% for option in modes %}<option value="{{ option.value }}" {% if conversation.mode == option.value %}selected{% endif %} {% if not option.available %}disabled{% endif %}>{{ option.label }}{% if option.note %} · {{ option.note }}{% endif %}</option>{% endfor %}</select><button class="link-button" type="submit">Change</button></form>{% else %}<label for="chat-mode">Answers</label><select name="mode" id="chat-mode" form="chat-composer">{% for option in modes %}<option value="{{ option.value }}" {% if mode == option.value %}selected{% endif %} {% if not option.available %}disabled{% endif %}>{{ option.label }}{% if option.note %} · {{ option.note }}{% endif %}</option>{% endfor %}</select>{% endif %}
+{% if graph_ai_enabled %}<form method="post" action="{% if conversation %}{% url 'chat-conversation' application.pk conversation.pk %}{% endif %}" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="graph-version"><label for="graph-version">Graph version</label><select name="graph_version" id="graph-version" {% if not conversation %}form="chat-composer"{% endif %}><option value="" {% if not conversation.graph_version %}selected{% endif %}>Latest{% if published_graph %} (v{{ published_graph }}){% endif %}</option>{% for number in graph_versions %}<option value="{{ number }}" {% if conversation.graph_version == number %}selected{% endif %}>Version {{ number }}</option>{% endfor %}</select>{% if conversation %}<button class="link-button" type="submit">Use</button>{% endif %}</form>{% endif %}</div>
+{% if graph_ai_enabled and not published_graph %}<p class="notice" role="status">No graph version is published yet. Graph answers are unavailable until an owner publishes one under <a href="{% url 'graph' application.pk %}?tab=versions">Knowledge → Versions</a>.</p>{% endif %}
+</header>
+<div class="chat-messages" id="chat-messages" tabindex="0" aria-label="Messages" data-application="{{ application.pk }}">
+{% if message_page.has_previous %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ message_page.previous_page_number }}">Load earlier messages</a>{% endif %}
+{% for message in message_page %}{% include "_chat_message.html" %}{% empty %}<div class="chat-empty"><h2>What would you like to understand?</h2><p>Ask about your documents, explore a topic, then ask follow-up questions here.</p><p class="muted">Each conversation stays with you in {{ application.name }}.</p></div>{% endfor %}
+{% if message_page.has_next %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ message_page.next_page_number }}">Newer messages</a>{% endif %}
 </div>
 <form method="post" class="chat-composer" id="chat-composer">{% csrf_token %}
 {% if conversation %}<input type="hidden" name="conversation" value="{{ conversation.pk }}">{% endif %}
 {{ form.non_field_errors }}{{ form.question.errors }}<label for="id_question">Message</label>{{ form.question }}
-<div class="composer-actions"><label for="chat-mode">Answer with <select name="mode" id="chat-mode"><option value="ai" {% if mode == 'ai' %}selected{% endif %}>AI conversation{% if not ai_enabled %} · setup required{% endif %}</option>{% if graph_ai_enabled %}<option value="graph" {% if mode == 'graph' %}selected{% endif %}>Graph answer</option>{% endif %}<option value="search" {% if mode == 'search' %}selected{% endif %}>Search source excerpts · no LLM</option></select></label><button class="button" type="submit" id="chat-send">Send</button></div>
-<small>{% if ai_enabled or graph_ai_enabled %}AI answers send your question, recent conversation and relevant sources to the selected provider; usage costs are recorded.{% else %}Source search is available. An application owner can enable AI answers in AI settings.{% endif %} Enter to send · Shift+Enter for a new line.</small>
+<div class="composer-actions"><small>{% if ai_enabled or graph_ai_enabled %}AI answers send your question, recent conversation and relevant sources to the selected provider; usage costs are recorded.{% else %}Source search is available. An application owner can enable AI answers in AI settings.{% endif %} Enter to send · Shift+Enter for a new line.</small><button class="button" type="submit" id="chat-send">Send</button></div>
 <p id="chat-status" role="status" aria-live="polite" hidden>Preparing your answer…</p>
 </form></section></div><script src="{% static 'chat.js' %}" defer></script>
 {% endblock %}

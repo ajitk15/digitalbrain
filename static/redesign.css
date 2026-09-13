@@ -1,0 +1,710 @@
+/*
+ * REDESIGN LAYER
+ *
+ * Everything here sits in the `redesign` cascade layer declared in tokens.css,
+ * so it beats every rule in app.css regardless of specificity. Write plain,
+ * low-specificity selectors; never reach for !important.
+ *
+ * Rules of the house:
+ *   - No style="" attributes and no inline <style>: the CSP is style-src 'self'.
+ *   - Use tokens, not literals.
+ *   - Do not rename ids or classes that JavaScript binds to. See CLAUDE.md.
+ */
+@layer redesign {
+  /* Typography --------------------------------------------------------- */
+
+  body {
+    font-family: var(--f-sans);
+    color: var(--c-ink);
+    background: var(--c-canvas);
+  }
+
+  /* Figures should not reflow as they tick during the 5s document poll. */
+  .metric strong,
+  td.mono,
+  .count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Graph quality panel ------------------------------------------------ */
+
+  .segmented {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    background: var(--c-canvas);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    margin-bottom: var(--s-3);
+  }
+  .segmented a {
+    padding: 5px 14px;
+    border-radius: var(--r-sm);
+    font-size: var(--t-12);
+    font-weight: 600;
+    color: var(--c-ink-3);
+    text-decoration: none;
+  }
+  .segmented a[aria-current] {
+    background: var(--c-surface);
+    color: var(--c-brand-strong);
+    box-shadow: var(--e-1);
+  }
+
+  .health-verdict {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin-bottom: var(--s-3);
+  }
+  .grade {
+    font-size: var(--t-11);
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: var(--r-pill);
+    border: 1px solid transparent;
+  }
+  .grade-good { background: var(--c-ok-bg); color: var(--c-ok); border-color: var(--c-ok-line); }
+  .grade-fair { background: var(--c-warn-bg); color: var(--c-warn); border-color: var(--c-warn-line); }
+  .grade-poor { background: var(--c-bad-bg); color: var(--c-bad); border-color: var(--c-bad-line); }
+
+  .health-issues {
+    margin: 0 0 var(--s-4);
+    padding-left: var(--s-5);
+    font-size: var(--t-12);
+    color: var(--c-ink-2);
+  }
+  .health-issues li { margin-bottom: var(--s-1); }
+
+  .tile-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s-2);
+    margin-bottom: var(--s-5);
+  }
+  .tile {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    padding: var(--s-3);
+    background: var(--c-surface);
+  }
+  .tile strong {
+    display: block;
+    font-size: var(--t-20);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .tile small { display: block; font-size: var(--t-11); color: var(--c-ink-muted); }
+  .tile small span { display: block; font-size: var(--t-10); color: var(--c-ink-faint); }
+
+  .panel-label {
+    font-size: var(--t-10);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--c-ink-faint);
+    margin: var(--s-5) 0 var(--s-2);
+  }
+  .panel-note { font-size: var(--t-11); margin-top: var(--s-2); }
+
+  /*
+   * Stacked provenance bar. Widths come from pct-N classes rather than an inline
+   * style attribute, which style-src 'self' forbids. The percentages are computed
+   * server-side in graph_quality.provenance_bands.
+   */
+  .band-bar {
+    display: flex;
+    height: 10px;
+    border-radius: var(--r-pill);
+    overflow: hidden;
+    background: var(--c-line-soft);
+  }
+  .band { flex-grow: 0; flex-shrink: 0; }
+  .band-extracted { background: var(--c-ok); }
+  .band-inferred { background: var(--c-inferred); }
+  .band-unquoted { background: var(--c-line-strong); }
+
+  .band-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    list-style: none;
+    margin: var(--s-2) 0 0;
+    padding: 0;
+    font-size: var(--t-11);
+    color: var(--c-ink-muted);
+  }
+  .band-legend li { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .band-legend strong { color: var(--c-ink); font-variant-numeric: tabular-nums; }
+  .swatch { width: 9px; height: 9px; border-radius: 2px; }
+  .swatch-extracted { background: var(--c-ok); }
+  .swatch-inferred { background: var(--c-inferred); }
+  .swatch-unquoted { background: var(--c-line-strong); }
+
+  /* <progress> renders a precise proportion with no inline style. */
+  .share-cell { display: flex; align-items: center; gap: var(--s-2); }
+  .share-bar {
+    appearance: none;
+    -webkit-appearance: none;
+    flex: 1;
+    min-width: 60px;
+    height: 6px;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--c-line-soft);
+    overflow: hidden;
+  }
+  .share-bar::-webkit-progress-bar { background: var(--c-line-soft); }
+  .share-bar::-webkit-progress-value { background: var(--c-brand); border-radius: var(--r-pill); }
+  .share-bar::-moz-progress-bar { background: var(--c-brand); border-radius: var(--r-pill); }
+  .share-value {
+    font-size: var(--t-11);
+    color: var(--c-ink-muted);
+    font-variant-numeric: tabular-nums;
+    min-width: 44px;
+    text-align: right;
+  }
+
+  @media (max-width: 700px) {
+    .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* Width utilities for the stacked bar, 1% steps. */
+  .pct-0 { flex-basis: 0%; }
+  .pct-1 { flex-basis: 1%; }
+  .pct-2 { flex-basis: 2%; }
+  .pct-3 { flex-basis: 3%; }
+  .pct-4 { flex-basis: 4%; }
+  .pct-5 { flex-basis: 5%; }
+  .pct-6 { flex-basis: 6%; }
+  .pct-7 { flex-basis: 7%; }
+  .pct-8 { flex-basis: 8%; }
+  .pct-9 { flex-basis: 9%; }
+  .pct-10 { flex-basis: 10%; }
+  .pct-11 { flex-basis: 11%; }
+  .pct-12 { flex-basis: 12%; }
+  .pct-13 { flex-basis: 13%; }
+  .pct-14 { flex-basis: 14%; }
+  .pct-15 { flex-basis: 15%; }
+  .pct-16 { flex-basis: 16%; }
+  .pct-17 { flex-basis: 17%; }
+  .pct-18 { flex-basis: 18%; }
+  .pct-19 { flex-basis: 19%; }
+  .pct-20 { flex-basis: 20%; }
+  .pct-21 { flex-basis: 21%; }
+  .pct-22 { flex-basis: 22%; }
+  .pct-23 { flex-basis: 23%; }
+  .pct-24 { flex-basis: 24%; }
+  .pct-25 { flex-basis: 25%; }
+  .pct-26 { flex-basis: 26%; }
+  .pct-27 { flex-basis: 27%; }
+  .pct-28 { flex-basis: 28%; }
+  .pct-29 { flex-basis: 29%; }
+  .pct-30 { flex-basis: 30%; }
+  .pct-31 { flex-basis: 31%; }
+  .pct-32 { flex-basis: 32%; }
+  .pct-33 { flex-basis: 33%; }
+  .pct-34 { flex-basis: 34%; }
+  .pct-35 { flex-basis: 35%; }
+  .pct-36 { flex-basis: 36%; }
+  .pct-37 { flex-basis: 37%; }
+  .pct-38 { flex-basis: 38%; }
+  .pct-39 { flex-basis: 39%; }
+  .pct-40 { flex-basis: 40%; }
+  .pct-41 { flex-basis: 41%; }
+  .pct-42 { flex-basis: 42%; }
+  .pct-43 { flex-basis: 43%; }
+  .pct-44 { flex-basis: 44%; }
+  .pct-45 { flex-basis: 45%; }
+  .pct-46 { flex-basis: 46%; }
+  .pct-47 { flex-basis: 47%; }
+  .pct-48 { flex-basis: 48%; }
+  .pct-49 { flex-basis: 49%; }
+  .pct-50 { flex-basis: 50%; }
+  .pct-51 { flex-basis: 51%; }
+  .pct-52 { flex-basis: 52%; }
+  .pct-53 { flex-basis: 53%; }
+  .pct-54 { flex-basis: 54%; }
+  .pct-55 { flex-basis: 55%; }
+  .pct-56 { flex-basis: 56%; }
+  .pct-57 { flex-basis: 57%; }
+  .pct-58 { flex-basis: 58%; }
+  .pct-59 { flex-basis: 59%; }
+  .pct-60 { flex-basis: 60%; }
+  .pct-61 { flex-basis: 61%; }
+  .pct-62 { flex-basis: 62%; }
+  .pct-63 { flex-basis: 63%; }
+  .pct-64 { flex-basis: 64%; }
+  .pct-65 { flex-basis: 65%; }
+  .pct-66 { flex-basis: 66%; }
+  .pct-67 { flex-basis: 67%; }
+  .pct-68 { flex-basis: 68%; }
+  .pct-69 { flex-basis: 69%; }
+  .pct-70 { flex-basis: 70%; }
+  .pct-71 { flex-basis: 71%; }
+  .pct-72 { flex-basis: 72%; }
+  .pct-73 { flex-basis: 73%; }
+  .pct-74 { flex-basis: 74%; }
+  .pct-75 { flex-basis: 75%; }
+  .pct-76 { flex-basis: 76%; }
+  .pct-77 { flex-basis: 77%; }
+  .pct-78 { flex-basis: 78%; }
+  .pct-79 { flex-basis: 79%; }
+  .pct-80 { flex-basis: 80%; }
+  .pct-81 { flex-basis: 81%; }
+  .pct-82 { flex-basis: 82%; }
+  .pct-83 { flex-basis: 83%; }
+  .pct-84 { flex-basis: 84%; }
+  .pct-85 { flex-basis: 85%; }
+  .pct-86 { flex-basis: 86%; }
+  .pct-87 { flex-basis: 87%; }
+  .pct-88 { flex-basis: 88%; }
+  .pct-89 { flex-basis: 89%; }
+  .pct-90 { flex-basis: 90%; }
+  .pct-91 { flex-basis: 91%; }
+  .pct-92 { flex-basis: 92%; }
+  .pct-93 { flex-basis: 93%; }
+  .pct-94 { flex-basis: 94%; }
+  .pct-95 { flex-basis: 95%; }
+  .pct-96 { flex-basis: 96%; }
+  .pct-97 { flex-basis: 97%; }
+  .pct-98 { flex-basis: 98%; }
+  .pct-99 { flex-basis: 99%; }
+  .pct-100 { flex-basis: 100%; }
+
+  /* Application tabs --------------------------------------------------- */
+
+  .application-menu a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: 8px 14px;
+    border-radius: var(--r-md);
+    font-size: var(--t-13);
+    font-weight: 600;
+  }
+  .application-menu a svg { flex: none; opacity: 0.75; }
+  .application-menu a[aria-current] svg { opacity: 1; }
+
+  /* Settings sub-navigation -------------------------------------------- */
+
+  .settings-tabs { margin-bottom: var(--s-4); }
+
+  /* Breadcrumbs, back control and the focus toggle ---------------------- */
+
+  .breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    min-height: var(--h-breadcrumb);
+  }
+  .crumb-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-sm);
+    background: var(--c-surface);
+    color: var(--c-ink-3);
+    flex: none;
+  }
+  .crumb-back:hover { color: var(--c-brand-strong); border-color: var(--c-brand-border); }
+
+  .focus-toggle {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    background: var(--c-surface);
+    color: var(--c-ink-3);
+    cursor: pointer;
+    flex: none;
+  }
+  .focus-toggle:hover { color: var(--c-brand-strong); border-color: var(--c-brand-border); }
+  .focus-toggle[aria-pressed="true"] {
+    background: var(--c-brand-tint);
+    border-color: var(--c-brand-border);
+    color: var(--c-brand-strong);
+  }
+
+  /*
+   * Focus mode. The last rule is the whole design: redefining one token grows
+   * every full-height workspace without any of them knowing focus mode exists.
+   */
+  .focus-mode .sidebar,
+  .focus-mode .topbar { display: none; }
+  .focus-mode .shell { margin-left: 0; }
+  .focus-mode .breadcrumbs > a:not(.crumb-back),
+  .focus-mode .breadcrumbs > span { display: none; }
+  .focus-mode .shell main { padding: var(--s-2) var(--s-4) var(--s-4); max-width: none; }
+  /* The --h-chrome-total override for focus mode lives in tokens.css, not
+     here: :root is unlayered, and an unlayered declaration beats a layered
+     one whatever its specificity, so an override in this layer is dead. */
+
+  /* Knowledge Base: three independently scrolling panes ----------------- */
+
+  .kb-panes {
+    display: grid;
+    grid-template-columns: var(--w-kb-rail) minmax(0, 1fr) var(--w-kb-quality);
+    gap: var(--s-3);
+    height: calc(100dvh - var(--h-chrome-total));
+    min-height: 520px;
+  }
+  .kb-pane {
+    display: flex;
+    flex-direction: column;
+    /* Both of these are required, on the grid item AND its flex child below,
+       or the panes scroll the page instead of themselves. */
+    min-width: 0;
+    min-height: 0;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--e-1);
+    overflow: hidden;
+  }
+  .kb-pane > header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--c-line-soft);
+  }
+  .kb-pane > header h2 { font-size: var(--t-13); margin: 0; }
+  .kb-pane > header small { font-size: var(--t-10); }
+  .kb-pane-body { flex: 1; min-height: 0; overflow: auto; padding: var(--s-4); }
+
+  /* The canvas must keep its 900x540 aspect: graph.js compares the rendered
+     width to a constant of 900, and a letterboxed SVG desynchronises panning. */
+  .kb-graph #graph-canvas {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 900 / 540;
+    max-height: 100%;
+    min-height: 0;
+  }
+  .kb-graph .graph-layout { display: block; }
+  .kb-graph #graph-inspector { max-height: 260px; margin-top: var(--s-3); }
+  .kb-graph .generate-card { margin-bottom: var(--s-3); }
+
+  /* Sources rail -------------------------------------------------------- */
+
+  .upload-drop {
+    display: block;
+    border: 1px dashed var(--c-line-strong);
+    border-radius: var(--r-md);
+    padding: var(--s-4);
+    text-align: center;
+    font-size: var(--t-12);
+    font-weight: 600;
+    color: var(--c-ink-3);
+    cursor: pointer;
+    margin-bottom: var(--s-2);
+  }
+  .upload-drop:hover { border-color: var(--c-brand); color: var(--c-brand-strong); }
+  .upload-drop input { display: block; width: 100%; margin-top: var(--s-2); font-size: var(--t-11); }
+  .rail-upload { margin-bottom: var(--s-3); }
+  .rail-link {
+    display: block;
+    font-size: var(--t-12);
+    margin-bottom: var(--s-3);
+  }
+  .rail-note { font-size: var(--t-12); }
+  .rail-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    font-size: var(--t-11);
+    font-weight: 600;
+    color: var(--c-ink-muted);
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--c-line-soft);
+    margin-bottom: var(--s-2);
+  }
+  .doc-card {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    padding: var(--s-2) var(--s-3);
+    margin-bottom: var(--s-2);
+  }
+  .doc-name {
+    display: block;
+    font-size: var(--t-12);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .doc-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-top: var(--s-1);
+  }
+  .doc-meta small { font-size: var(--t-10); color: var(--c-ink-faint); }
+  .doc-delete { font-size: var(--t-10); color: var(--c-ink-muted); }
+  .doc-delete:hover { color: var(--c-bad); }
+
+  @media (max-width: 1400px) {
+    .kb-panes { --w-kb-rail: 260px; --w-kb-quality: 300px; }
+  }
+  @media (max-width: 1100px) {
+    .kb-panes {
+      grid-template-columns: var(--w-kb-rail) minmax(0, 1fr);
+      height: auto;
+    }
+    .kb-graph { height: 60vh; }
+    .kb-sources { max-height: 60vh; }
+    .kb-quality { grid-column: 1 / -1; max-height: 70vh; }
+  }
+  @media (max-width: 700px) {
+    .kb-panes { display: flex; flex-direction: column; }
+    .kb-sources, .kb-quality { max-height: 60vh; }
+    .kb-graph { height: 420px; flex: none; }
+  }
+
+  /* Chat: answers read as documents ------------------------------------ */
+
+  .chat-workspace { height: calc(100dvh - var(--h-chrome-total)); }
+
+  .message-body {
+    font-size: var(--t-14);
+    line-height: var(--lh-prose);
+    color: var(--c-ink);
+  }
+  .chat-assistant .message-body { max-width: 72ch; }
+  .message-body > :first-child { margin-top: 0; }
+  .message-body > :last-child { margin-bottom: 0; }
+  .message-body h3, .message-body h4, .message-body h5 {
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    margin: var(--s-5) 0 var(--s-2);
+    color: var(--c-ink);
+  }
+  .message-body h3 { font-size: var(--t-17); }
+  .message-body h4 { font-size: var(--t-15); }
+  .message-body h5 {
+    font-size: var(--t-12);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--c-ink-3);
+  }
+
+  /* Callout panels, from markdown blockquotes. */
+  .chat-note {
+    margin: var(--s-4) 0;
+    padding: var(--s-3) var(--s-4);
+    background: var(--c-subtle);
+    border: 1px solid var(--c-line-soft);
+    border-radius: var(--r-md);
+    font-size: var(--t-13);
+    color: var(--c-ink-2);
+  }
+  .chat-note p { margin: 0 0 var(--s-2); }
+  .chat-note p:last-child { margin-bottom: 0; }
+
+  /* Tables: hairlines and a readable header, not the global uppercase style. */
+  .message-body .chat-table {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    overflow: auto;
+    margin: var(--s-4) 0;
+  }
+  .message-body .chat-table table { border-collapse: collapse; width: 100%; }
+  .message-body .chat-table th {
+    background: var(--c-well);
+    border-bottom: 1px solid var(--c-line);
+    text-align: left;
+    font-weight: 600;
+    font-size: var(--t-11);
+    color: var(--c-ink-3);
+    text-transform: none;
+    letter-spacing: 0;
+    padding: var(--s-2) var(--s-3);
+  }
+  .message-body .chat-table td {
+    border-top: 1px solid var(--c-line-soft);
+    padding: var(--s-2) var(--s-3);
+    vertical-align: top;
+    font-size: var(--t-12);
+  }
+  .message-body .chat-table td:first-child { font-weight: 600; color: var(--c-ink-2); }
+
+  /* Consolas is named explicitly so box-drawing glyphs in trees render. */
+  .message-body pre {
+    background: var(--c-subtle);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    padding: var(--s-3);
+    margin: var(--s-4) 0;
+    overflow: auto;
+    font: var(--t-12) / 1.55 var(--f-mono);
+    tab-size: 2;
+  }
+  .message-body pre code { font: inherit; background: none; padding: 0; }
+  .message-body code {
+    font: var(--t-12) / 1 var(--f-mono);
+    background: var(--c-brand-tint-2);
+    border-radius: var(--r-sm);
+    padding: 1px 5px;
+  }
+
+  /* The user's own message sits right, in a pill. chat.js builds the optimistic
+     bubble with these same classes, so both paths must render identically. */
+  .chat-user {
+    margin-left: auto;
+    margin-right: 0;
+    max-width: min(680px, 78%);
+    background: var(--c-brand-tint-2);
+    border-radius: var(--r-xl) var(--r-xl) var(--r-sm) var(--r-xl);
+    padding: var(--s-3) var(--s-4);
+  }
+  .chat-user .message-meta { text-align: right; }
+
+  /* Source chips ------------------------------------------------------- */
+
+  .message-sources {
+    margin-top: var(--s-4);
+    padding-top: var(--s-3);
+    border-top: 1px solid var(--c-line-soft);
+  }
+  .message-sources h4 {
+    font-size: var(--t-10);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--c-ink-faint);
+    margin: 0 0 var(--s-2);
+  }
+  .source-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .source-chip {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    background: var(--c-surface);
+    font-size: var(--t-11);
+    max-width: 100%;
+  }
+  .source-chip > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    padding: 5px var(--s-2);
+    cursor: pointer;
+    color: var(--c-ink-2);
+    list-style: none;
+  }
+  .source-chip > summary::-webkit-details-marker { display: none; }
+  .source-chip:hover { border-color: var(--c-brand-border); }
+  .source-chip[open] { width: 100%; }
+  .chip-title { overflow-wrap: anywhere; }
+  .chip-numbers {
+    font-variant-numeric: tabular-nums;
+    color: var(--c-ink-faint);
+    background: var(--c-canvas);
+    border-radius: var(--r-sm);
+    padding: 0 5px;
+  }
+  .chip-body { padding: 0 var(--s-2) var(--s-2); }
+  .chip-body a { font-size: var(--t-11); }
+
+  /* Composer ----------------------------------------------------------- */
+
+  #chat-send {
+    background: var(--c-ink);
+    border-color: var(--c-ink);
+    border-radius: var(--r-md);
+    padding: 8px 18px;
+  }
+  #chat-send:hover { background: var(--c-ink-2); border-color: var(--c-ink-2); }
+  .chat-composer textarea { font-size: var(--t-13); border-radius: var(--r-md); }
+
+  /* Sources rail: link import and per-source status --------------------- */
+
+  .upload-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s-1);
+  }
+  .upload-drop svg { color: var(--c-ink-faint); }
+  .upload-drop:hover svg { color: var(--c-brand); }
+
+  .rail-link-form { margin: var(--s-4) 0; }
+  .rail-link-form > label {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    font-size: var(--t-11);
+    font-weight: 600;
+    color: var(--c-ink-3);
+    margin-bottom: var(--s-1);
+  }
+  .rail-url-row { display: flex; gap: var(--s-1); }
+  .rail-url-row input { flex: 1; min-width: 0; font-size: var(--t-12); }
+  .rail-url-row .button {
+    flex: none;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .rail-link-form small { display: block; margin-top: var(--s-1); font-size: var(--t-10); }
+  .rail-link-form code {
+    font: var(--t-10) / 1 var(--f-mono);
+    background: var(--c-brand-tint-2);
+    border-radius: var(--r-sm);
+    padding: 0 3px;
+  }
+
+  .rail-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-1);
+    font-size: var(--t-12);
+  }
+
+  .doc-name { display: flex; align-items: center; gap: var(--s-1); }
+  .doc-name svg { flex: none; color: var(--c-ink-faint); }
+  .doc-name span { overflow-wrap: anywhere; }
+  .doc-origin {
+    display: block;
+    font-size: var(--t-10);
+    color: var(--c-ink-faint);
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .doc-delete {
+    margin-left: auto;
+    display: inline-flex;
+    color: var(--c-ink-faint);
+  }
+  .doc-delete:hover { color: var(--c-bad); }
+  .doc-error { display: block; font-size: var(--t-10); color: var(--c-bad); margin-top: var(--s-1); }
+
+  /* Status is the whole point of the queue, so give each state its own colour. */
+  .pill.status-pending,
+  .pill.status-fetching,
+  .pill.status-queued,
+  .pill.status-converting {
+    background: var(--c-warn-bg);
+    color: var(--c-warn);
+  }
+  .pill.status-ready { background: var(--c-ok-bg); color: var(--c-ok); }
+  .pill.status-failed,
+  .pill.status-rejected { background: var(--c-bad-bg); color: var(--c-bad); }
+  .doc-failed { border-color: var(--c-bad-line); }
+  /* Before a first graph exists there are only two panes. */
+  .kb-panes-empty { grid-template-columns: var(--w-kb-rail) minmax(0, 1fr); }
+  .kb-empty { display: flex; flex-direction: column; justify-content: center; }
+  .kb-empty .card { border: 0; box-shadow: none; padding: 0; }
+  .kb-empty h2 { font-size: var(--t-17); }
+}

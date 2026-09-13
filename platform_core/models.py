@@ -161,15 +161,30 @@ class Document(models.Model):
         max_length=20,
         default="quarantined",
         choices=[
+            ("pending", "Waiting to download"),
+            ("fetching", "Downloading"),
             ("quarantined", "Uploaded"),
             ("queued", "Queued for conversion"),
             ("converting", "Converting to Markdown"),
             ("deleted", "Deleted"),
-            ("ready", "Ready for graph generation"),
+            ("ready", "Ready to search"),
             ("failed", "Conversion failed"),
             ("rejected", "Rejected by scanner"),
         ],
     )
+    # Where this document came from. A link-sourced document has no bytes until the
+    # worker downloads them, which is what the pending and fetching states cover.
+    origin = models.CharField(
+        max_length=10,
+        default="upload",
+        choices=[
+            ("upload", "Upload"),
+            ("link", "Link"),
+            ("github", "GitHub"),
+            ("sharepoint", "SharePoint"),
+        ],
+    )
+    source_url = models.CharField(max_length=2000, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     conversion_started_at = models.DateTimeField(null=True, blank=True)
@@ -205,11 +220,30 @@ class KnowledgeEntry(models.Model):
         indexes = [models.Index(fields=["application", "active"])]
 
 
+CHAT_MODES = [("search", "Sources"), ("ai", "AI"), ("graph", "Graph answer")]
+
+MESSAGE_ROLES = [("user", "You"), ("assistant", "Digital Brain")]
+
+MESSAGE_STATUSES = [
+    ("streaming", "Streaming"),
+    ("complete", "Complete"),
+    ("stopped", "Stopped"),
+    ("failed", "Failed"),
+]
+
+
 class ChatConversation(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     title = models.CharField(max_length=120)
+    # Answer mode belongs to the conversation, not the message: a conversation is
+    # an AI conversation or a source-search conversation, and sending a message
+    # must never be able to flip it into a paid mode by accident.
+    mode = models.CharField(max_length=10, default="ai", choices=CHAT_MODES)
+    # Which saved graph version graph answers read from. Null means the live graph.
+    graph_version = models.PositiveIntegerField(null=True, blank=True)
+    title_locked = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -218,25 +252,40 @@ class ChatConversation(models.Model):
         indexes = [models.Index(fields=["application", "user", "-updated_at"])]
 
 
-class ChatTurn(models.Model):
+class ChatMessage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     conversation = models.ForeignKey(
-        ChatConversation, on_delete=models.CASCADE, related_name="turns"
+        ChatConversation, on_delete=models.CASCADE, related_name="messages"
     )
-    mode = models.CharField(
-        max_length=10,
-        default="search",
-        choices=[("search", "Sources"), ("ai", "AI"), ("graph", "Graph answer")],
-    )
-    question = models.CharField(max_length=2000)
-    answer = models.TextField()
+    role = models.CharField(max_length=10, choices=MESSAGE_ROLES)
+    status = models.CharField(max_length=12, default="complete", choices=MESSAGE_STATUSES)
+    body = models.TextField(max_length=200000, blank=True)
     citations = models.JSONField(default=list)
+    # What actually produced this answer, so the transcript stays truthful even
+    # after the conversation's own mode is changed.
+    mode = models.CharField(max_length=10, default="ai", choices=CHAT_MODES)
+    provider = models.CharField(max_length=16, blank=True)
+    model = models.CharField(max_length=160, blank=True)
+    error = models.CharField(max_length=300, blank=True)
+    parent = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="regenerations"
+    )
+    # Both halves of one exchange are written in the same transaction, so
+    # created_at cannot order them; an explicit sequence can.
+    sequence = models.PositiveIntegerField()
     created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-created_at", "-id"]
+        ordering = ["sequence", "created_at", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation", "sequence"], name="unique_conversation_sequence"
+            )
+        ]
+        indexes = [models.Index(fields=["conversation", "sequence"])]
 
 
 class ChangePlan(models.Model):
@@ -282,6 +331,8 @@ AI_PURPOSES = [
     ("chat", "Chat conversation"),
     ("graph_generation", "Graph generation"),
     ("graph_retrieval", "Graph retrieval"),
+    ("conversation_title", "Conversation titles"),
+    ("plan_drafting", "Code Factory drafting"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -310,22 +361,47 @@ class AIConfiguration(models.Model):
 
 
 class KnowledgeGraph(models.Model):
+    """The working graph: always current with sources, not necessarily published."""
+
     application = models.OneToOneField(Application, on_delete=models.CASCADE)
     version = models.UUIDField(default=uuid.uuid4)
     fingerprint = models.CharField(max_length=64, blank=True)
     status = models.CharField(max_length=16, default="building")
     data = models.JSONField(default=dict)
     quality = models.JSONField(default=dict)
+    # A requested run carries its own model choice. AI enrichment happens only when
+    # someone asked for it, so a background rebuild can never incur provider charges.
+    requested_provider = models.CharField(max_length=12, blank=True)
+    requested_model = models.CharField(max_length=160, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="graph_runs",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
 
 class GraphRevision(models.Model):
+    """A saved snapshot. Only a published one is used to answer questions."""
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
     number = models.PositiveIntegerField()
     fingerprint = models.CharField(max_length=64)
     data = models.JSONField(default=dict)
     quality = models.JSONField(default=dict)
+    provider = models.CharField(max_length=12, blank=True)
+    model = models.CharField(max_length=160, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="published_graphs",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -333,6 +409,7 @@ class GraphRevision(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["application", "number"], name="unique_graph_revision")
         ]
+        indexes = [models.Index(fields=["application", "-published_at"])]
 
     @property
     def version(self):

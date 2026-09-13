@@ -13,7 +13,8 @@ from platform_core.models import (
     AIConfiguration,
     AIUsage,
     ApplicationGrant,
-    ChatTurn,
+    ChatMessage,
+    GraphRevision,
     KnowledgeGraph,
 )
 from platform_core.workbench import add_knowledge
@@ -43,6 +44,20 @@ class AIRoutingTests(TestCase):
             output_rate=Decimal("10"),
             configured_by=self.owner,
         )
+
+    def request_enrichment(self, model="claude-sonnet-5", provider="claude"):
+        """Enrichment is opt-in: a run has to be asked for, with a chosen model."""
+        graph, _ = KnowledgeGraph.objects.get_or_create(application=self.app)
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(
+            requested_provider=provider, requested_model=model, requested_by=self.owner
+        )
+        return graph
+
+    def publish_latest(self):
+        from platform_core.graphs import publish_revision
+
+        newest = GraphRevision.objects.filter(application=self.app).order_by("-number").first()
+        return publish_revision(self.owner, self.app.pk, newest.number)
 
     def result(self, answer="A readable answer [1]."):
         return {
@@ -139,6 +154,7 @@ class AIRoutingTests(TestCase):
                 }
             )
         )
+        self.request_enrichment()
         rebuild(self.app.pk)
         graph = KnowledgeGraph.objects.get(application=self.app)
         self.assertEqual(graph.quality["semantic_relationships"], 1)
@@ -146,7 +162,13 @@ class AIRoutingTests(TestCase):
         self.assertEqual(graph.quality["model"], "claude-sonnet-5")
         self.assertTrue(any(e.get("inferred") for e in graph.data["edges"]))
         self.assertEqual(AIUsage.objects.get().purpose, "graph_generation")
+        # The chosen model is recorded on the snapshot it produced.
+        snapshot = GraphRevision.objects.filter(application=self.app).order_by("-number").first()
+        self.assertEqual(snapshot.model, "claude-sonnet-5")
+        self.assertEqual(snapshot.provider, "claude")
+        self.assertIsNone(snapshot.published_at)
         old_version = graph.version
+        # A rebuild that nobody asked for must not repeat a paid call.
         rebuild(self.app.pk)
         self.assertEqual(claude.call_count, 1)
         self.assertEqual(KnowledgeGraph.objects.get().version, old_version)
@@ -162,6 +184,7 @@ class AIRoutingTests(TestCase):
     @patch("platform_core.claude_agents.completion", side_effect=ValidationError("Unavailable"))
     def test_failed_generation_does_not_repeat_paid_calls_automatically(self, claude, secret):
         self.ai_config("graph_generation")
+        self.request_enrichment()
         with self.assertRaises(ValidationError):
             process_next_graph()
         self.assertFalse(process_next_graph())
@@ -175,20 +198,24 @@ class AIRoutingTests(TestCase):
     @patch("platform_core.claude_agents.completion")
     def test_graph_answers_use_saved_edges_and_private_history(self, claude, secret):
         self.ai_config("graph_retrieval")
+        self.request_enrichment()
         rebuild(self.app.pk)
+        self.publish_latest()
         claude.return_value = self.result()
         response = self.client.post(
             reverse("chat", args=[self.app.pk]), {"question": "Service Alpha", "mode": "graph"}
         )
         self.assertEqual(response.status_code, 302)
-        turn = ChatTurn.objects.get()
-        self.assertEqual(turn.mode, "graph")
-        self.assertIn("graph_version", turn.citations[0])
+        answer = ChatMessage.objects.get(role="assistant")
+        self.assertEqual(answer.mode, "graph")
+        self.assertIn("graph_version", answer.citations[0])
         self.assertEqual(claude.call_args.args[0].purpose, "graph_retrieval")
+        # A published snapshot is pinned, so changed evidence no longer errors: each
+        # edge simply fails verification and the answer has nothing to cite.
         self.source.active = False
         self.source.save()
-        with self.assertRaises(ValidationError):
-            graph_citations(self.app.pk, "Service Alpha")
+        self.assertEqual(graph_citations(self.app.pk, "Service Alpha"), [])
+        # An application with nothing published still refuses outright.
         ApplicationGrant.objects.create(application=self.other, user=self.owner, role="owner")
         with self.assertRaises(ValidationError):
             graph_citations(self.other.pk, "Service Alpha")
@@ -201,7 +228,7 @@ class AIRoutingTests(TestCase):
         response = self.client.post(url, {"question": "Hello there"})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "must configure Chat conversation")
-        self.assertFalse(ChatTurn.objects.exists())
+        self.assertFalse(ChatMessage.objects.exists())
 
     @patch("platform_core.ai.read_secret", return_value="scoped-key")
     @patch("platform_core.ai.completion")
@@ -213,9 +240,9 @@ class AIRoutingTests(TestCase):
         provider.assert_called_once()
         self.assertEqual(provider.call_args.args[3], "scoped-key")
         self.assertEqual(provider.call_args.args[2], [])
-        turn = ChatTurn.objects.get()
-        self.assertEqual(turn.mode, "ai")
-        self.assertIn("Hi!", turn.answer)
+        answer = ChatMessage.objects.get(role="assistant")
+        self.assertEqual(answer.mode, "ai")
+        self.assertIn("Hi!", answer.body)
         self.assertEqual(AIUsage.objects.get().purpose, "chat")
 
     def test_enabled_model_without_key_shows_setup_and_retains_draft(self):
@@ -227,4 +254,4 @@ class AIRoutingTests(TestCase):
         self.assertContains(response, "API key file is missing")
         self.assertContains(response, "gpt-5.6-luna")
         self.assertContains(response, "Hello")
-        self.assertFalse(ChatTurn.objects.exists())
+        self.assertFalse(ChatMessage.objects.exists())

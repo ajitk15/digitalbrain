@@ -53,3 +53,34 @@ class ConfigurationTests(SimpleTestCase):
                 )
                 with self.assertRaises(ImproperlyConfigured):
                     load_config()
+
+
+class HostLoginConfigurationTests(SimpleTestCase):
+    """claude_use_host_login is a development convenience and must stay one."""
+
+    BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
+
+    def load(self, body):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.toml"
+            path.write_text(body, encoding="utf-8")
+            with patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(path)}):
+                return load_config()
+
+    def test_it_is_accepted_in_development(self):
+        config = self.load(f'mode = "development"\n{self.BASE}claude_use_host_login = true\n')
+        self.assertTrue(config["claude_use_host_login"])
+
+    def test_it_defaults_to_absent(self):
+        config = self.load(f'mode = "development"\n{self.BASE}')
+        self.assertNotIn("claude_use_host_login", config)
+
+    def test_production_refuses_it_outright(self):
+        """Refused, not ignored: a production deployment must not silently share one identity."""
+        with self.assertRaises(ImproperlyConfigured) as raised:
+            self.load(f'mode = "production"\n{self.BASE}claude_use_host_login = true\n')
+        self.assertIn("cannot be set in production", str(raised.exception))
+
+    def test_it_must_be_a_boolean(self):
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "development"\n{self.BASE}claude_use_host_login = "yes"\n')

@@ -34,7 +34,8 @@ class RequestContextMiddleware:
             response["X-Request-ID"] = request_id
             response["Content-Security-Policy"] = (
                 "default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; "
-                "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+                "connect-src 'self'; form-action 'self'; base-uri 'none'; "
+                "frame-ancestors 'none'"
             )
             response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
             logger.info(

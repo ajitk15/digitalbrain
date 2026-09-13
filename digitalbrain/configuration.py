@@ -1,6 +1,7 @@
 """Non-secret TOML configuration and mounted secrets; no dotenv secret loading."""
 
 import os
+import re
 import tomllib
 from pathlib import Path
 
@@ -25,6 +26,10 @@ def load_config():
         "trust_proxy",
         "scanner",
         "scan_documents",
+        "claude_use_host_login",
+        "fetch_allow_hosts",
+        "sharepoint_tenant",
+        "sharepoint_client_id",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -32,6 +37,29 @@ def load_config():
         raise ImproperlyConfigured("mode must be development or production.")
     if type(config.get("scan_documents", False)) is not bool:
         raise ImproperlyConfigured("scan_documents must be a boolean.")
+    if type(config.get("claude_use_host_login", False)) is not bool:
+        raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    for field in ("sharepoint_tenant", "sharepoint_client_id"):
+        value = config.get(field, "")
+        if not isinstance(value, str):
+            raise ImproperlyConfigured(f"{field} must be a string.")
+        if value and not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", value):
+            raise ImproperlyConfigured(f"{field} contains unexpected characters.")
+    hosts = config.get("fetch_allow_hosts", [])
+    if not isinstance(hosts, list) or any(not isinstance(h, str) or not h.strip() for h in hosts):
+        raise ImproperlyConfigured("fetch_allow_hosts must be a list of hostnames.")
+    if any(h.strip() in {"*", "0.0.0.0", "::"} or h.strip().startswith("*") for h in hosts):
+        # An allow-list that allows everything is not an allow-list. Naming each
+        # internal host is the whole point of the setting.
+        raise ImproperlyConfigured("fetch_allow_hosts cannot contain a wildcard.")
+    if config.get("claude_use_host_login") and config.get("mode") == "production":
+        # Refused outright rather than quietly ignored: a production deployment that
+        # believes it is using per-application credentials must not be silently
+        # spending one shared identity.
+        raise ImproperlyConfigured(
+            "claude_use_host_login is a development convenience and cannot be set in "
+            "production. Mount a per-application API key or OAuth token instead."
+        )
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")

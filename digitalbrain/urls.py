@@ -18,6 +18,36 @@ urlpatterns = [
         name="knowledge-detail",
     ),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
+    path(
+        "applications/<uuid:pk>/chat/conversations/<uuid:conversation_id>/",
+        workbench.chat_conversation,
+        name="chat-conversation",
+    ),
+    path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/regenerate/",
+        workbench.chat_regenerate,
+        name="chat-regenerate",
+    ),
+    path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/edit/",
+        workbench.chat_edit,
+        name="chat-edit",
+    ),
+    path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/stream/",
+        workbench.chat_stream,
+        name="chat-stream",
+    ),
+    path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/stop/",
+        workbench.chat_stop,
+        name="chat-stop",
+    ),
+    path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/fragment/",
+        workbench.chat_message,
+        name="chat-message",
+    ),
     path("applications/<uuid:pk>/plans/", workbench.plans, name="plans"),
     path("applications/<uuid:pk>/plans/<uuid:plan_id>/", workbench.plan_detail, name="plan-detail"),
     path("applications/<uuid:pk>/connectors/", connectors.connectors, name="connectors"),

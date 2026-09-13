@@ -14,7 +14,83 @@ Owners and contributors can add immutable plain-text knowledge sources. Sources 
 read, or archived. Archiving excludes them from new retrieval without deleting approval evidence.
 
 All file types are accepted. Select up to 20 documents per batch, with a combined 20 MiB limit.
-Original bytes remain private and unchanged. Upload queues automatic Microsoft MarkItDown
+Original bytes remain private and unchanged.
+
+### Adding sources from a link
+
+The Sources rail also accepts a pasted link, and works out what it points at:
+
+| Pasted | Imported |
+| --- | --- |
+| Any web page or document URL | that one page or file |
+| `github.com/owner/repo` | the repository README |
+| a `/blob/` or `raw.githubusercontent.com` link | that one file |
+| a `/tree/` directory link | the documentation files under it, up to 25 |
+| a SharePoint or OneDrive file link | that document |
+| a SharePoint document library folder | the documents in it, up to 25 |
+
+A link becomes an ordinary document, so quarantine storage, scanning, offline MarkItDown
+conversion, the immutable knowledge source, graph regeneration and deletion all behave exactly as
+they do for an upload. **MarkItDown is still never handed a URL** — the bytes are downloaded
+first and converted from disk.
+
+Submitting does not download anything during the request: each file is recorded as **Waiting to
+download**, and the background worker fetches them. The rail shows every source's state —
+waiting, downloading, queued, converting, ready or failed — with where it came from and the
+reason for any failure, so a slow or dead host delays only itself.
+
+### SharePoint and OneDrive
+
+Links are resolved through Microsoft Graph's *shares* endpoint rather than by parsing SharePoint
+URLs, so whatever a user copies out of the browser works: a document library path, a
+`/:w:/r/...Doc.aspx?sourcedoc=` viewer link, a personal OneDrive sharing link, or a folder.
+
+Two things must be in place. The deployment names the app registration in TOML, which is
+non-secret:
+
+```toml
+sharepoint_tenant = 'contoso.onmicrosoft.com'
+sharepoint_client_id = '00000000-0000-0000-0000-000000000000'
+```
+
+and each application that may import mounts the client secret as
+`sharepoint_APPLICATION_UUID` in the secret directory. Mounting that secret is the
+per-application switch: an application without one cannot reach SharePoint even though the
+deployment is configured.
+
+**Read what this means for permissions.** Authentication is app-only client credentials, so the
+permission granted to the app registration is the boundary — not the permission of the person
+pasting the link. Under `Sites.Read.All` that is every site in the tenant, so a user who can
+import is able to obtain a document they could not open in SharePoint themselves. The Sources
+panel states this where links are pasted rather than only here. `Sites.Selected` narrows the app
+to sites an administrator grants individually and requires no change to this platform, because
+the restriction is applied by Entra ID; it is the safer choice where the content is sensitive.
+
+Imports are audited with the resolved item, and only owners and contributors can import at all.
+Access tokens are held in memory until shortly before they expire and are never written down.
+Graph requests go through the same hardened client as any other host, so the address, redirect,
+size and timeout rules all still apply. Document downloads read a fresh pre-authenticated
+address at download time rather than following Graph's redirect, which also means a queued item
+cannot expire before it is fetched.
+
+**Network policy.** Fetching a link means this server makes a request to an address the user
+chose, so the retriever resolves the hostname first and refuses loopback, private, link-local
+(including the `169.254.169.254` cloud metadata endpoint), multicast and reserved addresses. The
+connection is then pinned to the address that was validated, so a second DNS answer cannot
+redirect it. Only `http` and `https` are accepted, redirects are never followed, responses are
+capped at 8 MB and 20 seconds, and no credential is ever attached except the application's own
+mounted GitHub token on GitHub requests.
+
+Internal hosts can be permitted individually in the deployment TOML, which is what makes an
+internal wiki importable without opening the private network:
+
+```toml
+fetch_allow_hosts = ['wiki.internal', 'docs.corp.example']
+```
+
+Wildcards are refused: an allow-list that allows everything is not one. A private repository
+imports when the application's `github_APPLICATION_UUID` token is mounted; public repositories
+need no token and use the shared unauthenticated rate limit. Upload queues automatic Microsoft MarkItDown
 conversion whenever Knowledge is enabled; no antivirus scan is required in the current local setup.
 
 The managed server hosts a single conversion worker backed by document rows in the database.
@@ -58,49 +134,147 @@ Reference: [Microsoft MarkItDown](https://github.com/microsoft/markitdown).
 
 ## AI providers, models and costs
 
-Application owners configure three independent tasks under **AI settings**: **Chat conversation**,
-**Graph generation**, and **Graph retrieval**. Each has an enable switch, a grouped OpenAI/Claude
-model selector, custom provider/model fields and contracted USD input/output rates. Existing
-OpenAI chat configuration is preserved by the migration. New graph tasks start disabled.
+Application owners configure five independent tasks under **AI settings**: **Chat conversation**,
+**Graph generation**, **Graph retrieval**, **Conversation titles** and **Code Factory drafting**.
+Each has an enable switch, a grouped OpenAI/Claude model selector, custom provider/model fields
+and contracted USD input/output rates. Existing configuration is preserved by the migrations, and
+new tasks start disabled.
+
+Each task is priced and enabled on its own because each is a separate billable call. In
+particular, conversation titles and plan drafting are never a silent surcharge on chat: if their
+task is not configured, the feature simply does not run.
+
+**Graph generation deserves a stronger model than the others.** Extraction must find
+relationships, quote them exactly and name both entities, and a small fast model tends to return
+few relationships or ones that fail quote verification. The settings page says so next to that
+task. Chat can stay on a cheaper model.
 The model suggestions were checked against provider documentation on 2026-09-12; account access
 is not verified by the catalog. Custom IDs support models not listed there.
 
-Mount keys in the configured secret directory as `openai_APPLICATION_UUID` and
+Mount credentials in the configured secret directory as `openai_APPLICATION_UUID` and
 `claude_APPLICATION_UUID`. Both providers use their own Agent SDK. No credentials are stored
 in .env, database, form fields or logs. Restrict secret files to the service identity.
 
+### Which Claude credential to mount
+
+The Claude Agent SDK runs the bundled Claude Code CLI, and that CLI resolves credentials in a
+fixed order: `ANTHROPIC_API_KEY`, then `CLAUDE_CODE_OAUTH_TOKEN`, then an interactive login stored
+in `CLAUDE_CONFIG_DIR`. This platform never uses the third. The sandbox points `CLAUDE_CONFIG_DIR`,
+`HOME` and `USERPROFILE` at an empty directory and blanks the environment, so a run cannot inherit
+a login belonging to another application or to the person who started the server. That is what
+keeps per-application credentials, budgets and cost attribution meaningful.
+
+Two credentials are therefore accepted in the same per-application file, and its contents decide
+which variable the CLI is given:
+
+| Credential | Looks like | Bills | Notes |
+| --- | --- | --- | --- |
+| API key | `sk-ant-api…` | Console account | Straightforward for server deployments. |
+| OAuth token | `sk-ant-oat…` | Claude subscription | Generate with `claude setup-token`. Works headless; no interactive sign-in on the server. |
+
+An OAuth token is not a drop-in for an API key at the protocol level — the CLI reads them from
+different variables — but it is a drop-in here, because the platform detects the kind and sets the
+right one. Isolation, rotation and file permissions are identical for both.
+
+### Development without any credential
+
+For local work only, `config/local.toml` accepts `claude_use_host_login = true`. When an
+application has no mounted Claude credential, the runtime then stops redirecting
+`CLAUDE_CONFIG_DIR` and lets the CLI use the Claude Code login already on the machine, so chat
+works with no secret file at all.
+
+Its limits are deliberate. Configuration **refuses** the setting when `mode = "production"`
+rather than ignoring it, so a production deployment cannot believe it is using per-application
+credentials while actually sharing one identity. A mounted credential always wins over it. With
+the setting off, a missing secret stays an error. And the chat page says plainly when answers are
+being billed to the machine's own login rather than to the application.
+
+This is a convenience for one developer on one machine. A deployment serving other people should
+mount per-application credentials, which is what the per-application pricing and usage receipts
+are built around.
+
 OpenAI uses Responses for the listed GPT-6/GPT-5.6 models and Chat Completions for existing/custom
 older models. Each request owns a client and event loop. Provider storage and SDK tracing are
-disabled; no tools or handoffs, one model turn, 30-second HTTP / 35-second overall timeout, no
-application/HTTP retries or redirects. Model selection does not change the application's history.
+disabled; no handoffs, no application/HTTP retries or redirects, 30-second HTTP timeout. Model
+selection does not change the application's history.
 
 Claude uses the SDK's bundled CLI, an ephemeral settings directory and empty workspace,
-application-specific environment credentials, no inherited user/project settings or sessions,
-no tools, plugins, skills or MCP servers, one turn and a 45-second overall timeout. Session
-persistence and nonessential telemetry are disabled. The application does not retry Claude calls;
-provider/runtime internal behavior remains subject to the SDK. The managed stop script recognizes
-only the bundled CLI descendants of the verified application worker.
+application-specific environment credentials, and no inherited user/project settings or sessions.
+Built-in tools, plugins and skills stay disabled and session persistence and nonessential
+telemetry are off. The application does not retry Claude calls; provider and runtime internal
+behaviour remains subject to the SDK. The managed stop script recognizes only the bundled CLI
+descendants of the verified application worker.
+
+### Knowledge tools and multi-turn answers
+
+Chat answers are agentic. Both SDKs are given two tools over this application's knowledge:
+`search_knowledge` (lexical passage search) and `fetch_source` (a bounded 4,000-character window
+of one source). OpenAI receives them as Agents SDK function tools; Claude receives them from an
+in-process SDK MCP server, which runs inside the application process over an in-memory transport
+and adds no filesystem or network reach. Claude's permission mode remains deny-by-default with an
+explicit allow-list, so an unrecognized tool name is refused rather than run.
+
+Each tool is bound to one application and one user before the run starts. **No tool reads an
+application or user identifier from model-supplied arguments**; model arguments can only narrow a
+queryset that is already scoped, so an identifier belonging to another application reads as "not
+found". Access and the Knowledge feature switch are re-checked on every tool call, so a grant
+revoked mid-answer stops the next one.
+
+Runs are bounded to four model turns and eight tool calls; past that, tools return a budget
+message instead of running. Citations come from what the tools actually returned and are
+re-verified against live sources — still active, digest unchanged, excerpt still present — before
+anything is stored or displayed, then capped at eight. A citation the model invents resolves to
+nothing. Graph generation and graph retrieval remain single-turn and tool-free, because their
+output contract is strict JSON.
+
+**A multi-turn answer produces one usage receipt per model turn**, each keyed on its own provider
+request ID, so the AI costs page now shows several rows for one question rather than one. This
+keeps duplicate detection meaningful; collapsing turns into a single row would not.
 
 Chat conversations are private to each user and application. **New conversation** starts an
-independent thread; history resumes it. Messages are chronological (30 turns per page, 20
-conversations per history page). Existing entries remain in **Earlier chat history**. Recent
-context is capped at eight turns, with prior answers capped at 4,000 characters. Turns referencing
-changed/removed sources are excluded from new context; the owner's saved history remains.
+independent thread; history resumes it. Each exchange is stored as two messages, a question and
+an answer, ordered by an explicit sequence (60 messages per page, 20 conversations per history
+page). Existing entries remain in **Earlier chat history**. Recent context is capped at eight
+exchanges, with prior answers capped at 4,000 characters. Exchanges referencing changed or
+removed sources are excluded from new context; the saved history remains.
 
-Chat defaults to **AI conversation** on both page load and submission. Missing setup or keys
-produce a visible setup message and preserve the draft, never a silent source-search fallback.
-**Search source excerpts** explicitly selects bounded local lexical search without an LLM.
-**AI conversation** uses the
-chat task model and up to five matching source passages. **Graph answer** uses the graph retrieval
-task model: lexical matching of saved graph endpoints/relations plus one-hop neighbors, with up
-to eight verified source citations. It refuses stale/unavailable graphs. This is bounded graph
-retrieval, not embedding search. Both answer modes preserve follow-up context. AI conversation also calls the LLM for greetings,
-clarifications and general explanations without document matches; it must not invent application
-facts or source citations. Graph answers still avoid paid calls when graph evidence is absent.
+**Answer mode belongs to the conversation, not the message.** It is chosen when a conversation
+is started and changed from the conversation header. Sending a message cannot change it, so a
+thread cannot be moved onto a paid provider by accident or by a crafted request. Each stored
+answer also records the mode that actually produced it, so the transcript stays truthful after
+the conversation's mode is changed. Missing setup or keys produce a visible setup message and
+preserve the draft, never a silent source-search fallback.
+
+**Search source excerpts** is bounded local lexical search with no LLM. **AI conversation** uses
+the chat task model, seeded with up to five matching passages, and may call the knowledge tools
+described below. **Graph answer** uses the graph retrieval task model: lexical matching of saved
+graph endpoints/relations plus one-hop neighbours, with up to eight verified source citations. It
+refuses stale or unavailable graphs. This is bounded graph retrieval, not embedding search. AI
+conversation also answers greetings, clarifications and general explanations without document
+matches; it must not invent application facts or source citations. Graph answers still avoid paid
+calls when graph evidence is absent.
 
 Answers support escaped paragraphs, bold, lists, tables and code blocks; model links are not
 made active. Sources are expandable. Enter sends and Shift+Enter adds a line; provider errors
-preserve drafts. Answers arrive together rather than token streaming.
+preserve drafts.
+
+### Streaming, and what happens without JavaScript
+
+AI and graph answers stream token by token over server-sent events. The question and an empty
+answer are saved before the provider is contacted, so a dropped connection still leaves a record
+of what was asked. **Stop** ends the visible answer and stores what had arrived, marked stopped;
+the call is still drained far enough to record its usage, because a provider bills for work
+whether or not the reader is still watching. **Regenerate** discards an answer and re-asks the
+same question; **edit** replaces a question and discards everything after it.
+
+Streaming is progressive enhancement. Every control is an ordinary form that posts and works with
+JavaScript disabled, landing on the same synchronous path. The browser never renders model
+Markdown itself: streamed text is inserted as plain text, and the finished message is replaced by
+a server-rendered fragment produced by the same escaping filter used everywhere else.
+
+The stream registry is process-local, which is correct for the single managed worker process the
+lifecycle scripts start. Running several worker processes would need a shared cancellation
+channel before **Stop** could be relied on. Each active stream holds one server thread.
 
 Successful SDK replies record provider, configured model, task, input/output tokens and estimated
 USD cost. Original usage counts must exist. Claude cached read/write input is included at the
@@ -117,9 +291,31 @@ References: [OpenAI models](https://developers.openai.com/api/docs/models),
 
 ## AI graph generation
 
-The existing deterministic Markdown structural graph is always the base. When graph generation
-AI is enabled, source or graph-model setting changes queue an enrichment run under the configuring
-owner's current application access. The chosen provider/model extracts at most 25 relationships
+The existing deterministic Markdown structural graph is always the base, and the background worker
+keeps it current as sources change. That rebuild is free: **AI enrichment never runs on its own.**
+
+Open **Knowledge → Graph → Generate graph** (or **Regenerate graph**) to run one. The form asks
+which model to use, including **Structural only**, which uses no AI and cannot be charged. A model
+chosen there applies to that run only and does not change the application's saved graph settings;
+the model used is recorded on the snapshot it produces, and shown in the Versions table.
+
+### Draft and publish
+
+Every generated version is saved as a **draft**. **Chat and Code Factory answer from the latest
+published version only** — a rebuild, automatic or manual, cannot change answers until someone
+publishes it. Publish from the Versions tab; the newest published version wins, and the banner
+there always names the version currently answering.
+
+Publishing is refused when a version's source evidence has since changed, because that snapshot
+can no longer be verified. If nothing is published, graph answers in Chat say so rather than
+quietly falling back to a draft. Upgrading an existing installation publishes whichever version
+was already live, so behaviour does not change on upgrade.
+
+A published snapshot is pinned, so archiving a cited source no longer makes graph answers error:
+each affected relationship simply fails verification and the answer has nothing to cite.
+
+When a run is requested, enrichment happens under the configuring owner's current application
+access. The chosen provider/model extracts at most 25 relationships
 from at most 10 sources / 12,000 characters each. An exact source quote and both named entities
 must be present in the supplied text before a relationship is accepted. Unsupported results are
 excluded. Entity identity is source-local; matching labels do not silently merge distinct entities.
@@ -141,6 +337,13 @@ were archived or changed. Decisions are atomic and cannot be applied twice.
 Approved plans can be exported as JSON for implementation handoff. The current scope covers
 planning, review and export. Isolated repository execution, generated diffs, automated tests,
 PR creation and merge-policy enforcement are not implemented. Approval never executes code.
+
+When **Code Factory drafting** is configured, owners and contributors can describe a requirement
+and have a draft written into the proposal form. The draft is exactly that: it pre-fills the form
+for a human to edit and submit, and creates nothing by itself. Every quote it cites is verified
+against live sources the same way graph relationships are, and unverifiable ones are dropped and
+counted. Source pinning, independent approval by a different user, and the rule that approval
+never runs code are all unchanged.
 
 ## GitHub connector
 
@@ -191,6 +394,23 @@ This local deterministic generator does not integrate Graphify, LLM entity extra
 database, vector retrieval or a labeled semantic evaluation set. Those design integrations remain
 separate work; current graphs expose the structural facts and limitations directly.
 
+
+### Answering from a chosen graph version
+
+A graph conversation can be pinned to a numbered graph version from the conversation header, or
+left on **Latest**. Pinning deliberately skips the live fingerprint check, because reading an
+older version is the point. Safety does not depend on that check: every citation is still
+verified edge by edge against currently active sources with matching digests and an exact quote,
+so a version whose evidence has since changed yields no citations rather than stale claims.
+
+### Exploring the graph
+
+The graph canvas is a force-directed layout you can pan (drag), zoom (scroll or the zoom
+controls), and rearrange (drag a node to pin it). Clicking a node inspects it and offers to expand
+its neighbourhood; **Expand** grows the whole visible set. A counter always states how many of the
+total nodes are shown and when the display limit is reached, so a large graph is navigated rather
+than silently truncated. Node kinds can be filtered on and off. Dashed orange relationships are
+AI-inferred and source-verified; solid grey relationships are deterministic structure.
 
 ### Unified Knowledge area and saved graph versions
 
