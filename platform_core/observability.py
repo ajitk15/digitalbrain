@@ -16,7 +16,8 @@ class SafeJsonFormatter(logging.Formatter):
             "logger": record.name,
             "event": getattr(record, "event", "application_event"),
         }
-        for field in ("request_id", "route", "status", "duration_ms"):
+        # Fixed internal labels only; nothing here ever carries user data.
+        for field in ("request_id", "route", "status", "duration_ms", "lane", "count"):
             if hasattr(record, field):
                 entry[field] = getattr(record, field)
         if record.exc_info:

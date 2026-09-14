@@ -3,6 +3,7 @@
 import logging
 import time
 from datetime import timedelta
+from threading import Thread
 
 from django.db import close_old_connections
 from django.db.models import Q
@@ -76,8 +77,8 @@ def process_next_document():
 
 _last_purge = 0.0
 
-#: Retention is measured in days; checking hourly is ample and keeps the worker's
-#: one-second loop from running a table scan on every tick.
+#: Retention is measured in days; checking hourly is ample and keeps the lane
+#: from running a table scan on every tick.
 PURGE_INTERVAL = 3600
 
 
@@ -85,27 +86,87 @@ def purge_chat_if_due():
     global _last_purge
     now = time.monotonic()
     if now - _last_purge < PURGE_INTERVAL:
-        return
+        return False
     _last_purge = now
     from .workbench import purge_expired_conversations
 
     removed = purge_expired_conversations()
     if removed:
-        logger.info("chat_conversations_purged", extra={"count": removed})
+        logger.info(
+            "conversations purged",
+            extra={"event": "chat_conversations_purged", "count": removed},
+        )
+    return bool(removed)
+
+
+def intake_steps():
+    """Download queued links, then convert whatever is waiting."""
+    return (process_next_link, process_next_document)
+
+
+def graph_steps():
+    from .graphs import process_next_graph
+
+    return (process_next_graph,)
+
+
+def maintenance_steps():
+    return (purge_chat_if_due,)
+
+
+#: Independent queues, each on its own thread.
+#:
+#: These shared one loop, so a graph run - which may legitimately spend ten
+#: minutes waiting on a provider - stalled every document conversion and link
+#: import behind it, across every application. They contend for nothing that
+#: needed the shared loop: process_next_graph already declines an application
+#: whose documents are still converting, which is the only ordering that ever
+#: mattered, and it still does.
+#:
+#: Each lane carries its own idle delay because they are not equally urgent: an
+#: upload should start converting promptly, a retention sweep does not need to be
+#: asked about every second.
+LANES = (
+    ("intake", intake_steps, 1.0),
+    ("graph", graph_steps, 2.0),
+    ("maintenance", maintenance_steps, 30.0),
+)
+
+
+def run_lane(name, steps_for, idle_seconds):
+    """Run one queue forever. A failure in this lane never reaches another.
+
+    The loop does not sleep while it is finding work, so a backlog drains at the
+    speed of the work rather than one item per tick.
+    """
+    steps = steps_for()
+    while True:
+        worked = False
+        try:
+            close_old_connections()
+            for step in steps:
+                worked = bool(step()) or worked
+        except Exception:
+            # The event name is what makes this findable; the formatter
+            # deliberately keeps the message and traceback out of the log.
+            logger.warning(
+                "worker lane failed",
+                extra={"event": "worker_lane_failed", "lane": name},
+                exc_info=True,
+            )
+        finally:
+            close_old_connections()
+        time.sleep(0 if worked else idle_seconds)
 
 
 def run_document_worker():
-    while True:
-        try:
-            close_old_connections()
-            process_next_link()
-            process_next_document()
-            from .graphs import process_next_graph
-
-            process_next_graph()
-            purge_chat_if_due()
-        except Exception:
-            logger.warning("document_worker_retry")
-        finally:
-            close_old_connections()
-        time.sleep(1)
+    """Start every lane. The calling thread becomes the first of them."""
+    first, *rest = LANES
+    for name, steps_for, idle_seconds in rest:
+        Thread(
+            target=run_lane,
+            args=(name, steps_for, idle_seconds),
+            name=f"worker-{name}",
+            daemon=True,
+        ).start()
+    run_lane(*first)
