@@ -23,6 +23,19 @@ Start-all checks configuration, applies local migrations, collects assets, launc
 
 No default administrator, default password, or test account is installed.
 
+```powershell
+.\start-all.ps1 -Install
+```
+
+`-Install` asks for the sign-in ID, writes it to `.env` as the only key that file
+accepts, and runs `bootstrap_admin`, which prompts for the password itself and
+reads it hidden. The password never reaches a file, a command-line argument or
+the shell history. Starting without `-Install` when no administrator exists says
+so and points here. Everything else a fresh clone needs - virtual environment,
+configuration, database, static files - is created on every run regardless.
+
+To do the same by hand:
+
 1. Copy `.env.example` to `.env` and set **only** `SITE_ADMIN_USER_ID` to your chosen sign-in ID.
 2. Run:
 
