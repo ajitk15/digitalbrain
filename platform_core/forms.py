@@ -4,7 +4,8 @@ import warnings
 from django import forms
 from PIL import Image, UnidentifiedImageError
 
-from .models import ApplicationGrant, ChatRetention, User
+from .models import ApplicationGrant, ChatRetention, Portfolio, Product, User
+from .services import available_features
 
 
 class ResourceForm(forms.Form):
@@ -20,16 +21,107 @@ class MemberForm(forms.Form):
 
 
 class ApplicationForm(ResourceForm):
+    """Everything a new application needs, on one form.
+
+    Creating an application used to mean three pages - portfolio, then product,
+    then application - each redirecting back to the organization page, where the
+    controls sat behind a collapsed disclosure. The hierarchy is unchanged in the
+    database; it just stops costing three trips. Either level may be an existing
+    row or a new name, and the features the application starts with are chosen
+    here rather than discovered afterwards on another screen.
+    """
+
+    portfolio = forms.ModelChoiceField(
+        queryset=Portfolio.objects.none(),
+        required=False,
+        label="Portfolio",
+        help_text="Choose one, or leave blank and name a new portfolio below.",
+    )
+    new_portfolio = forms.CharField(max_length=120, required=False, label="New portfolio name")
+    product = forms.ModelChoiceField(
+        queryset=Product.objects.none(),
+        required=False,
+        label="Product",
+        help_text="Choose one, or leave blank and name a new product below.",
+    )
+    new_product = forms.CharField(max_length=120, required=False, label="New product name")
     owner = forms.ModelChoiceField(queryset=User.objects.none(), label="Application owner")
     owner_can_approve = forms.BooleanField(
         required=False, label="Explicitly grant this owner Code Factory approval rights"
     )
+    grant_me_owner = forms.BooleanField(
+        required=False,
+        label="Also grant me owner access to this application",
+        help_text=(
+            "Administering an organization does not grant access to its applications. "
+            "Tick this to record an explicit grant for yourself."
+        ),
+    )
 
-    def __init__(self, *args, organization, **kwargs):
+    def __init__(self, *args, organization, product=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.organization = organization
         self.fields["owner"].queryset = User.objects.filter(
             is_active=True, organizationmember__organization=organization
         )
+        self.fields["portfolio"].queryset = Portfolio.objects.filter(organization=organization)
+        self.fields["product"].queryset = Product.objects.filter(
+            portfolio__organization=organization
+        )
+        if product is not None:
+            # Reached from a specific product's "+", so both levels are decided.
+            for name in ("portfolio", "new_portfolio", "product", "new_product"):
+                del self.fields[name]
+        # Features default to on, matching services.all_features, where a missing
+        # row means enabled. Unticking one writes an ApplicationFeature row.
+        for key, label in available_features():
+            self.fields[f"feature_{key}"] = forms.BooleanField(
+                required=False, initial=True, label=label
+            )
+
+    @property
+    def feature_fields(self):
+        """The feature checkboxes, so the template can group them in a fieldset."""
+        return [self[name] for name in self.fields if name.startswith("feature_")]
+
+    def clean(self):
+        values = super().clean()
+        if "portfolio" not in self.fields:
+            return values
+        portfolio, new_portfolio = values.get("portfolio"), (values.get("new_portfolio") or "")
+        product, new_product = values.get("product"), (values.get("new_product") or "")
+        if portfolio and new_portfolio.strip():
+            self.add_error("new_portfolio", "Choose an existing portfolio or name a new one.")
+        if not portfolio and not new_portfolio.strip():
+            self.add_error("portfolio", "Choose a portfolio or name a new one.")
+        if product and new_product.strip():
+            self.add_error("new_product", "Choose an existing product or name a new one.")
+        if not product and not new_product.strip():
+            self.add_error("product", "Choose a product or name a new one.")
+        # A chosen product fixes the portfolio; disagreeing with the chosen
+        # portfolio would silently file the application somewhere unexpected.
+        if product and portfolio and product.portfolio_id != portfolio.pk:
+            self.add_error("product", "That product belongs to a different portfolio.")
+        if product and new_portfolio.strip():
+            self.add_error("product", "An existing product already has a portfolio.")
+        return values
+
+    def selected_features(self):
+        """{feature key: enabled} for every feature offered on this form.
+
+        An unticked checkbox simply is not posted, so "every box off" and "this
+        caller knows nothing about features" look identical on the wire - and the
+        second must not disable everything. The template posts a hidden marker to
+        tell them apart: without it the defaults stand, with it the checkboxes are
+        taken literally, including all of them being off.
+        """
+        if not self.data.get("features_declared"):
+            return dict.fromkeys((key for key, _ in available_features()), True)
+        return {
+            name.removeprefix("feature_"): bool(value)
+            for name, value in self.cleaned_data.items()
+            if name.startswith("feature_")
+        }
 
 
 class GrantForm(forms.Form):

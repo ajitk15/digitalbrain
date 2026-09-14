@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% load workspace icons %}
 {% block title %}Connectors · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}{% settings_nav %}
-<div class="page-heading"><div><h1>Connectors</h1><p class="muted">Import records from external systems as knowledge sources. Imports are read-only: nothing is ever written back.</p></div><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></div>
+<div class="page-heading"><div><h1>Connectors</h1><p class="muted">Import records from external systems as knowledge sources. Imports are read-only: nothing is ever written back.</p></div><a class="button" href="{% url 'connector-new' application.pk %}" data-modal>{% icon "plus" %}Add connector</a></div>
 
 {% if connectors %}
 <div class="table-wrap"><table><thead><tr><th>Connector</th><th>Target</th><th>Status</th><th>Last import (UTC)</th><th>Records</th><th>Actions</th></tr></thead><tbody>
@@ -21,7 +21,7 @@
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h3>No connectors yet</h3><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></p></div>
+<div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h3>No connectors yet</h3><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}" data-modal>{% icon "plus" %}Add connector</a></p></div>
 {% endif %}
 
 <p class="muted section">Credentials are never entered here. Mount one file per system in the configured secret directory, named <code>&lt;system&gt;_{{ application.pk }}</code>, readable only by the service account.</p>

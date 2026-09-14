@@ -2,20 +2,52 @@
 
 Working Python/Django SaaS foundation using the selected Digital Brain logo, with a compact responsive interface. This repository previously contained architecture documents only. The implementation covers administration, private local document intake, automatic background MarkItDown conversion, searchable knowledge, optional OpenAI answers and cost receipts, GitHub issue import, and change-plan approvals. See [feature workflows and setup](docs/feature-workflows.md) for configuration and remaining production integrations.
 
-## Start and stop on Windows
+## First run on a new machine
 
-From this folder:
+One command, from this folder, in PowerShell or from `cmd.exe`:
+
+```powershell
+.\start-all.ps1 -Install
+```
+
+`-Install` is the full setup path. It installs `uv` if the machine does not have it
+(via `winget`, falling back to the official user-scoped installer), builds `.venv` and
+installs the locked dependencies, creates the local configuration and database, asks
+for the first administrator, and asks which AI provider to use. If `uv` cannot be
+installed at all — no network, a locked-down machine — it falls back to
+`python -m venv` plus `pip install -e .`, which needs Python 3.12, 3.13 or 3.14 and
+resolves versions fresh rather than from `uv.lock`. Nothing is installed machine-wide
+and no elevation is requested.
+
+There is no `requirements.txt`: dependencies live in `pyproject.toml`, pinned by
+`uv.lock`.
+
+## Start and stop
 
 ```powershell
 .\start-all.ps1
 .\stop-all.ps1
 ```
 
+An ordinary start keeps an existing environment up to date but never downloads a
+toolchain; if the project is not set up yet it says so and points at `-Install`.
+
 Double-clickable equivalents: `start-all.cmd` and `stop-all.cmd`. Prefer these if
 PowerShell reports *"running scripts is disabled on this system"* — they pass
 `-ExecutionPolicy Bypass` for that one process, so no machine-wide setting has to
-change. To run the `.ps1` files directly instead, allow local scripts once with
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. An alternative port can be selected with `./start-all.ps1 -Port 8123`. Scripts require Python 3.12+ (or uv to install it); dependencies are locked in `uv.lock`. With no virtual environment, start-all uses uv to initialize one.
+change, and they hold the window open if something fails. To run the `.ps1` files
+directly instead, allow local scripts once with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. An alternative port can be
+selected with `./start-all.ps1 -Port 8123`.
+
+### Moving or copying the project folder
+
+`config/local.toml` and `.runtime/` are gitignored, so a fresh clone builds them
+correctly. A folder that is *copied* brings them along, and `config/local.toml`
+records an absolute path to the secret directory. Start-all now repairs that path on
+every run and discards runtime state left behind by the old location, so a moved
+project starts instead of failing on a missing signing key — or, worse, quietly
+reading the previous copy's secrets.
 
 Start-all checks configuration, applies local migrations, collects assets, launches a hidden Waitress process on loopback, and waits for readiness. It refuses occupied ports and does not create duplicate instances. Stop-all verifies the recorded project, executable, start timestamp and instance marker before stopping the launcher and its verified Python worker. It leaves databases, files and unrelated services alone. These are local development scripts; Windows stop is immediate, not a production request-draining mechanism.
 
@@ -31,8 +63,29 @@ No default administrator, default password, or test account is installed.
 accepts, and runs `bootstrap_admin`, which prompts for the password itself and
 reads it hidden. The password never reaches a file, a command-line argument or
 the shell history. Starting without `-Install` when no administrator exists says
-so and points here. Everything else a fresh clone needs - virtual environment,
-configuration, database, static files - is created on every run regardless.
+so and points here. Bootstrap stays disabled once an administrator exists: it can
+neither elevate nor reset an account.
+
+## AI provider
+
+```powershell
+.\start-all.ps1 -ConfigureAI
+```
+
+Asks whether to use Claude or OpenAI and mounts the credential. `-Install` runs this
+too, so normally it is not needed separately.
+
+If you have used the Claude Agent SDK elsewhere and never needed an API key, that is
+because the bundled CLI falls back to your own `claude` login. This platform blocks
+that fallback on purpose — each run gets a blanked environment so per-application
+billing and usage attribution are real. In development you can opt back in: choose
+Claude, then *"use this machine's Claude Code login"*, and it behaves like your other
+SDK apps. That route is refused outright when `mode = "production"`.
+
+Otherwise the credential is written to the secret directory and **copied into each
+application's own file when the application is created**, so nobody has to hand-create
+a file named after a UUID. An API key (`sk-ant-api…`) bills your Console account; a
+`claude setup-token` token (`sk-ant-oat…`) bills a Claude subscription.
 
 To do the same by hand:
 

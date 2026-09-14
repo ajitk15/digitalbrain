@@ -31,6 +31,18 @@ FEATURES = {
 }
 
 
+def available_features():
+    """(key, label) for every feature that can actually be switched on here.
+
+    Iterating the registry is what makes the create form extensible: adding a
+    line to FEATURES puts a new checkbox on it and a new row on the Features
+    screen, with nothing else to change. Entries whose availability flag is
+    False - document_uploads in production - are not offered at all, because
+    all_features would refuse them anyway.
+    """
+    return [(key, label) for key, (label, available) in FEATURES.items() if available]
+
+
 def audit(user, action, resource, organization=None, details=None):
     return AuditEvent.objects.create(
         actor=user,

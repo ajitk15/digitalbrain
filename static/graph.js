@@ -412,7 +412,15 @@
     const group = event.target.closest(".graph-node");
     const point = { x: event.clientX, y: event.clientY };
     if (group) {
-      dragging = { id: group.dataset.id, start: point, moved: false };
+      // The node's starting position is captured here, not re-read each move:
+      // see the pointermove handler for why that distinction matters.
+      const node = layout.get(group.dataset.id);
+      dragging = {
+        id: group.dataset.id,
+        start: point,
+        moved: false,
+        origin: node ? { x: node.x, y: node.y } : null,
+      };
     } else {
       dragging = { pan: true, start: point, origin: { ...view }, moved: false };
     }
@@ -430,13 +438,19 @@
       applyView();
       return;
     }
-    const point = layout.get(dragging.id);
-    if (!point) return;
+    const node = layout.get(dragging.id);
+    if (!node || !dragging.origin) return;
+    // Absolute from the position the drag started at, exactly like the pan
+    // branch above. It used to add each frame's delta and then re-base
+    // dragging.start, so every move divided a small delta by a fractional
+    // scale - getBoundingClientRect() returns fractional CSS pixels, and at
+    // 125%/150% Windows scaling the ratio never comes out clean. The rounding
+    // error was small per event and compounded over a drag, so the node crept
+    // away from the cursor and appeared to shake.
     const scale = canvas.getBoundingClientRect().width / WIDTH || 1;
-    point.x += dx / (view.k * scale);
-    point.y += dy / (view.k * scale);
-    point.pinned = true;
-    dragging.start = { x: event.clientX, y: event.clientY };
+    node.x = dragging.origin.x + dx / (view.k * scale);
+    node.y = dragging.origin.y + dy / (view.k * scale);
+    node.pinned = true;
     render(false);
   });
 

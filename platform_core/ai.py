@@ -1,7 +1,9 @@
 """Optional OpenAI synthesis with explicit application credentials and estimated costs."""
 
 import json
+import os
 from decimal import Decimal
+from pathlib import Path
 
 from django import forms
 from django.conf import settings
@@ -18,8 +20,10 @@ from digitalbrain.configuration import read_secret
 from .llm_agents import completion
 from .model_catalog import (
     GRAPH_GENERATION_ADVICE,
+    LIST_PRICES,
     MODEL_CHOICES,
     PRICING_NOTE,
+    PURPOSE_NOTES,
     price_reference,
 )
 from .models import AI_PURPOSES, AIConfiguration
@@ -86,6 +90,75 @@ def provider_credential(config, app):
         if config.provider == "claude" and host_login_enabled():
             return ""
         raise
+
+
+#: Written once by scripts/ai_setup.py during first-run setup. Deliberately not
+#: consulted by provider_credential: the runtime still resolves
+#: `<provider>_<application id>` and nothing else, so one application can never
+#: read another's credential and a deleted file stays an error. This is a template
+#: that is *copied* when an application is created, not a fallback that is read.
+DEFAULT_CREDENTIAL_NAMES = {"openai": "openai_default", "claude": "claude_default"}
+
+#: Starting points so a new application can answer straight away, instead of
+#: meeting "An application owner must configure Chat conversation first." Every
+#: value stays editable in AI settings.
+DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
+
+#: Graph generation can make paid calls whenever sources change, so it is the one
+#: purpose that is seeded switched off. An owner turns it on deliberately.
+SEEDED_DISABLED = {"graph_generation"}
+
+
+def configured_providers():
+    """Providers that first-run setup mounted a default credential for."""
+    directory = Path(settings.SECRET_DIRECTORY)
+    return [name for name, file in DEFAULT_CREDENTIAL_NAMES.items() if (directory / file).is_file()]
+
+
+def seed_application_ai(user, app, provider=None):
+    """Give a newly created application a usable AI configuration.
+
+    Copies the credential chosen during setup into this application's own secret
+    file and writes one AIConfiguration per purpose. Without this an application
+    is born unusable, and the only documented fix is to hand-create a file named
+    after a UUID - which is the step that made AI look broken on a new machine.
+
+    Returns the provider that was seeded, or None when setup supplied nothing.
+    """
+    from .agent_runtime.credentials import host_login_enabled
+
+    if provider is None:
+        available = configured_providers()
+        # Host login is Claude-only and needs no file, so it can seed a working
+        # configuration on its own in development.
+        provider = available[0] if available else ("claude" if host_login_enabled() else None)
+    if provider is None:
+        return None
+    directory = Path(settings.SECRET_DIRECTORY)
+    source = directory / DEFAULT_CREDENTIAL_NAMES[provider]
+    target = directory / f"{provider}_{app.pk}"
+    if source.is_file() and not target.exists():
+        # O_EXCL with the mode set at creation: never briefly world-readable, and
+        # never overwriting a credential someone mounted on purpose.
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(source.read_text(encoding="utf-8").strip())
+    model = DEFAULT_MODELS[provider]
+    listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
+    for purpose, _ in AI_PURPOSES:
+        AIConfiguration.objects.get_or_create(
+            application=app,
+            purpose=purpose,
+            defaults={
+                "provider": provider,
+                "model": model,
+                "configured_by": user,
+                "enabled": purpose not in SEEDED_DISABLED,
+                "input_rate": Decimal(listed[0]),
+                "output_rate": Decimal(listed[1]),
+            },
+        )
+    return provider
 
 
 def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=None, **options):
@@ -385,6 +458,8 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
 @login_required
 @require_http_methods(["GET", "POST"])
 def ai_settings(request, pk):
+    from .agent_runtime.credentials import host_login_enabled
+
     app, grant = application_for(request.user, pk)
     if grant.role != "owner":
         raise PermissionDenied
@@ -428,7 +503,16 @@ def ai_settings(request, pk):
                 "purpose": purpose,
                 "label": label,
                 "form": form,
+                "note": PURPOSE_NOTES.get(purpose, ""),
                 "advice": GRAPH_GENERATION_ADVICE if purpose == "graph_generation" else "",
+                # A one-line summary so the page can be read without opening
+                # five identical forms to find out what is set.
+                "summary": (
+                    f"{config.get_provider_display()} · {config.model}"
+                    if config and config.model
+                    else "Not configured"
+                ),
+                "active": bool(config and config.enabled and config.model),
             }
         )
     return render(
@@ -441,5 +525,11 @@ def ai_settings(request, pk):
             "pricing_note": PRICING_NOTE,
             "openai_secret": f"openai_{app.pk}",
             "claude_secret": f"claude_{app.pk}",
+            "openai_mounted": (Path(settings.SECRET_DIRECTORY) / f"openai_{app.pk}").is_file(),
+            "claude_mounted": (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file(),
+            # True only when this application would actually fall back to it, so
+            # the page can stop claiming a fallback never happens when it does.
+            "host_login": host_login_enabled()
+            and not (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file(),
         },
     )

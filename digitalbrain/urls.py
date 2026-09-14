@@ -108,6 +108,13 @@ urlpatterns = [
     path("organizations/<uuid:pk>/portfolios/new/", views.create_portfolio, name="portfolio-new"),
     path("portfolios/<uuid:pk>/products/new/", views.create_product, name="product-new"),
     path("products/<uuid:pk>/applications/new/", views.create_application, name="application-new"),
+    # The one-step route: no product yet, so the form chooses or names the
+    # portfolio and product alongside the application.
+    path(
+        "organizations/<uuid:organization_id>/applications/new/",
+        views.create_application,
+        name="application-create",
+    ),
     path("applications/<uuid:pk>/", views.application_home, name="application"),
     path("applications/<uuid:pk>/documents/", documents.documents, name="documents"),
     path(

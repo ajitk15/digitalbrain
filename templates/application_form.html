@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% block content %}<p class="eyebrow">{{ eyebrow }}</p><h1>{{ title }}</h1><p class="muted">One step. Name the application, say where it belongs, choose its owner and pick the features it starts with.</p>
+<section class="card form-card"><form method="post">{% csrf_token %}{{ form.non_field_errors }}
+{% for field in form %}{% if not field.name|slice:":8" == "feature_" %}<p>{{ field.errors }}{{ field.label_tag }}{{ field }}{% if field.help_text %}<span class="helptext">{{ field.help_text }}</span>{% endif %}</p>{% endif %}{% endfor %}
+<input type="hidden" name="features_declared" value="1">
+<fieldset class="checkbox-grid"><legend>Features this application starts with</legend><p class="helptext">Everything is on by default. Anything unticked can be switched back on later under Settings &rsaquo; Features.</p>{% for field in form.feature_fields %}<label>{{ field }}<span>{{ field.label }}</span></label>{% endfor %}</fieldset>
+<div class="actions"><button class="button">Create application</button> <a class="button secondary" href="{{ cancel_url }}" data-modal-close>Cancel</a></div></form></section>{% endblock %}

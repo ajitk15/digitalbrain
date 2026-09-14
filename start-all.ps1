@@ -1,17 +1,33 @@
 param(
     [ValidateRange(1024,65535)][int]$Port = 8000,
-    # First-time setup: create the initial platform administrator. Everything
-    # else a fresh clone needs - virtual environment, configuration, database -
-    # is created on every run anyway; the administrator is the one step that
-    # cannot be, because it needs a password only a person can supply.
-    [switch]$Install
+    # First-run setup for a machine that has never run this project: install uv
+    # (or fall back to pip), build the virtual environment, create the initial
+    # platform administrator, and choose an AI provider. An ordinary start keeps
+    # an existing environment up to date but never downloads a toolchain, so what
+    # a normal run does stays predictable.
+    [switch]$Install,
+    # Re-run only the AI provider question, without touching anything else.
+    [switch]$ConfigureAI
 )
 . (Join-Path $PSScriptRoot 'scripts/runtime-common.ps1')
+. (Join-Path $PSScriptRoot 'scripts/environment.ps1')
 
 function Get-AdminState {
-    $state = (& $PythonExecutable 'scripts/admin_status.py' 2>$null | Select-Object -Last 1)
-    if ($LASTEXITCODE -ne 0) { return 'unknown' }
-    return "$state".Trim()
+    # Anything this writes to stderr is diagnostic, not a reason to stop: the
+    # answer is simply 'unknown'. Windows PowerShell would otherwise turn that
+    # output into a terminating error under $ErrorActionPreference = 'Stop'.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $global:LASTEXITCODE = 0
+        $state = (& $PythonExecutable 'scripts/admin_status.py' 2>$null | Select-Object -Last 1)
+        if ($LASTEXITCODE -ne 0) { return 'unknown' }
+        return "$state".Trim()
+    } catch {
+        return 'unknown'
+    } finally {
+        $ErrorActionPreference = $previous
+    }
 }
 
 function Install-Administrator {
@@ -66,19 +82,12 @@ try {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     try { $listener.Start() } catch { throw "Port $Port is already occupied; choose -Port." }
     finally { $listener.Stop() }
-    if (-not (Test-Path -LiteralPath $PythonExecutable)) {
-        if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-            throw 'Install uv first, then run start-all.ps1 again.'
-        }
-        Invoke-Checked 'uv' @('--cache-dir', '.runtime/uv-cache', 'sync', '--frozen', '--python', '3.12')
-    } else {
-        if (Get-Command uv -ErrorAction SilentlyContinue) {
-            Invoke-Checked 'uv' @('--cache-dir', '.runtime/uv-cache', 'sync', '--frozen', '--python', $PythonExecutable, '--no-managed-python')
-        } else {
-            Invoke-Checked $PythonExecutable @('-c', 'import django, waitress, axes, PIL, argon2, pypdf, defusedxml, markitdown')
-        }
-    }
-    if (-not $env:DIGITAL_BRAIN_CONFIG -and -not (Test-Path 'config/local.toml')) {
+    Initialize-Environment -AllowInstall ($Install.IsPresent)
+    # Run on every start, not only when the file is absent: config/local.toml
+    # records an absolute secret_directory, so a project folder that was moved or
+    # copied would otherwise keep pointing at the old machine's secrets - or fail
+    # with an error that names the missing signing key and not the real cause.
+    if (-not $env:DIGITAL_BRAIN_CONFIG) {
         Invoke-Checked $PythonExecutable @('scripts/init_local.py')
     }
     # Local convenience scripts must not perform production migrations implicitly.
@@ -88,6 +97,15 @@ try {
     Invoke-Checked $PythonExecutable @('manage.py', 'migrate', '--noinput')
     # After migrate: the user table has to exist before an administrator can.
     if ($Install) { Install-Administrator }
+    if ($Install -or $ConfigureAI) {
+        # Unlike the administrator, an AI provider is optional - the platform runs
+        # without one. A person who declines or mistypes should land on a working
+        # site with a warning, not on a failed start.
+        & $PythonExecutable 'scripts/ai_setup.py'
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'AI provider setup did not complete. Re-run with -ConfigureAI to try again.'
+        }
+    }
     Invoke-Checked $PythonExecutable @('manage.py', 'collectstatic', '--noinput')
     $instance = [guid]::NewGuid().ToString()
     $arguments = @(('"' + $ServerScript + '"'), '--port', "$Port", '--instance', $instance)
@@ -114,7 +132,7 @@ try {
     if (-not $Install -and (Get-AdminState) -eq 'missing') {
         Write-Output ''
         Write-Output 'No administrator account exists yet, so nobody can sign in.'
-        Write-Output 'Run ./stop-all.ps1, then ./start-all.ps1 -Install to create one.'
+        Write-Output 'Run ./stop-all.ps1, then ./start-all.ps1 -Install to set this project up.'
         Write-Output ''
     }
     Write-Output 'Stop with ./stop-all.ps1. Logs: .runtime/server-error.log'

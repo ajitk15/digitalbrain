@@ -4,15 +4,17 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import connection, transaction
 from django.db.models import Count, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
+from .ai import seed_application_ai
 from .forms import (
     ApplicationForm,
     BrandingForm,
@@ -90,7 +92,12 @@ def chat_settings(request, pk):
     """Chat history retention for one application. Owner-only, like Features."""
     app, grant = application_for(request.user, pk, owner=True)
     if not feature_enabled("chat", app):
-        raise Http404
+        # 403, matching workbench.access. The 404-not-403 rule in CLAUDE.md is
+        # about a *missing grant*, where confirming the application exists is
+        # itself a disclosure. This caller already holds an owner grant, so
+        # pretending the page is absent tells them nothing they do not know and
+        # hides the one fact that would help: the feature is switched off.
+        raise PermissionDenied("This feature is disabled.")
     record, _ = ChatRetention.objects.get_or_create(application=app)
     form = ChatRetentionForm(request.POST or None, instance=record)
     if request.method == "POST":
@@ -217,7 +224,12 @@ def create_organization(request):
     return render(
         request,
         "form.html",
-        {"form": form, "title": "New organization", "eyebrow": "Platform administration"},
+        {
+            "form": form,
+            "title": "New organization",
+            "eyebrow": "Platform administration",
+            "cancel_url": reverse("platform-console"),
+        },
     )
 
 
@@ -278,7 +290,14 @@ def create_portfolio(request, pk):
             audit(request.user, "portfolio.created", portfolio.pk, org)
         return redirect("organization", pk=org.pk)
     return render(
-        request, "form.html", {"form": form, "title": "New portfolio", "eyebrow": org.name}
+        request,
+        "form.html",
+        {
+            "form": form,
+            "title": "New portfolio",
+            "eyebrow": org.name,
+            "cancel_url": reverse("organization", args=[org.pk]),
+        },
     )
 
 
@@ -294,30 +313,95 @@ def create_product(request, pk):
             audit(request.user, "product.created", product.pk, org)
         return redirect("organization", pk=org.pk)
     return render(
-        request, "form.html", {"form": form, "title": "New product", "eyebrow": portfolio.name}
+        request,
+        "form.html",
+        {
+            "form": form,
+            "title": "New product",
+            "eyebrow": portfolio.name,
+            "cancel_url": reverse("organization", args=[org.pk]),
+        },
     )
 
 
 @login_required
 @require_http_methods(["GET", "POST"])
-def create_application(request, pk):
-    product = get_object_or_404(Product.objects.select_related("portfolio"), pk=pk)
-    org = organization_for(request.user, product.portfolio.organization_id, admin=True)
-    form = ApplicationForm(request.POST or None, organization=org)
+def create_application(request, pk=None, organization_id=None):
+    """Create an application, and any portfolio or product it still needs.
+
+    Two entry points, one form. `application-new` carries a product, so both
+    levels are already decided. `application-create` carries only the
+    organization and lets the form choose or name them - which is what turned
+    three pages and three redirects into one submission.
+    """
+    if pk is not None:
+        product = get_object_or_404(Product.objects.select_related("portfolio"), pk=pk)
+        org = organization_for(request.user, product.portfolio.organization_id, admin=True)
+    else:
+        product, org = None, organization_for(request.user, organization_id, admin=True)
+    form = ApplicationForm(request.POST or None, organization=org, product=product)
     if request.method == "POST" and form.is_valid():
+        values = form.cleaned_data
         with transaction.atomic():
-            app = Application.objects.create(product=product, name=form.cleaned_data["name"])
+            target = product
+            if target is None:
+                portfolio = values.get("portfolio") or Portfolio.objects.create(
+                    organization=org, name=values["new_portfolio"].strip()
+                )
+                if not values.get("portfolio"):
+                    audit(request.user, "portfolio.created", portfolio.pk, org)
+                target = values.get("product")
+                if target is None:
+                    target = Product.objects.create(
+                        portfolio=portfolio, name=values["new_product"].strip()
+                    )
+                    audit(request.user, "product.created", target.pk, org)
+            app = Application.objects.create(product=target, name=values["name"])
             ApplicationGrant.objects.create(
                 application=app,
-                user=form.cleaned_data["owner"],
+                user=values["owner"],
                 role="owner",
-                can_approve=form.cleaned_data["owner_can_approve"],
+                can_approve=values["owner_can_approve"],
+            )
+            if values.get("grant_me_owner") and values["owner"] != request.user:
+                # Explicit, never implied. Administering an organization does not
+                # grant access to its applications (policy.py), so the creator is
+                # otherwise locked out of the application they just made - and
+                # cannot reach its Features screen, which is owner-only.
+                ApplicationGrant.objects.create(
+                    application=app, user=request.user, role="owner", can_approve=False
+                )
+            # Only unticked features need a row: all_features treats a missing
+            # row as enabled, so writing the rest would be noise.
+            ApplicationFeature.objects.bulk_create(
+                ApplicationFeature(application=app, key=key, enabled=False)
+                for key, enabled in form.selected_features().items()
+                if not enabled
             )
             audit(request.user, "application.created", app.pk, org)
-        messages.success(request, "Application created with explicit owner access.")
+            # Inside the transaction on purpose: an application that exists must
+            # have its AI rows. The credential copy is a filesystem write and so
+            # cannot roll back, but an unreferenced file under a UUID that is now
+            # unused is inert, and never overwrites one mounted deliberately.
+            seeded = seed_application_ai(request.user, app)
+        note = "Application created with explicit owner access."
+        if seeded:
+            note += (
+                f" It uses the {seeded} credential from setup; "
+                "check the model and prices in AI settings."
+            )
+        messages.success(request, note)
         return redirect("organization", pk=org.pk)
     return render(
-        request, "form.html", {"form": form, "title": "New application", "eyebrow": product.name}
+        request,
+        "application_form.html",
+        {
+            "form": form,
+            "title": "New application",
+            "eyebrow": product.name if product else org.name,
+            "organization": org,
+            "cancel_url": reverse("organization", args=[org.pk]),
+        },
     )
 
 
@@ -379,7 +463,8 @@ def audit_log(request):
 def usage(request, pk):
     app, grant = application_for(request.user, pk)
     if not feature_enabled("usage_reports", app):
-        raise Http404
+        # Same reasoning as chat_settings above: a disabled feature is 403.
+        raise PermissionDenied("This feature is disabled.")
     records = AIUsage.objects.filter(application=app)
     totals = records.values("currency", "estimated").annotate(
         amount=Sum("amount"),
@@ -407,23 +492,55 @@ def features(request, pk=None):
     else:
         app, _ = application_for(request.user, pk, owner=True)
     if request.method == "POST":
+        organization = app.product.portfolio.organization if app else None
+
+        def apply(key, enabled):
+            """Write one switch and audit it only when it actually changed."""
+            if app:
+                row, created = ApplicationFeature.objects.get_or_create(
+                    application=app, key=key, defaults={"enabled": enabled}
+                )
+            else:
+                row, created = FeatureSwitch.objects.get_or_create(
+                    key=key, defaults={"enabled": enabled}
+                )
+            if not created:
+                if row.enabled == enabled:
+                    return False
+                row.enabled = enabled
+                row.save(update_fields=["enabled"])
+            elif enabled:
+                # A new row that matches the default changes nothing worth recording.
+                return False
+            audit(
+                request.user,
+                "feature.enabled" if enabled else "feature.disabled",
+                key,
+                organization,
+            )
+            return True
+
+        # The page submits every checkbox at once, so one decision reaches the
+        # server as one request instead of a full page reload per feature.
+        if request.POST.get("features_declared"):
+            switchable = {key for key, (_, available) in FEATURES.items() if available}
+            wanted = {key: f"feature_{key}" in request.POST for key in switchable}
+            with transaction.atomic():
+                changed = sum(apply(key, enabled) for key, enabled in wanted.items())
+            messages.success(
+                request,
+                "Feature settings saved." if changed else "No feature settings changed.",
+            )
+            return redirect("application-features", pk=pk) if app else redirect("features")
+
+        # The original single-toggle form, kept working: it is a real POST target
+        # that any bookmarked page or script may still use.
         key = request.POST.get("feature")
         state = request.POST.get("state")
         if key not in FEATURES or not FEATURES[key][1] or state not in {"on", "off"}:
             return HttpResponse("Invalid or unavailable feature.", status=400)
         with transaction.atomic():
-            if app:
-                ApplicationFeature.objects.update_or_create(
-                    application=app, key=key, defaults={"enabled": state == "on"}
-                )
-            else:
-                FeatureSwitch.objects.update_or_create(key=key, defaults={"enabled": state == "on"})
-            audit(
-                request.user,
-                "feature.enabled" if state == "on" else "feature.disabled",
-                key,
-                app.product.portfolio.organization if app else None,
-            )
+            apply(key, state == "on")
         messages.success(request, "Feature setting updated.")
         return redirect("application-features", pk=pk) if app else redirect("features")
     rows = []

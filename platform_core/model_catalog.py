@@ -35,6 +35,23 @@ GRAPH_GENERATION_ADVICE = (
 RECOMMENDED_GRAPH_MODEL = "claude:claude-sonnet-5"
 
 
+# One line per purpose, so the settings page can say what each model is actually
+# for. These used to live as an if/elif chain inside the template, which covered
+# three of the five purposes and fell through to the chat wording for the rest.
+PURPOSE_NOTES = {
+    "chat": "Answers conversational questions from documents and recent messages.",
+    "graph_generation": (
+        "Adds AI relationships when sources or these settings change. Disabled, the "
+        "structural graph is still built locally at no cost. Enabled runs may incur charges."
+    ),
+    "graph_retrieval": (
+        "Uses the saved graph and its source evidence to answer in Chat's Graph answer mode."
+    ),
+    "conversation_title": "Names each conversation from its first exchange. A short, cheap call.",
+    "plan_drafting": "Drafts Code Factory change plans from a ticket and the knowledge graph.",
+}
+
+
 # Published list prices in USD per million tokens, for the models this catalog
 # offers. Shown in AI settings as a reference only: rates are entered per
 # application because a contracted price can differ from list, and what the

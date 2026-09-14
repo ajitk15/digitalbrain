@@ -41,6 +41,14 @@ per provider per application, owner-only permissions on POSIX. Never environment
 variables, never the database, never a form field. `.env` accepts only
 `SITE_ADMIN_USER_ID`.
 
+`scripts/ai_setup.py` (run by `start-all.ps1 -Install` / `-ConfigureAI`) asks for the
+credential once on a console and writes `<provider>_default`. That file is a **template,
+not a fallback**: `ai.seed_application_ai` *copies* it to `<provider>_<application id>`
+when an application is created, and `provider_credential` still resolves only the
+per-application name. Nothing reads `_default` at request time, so a deleted
+per-application file stays an error and one application still cannot read another's
+credential. Do not make it a read-time fallback — that is the whole distinction.
+
 **The Claude CLI never uses a host login in production.** The SDK drives the
 bundled Claude Code CLI, which would otherwise fall back to an interactive session
 in `CLAUDE_CONFIG_DIR`. The sandbox points that (plus `HOME`/`USERPROFILE`) at an
@@ -101,9 +109,35 @@ one implementation is the point — do not reimplement it in JavaScript.
 path in `workbench.answer_question`. `static/chat.js` only intercepts. The synchronous
 path stays tested and stays in the codebase.
 
+Popups obey the same rule. `static/modal.js` turns any `<a data-modal href="…">` into a
+dialog by fetching that href and lifting `<main>` out of the response — so the target
+must always be a page that renders and submits on its own, and no view has a
+"fragment mode". With JavaScript off the link simply navigates. A redirect in the POST
+response means the view accepted it; a response at the same URL is a re-rendered form
+with errors and replaces the dialog's contents. Native `<dialog>` is not decoration:
+`style-src 'self'` forbids writing `style.top` from script, so its own centring and
+focus handling are what make a popup possible at all.
+
 **The CSP is pinned by a test.** `platform_core/middleware.py` sets it and
 `test_security.py` asserts the exact string. `connect-src 'self'` exists for the chat
 EventSource. No `unsafe-inline`, no external origins.
+
+**Features are a registry, chosen at creation.** `services.FEATURES` is the single list;
+`available_features()` filters it to what can actually be switched on. Adding one line
+there puts a checkbox on the create form, a row on the Features screen and an entry in
+the nav, with nothing else to change. A missing `ApplicationFeature` row means enabled,
+so only unticked features are written.
+
+Both the create form and the Features screen post a hidden `features_declared` marker.
+An unticked checkbox is simply absent from a POST, so without the marker "every box off"
+and "this caller never mentioned features" are the same bytes — and the second must not
+silently disable everything. With the marker the checkboxes are taken literally.
+
+**Creating an application never widens access.** `views.create_application` writes the
+portfolio, product, application, owner grant and feature rows in one transaction, but
+the org admin who creates it still gets no access to it: `policy.applications_for`
+requires an explicit grant, and `test_security` pins the 404. The create form's
+"Also grant me owner access" checkbox records a real grant rather than implying one.
 
 ## Graph lifecycle
 

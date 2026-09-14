@@ -344,9 +344,71 @@
   .focus-mode .breadcrumbs > a:not(.crumb-back),
   .focus-mode .breadcrumbs > span { display: none; }
   .focus-mode .shell main { padding: var(--s-2) var(--s-4) var(--s-4); max-width: none; }
-  /* The --h-chrome-total override for focus mode lives in tokens.css, not
-     here: :root is unlayered, and an unlayered declaration beats a layered
-     one whatever its specificity, so an override in this layer is dead. */
+
+  /* Full-height workspaces --------------------------------------------- */
+
+  /*
+   * Reserve the scrollbar's width whether or not one is showing. Windows uses
+   * classic (space-taking) scrollbars, so a document that crosses the overflow
+   * threshold loses ~15px of width the instant the bar appears - which re-wraps
+   * .topbar and .breadcrumbs, changes the page height, and can push it back
+   * under the threshold. That oscillation is the focus-mode shake, and it only
+   * showed on some monitors because the wrap threshold depends on viewport
+   * width and DPI scale. Stable gutter, no oscillation.
+   */
+  html { scrollbar-gutter: stable; }
+
+  /*
+   * Chat and the Knowledge Base fill the window. They used to do it by
+   * subtracting a hard-coded chrome height from 100dvh, which was wrong by
+   * 10-18px even before anything wrapped, so the page always overflowed
+   * slightly. Now the shell is the full-height box and the workspace is simply
+   * the child that takes the remaining space - correct at any chrome height,
+   * and correct in focus mode with no override.
+   *
+   * :has() scopes this to the two pages that want it, so every other page keeps
+   * its ordinary document flow. min-height on the workspaces themselves is the
+   * fallback for a browser without :has(), where these rules do not apply.
+   */
+  .shell:has(.chat-workspace),
+  .shell:has(.kb-panes) {
+    display: flex;
+    flex-direction: column;
+    /* A definite height, not min-height. Flex children only shrink against a
+       container whose height is known; with min-height alone the shell simply
+       grows to fit and the overflow comes straight back. */
+    height: 100dvh;
+  }
+  .shell:has(.chat-workspace) > main,
+  .shell:has(.kb-panes) > main {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    /* A flex item will not shrink below its content without this. */
+    min-height: 0;
+  }
+  .shell:has(.chat-workspace) .chat-workspace,
+  .shell:has(.kb-panes) .kb-panes {
+    flex: 1;
+    height: auto;
+    /* No min-height: 0 here on purpose. Each workspace keeps its own floor
+       (360px / 420px) so a very short window scrolls the page rather than
+       squashing the conversation into a sliver. */
+  }
+
+  /*
+   * Below 700px the sidebar leaves fixed positioning and sits in the flow above
+   * the shell (app.css), so a 100dvh shell would be the sidebar's height too
+   * tall. The narrow layout already scrolls the document and gives chat its own
+   * height, so hand the whole thing back to normal flow.
+   */
+  @media (max-width: 700px) {
+    .shell:has(.chat-workspace),
+    .shell:has(.kb-panes) {
+      display: block;
+      height: auto;
+    }
+  }
 
   /* Knowledge Base: three independently scrolling panes ----------------- */
 
@@ -354,8 +416,11 @@
     display: grid;
     grid-template-columns: var(--w-kb-rail) minmax(0, 1fr) var(--w-kb-quality);
     gap: var(--s-3);
-    height: calc(100dvh - var(--h-chrome-total));
-    min-height: 520px;
+    /* A floor, not a size: the flex rules above supply the real height, and this
+       is the whole behaviour on a browser without :has(). Kept low enough that a
+       720p laptop still fits without a page scrollbar - each pane scrolls
+       internally, so a generous floor only pushed the panes off-screen. */
+    min-height: 420px;
   }
   .kb-pane {
     display: flex;
@@ -473,7 +538,7 @@
 
   /* Chat: answers read as documents ------------------------------------ */
 
-  .chat-workspace { height: calc(100dvh - var(--h-chrome-total)); }
+  .chat-workspace { min-height: 360px; }  /* Floor only; see .kb-panes above. */
 
   .message-body {
     font-size: var(--t-14);
@@ -707,6 +772,50 @@
   .kb-empty { display: flex; flex-direction: column; justify-content: center; }
   .kb-empty .card { border: 0; box-shadow: none; padding: 0; }
   .kb-empty h2 { font-size: var(--t-17); }
+  /* AI settings ---------------------------------------------------------
+
+     Five near-identical forms read as a wall, so each card now leads with what
+     the task is and what is currently set, and the forms sit underneath. The
+     legacy layer aligns the cards by forcing min-height on their description;
+     a grid with stretched rows does it properly. */
+  .ai-settings-grid {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    align-items: start;
+  }
+  .ai-settings-grid .muted { min-height: 0; font-size: var(--t-12); }
+  .ai-purpose { display: flex; flex-direction: column; }
+  .ai-purpose .card-heading { align-items: flex-start; gap: var(--s-2); }
+  .ai-purpose .card-heading h2 { font-size: var(--t-14); }
+  .ai-purpose .ai-model-form { margin-top: auto; }
+  .ai-purpose .pill { font-variant-numeric: tabular-nums; }
+
+  .credential-status .cred-rows {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    margin-bottom: var(--s-3);
+  }
+  .credential-status .list-row { padding: var(--s-3); }
+  .credential-status small.mono {
+    font-family: ui-monospace, monospace;
+    font-size: var(--t-10);
+    color: var(--c-ink-faint);
+    overflow-wrap: anywhere;
+  }
+
+  /* A whole feature row is the label, so the checkbox has a generous target. */
+  .feature-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    margin: 0;
+    font-weight: 400;
+    cursor: pointer;
+    flex: 1;
+  }
+  .feature-row input { width: auto; flex-shrink: 0; }
+  .feature-row small { color: var(--c-ink-muted); }
+
   .price-table { margin: var(--s-3) 0; max-width: 420px; }
   .price-table td.mono { font-variant-numeric: tabular-nums; text-align: right; }
   /* API tokens ---------------------------------------------------------- */
@@ -957,4 +1066,83 @@
      token form uses left the button floating beside the help text. */
   .card > .form-card { margin-top: 0; max-width: 420px; }
   .card > .form-card input { max-width: 220px; }
+
+  /* Popups ------------------------------------------------------------- */
+
+  /*
+   * One <dialog> serves every popup; static/modal.js moves an ordinary page's
+   * <main> into it. Native <dialog> is used precisely because it centres itself,
+   * traps focus and handles Escape without a single inline style - style-src
+   * 'self' forbids writing style.top from script.
+   */
+  .modal {
+    width: min(560px, calc(100vw - 2 * var(--s-4)));
+    max-height: calc(100dvh - 2 * var(--s-5));
+    padding: 0;
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    background: var(--c-surface);
+    color: var(--c-ink);
+    box-shadow: var(--e-2);
+    z-index: var(--z-focus);
+    overflow: hidden;
+  }
+  .modal::backdrop { background: rgba(16, 24, 40, 0.45); }
+  .modal-body { padding: var(--s-5); overflow-y: auto; max-height: inherit; }
+  /* The page heading becomes the dialog's title, at a size that suits a popup
+     rather than a full page. */
+  .modal-body h1 { font-size: var(--t-20); letter-spacing: -0.02em; margin-bottom: var(--s-2); }
+  .modal-body .eyebrow { margin-bottom: var(--s-1); }
+  /* A card inside a popup is already inside a surface; a second border and a
+     second padding just draw a box within a box. */
+  .modal-body .card,
+  .modal-body .form-card,
+  .modal-body .list-card {
+    border: 0;
+    padding: 0;
+    margin-top: var(--s-4);
+    max-width: none;
+    background: none;
+  }
+  .modal-body .actions { margin-top: var(--s-4); gap: var(--s-2); }
+  .modal-body form p:last-of-type { margin-bottom: 0; }
+
+  /* The + control that opens a create popup. */
+  .add-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s-1);
+    font-size: var(--t-12);
+    font-weight: 600;
+    color: var(--c-brand-strong);
+    border: 1px dashed var(--c-line-strong);
+    border-radius: var(--r-md);
+    padding: 4px 10px;
+    text-decoration: none;
+    background: none;
+  }
+  .add-button:hover { border-style: solid; border-color: var(--c-brand); text-decoration: none; }
+
+  /* The "+" beside an organization in the sidebar tree. Kept quiet until the
+     row is hovered or it has keyboard focus, so the tree still reads as names. */
+  .tree-add {
+    margin-left: auto;
+    padding: 0 6px;
+    border-radius: var(--r-sm);
+    font-size: var(--t-14);
+    line-height: 1.2;
+    color: var(--c-ink-faint);
+    text-decoration: none;
+    opacity: 0;
+  }
+  .org-tree summary:hover .tree-add,
+  .tree-add:focus-visible { opacity: 1; color: var(--c-brand-strong); }
+  .org-tree summary { display: flex; align-items: center; gap: var(--s-1); }
+
+  /* Feature checkboxes on the create form: a checkbox per registry entry. */
+  .checkbox-grid { display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; border: 0; }
+  .checkbox-grid legend { font-size: var(--t-12); font-weight: 600; color: var(--c-ink-3); padding: 0; }
+  .checkbox-grid label { display: flex; align-items: center; gap: var(--s-2); margin: 0; font-weight: 500; }
+  .checkbox-grid input { width: auto; }
 }

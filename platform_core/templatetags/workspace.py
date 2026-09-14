@@ -1,7 +1,7 @@
 from django import template
 from django.urls import reverse
 
-from platform_core.models import ApplicationGrant
+from platform_core.models import ApplicationGrant, OrganizationMember
 from platform_core.policy import applications_for, organizations_for
 from platform_core.services import feature_enabled
 
@@ -122,6 +122,16 @@ def organization_tree(context):
     selected_app = context.get("application")
     selected_org = context.get("organization")
     org_id = selected_app.organization_id if selected_app else getattr(selected_org, "pk", None)
+    # Only organizations this person administers get a "+": showing it anywhere
+    # else would open a popup onto a 404, since creating requires org admin.
+    # Each "+" creates the next level down - portfolio under an organization,
+    # product under a portfolio, application under a product - so the ids of the
+    # intermediate levels have to travel with the tree, not just their names.
+    administered = set(
+        OrganizationMember.objects.filter(user=request.user, is_admin=True).values_list(
+            "organization_id", flat=True
+        )
+    )
     tree = {
         org.pk: {
             "id": org.pk,
@@ -129,6 +139,7 @@ def organization_tree(context):
             "portfolios": {},
             "current": org.pk == org_id,
             "selected": org.pk == org_id and not selected_app,
+            "can_create": org.pk in administered,
         }
         for org in organizations_for(request.user).order_by("name", "id")
     }
@@ -140,10 +151,17 @@ def organization_tree(context):
             continue
         portfolio = app.product.portfolio
         branch = org["portfolios"].setdefault(
-            portfolio.pk, {"name": portfolio.name, "products": {}, "current": False}
+            portfolio.pk,
+            {"id": portfolio.pk, "name": portfolio.name, "products": {}, "current": False},
         )
         product = branch["products"].setdefault(
-            app.product_id, {"name": app.product.name, "applications": [], "current": False}
+            app.product_id,
+            {
+                "id": app.product_id,
+                "name": app.product.name,
+                "applications": [],
+                "current": False,
+            },
         )
         current = bool(selected_app and app.pk == selected_app.pk)
         branch["current"] |= current

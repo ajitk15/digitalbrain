@@ -122,18 +122,22 @@
   --e-2: 0 4px 12px rgba(16, 24, 40, 0.06);
 
   /*
-   * Layout. --h-chrome-total replaces the hard-coded calc(100dvh - 215px) that
-   * pinned chat's height to the exact chrome height of one moment in time.
-   * Focus mode redefines this single token, so every full-height workspace
-   * grows without needing to know focus mode exists.
+   * Layout.
+   *
+   * There is deliberately no --h-chrome-total here any more. It named a constant
+   * estimate of the chrome height and full-height workspaces were sized
+   * calc(100dvh - that). But the chrome is content-driven: .topbar and
+   * .breadcrumbs both wrap. Whenever the real height exceeded the estimate the
+   * document overflowed, a classic Windows scrollbar appeared and took ~15px of
+   * width, which re-wrapped the topbar, which changed the height again - a loop
+   * with nothing damping it, and one that lands differently on every monitor
+   * width and DPI scale. That was the focus-mode "shake".
+   *
+   * Workspaces now grow through real flex layout in redesign.css instead of
+   * subtracting a guess, so no token needs to know how tall the chrome is.
+   * --h-breadcrumb survives only as the breadcrumb strip's own min-height.
    */
-  --h-topbar: 46px;
-  --h-appmenu: 41px;
   --h-breadcrumb: 30px;
-  --h-chrome-total: calc(
-    var(--h-topbar) + var(--h-appmenu) + var(--h-breadcrumb) + 60px
-  );
-  --h-chrome-focus: calc(var(--h-breadcrumb) + var(--h-appmenu) + 24px);
   --w-sidebar: 256px;
   --w-kb-rail: 300px;
   --w-kb-quality: 340px;
@@ -144,13 +148,8 @@
 }
 
 /*
- * Focus mode frees the sidebar and top bar, so full-height workspaces should grow
- * into the space. This override MUST live here, unlayered and after :root, for
- * two reasons: an unlayered declaration beats any layered one, so putting it in
- * the redesign layer leaves it silently dead; and .focus-mode and :root have
- * equal specificity on the same element, so source order decides.
+ * Focus mode needs no token override. It hides the sidebar and top bar, and the
+ * flex layout in redesign.css lets the workspace take whatever room that frees
+ * without anyone having to say how much that is.
  */
-.focus-mode {
-  --h-chrome-total: var(--h-chrome-focus);
-}
 

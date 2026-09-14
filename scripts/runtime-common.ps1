@@ -24,7 +24,11 @@ function Lock-Lifecycle {
 
 function Get-OwnedProcess {
     param($State)
-    if ([string]$State.ProjectRoot -ne $ProjectRoot) { throw 'Runtime state belongs to another project.' }
+    # A copied or moved project folder brings .runtime/services.json with it. That
+    # file describes a process on the old machine, or under the old path - stale,
+    # not suspicious. Discard it so the caller can start cleanly. The checks below
+    # stay fatal: those guard against acting on a live process we do not own.
+    if ([string]$State.ProjectRoot -ne $ProjectRoot) { return $null }
     $process = Get-Process -Id ([int]$State.ProcessId) -ErrorAction SilentlyContinue
     if ($null -eq $process) { return $null }
     # Creation timestamp defeats PID reuse. Absolute executable and command line prove ownership.

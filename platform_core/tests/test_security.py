@@ -271,7 +271,10 @@ class SecurityTests(TestCase):
         FeatureSwitch.objects.create(key="usage_reports", enabled=False)
         ApplicationFeature.objects.create(application=self.app, key="usage_reports", enabled=True)
         self.login(self.owner)
-        self.assertEqual(self.client.get(reverse("usage", args=[self.app.pk])).status_code, 404)
+        # 403, not 404: this user holds a grant, so the application's existence
+        # is not a secret from them. A disabled feature answers the same way
+        # everywhere now - see workbench.access.
+        self.assertEqual(self.client.get(reverse("usage", args=[self.app.pk])).status_code, 403)
         self.receipt()
         self.assertEqual(AIUsage.objects.count(), 1)
         self.assertNotContains(
