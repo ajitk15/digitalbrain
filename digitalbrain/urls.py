@@ -19,8 +19,12 @@ urlpatterns = [
     ),
     # Machine-facing surfaces. Bearer-token only: no session cookie is accepted,
     # which is what keeps them out of reach of an authenticated browser.
-    path("api/v1/applications/<uuid:pk>/graph/search/", api.graph_search, name="api-graph-search"),
-    path("api/v1/applications/<uuid:pk>/mcp/", api.mcp, name="api-mcp"),
+    path(
+        "api/v1/applications/<str:reference>/graph/search/",
+        api.graph_search,
+        name="api-graph-search",
+    ),
+    path("api/v1/applications/<str:reference>/mcp/", api.mcp, name="api-mcp"),
     path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path(

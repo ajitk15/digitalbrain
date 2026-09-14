@@ -137,6 +137,51 @@ class GraphApiTests(TestCase):
         secret = self.mint(self.viewer)
         self.assertEqual(self.call(secret, q="Service Alpha").status_code, 200)
 
+    def test_an_address_may_name_the_application_readably(self):
+        """A UUID in every client configuration is a maintenance cost."""
+        readable = reverse("api-graph-search", args=[self.app.slug])
+        self.assertIn(self.app.slug, readable)
+        response = self.client.get(
+            readable, {"q": "Service Alpha"}, headers={"Authorization": f"Bearer {self.secret}"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+
+    def test_the_identifier_form_still_works(self):
+        """Anything already configured must keep running."""
+        response = self.client.get(
+            reverse("api-graph-search", args=[self.app.pk]),
+            {"q": "Service Alpha"},
+            headers={"Authorization": f"Bearer {self.secret}"},
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_an_address_naming_nothing_is_answered_like_a_bad_token(self):
+        """A readable name must not tell an outsider which applications exist."""
+        unknown = reverse("api-graph-search", args=["no-such-application"])
+        with_token = self.client.get(
+            unknown, {"q": "x"}, headers={"Authorization": f"Bearer {self.secret}"}
+        )
+        wrong_token = self.client.get(
+            reverse("api-graph-search", args=[self.app.slug]),
+            {"q": "x"},
+            headers={"Authorization": "Bearer dbk_000000000000_wrong"},
+        )
+        self.assertEqual(with_token.status_code, 401)
+        self.assertEqual(wrong_token.status_code, 401)
+        self.assertEqual(with_token.json()["error"], wrong_token.json()["error"])
+
+    def test_a_token_for_one_application_is_refused_on_another_s_name(self):
+        from platform_core.models import ApplicationGrant
+
+        ApplicationGrant.objects.create(application=self.other, user=self.owner, role="owner")
+        response = self.client.get(
+            reverse("api-graph-search", args=[self.other.slug]),
+            {"q": "x"},
+            headers={"Authorization": f"Bearer {self.secret}"},
+        )
+        self.assertEqual(response.status_code, 401)
+
     # ---- versions ----
 
     def test_a_version_can_be_pinned(self):
@@ -335,7 +380,7 @@ class TokenManagementTests(TestCase):
         """A copied snippet has to work as pasted, not point at some other app."""
         for name in ("claude-code", "claude-desktop", "vscode", "cursor", "kiro", "chatgpt"):
             with self.subTest(client=name):
-                self.assertIn(str(self.app.pk), self.snippet(name))
+                self.assertIn(self.app.slug, self.snippet(name))
 
     def test_no_snippet_carries_a_real_token(self):
         """These are copied and pasted into files; a live secret must never be in one."""
@@ -367,10 +412,15 @@ class TokenManagementTests(TestCase):
         self.assertIn('class="tabs settings-tabs"', body)
         self.assertNotIn('<div class="tabs">', body)
 
+    def test_the_page_shows_the_readable_address(self):
+        body = self.client.get(self.url).content.decode()
+        self.assertIn(f"/applications/{self.app.slug}/graph/search/", body)
+        self.assertIn(f"/applications/{self.app.slug}/mcp/", body)
+
     def test_the_endpoints_are_shown_as_complete_copyable_urls(self):
         """A caller should never have to assemble the origin by hand."""
         body = self.client.get(self.url).content.decode()
-        root = f"http://testserver/api/v1/applications/{self.app.pk}"
+        root = f"http://testserver/api/v1/applications/{self.app.slug}"
         self.assertIn(f'id="rest-url">{root}/graph/search/', body)
         self.assertIn(f'id="mcp-url">{root}/mcp/', body)
 

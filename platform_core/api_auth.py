@@ -23,6 +23,7 @@ the digest is then compared in constant time.
 import hashlib
 import hmac
 import secrets
+import uuid
 
 from django.utils import timezone
 
@@ -70,12 +71,38 @@ def presented(request):
     return value.strip()
 
 
-def authenticate(request, app_id):
-    """Resolve a bearer token to (user, token) for one application.
+def resolve_application(reference):
+    """The application an address names, by slug or by id, or None.
+
+    Both forms are accepted so the readable address can be adopted without
+    breaking a token, configuration or script that already carries a UUID.
+    """
+    from .models import Application
+
+    value = str(reference or "").strip()
+    if not value:
+        return None
+    application = Application.objects.filter(slug=value).first()
+    if application is not None:
+        return application
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return None
+    return Application.objects.filter(pk=value).first()
+
+
+def authenticate(request, reference):
+    """Resolve a bearer token to (user, token, application) for one application.
 
     Raises ApiError with a status the caller can return directly. The messages
     deliberately do not distinguish "no such token" from "wrong application" -
     both are simply unauthorized.
+
+    The address is resolved only after the token has been checked, so an address
+    that names nothing is answered exactly like a token that is not valid. A
+    readable slug would otherwise tell an unauthenticated caller which
+    applications exist, which the opaque id never did.
     """
     from .models import ApiToken
 
@@ -97,13 +124,14 @@ def authenticate(request, app_id):
         raise ApiError(
             f"That API token is {token.state.lower()}.", status=401, code="unauthenticated"
         )
-    if str(token.application_id) != str(app_id):
+    application = resolve_application(reference)
+    if application is None or token.application_id != application.pk:
         raise ApiError("That API token is not valid.", status=401, code="unauthenticated")
     if not token.user.is_active:
         raise ApiError("That API token is not valid.", status=401, code="unauthenticated")
     throttle(token)
     ApiToken.objects.filter(pk=token.pk).update(last_used_at=timezone.now())
-    return token.user, token
+    return token.user, token, application
 
 
 _recent = {}

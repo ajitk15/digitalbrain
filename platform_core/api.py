@@ -105,9 +105,14 @@ def search(user, app_id, question, version):
     }
 
 
-def authorize(request, app_id):
-    """Authenticate the token, then apply the platform's own access rules."""
-    user, token = authenticate(request, app_id)
+def authorize(request, reference):
+    """Authenticate the token, then apply the platform's own access rules.
+
+    The address may name the application by slug or by id; everything after this
+    point works on the resolved application, so the access checks are unchanged.
+    """
+    user, token, application = authenticate(request, reference)
+    app_id = application.pk
     try:
         app, _ = access(user, app_id, "knowledge")
         access(user, app_id, "chat")
@@ -124,10 +129,10 @@ def authorize(request, app_id):
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-def graph_search(request, pk):
+def graph_search(request, reference):
     """GET or POST a question, receive verified graph evidence."""
     try:
-        user, token, app = authorize(request, pk)
+        user, token, app = authorize(request, reference)
         if request.method == "POST":
             try:
                 body = json.loads(request.body or b"{}")
@@ -139,7 +144,7 @@ def graph_search(request, pk):
         else:
             question = request.GET.get("q") or request.GET.get("question")
             version = request.GET.get("version") or None
-        payload = search(user, pk, question, version)
+        payload = search(user, app.pk, question, version)
     except ApiError as failure:
         return error(failure)
     audit(
@@ -165,7 +170,7 @@ def rpc_error(request_id, code, message, status=200):
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def mcp(request, pk):
+def mcp(request, reference):
     """A read-only MCP server exposing graph retrieval as one tool.
 
     Implements the three methods a tool server needs - initialize, tools/list and
@@ -185,7 +190,7 @@ def mcp(request, pk):
     params = body.get("params") if isinstance(body.get("params"), dict) else {}
 
     try:
-        user, token, app = authorize(request, pk)
+        user, token, app = authorize(request, reference)
     except ApiError as failure:
         return error(failure)
 
@@ -218,7 +223,9 @@ def mcp(request, pk):
             return rpc_error(request_id, -32602, f"Unknown tool: {name}")
         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
         try:
-            payload = search(user, pk, arguments.get("question"), arguments.get("version"))
+            payload = search(
+                user, app.pk, arguments.get("question"), arguments.get("version")
+            )
         except ApiError as failure:
             # A tool failure is a result the model can read and react to, not a
             # protocol error.

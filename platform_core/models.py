@@ -3,12 +3,29 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils.text import slugify
 
 
 class User(AbstractUser):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     is_platform_admin = models.BooleanField(default=False)
     must_change_password = models.BooleanField(default=False)
+
+
+def unique_slug(model, name, field="slug"):
+    """A readable, unique handle derived from a name.
+
+    Two applications may legitimately share a name in different organizations,
+    but one address space cannot, so a collision gets a short suffix rather than
+    an error - naming is not the place to make someone retry.
+    """
+    base = slugify(name)[:120] or "application"
+    candidate, index = base, 2
+    while model.objects.filter(**{field: candidate}).exists():
+        suffix = f"-{index}"
+        candidate = f"{base[: 120 - len(suffix)]}{suffix}"
+        index += 1
+    return candidate
 
 
 class NamedResource(models.Model):
@@ -52,6 +69,17 @@ class Product(NamedResource):
 class Application(NamedResource):
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name="applications")
     active = models.BooleanField(default=True)
+    #: A readable handle for the API and MCP addresses, so a caller  does not
+    #: have to carry a UUID around. Unique across the platform because those
+    #: addresses have no organization in the path; guessing one gains nothing,
+    #: since every endpoint is bearer-only and a token is bound to one
+    #: application.
+    slug = models.SlugField(max_length=140, unique=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = unique_slug(Application, self.name)
+        super().save(*args, **kwargs)
 
     @property
     def organization_id(self):
