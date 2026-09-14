@@ -237,17 +237,34 @@ def document_detail(request, pk, document_id):
         with transaction.atomic():
             locked = Document.objects.select_for_update().get(pk=document.pk)
             if locked.status in {"quarantined", "failed"}:
-                locked.status = "queued"
+                # A link that never downloaded has no stored bytes to convert, so
+                # queueing conversion only fails again on the missing file. Send it
+                # back to the download queue instead.
+                never_downloaded = locked.origin != "upload" and not locked.size
+                locked.status = "pending" if never_downloaded else "queued"
                 locked.conversion_actor = request.user
                 locked.conversion_error = ""
                 locked.save(update_fields=["status", "conversion_actor", "conversion_error"])
                 audit(
                     request.user,
-                    "document.conversion_queued",
+                    "document.download_queued"
+                    if never_downloaded
+                    else "document.conversion_queued",
                     locked.pk,
                     app.product.portfolio.organization,
                 )
-        messages.success(request, "Document queued for Markdown conversion.")
+                queued = "download" if never_downloaded else "conversion"
+            else:
+                queued = None
+        if queued == "download":
+            messages.success(request, "Queued for download again.")
+        elif queued == "conversion":
+            messages.success(request, "Document queued for Markdown conversion.")
+        else:
+            messages.info(
+                request,
+                f"Nothing to retry: this document is {locked.get_status_display().lower()}.",
+            )
         return redirect("document-detail", pk=pk, document_id=document_id)
     entry = KnowledgeEntry.objects.filter(document=document, active=True).first()
     download = request.GET.get("download")

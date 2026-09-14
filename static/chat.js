@@ -252,12 +252,6 @@
     });
   }
 
-  document.querySelectorAll("form[data-confirm]").forEach((item) => {
-    item.addEventListener("submit", (event) => {
-      if (!window.confirm(item.dataset.confirm)) event.preventDefault();
-    });
-  });
-
   function wireMessage(root) {
     if (!(navigator.clipboard && window.isSecureContext)) return;
     root.querySelectorAll("[data-copy]").forEach((button) => {

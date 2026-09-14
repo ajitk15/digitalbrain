@@ -41,3 +41,18 @@
     });
   });
 })();
+
+/*
+ * Confirmation for destructive submits, wherever they are.
+ *
+ * This lived in chat.js, which only the chat page loads, so the confirmation
+ * api_tokens.html declares on "Revoke" never actually ran - the token went
+ * without a prompt. It belongs with the other globally loaded behaviour.
+ */
+(() => {
+  document.querySelectorAll("form[data-confirm]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+    });
+  });
+})();

@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from platform_core.graph_ai import (
     available_graph_versions,
@@ -28,8 +29,12 @@ class GraphVersionSelectionTests(TestCase):
             self.owner, self.app.pk, "Architecture", "Service Alpha sends messages to Queue Beta."
         )
 
-    def revision(self, number, relation="sends messages to"):
-        """A saved snapshot whose single edge quotes the live source exactly."""
+    def revision(self, number, relation="sends messages to", published=True):
+        """A saved snapshot whose single edge quotes the live source exactly.
+
+        Published by default: only a published version may be pinned or answered
+        from, so an unpublished one would not be a valid subject for these tests.
+        """
         quote = "Service Alpha sends messages to Queue Beta."
         data = {
             "nodes": [
@@ -51,7 +56,12 @@ class GraphVersionSelectionTests(TestCase):
             "sources": [{"id": str(self.source.pk)}],
         }
         return GraphRevision.objects.create(
-            application=self.app, number=number, fingerprint="f", data=data, quality={}
+            application=self.app,
+            number=number,
+            fingerprint="f",
+            data=data,
+            quality={},
+            published_at=timezone.now() if published else None,
         )
 
     def test_available_versions_are_listed_newest_first(self):
@@ -152,12 +162,14 @@ class GraphPublishingTests(TestCase):
         )
         self.url = reverse("graph", args=[self.app.pk])
 
-    def revision(self, number):
+    def revision(self, number, published=False):
+        """Unpublished by default: these tests are about the publishing step itself."""
         quote = "Service Alpha sends messages to Queue Beta."
         return GraphRevision.objects.create(
             application=self.app,
             number=number,
             fingerprint="f",
+            published_at=timezone.now() if published else None,
             data={
                 "nodes": [
                     {"id": "a", "label": "Service Alpha", "kind": "entity"},
@@ -267,8 +279,9 @@ class GraphPublishingTests(TestCase):
 
     def test_a_version_can_be_chosen_when_starting_a_conversation(self):
         """Otherwise the first question has to be asked against the wrong version."""
-        self.revision(1)
-        self.revision(2)
+        # Only published versions are offered, so these have to be published.
+        self.revision(1, published=True)
+        self.revision(2, published=True)
         from platform_core.models import AIConfiguration
 
         for purpose in ("chat", "graph_retrieval"):

@@ -137,6 +137,21 @@ def submit(user, app_id, raw):
     return created
 
 
+def import_still_permitted(document):
+    """Whether the uploader may still cause this application to fetch on its behalf."""
+    from django.http import Http404
+
+    from .workbench import access
+
+    if document.uploaded_by_id is None or not document.uploaded_by.is_active:
+        return False
+    try:
+        access(document.uploaded_by, document.application_id, "knowledge", write=True)
+    except (PermissionDenied, Http404):
+        return False
+    return True
+
+
 def download(document):
     """Fetch a pending document's bytes and hand it to the conversion queue.
 
@@ -148,6 +163,20 @@ def download(document):
     )
     if not claimed:
         return False
+
+    # A queued import can sit here after the person who asked for it lost access,
+    # and the fetch below spends the application's own GitHub or SharePoint
+    # credential. Re-check the grant now rather than trusting the one that existed
+    # when the link was pasted; the queue is not a way to outlive a revocation.
+    if not import_still_permitted(document):
+        Document.objects.filter(pk=document.pk, status="fetching").update(
+            status="failed",
+            conversion_error=(
+                "Import cancelled: the person who added this link no longer has "
+                "access to the application."
+            ),
+        )
+        return True
 
     token = ""
     target = document.source_url

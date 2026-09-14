@@ -258,18 +258,34 @@ def draft_plan(user, app_id, requirement, citations):
     }
 
 
-def chat_configuration(user, app_id):
+#: Which saved configuration answers each conversation mode.
+MODE_PURPOSE = {"ai": "chat", "graph": "graph_retrieval"}
+
+
+def chat_configuration(user, app_id, mode="ai"):
     """Authorize a chat run and return everything the worker needs as plain values.
 
     Called on the request thread. The worker is handed a token and ids, never a
     request-bound user object.
+
+    The mode picks the purpose: a graph conversation is answered by the graph
+    retrieval configuration, not the chat one. Streaming used to ignore mode
+    entirely and always load chat, so a conversation labelled "Graph answer" was
+    produced by the wrong model against the wrong sources.
     """
     app, _ = application_for(user, app_id)
     access(user, app_id, "knowledge")
     access(user, app_id, "chat")
-    config = AIConfiguration.objects.filter(application=app, purpose="chat", enabled=True).first()
+    purpose = MODE_PURPOSE.get(mode, "chat")
+    config = AIConfiguration.objects.filter(
+        application=app, purpose=purpose, enabled=True
+    ).first()
     if not config:
-        raise ValidationError("An application owner must configure Chat conversation first.")
+        raise ValidationError(
+            "An application owner must configure Graph retrieval first."
+            if purpose == "graph_retrieval"
+            else "An application owner must configure Chat conversation first."
+        )
     if config.provider not in {"openai", "claude"}:
         raise ValidationError("Unsupported AI provider.")
     token = provider_credential(config, app)

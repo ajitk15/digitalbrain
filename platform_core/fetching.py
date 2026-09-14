@@ -153,11 +153,20 @@ def normalise(raw):
             raise FetchError("Only http and https links can be imported.")
     else:
         value = "https://" + value
-    parsed = urlparse(value)
+    # urlparse raises on some shapes (an unmatched IPv6 bracket) and defers others
+    # until .hostname or .port is read (a port outside the valid range). Left
+    # uncaught, either turned a mistyped link into a 500 rather than a message.
+    try:
+        parsed = urlparse(value)
+        host, port = parsed.hostname, parsed.port
+    except ValueError:
+        raise FetchError("That link is not a valid address.") from None
     if parsed.scheme not in {"http", "https"}:
         raise FetchError("Only http and https links can be imported.")
-    if not parsed.hostname:
+    if not host:
         raise FetchError("That link has no host.")
+    if port is not None and not 1 <= port <= 65535:
+        raise FetchError("That link has an invalid port.")
     if parsed.username or parsed.password:
         raise FetchError("Links containing credentials are not accepted.")
     return parsed

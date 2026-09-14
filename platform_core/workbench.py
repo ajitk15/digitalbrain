@@ -189,28 +189,31 @@ def readable_evidence(citations):
     return "\n\n".join(parts)
 
 
-def conversation_context(conversation, app, user):
+def conversation_context(conversation, app, user, before=None):
     """Recent exchanges, as provider-neutral HistoryTurn values.
 
     Returns plain values rather than model instances so a worker thread can carry
     history without holding an ORM object bound to a request.
+
+    `before` excludes the tail a regenerate or edit is about to replace. Those
+    messages still exist at this point - they are removed only once a replacement
+    answer exists - so they have to be filtered out here or the model would be
+    shown the very answer it is being asked to redo.
     """
     if not conversation:
         return []
+    history = conversation.messages.filter(application=app, user=user)
+    if before is not None:
+        history = history.filter(sequence__lt=before)
     answers = list(
-        conversation.messages.filter(
-            application=app, user=user, role="assistant", status="complete"
-        ).order_by("-sequence")[:HISTORY_TURNS]
+        history.filter(role="assistant", status="complete").order_by("-sequence")[:HISTORY_TURNS]
     )
     if not answers:
         return []
     questions = {
         message.sequence: message.body
-        for message in conversation.messages.filter(
-            application=app,
-            user=user,
-            role="user",
-            sequence__in=[answer.sequence - 1 for answer in answers],
+        for message in history.filter(
+            role="user", sequence__in=[answer.sequence - 1 for answer in answers]
         )
     }
     # Never resend excerpts/answers backed by a removed or changed source. Look up
@@ -234,11 +237,24 @@ def conversation_context(conversation, app, user):
     ]
 
 
+def lock_conversation(conversation):
+    """Take the row lock the sequence allocator depends on.
+
+    next_sequence reads the highest sequence and adds one, which is only safe
+    while nothing else can do the same. The lock was documented but never
+    actually taken: two concurrent sends could read the same value and both write
+    it, violating the unique constraint after the provider had already been paid.
+    SQLite serialises writers anyway, which is why the tests never showed it;
+    PostgreSQL does not.
+    """
+    return ChatConversation.objects.select_for_update().filter(pk=conversation.pk).first()
+
+
 def next_sequence(conversation):
     """Allocate the next message slot.
 
-    Called inside the caller's transaction with the conversation row locked, so two
-    concurrent sends cannot claim the same sequence.
+    Must be called inside a transaction that already holds the conversation row
+    through lock_conversation, or two concurrent sends can claim one sequence.
     """
     last = conversation.messages.order_by("-sequence").values_list("sequence", flat=True).first()
     return 0 if last is None else last + 1
@@ -474,15 +490,20 @@ def lexical_citations(app, question):
     ]
 
 
-def answer_question(user, app, conversation, question, mode, graph_version=None):
+def answer_question(user, app, conversation, question, mode, graph_version=None, trim_from=None):
     """Produce and persist one exchange synchronously.
 
     This is the no-JavaScript path, and the fallback whenever streaming is
     unavailable. It raises rather than persisting a failed answer, so a provider
     error never leaves a half-finished turn in the transcript.
+
+    `trim_from` is how regenerate and edit replace an exchange. The removal
+    happens here, inside the same transaction as the new messages and only after
+    the provider has answered - deleting first meant a provider failure took the
+    question and every later message with it and returned nothing.
     """
     first_exchange = conversation is None
-    history = conversation_context(conversation, app, user)
+    history = conversation_context(conversation, app, user, before=trim_from)
     query = retrieval_query(question, history)
     citations = lexical_citations(app, query)
     answer = readable_evidence(citations)
@@ -501,6 +522,10 @@ def answer_question(user, app, conversation, question, mode, graph_version=None)
     with transaction.atomic():
         access(user, app.pk, "chat")
         access(user, app.pk, "knowledge")
+        if conversation is not None:
+            lock_conversation(conversation)
+        if trim_from is not None and conversation is not None:
+            conversation.messages.filter(sequence__gte=trim_from).delete()
         if conversation is None:
             conversation = ChatConversation.objects.create(
                 application=app,
@@ -641,8 +666,8 @@ def chat(request, pk):
     )
 
 
-def resend(request, pk, app, conversation, question):
-    """Re-ask a question after regenerate or edit trimmed the transcript."""
+def resend(request, pk, app, conversation, question, trim_from=None):
+    """Re-ask a question, replacing the transcript from `trim_from` on success."""
     destination = f"{reverse('chat', args=[pk])}?conversation={conversation.pk}"
     try:
         answer_question(
@@ -652,6 +677,7 @@ def resend(request, pk, app, conversation, question):
             question,
             conversation.mode,
             graph_version=conversation.graph_version,
+            trim_from=trim_from,
         )
     except (ValidationError, ImproperlyConfigured) as error:
         messages.error(request, failure_text(error))
@@ -673,6 +699,8 @@ def start_answer(app, user, conversation, question, mode, graph_version=None):
                 mode=mode,
                 graph_version=graph_version,
             )
+        else:
+            lock_conversation(conversation)
         sequence = next_sequence(conversation)
         ChatMessage.objects.create(
             application=app,
@@ -715,11 +743,18 @@ def finish_answer(message_id, status, body, citations, error="", provider="", mo
     )
 
 
-def answer_worker(user_id, app_id, message_id, question, history, session):
+def answer_worker(
+    user_id, app_id, message_id, question, history, session, mode="ai", graph_version=None
+):
     """Own the provider call and every database write for one streamed answer.
 
     Runs off the request thread, so it re-resolves its own objects and always
     releases its connection.
+
+    `mode` and `graph_version` carry the conversation's own settings. Without
+    them this path answered every conversation as ordinary chat over lexical
+    search, including ones the page labelled "Graph answer" and ones pinned to a
+    particular published version.
     """
     from django.db import close_old_connections
 
@@ -729,9 +764,15 @@ def answer_worker(user_id, app_id, message_id, question, history, session):
     status, body, citations, error, provider, model = "failed", "", [], "", "", ""
     try:
         user = User.objects.get(pk=user_id)
-        app, config, token = chat_configuration(user, app_id)
+        app, config, token = chat_configuration(user, app_id, mode=mode)
         provider, model = config.provider, config.model
-        citations_seed = lexical_citations(app, retrieval_query(question, history))
+        query = retrieval_query(question, history)
+        if mode == "graph":
+            from .graph_ai import graph_citations
+
+            citations_seed = graph_citations(app.pk, query, version=graph_version)
+        else:
+            citations_seed = lexical_citations(app, query)
         body, citations = stream_chat_answer(
             user, app, config, token, question, citations_seed, history, session
         )
@@ -822,9 +863,19 @@ def chat_stream(request, pk, message_id):
         session = streaming.open_session(message.pk)
     except streaming.StreamCapacityError as full:
         return JsonResponse({"error": str(full)}, status=503)
+    conversation = message.conversation
     threading.Thread(
         target=answer_worker,
-        args=(request.user.pk, app.pk, message.pk, question, history, session),
+        args=(
+            request.user.pk,
+            app.pk,
+            message.pk,
+            question,
+            history,
+            session,
+            conversation.mode,
+            conversation.graph_version,
+        ),
         name=f"chat-answer-{message.pk}",
         daemon=True,
     ).start()
@@ -946,9 +997,8 @@ def chat_regenerate(request, pk, message_id):
     )
     if not question:
         raise Http404
-    with transaction.atomic():
-        conversation.messages.filter(sequence__gte=answer.sequence - 1).delete()
-    return resend(request, pk, app, conversation, question)
+    # The old exchange is removed by answer_question once a replacement exists.
+    return resend(request, pk, app, conversation, question, trim_from=answer.sequence - 1)
 
 
 @login_required
@@ -965,9 +1015,7 @@ def chat_edit(request, pk, message_id):
     if not question:
         messages.error(request, "Enter a question.")
         return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
-    with transaction.atomic():
-        conversation.messages.filter(sequence__gte=original.sequence).delete()
-    return resend(request, pk, app, conversation, question)
+    return resend(request, pk, app, conversation, question, trim_from=original.sequence)
 
 
 class DraftForm(forms.Form):

@@ -71,6 +71,13 @@ class ResponsePolicyMiddleware:
             response = redirect("password")
         else:
             response = self.get_response(request)
-        if request.user.is_authenticated or request.path.startswith("/accounts/"):
+        # Bearer-token API answers carry the same private graph evidence a signed-in
+        # page does, but they never populate request.user, so the session test alone
+        # left them with no cache directive at all.
+        if (
+            request.user.is_authenticated
+            or request.path.startswith("/accounts/")
+            or request.path.startswith("/api/")
+        ):
             response["Cache-Control"] = "no-store"
         return response

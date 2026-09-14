@@ -250,16 +250,28 @@ def graph_snapshot(app_id, version=None):
                 "and publish it before asking graph questions."
             )
     else:
-        revision = GraphRevision.objects.filter(application_id=app_id, number=version).first()
+        # Published only, exactly like the default path. Naming a version is a way
+        # to pin an answer to a known snapshot, not a way around the publication
+        # step - a draft has not been reviewed and must never answer a question.
+        revision = GraphRevision.objects.filter(
+            application_id=app_id, number=version, published_at__isnull=False
+        ).first()
         if revision is None:
-            raise ValidationError("That graph version is not available for this application.")
+            raise ValidationError(
+                "That graph version is not published for this application. "
+                "Publish it in Knowledge before answering from it."
+            )
     return revision.data, revision.number
 
 
 def available_graph_versions(app_id):
-    """Numbered versions an owner may answer from, newest first."""
+    """Published versions a conversation may be pinned to, newest first.
+
+    Drafts are deliberately absent: offering one would let a conversation pin
+    itself to a snapshot graph_snapshot then refuses to answer from.
+    """
     return list(
-        GraphRevision.objects.filter(application_id=app_id)
+        GraphRevision.objects.filter(application_id=app_id, published_at__isnull=False)
         .order_by("-number")
         .values_list("number", flat=True)[:20]
     )

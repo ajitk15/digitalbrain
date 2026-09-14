@@ -898,6 +898,9 @@
   .error-page { text-align: center; }
   .error-page .muted { margin: 0 auto var(--s-5); }
   .error-page .actions { justify-content: center; }
+  /* Sign-in help ran at 10px and #949caf - about 2.75:1 on white, under the 4.5:1
+     WCAG asks for normal text, at a size that makes it worse. */
+  .login-help { font-size: var(--t-12); color: var(--c-ink-3); }
   .error-mark {
     display: inline-grid;
     place-items: center;

@@ -135,7 +135,9 @@ class ChatStreamViewTests(TestCase):
     def test_the_stream_is_chunked_event_stream_without_a_content_length(self):
         payload = self.start().json()
 
-        def fake_worker(user_id, app_id, message_id, question, history, session):
+        def fake_worker(
+            user_id, app_id, message_id, question, history, session, mode="ai", graph_version=None
+        ):
             session.emit("delta", {"t": "Thirty "})
             session.emit("delta", {"t": "days."})
             session.emit("done", {"status": "complete"})

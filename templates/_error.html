@@ -10,6 +10,7 @@ access. Each page now says what happened and what will actually help.
 <p class="eyebrow">DIGITAL BRAIN / {{ code }}</p>
 <h1>{{ heading }}</h1>
 <p class="muted">{{ detail }}</p>
+{% if request_id %}<p class="muted"><small>Reference: <code>{{ request_id }}</code></small></p>{% endif %}
 <div class="actions">
 <a class="button" href="{% url 'dashboard' %}">{% icon "overview" %}Go to Overview</a>
 {% if show_audit %}<a class="button secondary" href="{% url 'audit' %}">{% icon "audit" %}Audit log</a>{% endif %}

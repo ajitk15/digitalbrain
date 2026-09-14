@@ -23,7 +23,11 @@ from dataclasses import dataclass, field
 HEARTBEAT_SECONDS = 10
 MAX_STREAM_SECONDS = 180
 MAX_QUEUED_EVENTS = 1000
-MAX_ACTIVE_STREAMS = 16
+#: Concurrent streams allowed. Each one occupies a waitress request thread for
+#: its whole life, so this must stay comfortably below the thread count or a
+#: handful of long answers starve navigation, Stop and the readiness probe.
+#: scripts/serve.py derives its thread count from this so the two cannot drift.
+MAX_ACTIVE_STREAMS = 12
 SESSION_TTL_SECONDS = 600
 
 #: Pushed by the worker to mark the end of the event stream.

@@ -124,6 +124,20 @@ def chat_settings(request, pk):
     )
 
 
+@require_GET
+def server_error(request):
+    """The 500 page, carrying the request id the operator will need.
+
+    Django's default handler renders with an empty context, so the page could
+    only mention that an id exists without ever showing it.
+    """
+    from django.shortcuts import render as _render
+
+    return _render(
+        request, "500.html", {"request_id": getattr(request, "request_id", "")}, status=500
+    )
+
+
 @login_required
 @require_GET
 def application_home(request, pk):

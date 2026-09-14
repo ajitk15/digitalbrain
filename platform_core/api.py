@@ -65,14 +65,22 @@ def search(user, app_id, question, version):
     """Verified graph evidence for a question, plus the version that answered."""
     from .graph_ai import graph_citations, graph_snapshot
 
+    # A JSON body can carry any type here. Anything but a string is a caller
+    # mistake and must read as one: these used to reach .strip() and become a 500.
+    if question is not None and not isinstance(question, str):
+        raise ApiError("question must be a string.", code="invalid_request")
     question = (question or "").strip()[:MAX_QUESTION]
     if not question:
         raise ApiError("Provide a question.", code="invalid_request")
     if version is not None:
+        if isinstance(version, bool) or not isinstance(version, (int, str)):
+            raise ApiError("version must be an integer.", code="invalid_request")
         try:
             version = int(version)
         except (TypeError, ValueError):
             raise ApiError("version must be an integer.", code="invalid_request") from None
+        if version < 1:
+            raise ApiError("version must be a positive integer.", code="invalid_request")
     try:
         _, number = graph_snapshot(app_id, version)
         citations = graph_citations(app_id, question, version=version)
