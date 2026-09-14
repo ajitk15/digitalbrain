@@ -377,6 +377,9 @@ class ChangePlan(models.Model):
     )
     review_note = models.CharField(max_length=2000, blank=True)
     reviewed_at = models.DateTimeField(null=True)
+    #: Which published graph version the analysis was grounded in, so a plan
+    #: stays reproducible after a later graph is published.
+    graph_version = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -388,6 +391,169 @@ CONNECTOR_KINDS = [
     ("jira", "Jira"),
     ("servicenow", "ServiceNow"),
 ]
+
+
+#: What an analysis item is about. A ticket states some of what it wants; the
+#: rest is found by comparing the ticket against what the graph says the system
+#: actually does, and against the non-functional rubric.
+ITEM_CATEGORIES = [
+    ("stated", "Stated in the ticket"),
+    ("functional", "Functional gap"),
+    ("non_functional", "Non-functional gap"),
+]
+
+#: Non-functional headings, taken from docs/non-functional.md so the analysis
+#: reasons in the same terms the project already documents itself in.
+RUBRIC = [
+    ("security", "Security and privacy"),
+    ("availability", "Availability and operability"),
+    ("performance", "Performance and resource limits"),
+    ("auditability", "Auditability and correctness"),
+]
+
+PHASES = [
+    ("triage", "Triage"),
+    ("analysis", "Analysis"),
+    ("design", "Design"),
+    ("implementation", "Implementation"),
+    ("verification", "Verification"),
+    ("delivery", "Delivery"),
+]
+
+
+class FactoryRun(models.Model):
+    """One pass of the Code Factory pipeline over one ticket.
+
+    The run and its phases are the record of what happened: which ticket, which
+    graph version answered, which agent ran, what it cost and what it produced.
+    A phase cannot start unless the one before it succeeded, so the record is the
+    state machine rather than a commentary on one.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.PROTECT)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    connector = models.ForeignKey(
+        "Connector", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    # The ticket, copied rather than referenced: a run has to stay readable after
+    # the source entry is superseded by a later import.
+    ticket_external_id = models.CharField(max_length=120, blank=True)
+    ticket_title = models.CharField(max_length=300, blank=True)
+    ticket_url = models.URLField(max_length=1000, blank=True)
+    ticket_digest = models.CharField(max_length=64, blank=True)
+    #: Which published graph answered. Null means none was available.
+    graph_version = models.PositiveIntegerField(null=True, blank=True)
+    #: A repository named in the ticket. Never acted on without confirmation:
+    #: ticket text is data, and whoever can file a ticket must not be able to
+    #: choose where this platform writes.
+    proposed_repository = models.CharField(max_length=200, blank=True)
+    repository_confirmed = models.BooleanField(default=False)
+    plan = models.ForeignKey(
+        "ChangePlan", null=True, blank=True, on_delete=models.SET_NULL, related_name="runs"
+    )
+    status = models.CharField(
+        max_length=20,
+        default="pending",
+        choices=[
+            ("pending", "Queued"),
+            ("running", "Running"),
+            ("awaiting_review", "Awaiting review"),
+            ("complete", "Complete"),
+            ("failed", "Failed"),
+        ],
+    )
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["application", "-created_at"])]
+
+
+class RunPhase(models.Model):
+    """One SDLC phase of one run, with everything needed to audit it."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(FactoryRun, on_delete=models.CASCADE, related_name="phases")
+    name = models.CharField(max_length=20, choices=PHASES)
+    sequence = models.PositiveIntegerField()
+    agent = models.CharField(max_length=60, blank=True)
+    status = models.CharField(
+        max_length=12,
+        default="pending",
+        choices=[
+            ("pending", "Pending"),
+            ("running", "Running"),
+            ("ok", "Succeeded"),
+            ("failed", "Failed"),
+            ("skipped", "Skipped"),
+        ],
+    )
+    provider = models.CharField(max_length=12, blank=True)
+    model = models.CharField(max_length=160, blank=True)
+    # Null rather than zero until a receipt exists: a request whose usage could
+    # not be read was still billed, and recording it as free would hide that.
+    prompt_tokens = models.PositiveIntegerField(null=True, blank=True)
+    completion_tokens = models.PositiveIntegerField(null=True, blank=True)
+    citations_verified = models.PositiveIntegerField(default=0)
+    citations_rejected = models.PositiveIntegerField(default=0)
+    #: Digests of what went in and what came out, so an identical rerun is
+    #: recognisable as one without storing prompts or model output.
+    input_digest = models.CharField(max_length=64, blank=True)
+    output_digest = models.CharField(max_length=64, blank=True)
+    output = models.JSONField(default=dict, blank=True)
+    error = models.TextField(blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    duration_ms = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["run", "sequence"]
+        constraints = [
+            models.UniqueConstraint(fields=["run", "name"], name="unique_run_phase")
+        ]
+
+
+class PlanItem(models.Model):
+    """One gap and the fix proposed for it.
+
+    A plan used to be a single block of prose, which could not say "here are six
+    things, each with its own evidence and its own change". Each item carries the
+    graph citations that justify it, so a reviewer can check the claim rather
+    than take it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    plan = models.ForeignKey("ChangePlan", on_delete=models.CASCADE, related_name="items")
+    sequence = models.PositiveIntegerField()
+    category = models.CharField(max_length=16, choices=ITEM_CATEGORIES)
+    rubric = models.CharField(max_length=20, choices=RUBRIC, blank=True)
+    title = models.CharField(max_length=300)
+    explanation = models.TextField(max_length=4000)
+    change_summary = models.TextField(max_length=4000)
+    targets = models.JSONField(default=list, blank=True)
+    #: Verified graph citations: active source, matching digest, exact quote.
+    citations = models.JSONField(default=list, blank=True)
+    severity = models.CharField(
+        max_length=8,
+        default="medium",
+        choices=[("low", "Low"), ("medium", "Medium"), ("high", "High")],
+    )
+    status = models.CharField(
+        max_length=10,
+        default="proposed",
+        choices=[
+            ("proposed", "Proposed"),
+            ("accepted", "Accepted"),
+            ("rejected", "Rejected"),
+        ],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["plan", "sequence"]
 
 
 class Connector(models.Model):

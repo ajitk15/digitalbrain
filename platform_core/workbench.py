@@ -1033,6 +1033,9 @@ class DraftForm(forms.Form):
 @login_required
 @require_http_methods(["GET", "POST"])
 def plans(request, pk):
+    from .code_factory import ticket_choices
+    from .models import Connector, FactoryRun  # noqa: F811 - local to this view only
+
     app, grant = access(request.user, pk, "code_factory")
     form = PlanForm(request.POST or None)
     draft_form = DraftForm()
@@ -1040,6 +1043,23 @@ def plans(request, pk):
     plan_ai_enabled = AIConfiguration.objects.filter(
         application=app, purpose="plan_drafting", enabled=True
     ).exists()
+    if request.method == "POST" and request.POST.get("action") == "analyse":
+        from .code_factory import start_run
+        from .models import Connector
+
+        access(request.user, pk, "code_factory", write=True)
+        entry = get_object_or_404(
+            KnowledgeEntry, pk=request.POST.get("ticket"), application=app, active=True
+        )
+        connector = Connector.objects.filter(
+            pk=request.POST.get("connector"), application=app
+        ).first()
+        run = start_run(request.user, pk, entry, connector=connector)
+        messages.success(
+            request,
+            f"Queued analysis of {entry.title}. Its phases appear below as they run.",
+        )
+        return redirect(f"{reverse('plans', args=[pk])}#run-{run.pk}")
     if request.method == "POST" and request.POST.get("action") == "draft":
         access(request.user, pk, "code_factory", write=True)
         access(request.user, pk, "knowledge")
@@ -1110,6 +1130,9 @@ def plans(request, pk):
             "page": Paginator(ChangePlan.objects.filter(application=app), 20).get_page(
                 request.GET.get("page")
             ),
+            "runs": FactoryRun.objects.filter(application=app).prefetch_related("phases")[:10],
+            "tickets": ticket_choices(app),
+            "connectors": Connector.objects.filter(application=app, enabled=True),
         },
     )
 

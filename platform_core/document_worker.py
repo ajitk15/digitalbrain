@@ -110,6 +110,12 @@ def graph_steps():
     return (process_next_graph,)
 
 
+def factory_steps():
+    from .code_factory import process_next_run
+
+    return (process_next_run,)
+
+
 def maintenance_steps():
     return (purge_chat_if_due,)
 
@@ -129,6 +135,9 @@ def maintenance_steps():
 LANES = (
     ("intake", intake_steps, 1.0),
     ("graph", graph_steps, 2.0),
+    # Its own lane for the same reason graph has one: a Code Factory run makes
+    # three provider calls in sequence and must not sit in front of an upload.
+    ("factory", factory_steps, 2.0),
     ("maintenance", maintenance_steps, 30.0),
 )
 

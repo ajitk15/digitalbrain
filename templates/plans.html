@@ -1,4 +1,30 @@
-{% extends 'base.html' %}{% load workspace %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Submit change plans, pin knowledge sources and request independent approval.</p>{% if grant.role != 'viewer' %}<details class="card" {% if form.errors or draft_notice or draft_form.errors %}open{% endif %}><summary>+ Propose a change</summary>
+{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Submit change plans, pin knowledge sources and request independent approval.</p>{% if grant.role != 'viewer' and tickets %}
+<details class="card section" id="analyse"><summary>{% icon "search" 13 %}Analyse a ticket</summary>
+<p class="muted">Pick an imported Jira or ServiceNow ticket. The pipeline triages it, compares it against the published knowledge graph and the non-functional rubric, then proposes each fix with the evidence behind it. Nothing is changed until you review it.</p>
+<form method="post" class="token-form">{% csrf_token %}<input type="hidden" name="action" value="analyse">
+{% if connectors %}<label for="run-connector">Queue</label><select id="run-connector" name="connector"><option value="">Any connector</option>{% for connector in connectors %}<option value="{{ connector.pk }}">{{ connector.name }} · {{ connector.get_kind_display }}</option>{% endfor %}</select>{% endif %}
+<label for="run-ticket">Ticket</label><select id="run-ticket" name="ticket" required>{% for ticket in tickets %}<option value="{{ ticket.pk }}">{{ ticket.title }}</option>{% endfor %}</select>
+<button class="button" type="submit">{% icon "code" %}Analyse</button>
+</form></details>
+{% endif %}
+
+{% if runs %}
+<section class="section"><h2>Pipeline runs</h2>
+<p class="muted">Every phase records which agent ran, what it cost and what it produced. A run stops at the phase that failed.</p>
+<div class="list-card">{% for run in runs %}
+<div class="list-row run-row" id="run-{{ run.pk }}"><div>
+<strong>{{ run.ticket_title|default:"(untitled ticket)" }}</strong>
+<small>{{ run.ticket_external_id }} · requested {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · graph v{{ run.graph_version }}{% else %} · no published graph{% endif %}</small>
+<div class="run-phases">{% for phase in run.phases.all %}<span class="phase phase-{{ phase.status }}" title="{{ phase.agent }}{% if phase.duration_ms %} · {{ phase.duration_ms }}ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} in / {{ phase.completion_tokens }} out{% endif %}">{{ phase.get_name_display }}</span>{% endfor %}</div>
+{% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
+{% if run.proposed_repository %}<small class="muted">Repository named in the ticket: <code>{{ run.proposed_repository }}</code>{% if not run.repository_confirmed %} — not yet confirmed, and nothing is written to it.{% endif %}</small>{% endif %}
+</div>
+<span>{% if run.plan %}<a href="{% url 'plan-detail' application.pk run.plan.pk %}">Review {{ run.plan.items.count }} item(s) {% icon "arrow-right" 13 %}</a>{% else %}<span class="pill">{{ run.get_status_display }}</span>{% endif %}</span>
+</div>
+{% endfor %}</div></section>
+{% endif %}
+
+{% if grant.role != 'viewer' %}<details class="card" {% if form.errors or draft_notice or draft_form.errors %}open{% endif %}><summary>+ Propose a change</summary>
 {% if plan_ai_enabled %}<form method="post" class="section draft-form">{% csrf_token %}<input type="hidden" name="action" value="draft">{{ draft_form.non_field_errors }}{{ draft_form.as_p }}<button class="button secondary">Draft with AI</button><small class="muted">The draft is source-verified and pre-fills the form below. You still review, edit and submit it; approval is unchanged and never runs code. Provider charges apply.</small></form>{% endif %}
 {% if draft_notice %}<p class="notice" role="status">{{ draft_notice }}</p>{% endif %}
 <form method="post" class="section">{% csrf_token %}{{ form.as_p }}<button class="button">Submit for approval</button></form></details>{% endif %}<div class="list-card section">{% for plan in page %}<a class="list-row" href="{% url 'plan-detail' application.pk plan.pk %}"><div><strong>{{ plan.title }}</strong><small>{{ plan.author.username }} · {{ plan.created_at|date:"M d, Y" }}</small></div><span class="pill">{{ plan.get_status_display }}</span></a>{% empty %}<p class="padded muted">No change plans submitted.</p>{% endfor %}</div>{% include 'pagination.html' %}{% endblock %}

@@ -199,7 +199,21 @@ def verify_citations(app_id, candidates):
 
     if not candidates:
         return []
-    ids = {c.get("id") for c in candidates if c.get("id")}
+    # Ids come from a model and are not necessarily ids at all. Anything that is
+    # not a UUID cannot name a source, and passing it to the ORM raises rather
+    # than returning nothing - which turned one bad citation into a failed run.
+    ids = set()
+    for candidate in candidates:
+        value = candidate.get("id")
+        if not value:
+            continue
+        try:
+            uuid.UUID(str(value))
+        except (ValueError, AttributeError, TypeError):
+            continue
+        ids.add(str(value))
+    if not ids:
+        return []
     entries = {
         str(entry.pk): entry
         for entry in KnowledgeEntry.objects.filter(

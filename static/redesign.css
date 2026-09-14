@@ -929,6 +929,30 @@
   .empty-icon { display: inline-flex; color: var(--c-brand); opacity: 0.55; }
   .link-button { display: inline-flex; align-items: center; gap: var(--s-2); }
   summary svg { vertical-align: -2px; margin-right: var(--s-2); }
+  /* Code Factory runs --------------------------------------------------- */
+  .run-row { align-items: flex-start; }
+  .run-phases { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
+  .phase {
+    font-size: var(--t-11);
+    font-weight: 600;
+    padding: 2px var(--s-2);
+    border-radius: var(--r-sm);
+    border: 1px solid var(--c-line);
+    color: var(--c-ink-3);
+    background: var(--c-subtle);
+  }
+  .phase-ok { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .phase-failed { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .phase-running { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .plan-item { border-top: 1px solid var(--c-line); padding-top: var(--s-4); margin-top: var(--s-4); }
+  .plan-item:first-of-type { border-top: 0; margin-top: 0; }
+  .plan-item h3 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }
+  .item-evidence { margin: var(--s-3) 0 0; padding-left: var(--s-4); border-left: 2px solid var(--c-line); }
+  .item-evidence li { font-size: var(--t-13); margin-bottom: var(--s-2); overflow-wrap: anywhere; }
+  .pill.status-high { background: var(--c-bad-bg); color: var(--c-bad); }
+  .pill.status-medium { background: var(--c-warn-bg); color: var(--c-warn); }
+  .pill.status-low { background: var(--c-subtle); color: var(--c-ink-3); }
+  .plan-item h4 { font-size: var(--t-13); margin: var(--s-3) 0 var(--s-2); color: var(--c-ink-3); }
   /* A single-field settings form is a stack, not a row: the row layout the
      token form uses left the button floating beside the help text. */
   .card > .form-card { margin-top: 0; max-width: 420px; }

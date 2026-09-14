@@ -88,7 +88,14 @@ def provider_credential(config, app):
         raise
 
 
-def invoke_ai(user, app_id, purpose, question, citations, history=None, **options):
+def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=None, **options):
+    """Ask the configured provider and record what it cost.
+
+    `receipt`, when a dict is passed, is filled with the provider, model and
+    token counts of this call. Code Factory writes them onto its run record, so a
+    reader can see which model produced each phase and what it spent without
+    joining back to the usage table by timestamp and hoping.
+    """
     app, grant = application_for(user, app_id)
     access(user, app_id, "knowledge")
     if purpose in {"chat", "graph_retrieval", "conversation_title"}:
@@ -141,6 +148,16 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, **option
         access(user, app_id, "knowledge", write=True)
     if purpose == "plan_drafting":
         access(user, app_id, "code_factory", write=True)
+    if receipt is not None:
+        receipt.update(
+            {
+                "provider": config.provider,
+                "model": config.model,
+                "prompt_tokens": usage["prompt_tokens"],
+                "completion_tokens": usage["completion_tokens"],
+                "request_id": result["id"],
+            }
+        )
     return answer
 
 
