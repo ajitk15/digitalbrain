@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% load workspace icons %}
+{% block title %}Add connector · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}{% settings_nav %}
+<div class="page-heading"><div><h1>Add connector</h1><p class="muted">Choose the system to import from.</p></div><a class="button secondary" href="{% url 'connectors' application.pk %}">{% icon "arrow-left" %}Back</a></div>
+<div class="card-grid">{% for kind in kinds %}<a class="app-card" href="{% url 'connector-new' application.pk %}?kind={{ kind.key }}"><span class="app-icon">{% icon kind.icon 20 %}</span><h3>{{ kind.label }}</h3><p>{% if kind.credential_required %}Needs a mounted credential.{% else %}A mounted token raises the rate limit and reaches private repositories.{% endif %}</p><span class="link-label">Configure {% icon "arrow-right" 13 %}</span></a>{% endfor %}</div>
+{% endblock %}

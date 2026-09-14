@@ -383,14 +383,51 @@ class ChangePlan(models.Model):
         ordering = ["-created_at", "-id"]
 
 
+CONNECTOR_KINDS = [
+    ("github", "GitHub issues"),
+    ("jira", "Jira issues"),
+    ("servicenow", "ServiceNow records"),
+]
+
+
 class Connector(models.Model):
+    """One external system an application imports knowledge from.
+
+    A foreign key rather than a one-to-one: an application can legitimately track
+    a GitHub repository, a Jira project and a ServiceNow table at once, and two
+    Jira projects besides. `config` holds the settings a kind needs and nothing
+    secret - credentials stay file-mounted, so the non-secret half of an identity
+    (an account email, a client id) lives here while its token never does.
+    """
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    application = models.OneToOneField(Application, on_delete=models.PROTECT)
-    repository = models.CharField(max_length=200)
+    application = models.ForeignKey(Application, on_delete=models.PROTECT)
+    kind = models.CharField(max_length=20, choices=CONNECTOR_KINDS, default="github")
+    name = models.CharField(max_length=120, default="")
+    config = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
     last_synced_at = models.DateTimeField(null=True)
     last_count = models.PositiveIntegerField(default=0)
+    # What happened last time, so a failure leaves a trace on the row rather than
+    # only in a log nobody reads.
+    last_status = models.CharField(max_length=12, blank=True)
+    last_error = models.TextField(blank=True)
+    last_duration_ms = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["kind", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "kind", "name"], name="unique_connector_name"
+            )
+        ]
+
+    def __str__(self):
+        return self.name or self.get_kind_display()
 
 
 AI_PURPOSES = [

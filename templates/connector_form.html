@@ -1,0 +1,15 @@
+{% extends 'base.html' %}{% load workspace icons %}
+{% block title %}{{ kind.label }} · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}{% settings_nav %}
+<div class="page-heading"><div><h1>{% if connector %}Edit connector{% else %}{{ kind.label }}{% endif %}</h1><p class="muted">Read-only import. Nothing is written back to {{ kind.label }}.</p></div><a class="button secondary" href="{% url 'connectors' application.pk %}">{% icon "arrow-left" %}Back</a></div>
+{% if kind.credential_required and not credential %}<p class="notice notice-warning">{% icon "warning" %}<span>No credential is mounted for this system yet. Save the connector, then mount the secret file described below before importing.</span></p>{% endif %}
+<section class="card form-card">
+<form method="post">{% csrf_token %}
+<p><label for="connector-name">Name</label><input type="text" id="connector-name" name="name" maxlength="120" value="{{ name_field.value }}" required>{% if name_field.error %}<span class="helptext">{{ name_field.error }}</span>{% endif %}<span class="helptext">How this connector appears in the list.</span></p>
+{{ form.as_p }}
+<button class="button" type="submit">{% icon "save" %}Save connector</button>
+</form>
+</section>
+<section class="card section"><h2>Credential</h2><p class="muted">Mount the secret half of the credential as a file named <code>{{ secret_name }}</code> in the configured secret directory, readable only by the service account. It is never entered in this form, stored in the database, or written to <code>.env</code>.</p>
+<p class="muted">{% if credential %}{% icon "success" %} A credential is currently mounted.{% else %}{% icon "warning" %} No credential is mounted.{% endif %}</p></section>
+{% endblock %}

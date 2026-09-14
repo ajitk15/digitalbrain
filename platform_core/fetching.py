@@ -183,8 +183,17 @@ def suggested_name(parsed, content_type):
     return name[:180]
 
 
-def fetch(raw, *, headers=None):
-    """Retrieve a URL. Returns (bytes, content_type, filename, final_url)."""
+def fetch(raw, *, headers=None, method="GET", body=None):
+    """Retrieve a URL. Returns (bytes, content_type, filename, final_url).
+
+    `method`/`body` exist for the one exchange that cannot be a GET: trading
+    OAuth client credentials for an access token. They change nothing about the
+    address checks - resolution, the private-address refusal, the pinned
+    connection and the no-redirect rule all still apply, which is the whole
+    reason connectors come through here instead of opening their own sockets.
+    """
+    if method not in {"GET", "POST"}:
+        raise FetchError("Unsupported request method.")
     parsed = normalise(raw)
     addresses = resolve(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
     family, literal = addresses[0]
@@ -197,7 +206,9 @@ def fetch(raw, *, headers=None):
 
     connection = _connection(parsed, family, literal)
     try:
-        connection.request("GET", target, headers=request_headers)
+        if body is not None:
+            request_headers.setdefault("Content-Length", str(len(body)))
+        connection.request(method, target, body=body, headers=request_headers)
         response = connection.getresponse()
         if response.status in {301, 302, 303, 307, 308}:
             location = response.getheader("Location", "")

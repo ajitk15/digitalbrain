@@ -1,1 +1,28 @@
-{% extends 'base.html' %}{% load icons %}{% load workspace %}{% block content %}{% application_nav %}{% settings_nav %}<h1>Connectors</h1><p class="muted">Application-specific integrations managed by owners.</p><section class="card form-card"><h2>GitHub issues</h2><form method="post">{% csrf_token %}{{ form.as_p }}<button class="button" name="action" value="save">{% icon "save" %}Save connection</button></form><details class="section"><summary>Credential setup</summary><p>Mount a read-only GitHub token in the configured secret directory as <code>{{ secret_name }}</code>. Keep file access limited to the service account. No secrets go in .env.</p></details>{% if connector %}<form method="post" class="section">{% csrf_token %}<button class="button secondary" name="action" value="sync">{% icon "download" %}Import latest issues</button></form><small>{% if connector.last_synced_at %}Last import: {{ connector.last_synced_at|date:"M d, Y H:i" }} UTC · {{ connector.last_count }} new or updated{% else %}No imports yet{% endif %}</small>{% endif %}</section>{% endblock %}
+{% extends 'base.html' %}{% load workspace icons %}
+{% block title %}Connectors · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}{% settings_nav %}
+<div class="page-heading"><div><h1>Connectors</h1><p class="muted">Import records from external systems as knowledge sources. Imports are read-only: nothing is ever written back.</p></div><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></div>
+
+{% if connectors %}
+<div class="table-wrap"><table><thead><tr><th>Connector</th><th>Target</th><th>Status</th><th>Last import (UTC)</th><th>Records</th><th>Actions</th></tr></thead><tbody>
+{% for item in connectors %}<tr>
+<td><div class="row-lead">{% if item.kind %}{% icon item.kind.icon %}{% endif %}<div><strong>{{ item.row.name }}</strong><small>{{ item.row.get_kind_display }}</small></div></div></td>
+<td class="mono">{{ item.target|default:"—" }}</td>
+<td>{% if not item.row.enabled %}<span class="pill">Disabled</span>{% elif item.row.last_status == 'failed' %}<span class="pill status-failed" title="{{ item.row.last_error }}">Failed</span>{% elif not item.credential and item.kind.credential_required %}<span class="pill status-queued">No credential</span>{% elif item.row.last_status == 'ok' %}<span class="pill status-ready">Ready</span>{% else %}<span class="pill">Never imported</span>{% endif %}</td>
+<td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}</td>
+<td>{{ item.row.last_count }}</td>
+<td><div class="actions">
+<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="sync" class="link-button">{% icon "download" 12 %}Import</button></form>
+<a class="link-button" href="{% url 'connector-edit' application.pk item.row.pk %}">{% icon "sliders" 12 %}Edit</a>
+<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="{% if item.row.enabled %}disable{% else %}enable{% endif %}" class="link-button">{% icon "toggle" 12 %}{% if item.row.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+<form method="post" class="inline-form" data-confirm="Remove {{ item.row.name }}? Knowledge it already imported is kept.">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="delete" class="link-button">{% icon "trash" 12 %}Remove</button></form>
+</div></td></tr>
+{% if item.row.last_status == 'failed' and item.row.last_error %}<tr><td colspan="6"><p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ item.row.last_error }}</span></p></td></tr>{% endif %}
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h3>No connectors yet</h3><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></p></div>
+{% endif %}
+
+<p class="muted section">Credentials are never entered here. Mount one file per system in the configured secret directory, named <code>&lt;system&gt;_{{ application.pk }}</code>, readable only by the service account.</p>
+{% endblock %}

@@ -29,7 +29,10 @@ def settings_sections(app, grant):
         sections.append(("AI costs", "usage", {"usage"}, "cost"))
     if grant and grant.role == "owner":
         if feature_enabled("connectors", app):
-            sections.append(("Connectors", "connectors", {"connectors"}, "plug"))
+            sections.append(
+                ("Connectors", "connectors",
+                 {"connectors", "connector-new", "connector-edit"}, "plug")
+            )
         sections.append(("People & access", "application-access", {"application-access"}, "people"))
         sections.append(("Features", "application-features", {"application-features"}, "toggle"))
         if feature_enabled("chat", app):

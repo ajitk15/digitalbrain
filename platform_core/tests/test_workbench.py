@@ -9,7 +9,8 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from platform_core.ai import answer_with_ai
-from platform_core.connectors import ConnectorForm, sync_issues
+from platform_core.connector_kinds import GitHubForm
+from platform_core.connectors import sync
 from platform_core.models import (
     AIConfiguration,
     AIUsage,
@@ -170,23 +171,28 @@ class WorkbenchTests(TestCase):
 
     def test_connector_validation_and_owner_only_configuration(self):
         for repo in ["https://evil.test/x", "../x", "owner/..", "owner/repo?query=x"]:
-            self.assertFalse(ConnectorForm({"repository": repo}).is_valid())
+            self.assertFalse(GitHubForm({"repository": repo}).is_valid())
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
         self.assertEqual(
             self.client.get(reverse("connectors", args=[self.app.pk])).status_code, 403
         )
 
     @patch("platform_core.connectors.read_secret", return_value="test-key")
-    @patch("platform_core.connectors.read_issues")
-    def test_connector_import_is_idempotent_and_versions_updates(self, read, secret):
-        Connector.objects.create(application=self.app, repository="example/repo")
-        read.return_value = [
+    @patch("platform_core.connector_kinds.api_json")
+    def test_connector_import_is_idempotent_and_versions_updates(self, api, secret):
+        connector = Connector.objects.create(
+            application=self.app,
+            kind="github",
+            name="Issues",
+            config={"repository": "example/repo"},
+        )
+        api.return_value = [
             {"number": 1, "title": "Refund feature", "body": "Initial requirement"}
         ]
-        self.assertEqual(sync_issues(self.owner, self.app.pk), 1)
-        self.assertEqual(sync_issues(self.owner, self.app.pk), 0)
-        read.return_value[0]["body"] = "Changed requirement"
-        self.assertEqual(sync_issues(self.owner, self.app.pk), 1)
+        self.assertEqual(sync(self.owner, connector.pk, self.app.pk), 1)
+        self.assertEqual(sync(self.owner, connector.pk, self.app.pk), 0)
+        api.return_value[0]["body"] = "Changed requirement"
+        self.assertEqual(sync(self.owner, connector.pk, self.app.pk), 1)
         self.assertEqual(KnowledgeEntry.objects.count(), 2)
         self.assertEqual(KnowledgeEntry.objects.filter(active=True).count(), 1)
         secret.assert_called_with(
