@@ -349,8 +349,13 @@ def servicenow_records(config, secret):
 @dataclass(frozen=True)
 class Kind:
     key: str
+    #: The system's name, as it is written. Not "GitHub issues" - what is imported
+    #: is described in `summary`, and repeating it in the name reads as clutter
+    #: once the list has a column for the target anyway.
     label: str
     icon: str
+    #: One line describing what an import brings in, shown on the chooser card.
+    summary: str
     form: type
     records: callable
     #: Which config field identifies the target, for display and for uniqueness.
@@ -365,12 +370,32 @@ class Kind:
 KINDS = {
     kind.key: kind
     for kind in (
-        Kind("github", "GitHub issues", "code", GitHubForm, github_records, "repository", False),
-        Kind("jira", "Jira issues", "audit", JiraForm, jira_records, "base_url", True),
+        Kind(
+            "github",
+            "GitHub",
+            "github",
+            "Issues from a repository. A mounted token raises the rate limit and "
+            "reaches private repositories.",
+            GitHubForm,
+            github_records,
+            "repository",
+            False,
+        ),
+        Kind(
+            "jira",
+            "Jira",
+            "jira",
+            "Issues from a Cloud site or a Data Center instance, optionally narrowed by JQL.",
+            JiraForm,
+            jira_records,
+            "base_url",
+            True,
+        ),
         Kind(
             "servicenow",
-            "ServiceNow records",
-            "plug",
+            "ServiceNow",
+            "servicenow",
+            "Records from any table - incidents, problems, changes or knowledge articles.",
             ServiceNowForm,
             servicenow_records,
             "base_url",

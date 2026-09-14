@@ -384,9 +384,9 @@ class ChangePlan(models.Model):
 
 
 CONNECTOR_KINDS = [
-    ("github", "GitHub issues"),
-    ("jira", "Jira issues"),
-    ("servicenow", "ServiceNow records"),
+    ("github", "GitHub"),
+    ("jira", "Jira"),
+    ("servicenow", "ServiceNow"),
 ]
 
 

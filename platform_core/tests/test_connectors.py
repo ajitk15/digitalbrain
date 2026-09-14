@@ -302,3 +302,34 @@ class ConnectorManagementTests(TestCase):
 
         for kind in KINDS.values():
             self.assertIn(kind.icon, ICONS, f"{kind.key} names an icon that does not exist")
+
+    def test_each_kind_carries_its_own_mark_rather_than_a_shared_one(self):
+        """A generic icon on every row makes the list harder to scan, not easier."""
+        marks = [kind.icon for kind in KINDS.values()]
+        self.assertEqual(len(marks), len(set(marks)))
+
+    def test_systems_are_named_as_themselves(self):
+        """The list already has a column for what was imported; the name is the system."""
+        self.assertEqual([k.label for k in KINDS.values()], ["GitHub", "Jira", "ServiceNow"])
+        for kind in KINDS.values():
+            self.assertNotIn(" ", kind.label)
+            self.assertTrue(kind.summary, f"{kind.key} has no summary for its card")
+
+    def test_the_model_and_the_registry_agree_on_names(self):
+        from platform_core.models import CONNECTOR_KINDS
+
+        self.assertEqual(
+            dict(CONNECTOR_KINDS), {key: kind.label for key, kind in KINDS.items()}
+        )
+
+    def test_a_filled_mark_is_not_rendered_as_an_outline(self):
+        from django.template import Context, Template
+
+        from platform_core.templatetags.icons import FILLED
+
+        markup = Template('{% load icons %}{% icon "github" %}').render(Context())
+        self.assertIn("github", FILLED)
+        self.assertIn('fill="currentColor"', markup)
+        self.assertIn('stroke="none"', markup)
+        stroked = Template('{% load icons %}{% icon "jira" %}').render(Context())
+        self.assertIn('fill="none"', stroked)

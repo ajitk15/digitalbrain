@@ -59,6 +59,12 @@ ICONS = {
     "info": '<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.5v.5"/>',
     "empty": '<path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="m3 7 9 4 9-4"/><path d="M12 11v10"/>',
     "lock": '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    # Connector systems. GitHub's own mark is a filled path; Jira and ServiceNow
+    # get marks that describe what they are - an issue board and a service
+    # platform - rather than approximations of trademarks drawn from memory.
+    "github": '<path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.3-3.4-1.3-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.4 9.4 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .3.3.7 1 .7 2v3c0 .3.2.6.7.5A10 10 0 0 0 12 2z"/>',
+    "jira": '<rect x="3" y="4" width="18" height="16" rx="2"/><rect x="6.5" y="7.5" width="4" height="5" rx="1"/><rect x="13.5" y="7.5" width="4" height="8" rx="1"/>',
+    "servicenow": '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01"/><path d="M7 16.5h.01"/><path d="M11 7.5h3"/><path d="M11 16.5h3"/>',
     "document": '<path d="M14 3v5h5"/><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2z"/>',
 }
 
@@ -70,6 +76,11 @@ MESSAGE_ICONS = {
     "info": "info",
     "debug": "info",
 }
+
+
+#: Icons drawn as solid shapes rather than strokes. A brand mark is a filled
+#: path; rendering it stroked produces an outline of the silhouette.
+FILLED = {"github"}
 
 
 @register.simple_tag
@@ -85,12 +96,19 @@ def icon(name, size=15):
         raise template.TemplateSyntaxError(
             f"Unknown icon {name!r}. Add it to platform_core/templatetags/icons.py."
         ) from None
+    if name in FILLED:
+        style = 'fill="currentColor" stroke="none"'
+    else:
+        style = (
+            'fill="none" stroke="currentColor" stroke-width="1.7" '
+            'stroke-linecap="round" stroke-linejoin="round"'
+        )
     return format_html(
         '<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 24 24" '
-        'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" '
-        'stroke-linejoin="round" aria-hidden="true">{}</svg>',
+        '{} aria-hidden="true">{}</svg>',
         size,
         size,
+        mark_safe(style),  # noqa: S308 - one of the two literals above
         mark_safe(paths),  # noqa: S308 - literals from the registry above, never user input
     )
 
