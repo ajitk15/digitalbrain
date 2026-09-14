@@ -1170,8 +1170,40 @@ def review_plan(user, app_id, plan_id, decision, note):
 @login_required
 @require_http_methods(["GET", "POST"])
 def plan_detail(request, pk, plan_id):
+    from .code_factory import deliver, write_credential
+    from .models import FactoryRun
+
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
+    run = plan.runs.first()
+    if request.method == "POST" and request.POST.get("action") == "confirm-repository":
+        # The repository came out of ticket text. Confirming it is a person
+        # saying "yes, that one" - the ticket's author does not get to decide.
+        access(request.user, pk, "code_factory", write=True)
+        if run is None or not grant.can_approve:
+            raise PermissionDenied
+        FactoryRun.objects.filter(pk=run.pk).update(
+            proposed_repository=(request.POST.get("repository") or "").strip()[:200],
+            base_branch=(request.POST.get("base_branch") or "main").strip()[:200],
+            repository_confirmed=True,
+        )
+        audit(
+            request.user,
+            "factory.repository_confirmed",
+            run.pk,
+            app.product.portfolio.organization,
+            details={"repository": request.POST.get("repository", "")[:200]},
+        )
+        messages.success(request, "Repository confirmed. Delivery can now be requested.")
+        return redirect("plan-detail", pk=pk, plan_id=plan_id)
+    if request.method == "POST" and request.POST.get("action") == "deliver":
+        try:
+            url = deliver(request.user, pk, run.pk if run else None)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        else:
+            messages.success(request, f"Draft pull request opened: {url}")
+        return redirect("plan-detail", pk=pk, plan_id=plan_id)
     if request.method == "POST":
         try:
             review_plan(
@@ -1209,5 +1241,13 @@ def plan_detail(request, pk, plan_id):
             "can_review": grant.can_approve
             and plan.author_id != request.user.pk
             and plan.status == "pending",
+            "run": run,
+            "can_deliver": bool(
+                run
+                and grant.can_approve
+                and plan.status == "approved"
+                and not run.pull_request_url
+            ),
+            "write_credential": bool(write_credential(app)),
         },
     )

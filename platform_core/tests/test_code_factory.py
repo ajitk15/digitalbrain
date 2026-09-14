@@ -388,12 +388,19 @@ class PhaseBudgetTests(SimpleTestCase):
         ):
             self.assertIn(str(value), ANALYSIS_INSTRUCTIONS)
 
-    def test_each_phase_has_its_own_output_budget(self):
-        """One budget for three differently shaped asks is what overran before."""
+    def test_every_phase_that_calls_a_model_has_its_own_output_budget(self):
+        """One budget for differently shaped asks is what overran before.
+
+        Verification and delivery call no model - they check and they write - so
+        they have no budget, and that absence is deliberate rather than missing.
+        """
         from platform_core.code_factory import PHASE_TOKENS
 
-        self.assertEqual(set(PHASE_TOKENS), set(BUILD_A))
+        calls_a_model = set(BUILD_A) | {"implementation"}
+        self.assertEqual(set(PHASE_TOKENS), calls_a_model)
         self.assertLess(PHASE_TOKENS["triage"], PHASE_TOKENS["analysis"])
+        # Implementation returns whole files, so it needs the most room.
+        self.assertGreater(PHASE_TOKENS["implementation"], PHASE_TOKENS["analysis"])
 
     def test_the_factory_has_its_own_worker_lane(self):
         from platform_core.document_worker import LANES

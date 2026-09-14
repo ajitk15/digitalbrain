@@ -449,6 +449,9 @@ class FactoryRun(models.Model):
     #: choose where this platform writes.
     proposed_repository = models.CharField(max_length=200, blank=True)
     repository_confirmed = models.BooleanField(default=False)
+    #: The branch a delivery targets. Confirmed alongside the repository.
+    base_branch = models.CharField(max_length=200, default="main")
+    pull_request_url = models.URLField(max_length=1000, blank=True)
     plan = models.ForeignKey(
         "ChangePlan", null=True, blank=True, on_delete=models.SET_NULL, related_name="runs"
     )
@@ -459,6 +462,8 @@ class FactoryRun(models.Model):
             ("pending", "Queued"),
             ("running", "Running"),
             ("awaiting_review", "Awaiting review"),
+            ("delivering", "Delivering"),
+            ("delivered", "Pull request opened"),
             ("complete", "Complete"),
             ("failed", "Failed"),
         ],

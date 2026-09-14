@@ -186,13 +186,13 @@ def suggested_name(parsed, content_type):
 def fetch(raw, *, headers=None, method="GET", body=None):
     """Retrieve a URL. Returns (bytes, content_type, filename, final_url).
 
-    `method`/`body` exist for the one exchange that cannot be a GET: trading
-    OAuth client credentials for an access token. They change nothing about the
-    address checks - resolution, the private-address refusal, the pinned
-    connection and the no-redirect rule all still apply, which is the whole
-    reason connectors come through here instead of opening their own sockets.
+    `method`/`body` exist for the exchanges that cannot be a GET: trading OAuth
+    client credentials for an access token, and the GitHub calls that open a pull
+    request. They change nothing about the address checks - resolution, the
+    private-address refusal, the pinned connection and the no-redirect rule all
+    still apply, which is the whole reason nothing here opens its own socket.
     """
-    if method not in {"GET", "POST"}:
+    if method not in {"GET", "POST", "PUT"}:
         raise FetchError("Unsupported request method.")
     parsed = normalise(raw)
     addresses = resolve(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
@@ -216,7 +216,8 @@ def fetch(raw, *, headers=None, method="GET", body=None):
                 "That link redirects, which is not followed automatically. "
                 + (f"Try {location[:200]} directly." if location else "Use the final address.")
             )
-        if response.status != 200:
+        # 201 is how an API reports something created; it is a success here.
+        if response.status not in {200, 201}:
             raise FetchError(f"{parsed.hostname} returned HTTP {response.status}.")
         declared = response.getheader("Content-Length")
         if declared and declared.isdigit() and int(declared) > MAX_BYTES:

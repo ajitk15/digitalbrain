@@ -15,4 +15,34 @@
 {% endfor %}
 </section>
 {% endif %}
-<section class="card section"><h2>Proposed change</h2><pre class="source-text">{{ plan.proposal }}</pre><h2>Validation & rollback</h2><pre class="source-text">{{ plan.validation }}</pre></section>{% if can_review %}<section class="card section"><h2>Review decision</h2><form method="post">{% csrf_token %}<label for="review-note">Review note</label><textarea id="review-note" name="note" rows="3" maxlength="2000" required></textarea><div class="actions section"><button name="decision" value="approved" class="button">Approve plan</button><button name="decision" value="rejected" class="button danger">Reject plan</button></div></form></section>{% endif %}{% if plan.reviewed_at %}<section class="card section"><h2>Review by {{ plan.reviewed_by.username }}</h2><p>{{ plan.review_note }}</p></section>{% endif %}{% if plan.status == 'approved' %}<p class="section"><a class="button" href="?download=1">Export approved plan</a></p>{% endif %}<p class="muted section">Approval permits an implementation handoff. Repository execution and pull-request automation require a configured isolated worker.</p>{% endblock %}
+<section class="card section"><h2>Proposed change</h2><pre class="source-text">{{ plan.proposal }}</pre><h2>Validation & rollback</h2><pre class="source-text">{{ plan.validation }}</pre></section>{% if run %}
+<section class="card section"><h2>{% icon "code" %}Delivery</h2>
+{% if run.pull_request_url %}
+<p class="notice notice-success">{% icon "success" %}<span>A draft pull request is open: <a href="{{ run.pull_request_url }}">{{ run.pull_request_url }}</a></span></p>
+{% else %}
+{% if run.proposed_repository %}
+<p class="muted">The ticket named <code>{{ run.proposed_repository }}</code>. That came out of ticket text, so it is not acted on until someone confirms it — whoever can raise a ticket must not get to choose where this platform writes.</p>
+{% if not run.repository_confirmed and can_deliver %}
+<form method="post" class="form-card">{% csrf_token %}<input type="hidden" name="action" value="confirm-repository">
+<p><label for="repo">Repository</label><input type="text" id="repo" name="repository" value="{{ run.proposed_repository }}" maxlength="200" required><span class="helptext">owner/name. Change it if the ticket named the wrong one.</span></p>
+<p><label for="base">Base branch</label><input type="text" id="base" name="base_branch" value="{{ run.base_branch }}" maxlength="200" required></p>
+<button class="button" type="submit">{% icon "success" %}Confirm repository</button></form>
+{% elif run.repository_confirmed %}
+<p class="notice notice-success">{% icon "success" %}<span>Confirmed: <code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>.</span></p>
+{% endif %}
+{% else %}<p class="muted">The ticket did not name a repository, so there is nothing to deliver to.</p>{% endif %}
+
+{% if not write_credential %}<p class="notice notice-warning">{% icon "warning" %}<span>No write-scoped credential is mounted. Mount one as <code>github_write_{{ application.pk }}</code>; the read-only connector credential is deliberately not used for writing.</span></p>{% endif %}
+
+{% if can_deliver and run.repository_confirmed and write_credential %}
+<form method="post" data-confirm="Open a draft pull request against {{ run.proposed_repository }}? This writes to that repository.">{% csrf_token %}<input type="hidden" name="action" value="deliver">
+<button class="button" type="submit">{% icon "publish" %}Implement and open a draft pull request</button>
+<small class="muted">Runs implementation, checks what is about to be written, then opens a draft. No build or test suite is run — this platform holds knowledge about the application, not a checkout of it.</small></form>
+{% elif plan.status != 'approved' %}<p class="muted">Approve the plan first. Approving describes the work; opening a pull request writes to a repository, and that is a separate decision.</p>{% endif %}
+{% endif %}
+{% if run.phases.all %}<h3 class="panel-label">Run record</h3><div class="run-phases">{% for phase in run.phases.all %}<span class="phase phase-{{ phase.status }}" title="{{ phase.agent }}{% if phase.duration_ms %} · {{ phase.duration_ms }}ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} in / {{ phase.completion_tokens }} out{% endif %}{% if phase.error %} · {{ phase.error }}{% endif %}">{{ phase.get_name_display }}</span>{% endfor %}</div>{% endif %}
+{% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
+</section>
+{% endif %}
+
+{% if can_review %}<section class="card section"><h2>Review decision</h2><form method="post">{% csrf_token %}<label for="review-note">Review note</label><textarea id="review-note" name="note" rows="3" maxlength="2000" required></textarea><div class="actions section"><button name="decision" value="approved" class="button">Approve plan</button><button name="decision" value="rejected" class="button danger">Reject plan</button></div></form></section>{% endif %}{% if plan.reviewed_at %}<section class="card section"><h2>Review by {{ plan.reviewed_by.username }}</h2><p>{{ plan.review_note }}</p></section>{% endif %}{% if plan.status == 'approved' %}<p class="section"><a class="button" href="?download=1">Export approved plan</a></p>{% endif %}<p class="muted section">Approval permits an implementation handoff. Repository execution and pull-request automation require a configured isolated worker.</p>{% endblock %}

@@ -1,11 +1,19 @@
-"""The Code Factory pipeline: a ticket in, a reviewed list of fixes out.
+"""The Code Factory pipeline: a ticket in, a reviewed change out.
 
-Three phases run here, each its own agent with its own instructions, model budget
-and recorded receipt:
+Six phases, each its own agent with its own instructions, model budget and
+recorded receipt:
 
-    triage    - what is this ticket actually asking for?
-    analysis  - what gaps exist, functionally and non-functionally?
-    design    - for each gap, what changes and where?
+    triage         - what is this ticket actually asking for?
+    analysis       - what gaps exist, functionally and non-functionally?
+    design         - for each gap, what changes and where?
+    --- human approval, and confirmation of the repository ---
+    implementation - the new contents of the files the design named
+    verification   - what is about to be written, checked before writing it
+    delivery       - a branch, the commits, and a draft pull request
+
+The break in the middle is the point. The first three phases produce a
+description of work and stop. Approving that description is one decision;
+writing to somebody's repository is a different one, and it has its own gate.
 
 Phases are separate calls rather than one prompt because they have genuinely
 different shapes and budgets. Asking one call to do all three is what produced
@@ -30,7 +38,7 @@ import json
 import re
 import time
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
@@ -39,7 +47,16 @@ from .services import audit
 
 #: Per-phase output budgets. Each is sized for what that phase actually returns,
 #: rather than one number inherited by all three.
-PHASE_TOKENS = {"triage": 1024, "analysis": 8192, "design": 4096}
+PHASE_TOKENS = {
+    "triage": 1024,
+    "analysis": 8192,
+    "design": 4096,
+    # Implementation returns whole files rather than a diff, so it needs room for
+    # the largest file it might rewrite. A diff would be smaller but would also
+    # need applying, and a patch that almost applies is worse than one that does
+    # not: this way the content either arrives complete or is refused.
+    "implementation": 16384,
+}
 
 #: A background job with nobody holding a request open, but still a ceiling.
 PHASE_TIMEOUT = 300
@@ -64,6 +81,9 @@ AGENTS = {
     "triage": "Ticket triage",
     "analysis": "Gap analysis",
     "design": "Change design",
+    "implementation": "Implementation",
+    "verification": "Pre-write checks",
+    "delivery": "Pull request",
 }
 
 GROUND_RULES = (
@@ -642,3 +662,320 @@ def connector_prefix(connector):
     if connector.kind in KINDS:
         return config.get("base_url", "")
     return ""
+
+
+# --------------------------------------------------------------------- Build B
+
+BUILD_B = ("implementation", "verification", "delivery")
+
+#: Text a model leaves behind when it abbreviates instead of writing the file.
+ELISIONS = ("... rest of", "# ...", "// ...", "<!-- ... -->", "unchanged ...", "... (")
+
+IMPLEMENTATION_INSTRUCTIONS = GROUND_RULES + (
+    "You are given the current contents of files from a repository, each with a "
+    "number. Apply the approved changes described to you. Return only a JSON "
+    "object with a files array, each entry having: file (the number of the file "
+    "you are changing) and content (that file's complete new text). Return only "
+    "files you are actually changing, and return each one in full - not a diff, "
+    "not an excerpt, and never a placeholder or an elision. If a change cannot be "
+    "made from what you were given, leave that file out and explain why in a "
+    "notes string on the object."
+)
+
+
+def write_credential(app):
+    """The write-scoped token, separate from the read-only connector one.
+
+    Different files on purpose: letting an application import issues must not
+    also let it push. Absent is a state, not a failure - an application with no
+    write credential simply cannot deliver, and is told so.
+    """
+    from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
+
+    from digitalbrain.configuration import read_secret
+
+    try:
+        return read_secret(settings.SECRET_DIRECTORY, f"github_write_{app.pk}")
+    except ImproperlyConfigured:
+        return ""
+
+
+def target_paths(plan):
+    """Every repository path the approved items named, in order, deduplicated."""
+    seen, paths = set(), []
+    for item in plan.items.exclude(status="rejected").order_by("sequence"):
+        for target in item.targets:
+            candidate = str(target).strip()
+            if not candidate or candidate in seen:
+                continue
+            # A target is only a path if it looks like one. Design is allowed to
+            # name a component instead, and that is not something to open.
+            if "/" in candidate or "." in candidate:
+                seen.add(candidate)
+                paths.append(candidate)
+    return paths
+
+
+def run_implementation(run, token):
+    """Ask for the new contents of the files the design named."""
+    from .github_write import MAX_FILES, read_file
+
+    started = time.monotonic()
+    phase = start_phase(run, "implementation", 4)
+    files = []
+    for path in target_paths(run.plan)[:MAX_FILES]:
+        found = read_file(run.proposed_repository, path, run.base_branch, token)
+        if found:
+            files.append(found)
+    if not files:
+        message = (
+            "None of the files the design named could be read from "
+            f"{run.proposed_repository} at {run.base_branch}. Nothing was changed."
+        )
+        finish_phase(phase, "failed", started, error=message)
+        raise ValidationError(message)
+    numbered = [
+        {
+            "id": str(index),
+            "title": found["path"],
+            "excerpt": found["text"][:20000],
+            "digest": found["sha"],
+        }
+        for index, found in enumerate(files, start=1)
+    ]
+    approved = "\n\n".join(
+        f"{item.title}\n{item.change_summary}"
+        for item in run.plan.items.exclude(status="rejected").order_by("sequence")
+    )[:8000]
+    receipt = {}
+    try:
+        answer = ask(
+            run.requested_by,
+            run.application_id,
+            "implementation",
+            IMPLEMENTATION_INSTRUCTIONS,
+            f"Approved changes:\n{approved}",
+            numbered,
+            receipt,
+        )
+        payload = parse_json(answer, "Implementation")
+        changes = collect_changes(payload, files)
+    except ValidationError as failure:
+        finish_phase(
+            phase,
+            "failed",
+            started,
+            error=" ".join(failure.messages),
+            usage=receipt,
+            sample=getattr(failure, "sample", ""),
+        )
+        raise
+    finish_phase(
+        phase,
+        "ok",
+        started,
+        output={
+            "notes": str(payload.get("notes") or "")[:1000],
+            "files": [
+                {"path": change["path"], "bytes": len(change["content"])} for change in changes
+            ],
+        },
+        usage=receipt,
+    )
+    return changes
+
+
+def collect_changes(payload, files):
+    """The proposed new contents, matched back to files we actually read."""
+    from .github_write import MAX_FILE_BYTES
+
+    by_number = {str(index): found for index, found in enumerate(files, start=1)}
+    changes = []
+    for entry in (payload.get("files") or [])[: len(files)]:
+        if not isinstance(entry, dict):
+            continue
+        found = by_number.get(str(entry.get("file")))
+        content = entry.get("content")
+        if found is None or not isinstance(content, str) or not content.strip():
+            continue
+        if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+            continue
+        if content == found["text"]:
+            # Returned unchanged: committing it would put an empty diff in front
+            # of a reviewer and claim work that did not happen.
+            continue
+        changes.append({"path": found["path"], "content": content, "sha": found["sha"]})
+    if not changes:
+        raise ValidationError("The implementation returned no usable file changes.")
+    return changes
+
+
+def run_verification(run, changes, token):
+    """Check what is about to be written, before anything is written.
+
+    There is no test suite to run: this platform holds knowledge about an
+    application, not a checkout of it with a known build command. What it can do
+    is refuse a change that is obviously not one - a path nobody read, an elision
+    where code should be, a file that moved underneath us - and say plainly that
+    it did no more than that rather than implying a green build.
+    """
+    from .github_write import read_file, safe_path
+
+    started = time.monotonic()
+    phase = start_phase(run, "verification", 5)
+    findings = []
+    for change in changes:
+        try:
+            safe_path(change["path"])
+        except ValidationError as failure:
+            findings.append(f"{change['path']}: {' '.join(failure.messages)}")
+            continue
+        if any(marker in change["content"] for marker in ELISIONS):
+            findings.append(f"{change['path']}: contains an elision where code should be.")
+        current = read_file(run.proposed_repository, change["path"], run.base_branch, token)
+        if current is None:
+            findings.append(f"{change['path']}: could not be re-read before writing.")
+        elif current["sha"] != change["sha"]:
+            findings.append(f"{change['path']}: changed in the repository since it was read.")
+    if findings:
+        finish_phase(phase, "failed", started, error="; ".join(findings)[:2000])
+        raise ValidationError("; ".join(findings))
+    finish_phase(
+        phase,
+        "ok",
+        started,
+        output={
+            "checked": [change["path"] for change in changes],
+            "limits": (
+                "Paths, elisions and staleness were checked. No build or test suite was "
+                "run: this platform holds knowledge about the application, not a checkout."
+            ),
+        },
+    )
+    return True
+
+
+def run_delivery(run, changes, token):
+    """Branch, commit each file, and open a draft pull request."""
+    from .github_write import (
+        BRANCH_PREFIX,
+        branch_head,
+        commit_file,
+        create_branch,
+        open_pull_request,
+    )
+
+    started = time.monotonic()
+    phase = start_phase(run, "delivery", 6)
+    branch = f"{BRANCH_PREFIX}{run.ticket_external_id or 'change'}-{str(run.pk)[:8]}".lower()
+    try:
+        head = branch_head(run.proposed_repository, run.base_branch, token)
+        create_branch(run.proposed_repository, branch, head, token)
+        for change in changes:
+            commit_file(
+                run.proposed_repository,
+                branch,
+                change["path"],
+                change["content"],
+                change["sha"],
+                f"{run.ticket_external_id or 'Change'}: {change['path']}",
+                token,
+            )
+        url = open_pull_request(
+            run.proposed_repository,
+            branch,
+            run.base_branch,
+            run.plan.title,
+            pull_request_body(run),
+            token,
+        )
+    except ValidationError as failure:
+        finish_phase(phase, "failed", started, error=" ".join(failure.messages))
+        raise
+    finish_phase(phase, "ok", started, output={"branch": branch, "pull_request": url})
+    FactoryRun.objects.filter(pk=run.pk).update(pull_request_url=url)
+    return url
+
+
+def pull_request_body(run):
+    """What a reviewer on the repository side needs without opening this platform."""
+    lines = [
+        f"Raised from {run.ticket_url or run.ticket_external_id}.",
+        "",
+        f"Analysed against published knowledge graph version {run.graph_version}."
+        if run.graph_version
+        else "No published knowledge graph was available for this analysis.",
+        "",
+        "## Approved items",
+    ]
+    for item in run.plan.items.exclude(status="rejected").order_by("sequence"):
+        heading = item.get_category_display()
+        if item.rubric:
+            heading += f" · {item.get_rubric_display()}"
+        lines.append(f"\n### {item.title}")
+        lines.append(f"_{heading} · {item.get_severity_display()}_")
+        lines.append(item.explanation)
+        if item.change_summary:
+            lines.append(f"\n**What changes:** {item.change_summary}")
+        for citation in item.citations:
+            lines.append(f"\n> {str(citation.get('excerpt', ''))[:400]}")
+            lines.append(f">\n> -- {citation.get('title', '')}")
+    lines.append(
+        "\n---\nOpened as a draft by Digital Brain. Every quotation above was verified "
+        "against its source before this was raised. No build or test suite was run."
+    )
+    return "\n".join(lines)
+
+
+def deliver(user, app_id, run_id):
+    """Implementation, verification and delivery, as one explicitly requested act.
+
+    Never automatic on approval. Approving a plan approves a description of work;
+    opening a pull request writes to somebody's repository, and that is a
+    separate decision with its own gate.
+    """
+    from django.shortcuts import get_object_or_404
+
+    from .workbench import access
+
+    app, grant = access(user, app_id, "code_factory")
+    if not grant.can_approve:
+        raise PermissionDenied
+    run = get_object_or_404(FactoryRun, pk=run_id, application=app)
+    if run.plan is None or run.plan.status != "approved":
+        raise ValidationError("Approve the plan before delivering it.")
+    if not run.repository_confirmed:
+        raise ValidationError(
+            "Confirm the repository first. It was taken from the ticket, and a "
+            "ticket does not get to choose where this platform writes."
+        )
+    if run.pull_request_url:
+        raise ValidationError("This run already opened a pull request.")
+    token = write_credential(app)
+    if not token:
+        raise ValidationError(
+            f"Mount a write-scoped GitHub credential as github_write_{app.pk} in the "
+            "configured secret directory. The read-only connector credential is "
+            "deliberately not used for writing."
+        )
+    FactoryRun.objects.filter(pk=run.pk).update(status="delivering", error="")
+    run.refresh_from_db()
+    try:
+        changes = run_implementation(run, token)
+        run_verification(run, changes, token)
+        url = run_delivery(run, changes, token)
+    except ValidationError as failure:
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="failed", error=" ".join(failure.messages)[:2000]
+        )
+        raise
+    audit(
+        user,
+        "factory.pull_request_opened",
+        run.pk,
+        app.product.portfolio.organization,
+        details={"repository": run.proposed_repository, "url": url, "files": len(changes)},
+    )
+    FactoryRun.objects.filter(pk=run.pk).update(status="delivered", finished_at=timezone.now())
+    return url
