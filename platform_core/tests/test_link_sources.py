@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from platform_core.fetching import FetchError
 from platform_core.link_sources import download, submit
-from platform_core.models import Document
+from platform_core.models import CodeRepository, Document
 
 from . import test_documents
 
@@ -54,6 +54,9 @@ class LinkSubmissionTests(TestCase):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs")
         self.assertEqual(created[0].origin, "github")
         self.assertEqual(created[0].name, "docs-README.md")
+        repository = CodeRepository.objects.get(application=self.app)
+        self.assertEqual(repository.external_id, "a/docs")
+        self.assertEqual(repository.status, "documentation")
 
     def test_a_docs_tree_queues_every_file_it_resolved(self):
         files = [(f"docs-guide{n}.md", f"https://raw.example/{n}.md") for n in range(5)]

@@ -1,10 +1,26 @@
 from django.contrib.auth import views as auth
 from django.urls import path
 
-from platform_core import administration, ai, api, connectors, documents, graphs, views, workbench
+from platform_core import (
+    administration,
+    ai,
+    api,
+    code_graph,
+    connectors,
+    documents,
+    graphs,
+    views,
+    workbench,
+)
 
 urlpatterns = [
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
+    path("applications/<uuid:pk>/code-graph/", code_graph.code_graph, name="code-graph"),
+    path(
+        "applications/<uuid:pk>/code-graph/files/<uuid:file_id>/",
+        code_graph.code_file,
+        name="code-file",
+    ),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/delete/",
         documents.document_delete,

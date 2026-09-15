@@ -40,6 +40,7 @@ import time
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.http import Http404
 from django.utils import timezone
 
 from .models import RUBRIC, ChangePlan, FactoryRun, PlanItem, RunPhase
@@ -276,9 +277,9 @@ def ask(user, app_id, phase_name, instructions, question, citations, receipt):
 
 def ticket_question(run, extra=""):
     """The ticket, presented as the subject of the work rather than as speech."""
-    return (
-        f"Ticket {run.ticket_external_id or '(no id)'}: {run.ticket_title}\n\n{extra}"
-    ).strip()[:8000]
+    return (f"Ticket {run.ticket_external_id or '(no id)'}: {run.ticket_title}\n\n{extra}").strip()[
+        :8000
+    ]
 
 
 def run_triage(run, body):
@@ -298,12 +299,11 @@ def run_triage(run, body):
         )
         payload = parse_json(answer, "Triage")
         output = {
-            "kind": payload.get("kind") if payload.get("kind") in {"bug", "fix", "enhancement"}
+            "kind": payload.get("kind")
+            if payload.get("kind") in {"bug", "fix", "enhancement"}
             else "fix",
             "summary": str(payload.get("summary") or "")[:500],
-            "requirements": [
-                str(item)[:300] for item in (payload.get("requirements") or [])[:20]
-            ],
+            "requirements": [str(item)[:300] for item in (payload.get("requirements") or [])[:20]],
             "repository": repository_from(payload.get("repository")),
         }
     except ValidationError as failure:
@@ -318,8 +318,77 @@ def run_triage(run, body):
         raise
     finish_phase(phase, "ok", started, output=output, usage=receipt)
     if output["repository"]:
-        FactoryRun.objects.filter(pk=run.pk).update(proposed_repository=output["repository"])
+        from .models import CodeRepository
+        from .services import feature_enabled
+
+        repository = (
+            CodeRepository.objects.filter(
+                application_id=run.application_id,
+                provider="github",
+                external_id=output["repository"].lower(),
+                status__in=["ready", "partial"],
+            ).first()
+            if feature_enabled("code_graph", run.application)
+            else None
+        )
+        snapshot = repository.snapshots.first() if repository else None
+        FactoryRun.objects.filter(pk=run.pk).update(
+            proposed_repository=output["repository"], code_snapshot=snapshot
+        )
+        run.code_snapshot = snapshot
     return output
+
+
+def code_context_for(run, question):
+    """A bounded structural neighborhood from the snapshot pinned by triage.
+
+    Access is re-checked here rather than trusted from triage, because a run
+    sits in a queue and a grant or the feature can be withdrawn while it waits.
+    A withdrawn one removes the code context; it does not fail the run. Code
+    Graph is additional evidence for a pipeline that worked without it, and
+    turning the feature off must not take Code Factory down with it.
+    """
+    if not run.code_snapshot_id:
+        return ""
+    from django.db.models import Q
+
+    from .models import CodeRelationship
+    from .workbench import access
+
+    try:
+        app, _ = access(run.requested_by, run.application_id, "code_graph")
+    except (Http404, PermissionDenied):
+        return ""
+    if run.code_snapshot.repository.application_id != app.pk:
+        return ""
+
+    terms = [term.lower() for term in re.findall(r"[A-Za-z_$][\w$.-]{2,}", question)[:20]]
+    condition = Q()
+    for term in terms:
+        condition |= Q(path__icontains=term) | Q(content__icontains=term)
+    files = list(run.code_snapshot.files.filter(condition).defer("content")[:20]) if terms else []
+    if not files:
+        files = list(run.code_snapshot.files.defer("content")[:12])
+    ids = {item.pk for item in files}
+    edges = (
+        CodeRelationship.objects.filter(snapshot=run.code_snapshot)
+        .filter(Q(source_id__in=ids) | Q(target_id__in=ids))
+        .select_related("source", "target")[:40]
+    )
+    lines = [
+        f"Code Graph: {run.code_snapshot.repository.name} snapshot v{run.code_snapshot.number} "
+        f"at commit {run.code_snapshot.commit_sha}."
+    ]
+    for item in files:
+        symbols = ", ".join(symbol.get("name", "") for symbol in item.symbols[:12])
+        description = symbols or "no detected symbols"
+        lines.append(
+            f"FILE {item.path} ({item.language}, {item.lines} lines): {description}"
+        )
+    for edge in edges:
+        label = edge.get_confidence_display()
+        lines.append(f"DEPENDENCY [{label}] {edge.source.path} imports {edge.target.path}")
+    return "\n".join(lines)[:12000]
 
 
 def collect_items(run, payload, citations):
@@ -388,11 +457,12 @@ def run_analysis(run, triage, body):
     phase = start_phase(run, "analysis", 2)
     asked = "\n".join(triage["requirements"])
     question = ticket_question(run, f"{triage['summary']}\n\nAsked for:\n{asked}\n\n{body}")
+    code_context = code_context_for(run, question)
+    if code_context:
+        question = f"{question}\n\nPinned code structure:\n{code_context}"
     citations = evidence_for(run.application_id, question, run.graph_version)
     # Numbered for the prompt; the stored citation is always the original.
-    numbered = [
-        {**citation, "id": str(index)} for index, citation in enumerate(citations, start=1)
-    ]
+    numbered = [{**citation, "id": str(index)} for index, citation in enumerate(citations, start=1)]
     RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of([question, citations]))
     receipt = {}
     try:

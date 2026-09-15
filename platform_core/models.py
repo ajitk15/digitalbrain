@@ -248,6 +248,128 @@ class KnowledgeEntry(models.Model):
         indexes = [models.Index(fields=["application", "active"])]
 
 
+class CodeRepository(models.Model):
+    """A repository registered inside one application's security boundary."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        Application, on_delete=models.PROTECT, related_name="code_repositories"
+    )
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    provider = models.CharField(max_length=20, default="github")
+    external_id = models.CharField(max_length=240)
+    name = models.CharField(max_length=240)
+    source_url = models.URLField(max_length=1000)
+    default_ref = models.CharField(max_length=200, default="main")
+    job_id = models.UUIDField(default=uuid.uuid4)
+    status = models.CharField(
+        max_length=20,
+        default="queued",
+        choices=[
+            ("documentation", "Source import only"),
+            ("queued", "Queued"),
+            ("indexing", "Indexing"),
+            ("ready", "Ready"),
+            ("partial", "Partial"),
+            ("failed", "Failed"),
+        ],
+    )
+    error = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "provider", "external_id"],
+                name="unique_application_code_repository",
+            )
+        ]
+        indexes = [models.Index(fields=["application", "status"])]
+
+
+class CodeSnapshot(models.Model):
+    """Immutable analysis of one repository at one resolved commit."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    repository = models.ForeignKey(
+        CodeRepository, on_delete=models.PROTECT, related_name="snapshots"
+    )
+    number = models.PositiveIntegerField()
+    ref = models.CharField(max_length=200)
+    commit_sha = models.CharField(max_length=64)
+    manifest_digest = models.CharField(max_length=64)
+    analyzer_version = models.CharField(max_length=40, default="structural-v1")
+    complete = models.BooleanField(default=True)
+    warnings = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["repository", "number"], name="unique_code_snapshot_number"
+            ),
+            models.UniqueConstraint(
+                fields=["repository", "commit_sha", "manifest_digest"],
+                name="unique_code_snapshot_manifest",
+            ),
+        ]
+        indexes = [models.Index(fields=["repository", "-created_at"])]
+
+
+class CodeFile(models.Model):
+    """A bounded source file and parser facts retained with its snapshot."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    snapshot = models.ForeignKey(CodeSnapshot, on_delete=models.CASCADE, related_name="files")
+    path = models.CharField(max_length=500)
+    language = models.CharField(max_length=30)
+    digest = models.CharField(max_length=64)
+    content = models.TextField(max_length=400000)
+    parse_ok = models.BooleanField(default=True)
+    symbols = models.JSONField(default=list)
+    imports = models.JSONField(default=list)
+    lines = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["path", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["snapshot", "path"], name="unique_code_snapshot_path")
+        ]
+        indexes = [models.Index(fields=["snapshot", "language"])]
+
+
+class CodeRelationship(models.Model):
+    """A directed, explainable relationship: source depends on target."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    snapshot = models.ForeignKey(
+        CodeSnapshot, on_delete=models.CASCADE, related_name="relationships"
+    )
+    source = models.ForeignKey(CodeFile, on_delete=models.CASCADE, related_name="dependencies")
+    target = models.ForeignKey(CodeFile, on_delete=models.CASCADE, related_name="dependents")
+    kind = models.CharField(max_length=20, default="import")
+    confidence = models.CharField(
+        max_length=12, choices=[("static", "Static"), ("inferred", "Inferred")]
+    )
+    detail = models.CharField(max_length=500, blank=True)
+    evidence = models.JSONField(default=dict)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "source", "target", "kind"],
+                name="unique_code_relationship",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["snapshot", "source"]),
+            models.Index(fields=["snapshot", "target"]),
+        ]
+
+
 CHAT_MODES = [("search", "Sources"), ("ai", "AI"), ("graph", "Graph answer")]
 
 MESSAGE_ROLES = [("user", "You"), ("assistant", "Digital Brain")]
@@ -472,6 +594,9 @@ class FactoryRun(models.Model):
     ticket_digest = models.CharField(max_length=64, blank=True)
     #: Which published graph answered. Null means none was available.
     graph_version = models.PositiveIntegerField(null=True, blank=True)
+    code_snapshot = models.ForeignKey(
+        "CodeSnapshot", null=True, blank=True, on_delete=models.SET_NULL
+    )
     #: A repository named in the ticket. Never acted on without confirmation:
     #: ticket text is data, and whoever can file a ticket must not be able to
     #: choose where this platform writes.

@@ -14,7 +14,7 @@
 <div class="list-card">{% for run in runs %}
 <div class="list-row run-row" id="run-{{ run.pk }}"><div>
 <strong>{{ run.ticket_title|default:"(untitled ticket)" }}</strong>
-<small>{{ run.ticket_external_id }} · requested {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · graph v{{ run.graph_version }}{% else %} · no published graph{% endif %}</small>
+<small>{{ run.ticket_external_id }} · requested {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · knowledge graph v{{ run.graph_version }}{% else %} · no published knowledge graph{% endif %}{% if run.code_snapshot %} · code graph v{{ run.code_snapshot.number }} at {{ run.code_snapshot.commit_sha|slice:':8' }}{% endif %}</small>
 <div class="run-phases">{% for phase in run.phases.all %}<details class="phase-detail"><summary class="phase phase-{{ phase.status }}">{{ phase.get_name_display }}</summary><div><strong>{{ phase.agent }}</strong><p>{{ phase.get_status_display }}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}</p>{% if phase.prompt_tokens %}<p>{{ phase.prompt_tokens }} input / {{ phase.completion_tokens }} output tokens</p>{% endif %}{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div></details>{% endfor %}</div>
 {% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
 {% if run.proposed_repository %}<small class="muted">Repository named in the ticket: <code>{{ run.proposed_repository }}</code>{% if not run.repository_confirmed %} — not yet confirmed, and nothing is written to it.{% endif %}</small>{% endif %}

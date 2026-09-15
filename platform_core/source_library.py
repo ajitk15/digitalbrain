@@ -1,10 +1,27 @@
 """One inventory for uploaded documents and searchable imported records."""
 
+from urllib.parse import urlparse
+
 from django.core.paginator import Paginator
 from django.db.models import CharField, Q, Value
 
-from .models import Document, GraphRevision, KnowledgeEntry
+from .models import CodeRepository, Document, GraphRevision, KnowledgeEntry
 from .services import feature_enabled
+
+
+def repository_of(url):
+    """owner/name for a GitHub document URL, read from the path, not a substring.
+
+    A substring search matches the wrong repository whenever one repository's
+    owner/name also appears inside another's file path, and misses a bare
+    ``github.com/owner/repo`` link because it has no trailing slash.
+    """
+    parsed = urlparse(url or "")
+    host = (parsed.hostname or "").lower()
+    if host not in {"github.com", "www.github.com", "raw.githubusercontent.com"}:
+        return ""
+    parts = [part for part in (parsed.path or "").split("/") if part]
+    return f"{parts[0]}/{parts[1]}".lower() if len(parts) >= 2 else ""
 
 
 def graph_usage(app, entries):
@@ -64,10 +81,25 @@ def library_context(app, request):
     by_document = {entry.document_id: entry for entry in page_entries if entry.document_id}
     by_id = {entry.pk: entry for entry in page_entries}
     usage = graph_usage(app, page_entries)
+    code_repositories = (
+        {
+            repository.external_id.lower(): repository
+            for repository in CodeRepository.objects.filter(application=app).prefetch_related(
+                "snapshots"
+            )
+        }
+        if feature_enabled("code_graph", app)
+        else {}
+    )
     rows = []
     for pk, created_at, kind in selected:
         doc = docs.get(pk) if kind == "document" else None
         entry = by_document.get(pk) if doc else by_id.get(pk)
+        code_repository = (
+            code_repositories.get(repository_of(doc.source_url))
+            if doc and doc.origin == "github"
+            else None
+        )
         rows.append({
             "document": doc, "entry": entry,
             "title": doc.name if doc else entry.title,
@@ -76,6 +108,8 @@ def library_context(app, request):
             ),
             "created_at": created_at,
             "versions": usage.get(str(entry.pk), []) if entry else [],
+            "code_repository": code_repository,
+            "code_snapshot": code_repository.snapshots.first() if code_repository else None,
         })
     page.object_list = rows
     return {

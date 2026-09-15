@@ -26,6 +26,7 @@ FEATURES = {
     "usage_reports": ("AI cost reports", True),
     "chat": ("Knowledge chat", True),
     "knowledge": ("Knowledge sources", True),
+    "code_graph": ("Code Graph", True),
     "code_factory": ("Code Factory plans", True),
     "connectors": ("External connectors", True),
 }

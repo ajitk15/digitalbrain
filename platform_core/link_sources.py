@@ -25,6 +25,7 @@ from digitalbrain.configuration import read_secret
 from .documents import document_folder, document_path, intake_enabled
 from .fetching import FetchError, fetch, normalise, resolve, suggested_name
 from .github_sources import is_github
+from .github_sources import parse as parse_github
 from .github_sources import plan as github_plan
 from .models import Document
 from .policy import application_for
@@ -125,6 +126,11 @@ def submit(user, app_id, raw):
                 source_url=url[:2000],
             )
             created.append(document)
+        if origin == "github" and feature_enabled("code_graph", app):
+            from .code_graph_ingest import showcase_repository
+
+            _, owner, repo, ref, _ = parse_github(normalise(raw))
+            showcase_repository(user, app, f"{owner}/{repo}", ref or "main")
         audit(
             user,
             "document.linked",

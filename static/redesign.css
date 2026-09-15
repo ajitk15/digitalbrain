@@ -1239,6 +1239,19 @@
   .kb-graph .actions { flex-wrap: wrap; }
   #graph-search { flex: 1 1 180px; width: auto; min-width: 0; }
   #graph-node { flex: 1 1 180px; width: auto; min-width: 0; max-width: 300px; }
+  .code-repository-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+  .code-graph-workspace { padding: var(--s-4); }
+  .code-graph-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: var(--s-4); }
+  .code-file-list { max-height: 620px; overflow: auto; border-right: 1px solid var(--c-line); padding-right: var(--s-3); }
+  .code-file-list > a { display: block; padding: var(--s-2); border-radius: var(--r-sm); overflow-wrap: anywhere; }
+  .code-file-list > a:hover { background: var(--c-well); text-decoration: none; }
+  #code-graph-canvas { width: 100%; min-height: 520px; background: var(--c-well); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); }
+  .code-edge { stroke: #98a2b5; stroke-width: 1; }
+  .code-edge.inferred { stroke-dasharray: 4 4; }
+  .code-node { fill: var(--c-brand); stroke: white; stroke-width: 2; }
+  .code-node.parse-error { fill: var(--c-danger); }
+  .code-file-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--s-4); align-items: start; }
+  .code-source { max-height: 68vh; overflow: auto; white-space: pre; font: var(--t-12)/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--c-well); border: 1px solid var(--c-line-soft); padding: var(--s-4); border-radius: var(--r-md); }
   .generate-form select { min-width: 0; max-width: 100%; }
   .kb-panes-empty { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); }
 
@@ -1279,6 +1292,8 @@
     .application-menu-name { flex-basis: 100%; max-width: none; font-size: var(--t-12); }
   }
   @media (max-width: 900px) {
+    .code-graph-layout, .code-file-grid { grid-template-columns: 1fr; }
+    .code-file-list { border-right: 0; border-bottom: 1px solid var(--c-line); max-height: 250px; }
     .chat-workspace { display: flex; flex-direction: column; height: auto; }
     .chat-history { max-height: 300px; }
     .chat-panel { min-height: 460px; }
