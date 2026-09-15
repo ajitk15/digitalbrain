@@ -227,6 +227,9 @@
     }
   }
 
+  //: Zoomed past this there is room on screen for every label at once.
+  const LABEL_ALL_ZOOM = 1.6;
+
   function applyView() {
     const viewport = canvas.querySelector("#graph-viewport");
     if (viewport) {
@@ -235,6 +238,7 @@
         `translate(${view.x} ${view.y}) scale(${view.k})`
       );
     }
+    canvas.classList.toggle("labelled", view.k >= LABEL_ALL_ZOOM);
   }
 
   const minimap = document.getElementById("graph-minimap");
@@ -405,6 +409,13 @@
 
     const ids = shown();
     const set = new Set(ids);
+    // The busiest nodes on screen keep a standing label: a hub is what you
+    // navigate by, whatever kind it happens to be.
+    const hubs = new Set(
+      [...ids]
+        .sort((left, right) => (degree.get(right) || 0) - (degree.get(left) || 0))
+        .slice(0, 18)
+    );
     canvas.replaceChildren();
 
     const defs = el("defs", {});
@@ -513,16 +524,26 @@
           "stroke-width": id === focus ? 2 : 0,
         })
       );
-      // Labels only where they stay legible.
-      if (id === focus || node.kind === "document" || ids.length <= 45) {
-        group.append(
-          el(
-            "text",
-            { y: radius + 12, "text-anchor": "middle", fill: COLORS.label, "font-size": 10 },
-            node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label
-          )
-        );
-      }
+      // Every node carries its label and CSS decides which reach the screen, so
+      // hovering or zooming reveals more without redrawing the scene. Drawing
+      // them only for documents left a field of unnamed dots that could be read
+      // one click at a time, which is not a way of reading a graph.
+      const named =
+        id === focus || node.kind === "document" || ids.length <= 45 || hubs.has(id);
+      group.classList.toggle("named", named);
+      group.append(
+        el(
+          "text",
+          {
+            y: radius + 12,
+            "text-anchor": "middle",
+            fill: COLORS.label,
+            "font-size": 10,
+            class: "kg-label",
+          },
+          node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label
+        )
+      );
       group.append(el("title", {}, `${node.label} (${node.kind})`));
       viewport.append(group);
     });

@@ -1233,6 +1233,16 @@
   #graph-canvas { border: 1px solid #242b3d; border-radius: var(--r-md); background: #0b0e14; touch-action: none; }
   #graph-canvas[data-canvas="light"] { border-color: var(--c-line-soft); background: var(--c-well); }
   .graph-node { cursor: pointer; }
+  /* A label is always in the markup; these rules decide which reach the screen.
+     A halo in the canvas colour keeps one readable where it crosses an edge or
+     another node, and a label is never a hit target - the circle is - so it
+     cannot swallow a click. */
+  .kg-label { pointer-events: none; paint-order: stroke; stroke: #0b0e14; stroke-width: 2.5px; stroke-linejoin: round; }
+  #graph-canvas[data-canvas="light"] .kg-label { stroke: #f2f3f7; }
+  .graph-node:not(.named) .kg-label { display: none; }
+  #graph-canvas.labelled .graph-node .kg-label { display: block; }
+  #graph-canvas.tracing .graph-node.lit .kg-label { display: block; }
+  .graph-node:hover .kg-label, .graph-node:focus .kg-label { display: block; }
   .graph-node circle { transition: opacity .12s; }
   .kg-edge { transition: opacity .12s, stroke-width .12s; }
   /* Hover reads a neighbourhood without committing to a selection. */
