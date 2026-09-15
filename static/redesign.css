@@ -1225,7 +1225,25 @@
   .kb-graph .kb-pane-body > .card { border: 0; padding: 0; background: none; }
   .kb-graph .generate-card { margin-bottom: var(--s-3); }
   .graph-layout { display: flex; flex-direction: column; gap: var(--s-3); }
-  #graph-canvas { border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-well); }
+  /* The knowledge canvas is a dark stage under a light application, for the same
+     reason the code canvas is: a graph is read as a picture, and both the nodes
+     and the gradient edges carry far more contrast against ink than paper.
+     Colour lives in graph.js, because it lands in SVG presentation attributes
+     where a custom property is not reliably resolvable. */
+  #graph-canvas { border: 1px solid #242b3d; border-radius: var(--r-md); background: #0b0e14; touch-action: none; }
+  #graph-canvas[data-canvas="light"] { border-color: var(--c-line-soft); background: var(--c-well); }
+  .graph-node { cursor: pointer; }
+  .graph-node circle { transition: opacity .12s; }
+  .kg-edge { transition: opacity .12s, stroke-width .12s; }
+  /* Hover reads a neighbourhood without committing to a selection. */
+  #graph-canvas.tracing .graph-node:not(.lit) { opacity: .22; }
+  #graph-canvas.tracing .kg-edge:not(.lit) { opacity: .1; }
+  #graph-canvas .kg-edge.lit { stroke-width: 2.4; }
+  .graph-stage { position: relative; }
+  #graph-minimap { position: absolute; right: 10px; bottom: 10px; width: 148px; height: 89px; background: rgba(11, 14, 20, .78); border: 1px solid #242b3d; border-radius: 8px; cursor: pointer; }
+  #graph-canvas[data-canvas="light"] ~ #graph-minimap { background: rgba(236, 238, 244, .85); border-color: var(--c-line-soft); }
+  .graph-theme { position: absolute; left: 10px; top: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #323b52; background: #1a1f2e; color: #b8c1d9; padding: 0; font-size: 14px; }
+  .graph-theme:hover { background: #222839; filter: none; }
   .graph-overview { margin-bottom: var(--s-3); font-size: var(--t-13); }
   .graph-overview[open] > summary { margin-bottom: var(--s-3); }
   .shell:has(.kb-panes) .page-heading p { margin-top: var(--s-1); }

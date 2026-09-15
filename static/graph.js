@@ -29,13 +29,39 @@
   const zoomFit = document.getElementById("graph-fit");
 
   const NS = "http://www.w3.org/2000/svg";
-  const COLORS = {
-    document: "#4145c8",
-    record: "#8a53bc",
-    value: "#258777",
-    section: "#7b879b",
-    entity: "#c57624",
+
+  // Two palettes rather than one lightened: a mid-tone that reads as bright on
+  // near-black washes out on paper, so the light values are darkened instead.
+  // These land in SVG presentation attributes and in colour arithmetic for the
+  // edge gradients, where a CSS custom property is not reliably resolvable.
+  const PALETTES = {
+    dark: {
+      document: "#6d7cff",
+      record: "#b07cff",
+      value: "#35c8a0",
+      section: "#7f8db0",
+      entity: "#e0a92e",
+      edge: "#2c3c60",
+      inferred: "#e0a92e",
+      label: "#b8c1d9",
+      focusRing: "#e4e9f2",
+      ground: "#242b3d",
+    },
+    light: {
+      document: "#4145c8",
+      record: "#8a53bc",
+      value: "#258777",
+      section: "#7b879b",
+      entity: "#b45309",
+      edge: "#d7dce9",
+      inferred: "#b45309",
+      label: "#334155",
+      focusRing: "#1f2937",
+      ground: "#c2c3c8",
+    },
   };
+  let theme = "dark";
+  let COLORS = PALETTES[theme];
   const KINDS = ["document", "record", "value", "section", "entity"];
   const START_NODES = 120;
   const MAX_NODES = 400;
@@ -51,6 +77,12 @@
     neighbours.get(e.target).add(e.source);
   });
 
+  // Degree decides how large a node draws. A uniform dot field says nothing
+  // about which parts of the graph carry weight.
+  const degree = new Map();
+  graph.nodes.forEach((n) => degree.set(n.id, neighbours.get(n.id).size));
+  const busiest = Math.max(1, ...degree.values());
+
   const hidden = new Set();
   let visible = new Set();
   let focus = null;
@@ -63,6 +95,17 @@
     Object.entries(attrs || {}).forEach(([k, v]) => node.setAttribute(k, v));
     if (text !== undefined) node.textContent = text;
     return node;
+  };
+
+  const toRgb = (hex) => {
+    const value = parseInt(hex.slice(1), 16);
+    return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  };
+  const mixHex = (a, b, t) => {
+    const left = toRgb(a);
+    const right = toRgb(b);
+    const part = (i) => Math.round(left[i] + (right[i] - left[i]) * t);
+    return `#${[0, 1, 2].map((i) => part(i).toString(16).padStart(2, "0")).join("")}`;
   };
 
   const shown = () => [...visible].filter((id) => !hidden.has(nodes.get(id).kind));
@@ -194,6 +237,92 @@
     }
   }
 
+  const minimap = document.getElementById("graph-minimap");
+
+  function drawMinimap(ids) {
+    if (!minimap) return;
+    if (!ids.length) {
+      minimap.replaceChildren();
+      return;
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    ids.forEach((id) => {
+      const point = layout.get(id);
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    });
+    const pad = 20;
+    minimap.setAttribute(
+      "viewBox",
+      `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`
+    );
+    minimap.replaceChildren();
+    ids.forEach((id) => {
+      const point = layout.get(id);
+      minimap.append(
+        el("circle", {
+          cx: point.x,
+          cy: point.y,
+          r: 5,
+          fill: COLORS[nodes.get(id).kind] || COLORS.section,
+          opacity: 0.8,
+        })
+      );
+    });
+  }
+
+  if (minimap) {
+    minimap.addEventListener("click", (event) => {
+      const box = minimap.getBoundingClientRect();
+      const parts = (minimap.getAttribute("viewBox") || "0 0 1 1").split(" ").map(Number);
+      const x = parts[0] + ((event.clientX - box.left) / box.width) * parts[2];
+      const y = parts[1] + ((event.clientY - box.top) / box.height) * parts[3];
+      view.x = WIDTH / 2 - x * view.k;
+      view.y = HEIGHT / 2 - y * view.k;
+      applyView();
+    });
+  }
+
+  const themeButton = document.getElementById("graph-theme");
+  if (themeButton) {
+    const applyTheme = () => {
+      COLORS = PALETTES[theme];
+      canvas.setAttribute("data-canvas", theme);
+      themeButton.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+      const next = theme === "dark" ? "light" : "dark";
+      themeButton.setAttribute("aria-label", `Switch the canvas to ${next}`);
+      themeButton.setAttribute("title", `Switch the canvas to ${next}`);
+      // A redraw is cheap here and the layout is untouched by it: positions
+      // live in `layout`, so the camera and the expansion survive.
+      render(false);
+    };
+    themeButton.addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem("digital-brain.knowledge.canvas", theme);
+      } catch (failure) {
+        /* a private window refusing storage is not a reason to fail the click */
+      }
+      applyTheme();
+    });
+    try {
+      if (localStorage.getItem("digital-brain.knowledge.canvas") === "light") {
+        theme = "light";
+        // The palette has to move with the theme before the first render, or a
+        // remembered preference draws dark nodes onto a light canvas.
+        COLORS = PALETTES[theme];
+      }
+    } catch (failure) {
+      /* no stored preference is the normal case */
+    }
+    canvas.setAttribute("data-canvas", theme);
+  }
+
   function fit() {
     const points = shown().map((id) => layout.get(id)).filter(Boolean);
     if (!points.length) return;
@@ -277,25 +406,75 @@
     const ids = shown();
     const set = new Set(ids);
     canvas.replaceChildren();
+
+    const defs = el("defs", {});
+    canvas.append(defs);
+
+    // The dotted ground is one pattern however far you pan, where a grid of
+    // real dots would be thousands of elements.
+    const dots = el("pattern", {
+      id: "kg-dots",
+      width: 24,
+      height: 24,
+      patternUnits: "userSpaceOnUse",
+    });
+    dots.append(el("circle", { cx: 1, cy: 1, r: 1, fill: COLORS.ground }));
+    defs.append(dots);
+    canvas.append(
+      el("rect", { x: -4000, y: -4000, width: 9000, height: 9000, fill: "url(#kg-dots)" })
+    );
+
     const viewport = el("g", { id: "graph-viewport" });
     canvas.append(viewport);
 
     const lines = el("g", { "stroke-linecap": "round" });
     viewport.append(lines);
 
+    // An edge is a gradient between the two kinds it joins, with the midpoint
+    // pulled most of the way to the edge tone: a fully saturated middle turns a
+    // dense graph into stripes and stops the nodes reading as the subject.
+    const gradients = new Map();
+    const gradientFor = (from, to) => {
+      const key = `${from}|${to}`;
+      if (gradients.has(key)) return gradients.get(key);
+      const id = `kg-edge-${gradients.size}`;
+      const gradient = el("linearGradient", {
+        id,
+        gradientUnits: "objectBoundingBox",
+        x1: "0",
+        y1: "0",
+        x2: "1",
+        y2: "1",
+      });
+      const middle = mixHex(mixHex(from, to, 0.5), COLORS.edge, 0.55);
+      gradient.append(el("stop", { offset: "0", "stop-color": from, "stop-opacity": "0.75" }));
+      gradient.append(el("stop", { offset: "0.5", "stop-color": middle }));
+      gradient.append(el("stop", { offset: "1", "stop-color": to, "stop-opacity": "0.75" }));
+      defs.append(gradient);
+      gradients.set(key, id);
+      return id;
+    };
+
     edges.forEach((e) => {
       if (!set.has(e.source) || !set.has(e.target)) return;
       const a = layout.get(e.source);
       const b = layout.get(e.target);
+      const from = COLORS[nodes.get(e.source).kind] || COLORS.section;
+      const to = COLORS[nodes.get(e.target).kind] || COLORS.section;
       const line = el("line", {
         x1: a.x,
         y1: a.y,
         x2: b.x,
         y2: b.y,
-        stroke: e.inferred ? "#c57624" : "#d7dce9",
-        "stroke-width": e.inferred ? 1.8 : 1,
+        // An inferred relation keeps a flat amber: guessed evidence must not
+        // look like the same thing as a structural fact.
+        stroke: e.inferred ? COLORS.inferred : `url(#${gradientFor(from, to)})`,
+        "stroke-width": e.inferred ? 1.6 : 1.2,
         "stroke-dasharray": e.inferred ? "4 3" : "",
+        class: "kg-edge",
       });
+      line.dataset.source = e.source;
+      line.dataset.target = e.target;
       line.append(el("title", {}, `${e.relation}${e.inferred ? " (AI-inferred)" : ""}`));
       lines.append(line);
     });
@@ -311,13 +490,27 @@
         transform: `translate(${point.x} ${point.y})`,
       });
       group.dataset.id = id;
-      const radius = id === focus ? 12 : node.kind === "document" ? 9 : 6;
+      // Size carries degree, so the hubs are visible before anything is clicked.
+      const weight = Math.sqrt((degree.get(id) || 0) / busiest);
+      const radius =
+        id === focus ? 13 : Math.max(4.5, (node.kind === "document" ? 7 : 5) + weight * 7);
+      if (id === focus) {
+        group.append(
+          el("circle", {
+            r: radius + 7,
+            fill: "none",
+            stroke: COLORS[node.kind] || COLORS.section,
+            "stroke-width": 1,
+            opacity: 0.45,
+          })
+        );
+      }
       group.append(
         el("circle", {
           r: radius,
-          fill: COLORS[node.kind] || "#7b879b",
-          stroke: id === focus ? "#1f2937" : "#fff",
-          "stroke-width": id === focus ? 2 : 1,
+          fill: COLORS[node.kind] || COLORS.section,
+          stroke: id === focus ? COLORS.focusRing : "none",
+          "stroke-width": id === focus ? 2 : 0,
         })
       );
       // Labels only where they stay legible.
@@ -325,7 +518,7 @@
         group.append(
           el(
             "text",
-            { y: radius + 12, "text-anchor": "middle", fill: "#334155", "font-size": 10 },
+            { y: radius + 12, "text-anchor": "middle", fill: COLORS.label, "font-size": 10 },
             node.label.length > 22 ? `${node.label.slice(0, 21)}…` : node.label
           )
         );
@@ -334,6 +527,35 @@
       viewport.append(group);
     });
 
+    // Hover traces a neighbourhood. At 400 nodes this is most of what makes the
+    // picture explorable without committing to a selection.
+    const lit = (id) => {
+      const near = neighbours.get(id) || new Set();
+      canvas.classList.add("tracing");
+      viewport.querySelectorAll(".graph-node").forEach((group) => {
+        const other = group.dataset.id;
+        group.classList.toggle("lit", other === id || near.has(other));
+      });
+      lines.querySelectorAll(".kg-edge").forEach((line) => {
+        line.classList.toggle(
+          "lit",
+          line.dataset.source === id || line.dataset.target === id
+        );
+      });
+    };
+    const unlit = () => {
+      canvas.classList.remove("tracing");
+      viewport.querySelectorAll(".lit").forEach((node) => node.classList.remove("lit"));
+      lines.querySelectorAll(".lit").forEach((line) => line.classList.remove("lit"));
+    };
+    viewport.querySelectorAll(".graph-node").forEach((group) => {
+      group.addEventListener("pointerenter", () => lit(group.dataset.id));
+      group.addEventListener("pointerleave", unlit);
+      group.addEventListener("focus", () => lit(group.dataset.id));
+      group.addEventListener("blur", unlit);
+    });
+
+    drawMinimap(ids);
     applyView();
     counter.textContent =
       `${ids.length} of ${graph.nodes.length} nodes shown` +
