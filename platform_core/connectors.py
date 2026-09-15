@@ -14,6 +14,7 @@ Two boundaries this file exists to hold:
 
 import hashlib
 import time
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
@@ -43,6 +44,23 @@ def credential(app, kind):
         return read_secret(settings.SECRET_DIRECTORY, f"{kind}_{app.pk}")
     except ImproperlyConfigured:
         return ""
+
+
+def credential_location(app, kind):
+    """Where this application's secret for one kind belongs, and whether it is there.
+
+    The value is never included. A screen that tells someone to mount a file
+    without saying which file, in which directory, is a screen they cannot act
+    on - which is what sent people to the filesystem to guess.
+    """
+    name = f"{kind}_{app.pk}"
+    directory = str(settings.SECRET_DIRECTORY)
+    return {
+        "name": name,
+        "directory": directory,
+        "path": str(Path(directory) / name),
+        "mounted": bool(credential(app, kind)),
+    }
 
 
 def owner_access(user, app_id):
@@ -243,6 +261,7 @@ def connector_form(request, pk, connector_id=None):
             "name_field": name_field,
             "secret_name": f"{key}_{app.pk}",
             "credential": bool(credential(app, key)),
+            "location": credential_location(app, key),
         },
     )
 

@@ -1241,15 +1241,178 @@
   #graph-node { flex: 1 1 180px; width: auto; min-width: 0; max-width: 300px; }
   .code-repository-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
   .code-graph-workspace { padding: var(--s-4); }
-  .code-graph-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: var(--s-4); }
+  .code-graph-layout { display: grid; grid-template-columns: minmax(210px, 260px) minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+  .code-graph-layout:has(.code-inspector:not([hidden])) { grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(280px, 360px); }
   .code-file-list { max-height: 620px; overflow: auto; border-right: 1px solid var(--c-line); padding-right: var(--s-3); }
   .code-file-list > a { display: block; padding: var(--s-2); border-radius: var(--r-sm); overflow-wrap: anywhere; }
   .code-file-list > a:hover { background: var(--c-well); text-decoration: none; }
-  #code-graph-canvas { width: 100%; min-height: 520px; background: var(--c-well); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); }
-  .code-edge { stroke: #98a2b5; stroke-width: 1; }
-  .code-edge.inferred { stroke-dasharray: 4 4; }
-  .code-node { fill: var(--c-brand); stroke: white; stroke-width: 2; }
-  .code-node.parse-error { fill: var(--c-danger); }
+  /* The explorer canvas.
+     A dark stage under a light application: a dependency graph is read as a
+     picture, and cards and edges carry far more contrast against ink than
+     against paper. Everything is driven by classes and SVG attributes, because
+     `style-src 'self'` means the renderer may not write one inline style. */
+  .code-graph-stage { display: flex; flex-direction: column; gap: var(--s-2); min-width: 0; }
+  .graph-canvas-frame { position: relative; border-radius: var(--r-md); overflow: hidden; background: #0b0e14; border: 1px solid #242b3d; }
+  #code-graph-canvas { display: block; width: 100%; height: 640px; touch-action: none; cursor: grab; }
+  #code-graph-canvas.grabbing { cursor: grabbing; }
+  #code-graph-canvas > text { fill: #5c6780; font-size: 13px; }
+  .canvas-dot { fill: #242b3d; }
+
+  /* A file's colour is its role in the graph, not its language: what imports
+     it and what it imports is the thing a dependency picture is about. The
+     language is named on the chip instead. */
+  .code-edge { stroke-width: 1.6; fill: none; transition: stroke-width .12s, opacity .12s; }
+  /* A seam is dashed and amber: inferred evidence must not look like proof.
+     Amber darkens for the light canvas - #e0a92e is legible on near-black and
+     nearly invisible on paper. */
+  .code-edge.inferred { stroke-dasharray: 6 4; stroke: #e0a92e; }
+  [data-canvas="light"] .code-edge.inferred { stroke: #b45309; }
+  .code-edge.on { stroke-width: 2.4; }
+  .arrow-line { fill: #323b52; }
+  .arrow-line.on { fill: #9575ff; }
+  .has-selection .code-edge:not(.on) { opacity: .14; }
+
+  .edge-labels.too-small { display: none; }
+  .edge-label text { fill: #b8c1d9; font: 9.5px ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .edge-label-plate { fill: #11151f; stroke: #323b52; stroke-width: 1; }
+  .edge-label.on text { fill: #e4e9f2; }
+  .edge-label.on .edge-label-plate { stroke: #7c5cff; }
+  .has-selection .edge-label:not(.on) { opacity: .14; }
+
+  .code-card { cursor: pointer; }
+  .card-body { fill: #1a1f2e; stroke: #242b3d; stroke-width: 1; transition: stroke .12s; }
+  .code-card:hover .card-body { fill: #222839; stroke: #323b52; }
+  .code-card.selected .card-body { stroke: #7c5cff; stroke-width: 2; fill: #222839; }
+  .code-card.related .card-body { stroke: #323b52; }
+  /* Three levels, so "connected to the selection" stays legible while the rest
+     recedes without vanishing. */
+  .has-selection .code-card.related { opacity: .55; }
+  .has-selection .code-card:not(.selected):not(.related) { opacity: .18; }
+
+  /* Search dims rather than redrawing, so the shape you were reading stays put.
+     It outranks hover and selection: a filter is the strongest statement of
+     intent on the canvas. */
+  .searching .code-card.no-match { opacity: .09; }
+  .searching .code-edge.no-match { opacity: .07; }
+  .searching .edge-label.no-match { opacity: 0; }
+  .code-card.match .card-body { stroke: #9575ff; }
+
+  /* Hover reads the neighbourhood without committing to a selection, so it
+     stands down entirely once something is selected. */
+  .has-hover:not(.has-selection) .code-card:not(.hover):not(.hover-related) { opacity: .3; }
+  .has-hover:not(.has-selection) .code-edge:not(.hover-on) { opacity: .12; }
+  .has-hover:not(.has-selection) .edge-label:not(.hover-on) { opacity: .12; }
+  .code-card.hover .card-body { stroke: #9575ff; stroke-width: 2; }
+  .card-body.parse-error { stroke: #eab308; stroke-dasharray: 4 3; }
+
+  .card-chip { fill: #242b3d; }
+  .card-badge { fill: #b8c1d9; font: 700 8.5px system-ui, sans-serif; letter-spacing: .04em; }
+  .card-name { fill: #e4e9f2; font: 600 12.5px ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .card-folder { fill: #5c6780; font: 9.5px ui-monospace, SFMono-Regular, Consolas, monospace; }
+  .card-metrics { font: 9.5px system-ui, sans-serif; }
+  .metric-fn { fill: #3b82f6; }
+  .metric-cls { fill: #5c6780; }
+  .card-loc { fill: #5c6780; font: 9.5px system-ui, sans-serif; }
+
+  .role-entry .card-chip { fill: rgba(168, 85, 247, .16); }
+  .role-service .card-chip { fill: rgba(59, 130, 246, .16); }
+  .role-leaf .card-chip { fill: rgba(34, 197, 94, .16); }
+  .role-circular .card-chip { fill: rgba(239, 68, 68, .16); }
+
+  .graph-controls { position: absolute; top: var(--s-3); left: var(--s-3); display: flex; flex-direction: column; gap: 4px; }
+  .graph-control { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #323b52; background: #1a1f2e; color: #b8c1d9; font-size: 14px; line-height: 1; padding: 0; }
+  .graph-control:hover { background: #222839; filter: none; }
+
+  .graph-legend { position: absolute; top: var(--s-3); right: var(--s-3); max-width: 62%; padding: 8px 11px; border-radius: 8px; background: rgba(17, 21, 31, .92); border: 1px solid #242b3d; }
+  .graph-legend summary { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #5c6780; cursor: pointer; }
+  .legend-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: 7px; }
+  .legend-group b { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #5c6780; font-weight: 600; width: 100%; }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: #b8c1d9; }
+  .legend-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+  .legend-swatch.role-entry { background: #a855f7; }
+  .legend-swatch.role-service { background: #3b82f6; }
+  .legend-swatch.role-leaf { background: #22c55e; }
+  .legend-swatch.role-orphan { background: #64748b; }
+  .legend-swatch.role-circular { background: #ef4444; }
+  .legend-note { display: block; margin-top: 7px; font-size: 9.5px; color: #5c6780; max-width: 34ch; }
+
+  .graph-minimap { position: absolute; right: var(--s-3); bottom: var(--s-3); width: 172px; height: 108px; background: rgba(11, 14, 20, .78); border: 1px solid #242b3d; border-radius: 8px; cursor: pointer; }
+  .mini-node { fill: #323b52; }
+  .mini-port { fill: rgba(124, 92, 255, .14); stroke: #7c5cff; stroke-width: 6; }
+
+  /* Light canvas. The palette is not the dark one lightened - a colour that
+     reads as bright against near-black is washed out against paper - so each
+     value is darkened instead. Amber is the clearest case. */
+  .graph-canvas-frame[data-canvas="light"] { background: #eceef4; border-color: #dde0ea; }
+  [data-canvas="light"] .canvas-dot { fill: #c2c3c8; }
+  [data-canvas="light"] #code-graph-canvas > text { fill: #6b7286; }
+  [data-canvas="light"] .card-body { fill: #fbfcfe; stroke: #dde0ea; }
+  [data-canvas="light"] .code-card:hover .card-body { fill: #ffffff; stroke: #c5cad9; }
+  [data-canvas="light"] .code-card.selected .card-body { fill: #ffffff; stroke: #6d4bd8; }
+  [data-canvas="light"] .card-chip { fill: #e7eaf2; }
+  [data-canvas="light"] .card-badge { fill: #3f4759; }
+  [data-canvas="light"] .card-name { fill: #171c2b; }
+  [data-canvas="light"] .card-folder, [data-canvas="light"] .card-loc,
+  [data-canvas="light"] .metric-cls { fill: #6b7286; }
+  [data-canvas="light"] .metric-fn { fill: #2563eb; }
+  [data-canvas="light"] .arrow-line { fill: #c5cad9; }
+  [data-canvas="light"] .edge-label text { fill: #3f4759; }
+  [data-canvas="light"] .edge-label-plate { fill: #ffffff; stroke: #dde0ea; }
+  [data-canvas="light"] .graph-legend { background: rgba(244, 245, 249, .94); border-color: #dde0ea; }
+  [data-canvas="light"] .graph-legend summary, [data-canvas="light"] .legend-note { color: #6b7286; }
+  [data-canvas="light"] .legend-item { color: #3f4759; }
+  [data-canvas="light"] .graph-control { background: #fbfcfe; border-color: #dde0ea; color: #3f4759; }
+  [data-canvas="light"] .graph-control:hover { background: #eceef4; }
+  [data-canvas="light"] .graph-minimap { background: rgba(236, 238, 244, .85); border-color: #dde0ea; }
+  [data-canvas="light"] .mini-node { fill: #c5cad9; }
+  [data-canvas="light"] .mini-port { fill: rgba(109, 75, 216, .12); stroke: #6d4bd8; }
+
+  .graph-statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-1); font-size: var(--t-12); color: var(--c-ink-3); border-top: 1px solid var(--c-line); }
+  .graph-statusbar strong { color: var(--c-ink); font-weight: 600; }
+  .graph-match { margin: var(--s-2) 0 0; font-size: var(--t-12); color: var(--c-ink-2); }
+  .graph-subset { color: var(--c-ink-3); font-style: italic; }
+
+  /* The file tree. */
+  .tree-folder { margin-bottom: var(--s-2); }
+  .tree-folder > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); padding: var(--s-1) var(--s-2); border-radius: var(--r-sm); cursor: pointer; font-size: var(--t-12); font-weight: 600; color: var(--c-ink-2); }
+  .tree-folder > summary:hover { background: var(--c-well); }
+  .tree-name { overflow-wrap: anywhere; }
+  .tree-count { color: var(--c-ink-3); font-weight: 400; white-space: nowrap; }
+  .tree-folder > a { padding-left: var(--s-4); }
+  .graph-hint { margin-left: auto; color: var(--c-ink-3); }
+
+  .file-metrics { gap: var(--s-2); margin-bottom: var(--s-3); }
+  .file-metrics .metric { flex: 0 1 auto; min-width: 92px; padding: var(--s-2) var(--s-3); }
+  .file-metrics .metric strong { font-size: var(--t-17); margin: 0 0 2px; }
+
+  /* Radio-driven tabs: the file page must render and stay usable with scripting
+     off, and the inspector lifts this markup verbatim. */
+  .file-tabs .tab-radio { position: absolute; opacity: 0; pointer-events: none; }
+  .tab-strip { display: flex; flex-wrap: wrap; gap: var(--s-4); border-bottom: 1px solid var(--c-line); margin-bottom: var(--s-4); }
+  .tab-strip label { margin: 0; padding: 0 0 var(--s-2); font-size: var(--t-13); font-weight: 600; color: var(--c-ink-3); cursor: pointer; border-bottom: 2px solid transparent; }
+  .tab-strip label:hover { color: var(--c-ink); }
+  .tab-pane { display: none; }
+  #file-tab-overview:checked ~ .tab-strip label[for="file-tab-overview"],
+  #file-tab-deps:checked ~ .tab-strip label[for="file-tab-deps"],
+  #file-tab-used:checked ~ .tab-strip label[for="file-tab-used"],
+  #file-tab-impact:checked ~ .tab-strip label[for="file-tab-impact"] { color: var(--c-brand); border-bottom-color: var(--c-brand); }
+  #file-tab-overview:checked ~ .tab-pane[data-pane="overview"],
+  #file-tab-deps:checked ~ .tab-pane[data-pane="deps"],
+  #file-tab-used:checked ~ .tab-pane[data-pane="used"],
+  #file-tab-impact:checked ~ .tab-pane[data-pane="impact"] { display: block; }
+  .tab-radio:focus-visible ~ .tab-strip label { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .impact-ring { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }
+  .impact-ring a { font-size: var(--t-12); overflow-wrap: anywhere; }
+
+  .code-inspector { border-left: 1px solid var(--c-line); padding-left: var(--s-4); max-height: 740px; overflow: auto; min-width: 0; }
+  .inspector-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+  .inspector-head h2 { margin: 0; }
+  .inspector-head .graph-control { background: var(--c-surface); border-color: var(--c-line); color: var(--c-ink-2); }
+  .inspector-head .graph-control:hover { background: var(--c-well); }
+  #code-inspector-body h1 { font-size: var(--t-17); overflow-wrap: anywhere; }
+  #code-inspector-body .application-menu, #code-inspector-body .breadcrumbs, #code-inspector-body .page-heading > a { display: none; }
+  #code-inspector-body .code-file-grid { grid-template-columns: minmax(0, 1fr); }
+  #code-inspector-body .code-source { max-height: 300px; }
   .code-file-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--s-4); align-items: start; }
   .code-source { max-height: 68vh; overflow: auto; white-space: pre; font: var(--t-12)/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--c-well); border: 1px solid var(--c-line-soft); padding: var(--s-4); border-radius: var(--r-md); }
   .generate-form select { min-width: 0; max-width: 100%; }
@@ -1292,7 +1455,12 @@
     .application-menu-name { flex-basis: 100%; max-width: none; font-size: var(--t-12); }
   }
   @media (max-width: 900px) {
-    .code-graph-layout, .code-file-grid { grid-template-columns: 1fr; }
+    .code-graph-layout, .code-file-grid,
+    .code-graph-layout:has(.code-inspector:not([hidden])) { grid-template-columns: 1fr; }
+    .code-inspector { border-left: 0; border-top: 1px solid var(--c-line); padding-left: 0; padding-top: var(--s-3); }
+    #code-graph-canvas { height: 440px; }
+    .graph-legend { display: none; }
+    .graph-minimap { width: 112px; height: 72px; }
     .code-file-list { border-right: 0; border-bottom: 1px solid var(--c-line); max-height: 250px; }
     .chat-workspace { display: flex; flex-direction: column; height: auto; }
     .chat-history { max-height: 300px; }
@@ -1343,4 +1511,41 @@
     .modal-body { padding: var(--s-4); }
   }
 
+}
+
+.empty-graph {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: 18rem;
+  padding: var(--s-3);
+  color: var(--c-ink-3);
+  border: 1px dashed var(--c-line);
+  border-radius: var(--r-md);
+}
+
+.empty-graph h3 {
+  margin: 0 0 0.5rem;
+}
+
+.empty-graph p {
+  margin: 0 0 0.35rem;
+  max-width: 46ch;
+}
+
+.secret-path {
+  margin: var(--s-3) 0;
+  overflow-x: auto;
+}
+
+.secret-path code {
+  display: inline-block;
+  padding: var(--s-2);
+  background: var(--c-surface);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-sm);
+  font-size: var(--t-12);
+  white-space: nowrap;
 }

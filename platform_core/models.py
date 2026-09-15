@@ -303,6 +303,10 @@ class CodeSnapshot(models.Model):
     analyzer_version = models.CharField(max_length=40, default="structural-v1")
     complete = models.BooleanField(default=True)
     warnings = models.JSONField(default=list)
+    #: Number of circular *groups*, not files in them: five files in one loop is
+    #: one problem. Counted across every file, not the drawn ones.
+    cycle_count = models.PositiveIntegerField(default=0)
+    orphan_count = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -331,7 +335,17 @@ class CodeFile(models.Model):
     parse_ok = models.BooleanField(default=True)
     symbols = models.JSONField(default=list)
     imports = models.JSONField(default=list)
+    #: HTTP routes this file declares, and outbound calls it makes. Both sides
+    #: of an API seam, kept so an inferred edge can show its evidence.
+    routes = models.JSONField(default=list)
+    calls = models.JSONField(default=list)
     lines = models.PositiveIntegerField(default=0)
+    #: Decided over the whole snapshot at index time, never over the subset a
+    #: page draws. Blank on snapshots taken before roles were stored.
+    role = models.CharField(max_length=12, blank=True)
+    #: Which circular group, when this file is in one. Groups are numbered per
+    #: snapshot; a file importing itself is a group of one.
+    cycle_group = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["path", "id"]

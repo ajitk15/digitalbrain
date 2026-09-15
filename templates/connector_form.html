@@ -10,6 +10,9 @@
 <button class="button" type="submit">{% icon "save" %}Save connector</button>
 </form>
 </section>
-<section class="card section"><h2>Credential</h2><p class="muted">Mount the secret half of the credential as a file named <code>{{ secret_name }}</code> in the configured secret directory, readable only by the service account. It is never entered in this form, stored in the database, or written to <code>.env</code>.</p>
-<p class="muted">{% if credential %}{% icon "success" %} A credential is currently mounted.{% else %}{% icon "warning" %} No credential is mounted.{% endif %}</p></section>
+<section class="card section"><h2>Credential</h2><p class="muted">{% if credential %}{% icon "success" %} A credential is currently mounted.{% else %}{% icon "warning" %} No credential is mounted.{% endif %}</p>
+<p class="muted">Mount the secret half as a file at this exact path, readable only by the service account. It is never entered in this form, stored in the database, or written to <code>.env</code>.</p>
+<p class="secret-path"><code>{{ location.path }}</code></p>
+<p class="muted">The file holds the secret and nothing else — no quotes, no key name, no trailing blank line. Create it, then reload this page to confirm it is picked up.</p>
+{% if kind.key == 'github' %}<p class="muted">This one file also authorises GitHub link imports and Code Graph indexing for this application. Without it GitHub allows only 60 anonymous requests an hour and hides private repositories; with it the limit is 5,000 an hour. A token needs read access to repository contents and nothing more.</p>{% endif %}</section>
 {% endblock %}

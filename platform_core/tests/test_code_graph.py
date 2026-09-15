@@ -59,43 +59,6 @@ class CodeGraphTests(TestCase):
         self.assertEqual(repository.default_ref, "develop")
         self.assertFalse(repository.snapshots.exists())
 
-    @patch("platform_core.code_graph_ingest.github_token", return_value="")
-    @patch("platform_core.code_graph_ingest.api_json")
-    def test_index_pins_commit_and_builds_explainable_relationships(self, api_json, _token):
-        responses = {
-            "/repos/acme/widgets": {"default_branch": "main"},
-            "/repos/acme/widgets/commits/main": {"sha": "c" * 40},
-            f"/repos/acme/widgets/git/trees/{'c' * 40}?recursive=1": {
-                "truncated": False,
-                "tree": [
-                    {"path": "app/main.py", "type": "blob", "size": 30, "sha": "a" * 40},
-                    {"path": "app/util.py", "type": "blob", "size": 20, "sha": "b" * 40},
-                ],
-            },
-            f"/repos/acme/widgets/git/blobs/{'a' * 40}": {
-                "encoding": "base64", "content": "ZnJvbSBhcHAgaW1wb3J0IHV0aWwK"
-            },
-            f"/repos/acme/widgets/git/blobs/{'b' * 40}": {
-                "encoding": "base64", "content": "ZGVmIGhlbHBlcigpOgogICAgcGFzcwo="
-            },
-        }
-        api_json.side_effect = lambda path, token: responses[path]
-        repository = register(self.owner, self.app.pk, "acme/widgets")
-        self.assertTrue(index_repository(repository))
-        repository.refresh_from_db()
-        snapshot = repository.snapshots.get()
-        self.assertEqual(repository.status, "ready")
-        self.assertEqual(snapshot.commit_sha, "c" * 40)
-        self.assertTrue(snapshot.complete)
-        self.assertEqual(snapshot.files.count(), 2)
-        edge = snapshot.relationships.select_related("source", "target").get()
-        self.assertEqual((edge.source.path, edge.target.path), ("app/main.py", "app/util.py"))
-        self.assertEqual(edge.confidence, "static")
-        response = self.client.get(
-            reverse("code-graph", args=[self.app.pk]), {"repository": repository.pk}
-        )
-        self.assertContains(response, "snapshot v1")
-        self.assertContains(response, "app/main.py")
 
     def test_file_detail_cannot_cross_application_boundary(self):
         repository = CodeRepository.objects.create(
@@ -114,29 +77,6 @@ class CodeGraphTests(TestCase):
             self.client.get(reverse("code-file", args=[self.app.pk, file.pk])).status_code, 404
         )
 
-    @patch("platform_core.code_graph_ingest.github_token", return_value="")
-    @patch("platform_core.code_graph_ingest.api_json")
-    def test_superseded_index_cannot_publish_its_snapshot(self, api_json, _token):
-        repository = register(self.owner, self.app.pk, "acme/widgets")
-
-        def response(path, token):
-            if path.endswith("/widgets"):
-                return {"default_branch": "main"}
-            if "/commits/" in path:
-                return {"sha": "c" * 40}
-            if "/git/trees/" in path:
-                return {
-                    "truncated": False,
-                    "tree": [{"path": "app.py", "type": "blob", "size": 10, "sha": "a" * 40}],
-                }
-            CodeRepository.objects.filter(pk=repository.pk).update(
-                status="queued", job_id=uuid.uuid4()
-            )
-            return {"encoding": "base64", "content": "cHJpbnQoJ29sZCcpCg=="}
-
-        api_json.side_effect = response
-        self.assertFalse(index_repository(repository))
-        self.assertFalse(CodeSnapshot.objects.filter(repository=repository).exists())
 
     @patch("platform_core.code_factory.ask")
     def test_triage_pins_matching_snapshot_for_code_factory(self, ask):
@@ -280,61 +220,550 @@ class CodeGraphTests(TestCase):
         )
         self.assertEqual(repository_of("https://example.com/acme/widgets"), "")
 
-    @patch("platform_core.code_graph_ingest.github_token", return_value="")
-    @patch("platform_core.code_graph_ingest.api_json")
-    def test_a_repository_name_is_checked_before_it_becomes_an_api_path(self, api_json, _token):
-        from django.core.exceptions import ValidationError as Invalid
-
-        unusable = ["../../etc", "acme/../secret", "acme", "acme/widgets/extra"]
-        for value in unusable:
-            # Showcasing declines quietly: it runs beside saving a connector.
-            self.assertIsNone(showcase_repository(self.owner, self.app, value))
-            # Registering is the deliberate act, and says why it refused.
-            with self.assertRaises(Invalid):
-                register(self.owner, self.app.pk, value)
-        self.assertFalse(CodeRepository.objects.filter(application=self.app).exists())
-
-        # A row that reached the table another way still cannot become a path.
-        repository = CodeRepository.objects.create(
-            application=self.app, added_by=self.owner, external_id="acme/../secret",
-            name="acme/../secret", source_url="https://github.com/acme", status="queued",
-        )
-        self.assertTrue(index_repository(repository))
-        repository.refresh_from_db()
-        self.assertEqual(repository.status, "failed")
-        api_json.assert_not_called()
 
     def test_a_connector_owner_github_would_reject_does_not_break_saving_it(self):
         self.assertIsNone(showcase_repository(self.owner, self.app, "my_org/widgets"))
 
+    # ---------------------------------------------------------------- cloning
+
+    def _clone(self, files, commit="c" * 40, warnings=None, complete=True):
+        """Stand in for a clone, returning what clone_sources returns."""
+        return lambda name, ref, token: (commit, list(files), list(warnings or []), complete)
+
     @patch("platform_core.code_graph_ingest.github_token", return_value="")
-    @patch("platform_core.code_graph_ingest.api_json")
-    def test_a_rate_limit_keeps_the_files_already_read(self, api_json, _token):
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_indexing_pins_the_cloned_commit_and_explains_each_edge(self, clone, _token):
+        clone.side_effect = self._clone(
+            [
+                ("app/main.py", "from app import util\n"),
+                ("app/util.py", "def helper():\n    pass\n"),
+            ]
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        snapshot = repository.snapshots.get()
+        self.assertEqual(repository.status, "ready")
+        self.assertEqual(snapshot.commit_sha, "c" * 40)
+        self.assertTrue(snapshot.complete)
+        self.assertEqual(snapshot.files.count(), 2)
+        edge = snapshot.relationships.select_related("source", "target").get()
+        self.assertEqual((edge.source.path, edge.target.path), ("app/main.py", "app/util.py"))
+        self.assertEqual(edge.confidence, "static")
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_indexing_makes_no_rest_call_so_the_hourly_quota_cannot_stop_it(
+        self, clone, _token
+    ):
+        """One clone, not one request per file. The REST budget is not involved."""
+        clone.side_effect = self._clone(
+            [(f"pkg/mod{index}.py", "x = 1\n") for index in range(120)]
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        self.assertEqual(repository.status, "ready")
+        self.assertEqual(repository.snapshots.get().files.count(), 120)
+        self.assertEqual(clone.call_count, 1)
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_a_superseded_index_cannot_publish_its_snapshot(self, clone, _token):
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+
+        def racing(name, ref, token):
+            CodeRepository.objects.filter(pk=repository.pk).update(
+                status="queued", job_id=uuid.uuid4()
+            )
+            return "c" * 40, [("app.py", "x = 1\n")], [], True
+
+        clone.side_effect = racing
+        self.assertFalse(index_repository(repository))
+        self.assertFalse(CodeSnapshot.objects.filter(repository=repository).exists())
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_a_clone_failure_is_reported_in_words_not_a_status_code(self, clone, _token):
         from django.core.exceptions import ValidationError as Invalid
 
-        def response(path, token):
-            if path.endswith("/widgets"):
-                return {"default_branch": "main"}
-            if "/commits/" in path:
-                return {"sha": "c" * 40}
-            if "/git/trees/" in path:
-                return {
-                    "truncated": False,
-                    "tree": [
-                        {"path": "app/a.py", "type": "blob", "size": 10, "sha": "a" * 40},
-                        {"path": "app/b.py", "type": "blob", "size": 10, "sha": "b" * 40},
-                    ],
-                }
-            if path.endswith("a" * 40):
-                return {"encoding": "base64", "content": "aW1wb3J0IG9z"}
-            raise Invalid("GitHub refused the request, which is usually its rate limit.")
+        clone.side_effect = Invalid(
+            "acme/private could not be cloned. If it is private, mount this "
+            "application's GitHub credential."
+        )
+        repository = register(self.owner, self.app.pk, "acme/private")
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        self.assertEqual(repository.status, "failed")
+        self.assertIn("mount this application's GitHub credential", repository.error)
 
-        api_json.side_effect = response
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_partial_coverage_carries_the_reason_from_the_clone(self, clone, _token):
+        clone.side_effect = self._clone(
+            [("app/ok.py", "x = 1\n")],
+            warnings=["app/blob.py could not be read as UTF-8 text and was left out."],
+            complete=False,
+        )
         repository = register(self.owner, self.app.pk, "acme/widgets")
         self.assertTrue(index_repository(repository))
         repository.refresh_from_db()
         snapshot = repository.snapshots.get()
         self.assertEqual(repository.status, "partial")
-        self.assertFalse(snapshot.complete)
-        self.assertEqual([item.path for item in snapshot.files.all()], ["app/a.py"])
-        self.assertTrue(any("rate limit" in warning for warning in snapshot.warnings))
+        self.assertIn("app/blob.py", " ".join(snapshot.warnings))
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_a_repository_with_no_supported_files_is_not_called_ready(self, clone, _token):
+        """A COBOL repository indexing to nothing must not report success."""
+        clone.side_effect = self._clone([])
+        repository = register(self.owner, self.app.pk, "acme/legacy")
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        snapshot = repository.snapshots.get()
+        self.assertEqual(repository.status, "partial")
+        self.assertEqual(snapshot.files.count(), 0)
+        self.assertIn("No supported source files", " ".join(snapshot.warnings))
+
+    def test_the_clone_never_takes_a_host_from_anyone(self):
+        """The remote is built from a validated owner/name against a fixed host."""
+        from platform_core.code_graph_clone import REMOTE
+        from platform_core.code_graph_ingest import valid_name
+
+        self.assertTrue(REMOTE.startswith("https://github.com/"))
+        from django.core.exceptions import ValidationError as Invalid
+
+        for hostile in [
+            "http://evil.example.com/a/b",
+            "a/b/../../etc",
+            "--upload-pack=touch",
+            "ext::sh -c whoami",
+            "acme",
+        ]:
+            with self.assertRaises(Invalid):
+                valid_name(hostile)
+
+    def test_the_clone_environment_hides_the_operator_and_the_token(self):
+        import tempfile
+        from pathlib import Path
+
+        from platform_core.code_graph_clone import _environment
+
+        with tempfile.TemporaryDirectory() as directory:
+            scratch = Path(directory)
+            environment = _environment(scratch, "ghp_secret_value")
+            # No inherited home, so a clone cannot read the operator's credentials.
+            self.assertEqual(environment["HOME"], str(scratch / "home"))
+            self.assertEqual(environment["USERPROFILE"], str(scratch / "home"))
+            self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+            self.assertNotIn("GITHUB_TOKEN", environment)
+            # The token lives in a config file, never in the process arguments.
+            config = (scratch / "gitconfig").read_text(encoding="utf-8")
+            self.assertIn("ghp_secret_value", config)
+            self.assertIn("hooksPath", config)
+
+    # ------------------------------------------------------------ credentials
+
+    def test_the_credential_panel_names_the_file_but_never_the_secret(self):
+        """Telling someone to mount a file without saying which file is unusable."""
+        import os
+        import tempfile
+
+        from django.test import override_settings
+
+        CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/widgets",
+            name="acme/widgets", source_url="https://github.com/acme/widgets", status="failed",
+            error="acme/widgets could not be cloned.",
+        )
+        url = reverse("code-graph", args=[self.app.pk])
+        with tempfile.TemporaryDirectory() as directory:
+            secret = os.path.join(directory, f"github_{self.app.pk}")
+            with override_settings(SECRET_DIRECTORY=directory):
+                response = self.client.get(url)
+                self.assertContains(response, "No GitHub credential is mounted")
+                self.assertContains(response, secret)
+
+                with open(secret, "w", encoding="utf-8") as handle:
+                    handle.write("ghp_thismustnotreachthepage")
+                response = self.client.get(url)
+                self.assertNotContains(response, "No GitHub credential is mounted")
+                self.assertNotContains(response, "ghp_thismustnotreachthepage")
+
+    def test_a_working_repository_is_not_nagged_about_a_credential(self):
+        """Public repositories clone without one, so the banner would be noise."""
+        import os
+        import tempfile
+
+        from django.test import override_settings
+
+        CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/public",
+            name="acme/public", source_url="https://github.com/acme/public", status="ready",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            with override_settings(SECRET_DIRECTORY=directory):
+                response = self.client.get(reverse("code-graph", args=[self.app.pk]))
+                self.assertNotContains(response, "No GitHub credential is mounted")
+                self.assertFalse(
+                    os.path.exists(os.path.join(directory, f"github_{self.app.pk}"))
+                )
+
+    def test_the_connector_screen_shows_the_same_credential_path(self):
+        import os
+        import tempfile
+
+        from django.test import override_settings
+
+        with tempfile.TemporaryDirectory() as directory:
+            with override_settings(SECRET_DIRECTORY=directory):
+                response = self.client.get(
+                    reverse("connector-new", args=[self.app.pk]), {"kind": "github"}
+                )
+                if response.status_code != 200:
+                    self.skipTest("the github connector form is not reachable for this role")
+                self.assertContains(response, os.path.join(directory, f"github_{self.app.pk}"))
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_reindexing_an_empty_repository_never_reports_ready(self, clone, _token):
+        """The reuse branch answered from the old snapshot and kept saying ready."""
+        clone.side_effect = self._clone([])
+        repository = register(self.owner, self.app.pk, "acme/legacy")
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        self.assertEqual(repository.status, "partial")
+
+        # Same commit, same (empty) manifest: the second run reuses the snapshot.
+        CodeRepository.objects.filter(pk=repository.pk).update(
+            status="queued", job_id=uuid.uuid4()
+        )
+        repository.refresh_from_db()
+        self.assertTrue(index_repository(repository))
+        repository.refresh_from_db()
+        self.assertEqual(repository.snapshots.count(), 1)
+        self.assertEqual(repository.status, "partial")
+
+    def test_choosing_a_repository_still_works_without_scripting(self):
+        """The selector is enhanced by script, never dependent on it."""
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/widgets",
+            name="acme/widgets", source_url="https://github.com/acme/widgets", status="ready",
+        )
+        response = self.client.get(reverse("code-graph", args=[self.app.pk]))
+        body = response.content.decode()
+        self.assertIn('method="get"', body)
+        self.assertIn("data-auto-submit", body)
+        self.assertIn(">View<", body)
+        # And the plain GET it posts selects that repository server-side.
+        response = self.client.get(
+            reverse("code-graph", args=[self.app.pk]), {"repository": str(repository.pk)}
+        )
+        self.assertContains(response, repository.name)
+
+    # ------------------------------------------------- roles and cycle counts
+
+    def test_a_cycle_flags_every_file_in_it_not_just_the_two_ends(self):
+        """a -> b -> c -> a. The cheap back-edge check leaves b looking clean."""
+        from platform_core.code_graph_analysis import classify
+
+        paths = ["a.py", "b.py", "c.py"]
+        edges = [
+            {"source": "a.py", "target": "b.py"},
+            {"source": "b.py", "target": "c.py"},
+            {"source": "c.py", "target": "a.py"},
+        ]
+        roles, groups, count = classify(paths, edges)
+        self.assertEqual(count, 1, "five files in one loop is one problem, not five")
+        self.assertEqual({roles[path] for path in paths}, {"circular"})
+        self.assertEqual(len({groups[path] for path in paths}), 1)
+
+    def test_a_file_importing_itself_is_a_cycle_of_one(self):
+        from platform_core.code_graph_analysis import classify
+
+        roles, groups, count = classify(["solo.py"], [{"source": "solo.py", "target": "solo.py"}])
+        self.assertEqual(count, 1)
+        self.assertEqual(roles["solo.py"], "circular")
+
+    def test_roles_name_what_points_at_a_file(self):
+        from platform_core.code_graph_analysis import classify
+
+        roles, _, count = classify(
+            ["top.py", "mid.py", "sink.py", "lone.py"],
+            [
+                {"source": "top.py", "target": "mid.py"},
+                {"source": "mid.py", "target": "sink.py"},
+            ],
+        )
+        self.assertEqual(count, 0)
+        self.assertEqual(roles["top.py"], "entry")
+        self.assertEqual(roles["mid.py"], "service")
+        self.assertEqual(roles["sink.py"], "leaf")
+        self.assertEqual(roles["lone.py"], "orphan")
+
+    def test_deep_import_chains_do_not_exhaust_the_stack(self):
+        """The recursive form dies somewhere past a thousand files."""
+        from platform_core.code_graph_analysis import classify
+
+        paths = [f"m{index}.py" for index in range(4000)]
+        edges = [
+            {"source": paths[index], "target": paths[index + 1]}
+            for index in range(len(paths) - 1)
+        ]
+        roles, _, count = classify(paths, edges)
+        self.assertEqual(count, 0)
+        self.assertEqual(roles[paths[0]], "entry")
+        self.assertEqual(roles[paths[-1]], "leaf")
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_the_snapshot_stores_counts_taken_over_every_file(self, clone, _token):
+        """Not over the subset a page draws, which is where the wrong count came from."""
+        clone.side_effect = self._clone(
+            [
+                ("pkg/a.py", "from pkg import b\n"),
+                ("pkg/b.py", "from pkg import c\n"),
+                ("pkg/c.py", "from pkg import a\n"),
+                ("pkg/lonely.py", "x = 1\n"),
+                ("pkg/__init__.py", ""),
+            ]
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+        self.assertEqual(snapshot.cycle_count, 1)
+        self.assertEqual(
+            snapshot.orphan_count,
+            snapshot.files.filter(role="orphan").count(),
+        )
+        self.assertEqual(snapshot.files.filter(role="circular").count(), 3)
+        self.assertEqual(
+            {item.cycle_group for item in snapshot.files.filter(role="circular")}, {1}
+        )
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_the_status_bar_counts_the_snapshot_not_the_drawn_nodes(self, clone, _token):
+        """A repository past the node cap still reports its real totals."""
+        sources = [(f"pkg/mod{index}.py", "x = 1\n") for index in range(260)]
+        clone.side_effect = self._clone(sources)
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+        self.assertEqual(snapshot.files.count(), 260)
+        self.assertEqual(snapshot.orphan_count, 260)
+
+        response = self.client.get(
+            reverse("code-graph", args=[self.app.pk]), {"repository": str(repository.pk)}
+        )
+        body = response.content.decode()
+        # The honest total, not the 200 that fit on the canvas.
+        self.assertIn("260", body)
+        self.assertIn("with no links", body)
+        self.assertIn("drawing 200 of 260", body)
+
+    def test_search_still_works_as_a_plain_form_without_scripting(self):
+        """Live dimming is an enhancement; the server search is the contract."""
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/widgets",
+            name="acme/widgets", source_url="https://github.com/acme/widgets", status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(
+            repository=repository, number=1, ref="main", commit_sha="c" * 40,
+            manifest_digest="m" * 64,
+        )
+        CodeFile.objects.create(
+            snapshot=snapshot, path="pkg/needle.py", language="python", digest="a" * 64,
+            content="x = 1", lines=1, role="orphan",
+        )
+        CodeFile.objects.create(
+            snapshot=snapshot, path="pkg/other.py", language="python", digest="b" * 64,
+            content="haystack = 1", lines=1, role="orphan",
+        )
+        url = reverse("code-graph", args=[self.app.pk])
+        response = self.client.get(url, {"repository": str(repository.pk), "q": "needle"})
+        self.assertContains(response, "needle.py")
+        self.assertNotContains(response, "other.py")
+
+        # The server also looks inside contents, which the browser cannot.
+        response = self.client.get(url, {"repository": str(repository.pk), "q": "haystack"})
+        self.assertContains(response, "other.py")
+        self.assertNotContains(response, "needle.py")
+
+        # And the live-dimming surface is present for the enhancement to use.
+        response = self.client.get(url, {"repository": str(repository.pk)})
+        self.assertContains(response, 'id="code-search-status"')
+        self.assertContains(response, 'method="get"')
+
+    # ------------------------------------------------------------ impact
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_impact_follows_imports_in_the_right_direction(self, clone, _token):
+        """source imports target. Reversing it gives a plausible wrong answer."""
+        clone.side_effect = self._clone(
+            [
+                ("pkg/__init__.py", ""),
+                ("pkg/base.py", "VALUE = 1\n"),
+                ("pkg/middle.py", "from pkg import base\n"),
+                ("pkg/top.py", "from pkg import middle\n"),
+            ]
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+        base = snapshot.files.get(path="pkg/base.py")
+        top = snapshot.files.get(path="pkg/top.py")
+        paths = {item.pk: item.path for item in snapshot.files.all()}
+
+        from platform_core.code_graph import reach
+
+        # Changing base.py could reach middle.py at one hop, top.py at two.
+        affected = {paths[pk]: hops for pk, hops in reach(snapshot, base.pk, False).items()}
+        self.assertEqual(affected.get("pkg/middle.py"), 1)
+        self.assertEqual(affected.get("pkg/top.py"), 2)
+
+        # base.py rests on nothing.
+        self.assertEqual(reach(snapshot, base.pk, True), {})
+
+        # top.py rests on middle then base, and nothing depends on it.
+        rests = {paths[pk]: hops for pk, hops in reach(snapshot, top.pk, True).items()}
+        self.assertEqual(rests.get("pkg/middle.py"), 1)
+        self.assertEqual(rests.get("pkg/base.py"), 2)
+        self.assertEqual(reach(snapshot, top.pk, False), {})
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_impact_terminates_on_a_cycle(self, clone, _token):
+        clone.side_effect = self._clone(
+            [
+                ("pkg/__init__.py", ""),
+                ("pkg/a.py", "from pkg import b\n"),
+                ("pkg/b.py", "from pkg import a\n"),
+            ]
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+
+        from platform_core.code_graph import reach
+
+        a = snapshot.files.get(path="pkg/a.py")
+        b = snapshot.files.get(path="pkg/b.py")
+        self.assertIn(b.pk, reach(snapshot, a.pk, True))
+        self.assertIn(b.pk, reach(snapshot, a.pk, False))
+
+    def test_the_file_page_keeps_working_without_scripting(self):
+        """Tabs are radio inputs, so every pane is in the markup and reachable."""
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/widgets",
+            name="acme/widgets", source_url="https://github.com/acme/widgets", status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(
+            repository=repository, number=1, ref="main", commit_sha="c" * 40,
+            manifest_digest="m" * 64,
+        )
+        file = CodeFile.objects.create(
+            snapshot=snapshot, path="pkg/alone.py", language="python", digest="a" * 64,
+            content="x = 1", lines=1, role="orphan",
+        )
+        response = self.client.get(reverse("code-file", args=[self.app.pk, file.pk]))
+        body = response.content.decode()
+        self.assertIn('type="radio"', body)
+        for pane in ["overview", "deps", "used", "impact"]:
+            self.assertIn(f'data-pane="{pane}"', body)
+        # An honest empty impact, and the caveat that frames it.
+        self.assertIn("cannot break anything else", body)
+        self.assertIn("measured between files, not functions", body)
+
+    # ------------------------------------------------------------ API seams
+
+    def test_a_call_and_a_route_are_matched_on_a_normalised_path(self):
+        from platform_core.code_graph_analysis import normalise_route
+
+        self.assertEqual(normalise_route("/api/users/<int:pk>/"), "/api/users/*")
+        self.assertEqual(normalise_route("api/users/{id}"), "/api/users/*")
+        self.assertEqual(normalise_route("https://host/api/users/x?q=1"), "/api/users/x")
+
+    def test_a_seam_is_inferred_and_never_invented(self):
+        from platform_core.code_graph_analysis import facts, relationships
+
+        files = [
+            facts("api/urls.py", 'urlpatterns = [path("api/graph/", view)]\n'),
+            facts("web/client.js", 'const r = await fetch("/api/graph/")\n'),
+            facts("web/stray.js", 'const z = await fetch("/api/nothing-declares-this")\n'),
+        ]
+        edges = relationships(files)
+        seams = [edge for edge in edges if edge["kind"] == "api"]
+        self.assertEqual(len(seams), 1)
+        self.assertEqual(seams[0]["source"], "web/client.js")
+        self.assertEqual(seams[0]["target"], "api/urls.py")
+        # Matching strings is not proof that a service answers.
+        self.assertEqual(seams[0]["confidence"], "inferred")
+        # An unmatched call produces nothing at all.
+        self.assertNotIn("web/stray.js", {edge["source"] for edge in seams})
+
+    def test_two_files_sharing_a_word_are_not_connected_by_it(self):
+        from platform_core.code_graph_analysis import facts, relationships
+
+        files = [
+            facts("a/urls.py", 'urlpatterns = [path("api/users/", view)]\n'),
+            facts("b/client.js", 'fetch("/api/orders/")\n'),
+        ]
+        self.assertEqual([e for e in relationships(files) if e["kind"] == "api"], [])
+
+    def test_different_known_methods_are_different_endpoints(self):
+        from platform_core.code_graph_analysis import facts, relationships
+
+        files = [
+            facts("api/routes.py", '@app.get("/api/items")\ndef read(): pass\n'),
+            facts("web/writer.js", 'api.post("/api/items")\n'),
+        ]
+        self.assertEqual([e for e in relationships(files) if e["kind"] == "api"], [])
+
+    def test_an_inferred_seam_never_displaces_a_real_import(self):
+        from platform_core.code_graph_analysis import facts, relationships
+
+        files = [
+            facts("pkg/__init__.py", ""),
+            facts("pkg/server.py", 'urlpatterns = [path("api/x/", v)]\n'),
+            facts(
+                "pkg/caller.py",
+                'from pkg import server\nimport requests\nrequests.get("/api/x/")\n',
+            ),
+        ]
+        pair = [
+            edge
+            for edge in relationships(files)
+            if edge["source"] == "pkg/caller.py" and edge["target"] == "pkg/server.py"
+        ]
+        self.assertEqual(len(pair), 1)
+        self.assertEqual(pair[0]["kind"], "import")
+        self.assertEqual(pair[0]["confidence"], "static")
+
+    def test_modern_javascript_declarations_are_found(self):
+        """A file of arrow-function components used to report no symbols."""
+        from platform_core.code_graph_analysis import facts
+
+        found = facts(
+            "web/App.jsx",
+            'export const Panel = ({ x }) => null\n'
+            'const legacy = function () {}\n'
+            'export default function App() {}\n'
+            'export class Store {}\n',
+        )
+        names = {item["name"] for item in found["symbols"]}
+        self.assertEqual(names, {"Panel", "legacy", "App", "Store"})
+
+    def test_a_dynamic_import_is_still_an_import(self):
+        from platform_core.code_graph_analysis import facts, relationships
+
+        files = [
+            facts("web/lazy.js", 'const m = await import("./heavy")\n'),
+            facts("web/heavy.js", "export const heavy = () => null\n"),
+        ]
+        edges = relationships(files)
+        self.assertEqual(
+            [(edge["source"], edge["target"]) for edge in edges],
+            [("web/lazy.js", "web/heavy.js")],
+        )

@@ -83,6 +83,19 @@ address so DNS cannot change the answer underneath it. http/https only, no redir
 followed, 8 MB and 20 s caps, no credentials attached. Do not add a second code path
 that fetches URLs.
 
+`code_graph_clone.py` is the one exception, and it is one because it takes no
+URL. Code Graph reads a repository by cloning it: the REST path spent one
+request per file against an anonymous budget of sixty an hour, so a repository
+of any size exhausted the quota before it finished. The caller supplies
+`owner/name`, validated by `code_graph_ingest.valid_name`, and the remote is
+built against a hardcoded `github.com` - no input chooses the host, which is
+what the rule above exists to prevent. The clone reads content and never runs
+it: hooks are redirected to an empty directory, submodules are not followed,
+and `HOME`/`USERPROFILE`/git config are pointed at a scratch directory so a run
+cannot reach the operator's own git credentials. The token is written to that
+scratch config rather than passed in argv, where the process list would expose
+it. Do not widen this to accept a URL, and do not add a third fetcher.
+
 **SharePoint reads as the application, not as the user.** `sharepoint.py` uses
 app-only client credentials, so the app registration's grant is the boundary. Under
 `Sites.Read.All` an importing user can obtain documents they could not open
