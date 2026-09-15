@@ -11,11 +11,11 @@
 <p class="muted">Credentials are files in the configured secret directory, never in .env, the database or a form field. Setup writes them: run <code>start-all.ps1 -ConfigureAI</code>, and every application created afterwards gets its own copy automatically.</p>
 </section>
 
-<div class="ai-settings-grid">{% for section in sections %}<section class="card ai-purpose">
-<div class="card-heading"><h2>{{ section.label }}</h2><span class="pill {% if not section.active %}pending{% endif %}">{% if section.active %}{{ section.summary }}{% elif section.summary != 'Not configured' %}Off · {{ section.summary }}{% else %}Not configured{% endif %}</span></div>
+<div class="ai-settings-grid">{% for section in sections %}<details class="card ai-purpose" {% if section.form.errors %}open{% endif %}>
+<summary class="card-heading"><strong>{{ section.label }}</strong><span class="pill {% if not section.active %}pending{% endif %}">{% if section.active %}{{ section.summary }}{% elif section.summary != 'Not configured' %}Off · {{ section.summary }}{% else %}Not configured{% endif %}</span></summary>
 <p class="muted">{{ section.note }}</p>
 {% if section.advice %}<p class="notice" role="note">{{ section.advice }}</p>{% endif %}
-<form method="post" class="ai-model-form">{% csrf_token %}<input type="hidden" name="purpose" value="{{ section.purpose }}">{{ section.form.as_p }}<button class="button">{% icon "save" %}Save</button></form></section>{% endfor %}</div>
+<form method="post" class="ai-model-form">{% csrf_token %}<input type="hidden" name="purpose" value="{{ section.purpose }}">{{ section.form.as_p }}<button class="button">{% icon "save" %}Save</button></form></details>{% endfor %}</div>
 
 <details class="card section"><summary>Model availability and reference prices</summary>
 <p>Claude accepts either credential and the file contents decide which is used. An <strong>API key</strong> (<code>sk-ant-api…</code>) bills your Anthropic Console account. A token from <code>claude setup-token</code> (<code>sk-ant-oat…</code>) bills a Claude subscription and needs no interactive sign-in on the server. Each application uses its own mounted credential, so one application can never spend another's budget. The single exception is the development-only host login noted above.</p>

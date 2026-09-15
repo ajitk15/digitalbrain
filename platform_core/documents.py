@@ -11,7 +11,6 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.paginator import Paginator
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -21,6 +20,7 @@ from .fetching import FetchError
 from .models import ApplicationGrant, Document, KnowledgeEntry
 from .policy import application_for
 from .services import audit, feature_enabled
+from .source_library import graph_usage, library_context
 
 MAX_BYTES = 20 * 1024 * 1024
 
@@ -197,10 +197,6 @@ def documents(request, pk):
                     "Markdown conversion runs automatically when Knowledge is enabled.",
                 )
             return redirect(return_route(request), pk=pk)
-    query = Document.objects.filter(application=app).exclude(status="deleted")
-    search = request.GET.get("q", "").strip()[:120]
-    if search:
-        query = query.filter(name__icontains=search)
     return render(
         request,
         "documents.html",
@@ -212,12 +208,7 @@ def documents(request, pk):
             "uploads_enabled": feature_enabled("document_uploads", app),
             "form": form,
             "link_form": link_form,
-            "query": search,
-            "conversion_pending": query.filter(status__in=["queued", "converting"]).exists(),
-            "document_count": Document.objects.filter(application=app)
-            .exclude(status="deleted")
-            .count(),
-            "page": Paginator(query, 20).get_page(request.GET.get("page")),
+            **library_context(app, request),
         },
     )
 
@@ -267,6 +258,8 @@ def document_detail(request, pk, document_id):
             )
         return redirect("document-detail", pk=pk, document_id=document_id)
     entry = KnowledgeEntry.objects.filter(document=document, active=True).first()
+    if not feature_enabled("knowledge", app):
+        entry = None
     download = request.GET.get("download")
     if download in {"markdown", "graph"}:
         if document.status != "ready" or not entry or not feature_enabled("knowledge", app):
@@ -300,6 +293,7 @@ def document_detail(request, pk, document_id):
             "application": app,
             "document": document,
             "entry": entry,
+            "versions": graph_usage(app, [entry]).get(str(entry.pk), []) if entry else [],
             "can_delete": grant.role == "owner"
             or (grant.role == "contributor" and document.uploaded_by_id == request.user.pk),
             "scan_required": settings.DOCUMENT_SCAN_REQUIRED,

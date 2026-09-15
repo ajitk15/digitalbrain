@@ -16,7 +16,13 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
-from django.http import Http404, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import (
+    Http404,
+    HttpResponse,
+    HttpResponseNotAllowed,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -43,15 +49,6 @@ def access(user, pk, feature, write=False):
     if write and grant.role not in {"owner", "contributor"}:
         raise PermissionDenied
     return app, grant
-
-
-class KnowledgeForm(forms.Form):
-    title = forms.CharField(max_length=200)
-    content = forms.CharField(
-        max_length=100000,
-        widget=forms.Textarea(attrs={"rows": 7}),
-        help_text="Plain text. Saved as a new immutable source; HTML is displayed as text.",
-    )
 
 
 class QuestionForm(forms.Form):
@@ -124,28 +121,12 @@ def retrieve(app, question):
 @require_http_methods(["GET", "POST"])
 def knowledge(request, pk):
     app, grant = access(request.user, pk, "knowledge")
-    form = KnowledgeForm(request.POST or None)
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
-        if form.is_valid():
-            add_knowledge(request.user, pk, **form.cleaned_data)
-            messages.success(request, "Knowledge source added.")
-            return redirect("knowledge", pk=pk)
-    entries = KnowledgeEntry.objects.filter(application=app, active=True)
-    query = request.GET.get("q", "").strip()[:200]
-    if query:
-        entries = entries.filter(Q(title__icontains=query) | Q(content__icontains=query))
-    return render(
-        request,
-        "knowledge.html",
-        {
-            "application": app,
-            "grant": grant,
-            "form": form,
-            "query": query,
-            "page": Paginator(entries, 20).get_page(request.GET.get("page")),
-        },
-    )
+        return HttpResponseNotAllowed(["GET"])
+    from .documents import documents
+
+    return documents(request, pk)
 
 
 @login_required
@@ -161,12 +142,15 @@ def knowledge_detail(request, pk, entry_id):
             audit(request.user, "knowledge.archived", entry.pk, app.product.portfolio.organization)
         messages.success(request, "Source archived. New answers will exclude it.")
         return redirect("knowledge", pk=pk)
+    from .source_library import graph_usage
+
     return render(
         request,
         "knowledge_detail.html",
         {
             "application": app,
             "entry": entry,
+            "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
             "grant": grant,
         },
     )

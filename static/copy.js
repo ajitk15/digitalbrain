@@ -50,9 +50,10 @@
  * without a prompt. It belongs with the other globally loaded behaviour.
  */
 (() => {
-  document.querySelectorAll("form[data-confirm]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
-    });
-  });
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (form.matches("form[data-confirm]") && !window.confirm(form.dataset.confirm)) {
+      event.preventDefault();
+    }
+  }, true);
 })();

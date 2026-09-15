@@ -6,7 +6,7 @@
 {% elif not chat_key_present %}<div class="notice" role="status"><strong>{{ chat_config.get_provider_display }} / {{ chat_config.model }} is selected, but its API key file is missing.</strong> {% if grant.role == 'owner' %}<a href="{% url 'ai-settings' application.pk %}">View secure credential setup</a>{% else %}Ask an application owner to mount the API key.{% endif %} Messages cannot reach the LLM until this is configured.</div>{% endif %}
 {% if host_login %}<div class="notice" role="status"><strong>{{ host_login }}</strong> Configure a per-application API key or <code>claude setup-token</code> token in AI settings before relying on this for shared or production use.</div>{% endif %}
 <div class="chat-workspace">
-<aside class="chat-history" aria-label="Conversation history">
+<button type="button" class="button secondary history-toggle" data-panel-toggle="conversation-history" aria-expanded="true" aria-controls="conversation-history" hidden>Conversation history</button><aside id="conversation-history" class="chat-history" aria-label="Conversation history">
 <a class="button" href="{% url 'chat' application.pk %}?new=1">+ New conversation</a>
 <h2>Your conversations</h2>
 {% for item in conversations %}<a class="conversation-link" href="?conversation={{ item.pk }}" {% if conversation.pk == item.pk %}aria-current="page"{% endif %}><strong>{{ item.title }}</strong><small>{{ item.updated_at|date:"M d, H:i" }} UTC</small></a>{% empty %}<p class="muted">Your conversations will appear here.</p>{% endfor %}
