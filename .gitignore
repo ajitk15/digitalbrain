@@ -13,3 +13,8 @@ config/local.toml
 staticfiles/
 *.log
 
+
+# Seeded design canvases: generated from the .dc.html sources beside them by the
+# design skill, ~2.5 MB of editor payload each. The sources are the thing worth
+# keeping; the canvas is rebuilt from them.
+design/*/[a-z]*-*.html

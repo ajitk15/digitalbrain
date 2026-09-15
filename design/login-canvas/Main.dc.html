@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: "Inter var", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    a { color: #4145c8; text-decoration: none; }
+    a:hover { color: #363ebb; text-decoration: underline; }
+    .field-input {
+      width: 100%; padding: 11px 12px; border: 1px solid #d9deeb; border-radius: 6px;
+      background: #fff; color: #202b43; font: inherit; font-size: 14px; box-sizing: border-box;
+    }
+  </style>
+</helmet>
+
+<div style="display: grid; grid-template-columns: 45% 55%; min-height: 900px; background: #fff">
+
+  <!-- The story panel, but the product drawn rather than described. Digital
+       Brain IS a knowledge graph; the motif is the thing itself, kept quiet
+       enough to sit behind type. -->
+  <section style="position: relative; background: #171c3a; color: #fff; padding: 65px 12%; display: flex; flex-direction: column; justify-content: center; overflow: hidden">
+
+    <svg viewBox="0 0 640 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.55">
+      <g stroke="#2d3566" stroke-width="1" fill="none">
+        <path d="M120 180 L300 250 L470 170 M300 250 L280 430 M280 430 L140 520 M280 430 L455 500 M455 500 L520 690 M140 520 L190 720 M190 720 L380 760 M380 760 L520 690 M470 170 L560 330 M560 330 L455 500"/>
+      </g>
+      <g fill="#4145c8">
+        <circle cx="300" cy="250" r="7"/><circle cx="280" cy="430" r="9"/><circle cx="455" cy="500" r="6"/>
+      </g>
+      <g fill="#8a53bc">
+        <circle cx="120" cy="180" r="4"/><circle cx="140" cy="520" r="5"/><circle cx="380" cy="760" r="4"/>
+      </g>
+      <g fill="#258777">
+        <circle cx="470" cy="170" r="4"/><circle cx="520" cy="690" r="5"/><circle cx="190" cy="720" r="4"/><circle cx="560" cy="330" r="3"/>
+      </g>
+    </svg>
+
+    <div style="position: relative; display: flex; flex-direction: column; align-items: flex-start">
+      <span style="display: inline-block; background: #292e50; color: #bbbde7; border-radius: 5px; padding: 4px 8px; font-size: 9px; font-weight: 600; letter-spacing: 1.2px; margin-bottom: 43px">DIGITAL BRAIN / WORKSPACE</span>
+
+      <h1 style="font-size: 53px; line-height: 1.14; letter-spacing: -2px; margin: 0 0 22px; font-weight: 600">Your knowledge.<br>Your next move.</h1>
+
+      <p style="color: #a4acc9; max-width: 350px; font-size: 13px; line-height: 1.8; margin: 0">A focused home for application knowledge, collaboration and controlled execution.</p>
+
+      <div style="display: flex; flex-direction: column; gap: 25px; margin: 29px 0 48px">
+        <div style="display: grid; grid-template-columns: 40px 1fr; align-items: start">
+          <span style="color: #737aab; font-size: 10px; padding-top: 2px">01</span>
+          <div><strong style="display: block; font-size: 12px; font-weight: 500">Organize with clarity</strong><p style="font-size: 11px; color: #9099bc; margin: 5px 0 0">One place for your organizations, products and applications.</p></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 40px 1fr; align-items: start">
+          <span style="color: #737aab; font-size: 10px; padding-top: 2px">02</span>
+          <div><strong style="display: block; font-size: 12px; font-weight: 500">Give the right access</strong><p style="font-size: 11px; color: #9099bc; margin: 5px 0 0">Explicit roles keep each application in its own workspace.</p></div>
+        </div>
+        <div style="display: grid; grid-template-columns: 40px 1fr; align-items: start">
+          <span style="color: #737aab; font-size: 10px; padding-top: 2px">03</span>
+          <div><strong style="display: block; font-size: 12px; font-weight: 500">Stay accountable</strong><p style="font-size: 11px; color: #9099bc; margin: 5px 0 0">Trace administrative changes and understand AI costs.</p></div>
+        </div>
+      </div>
+
+      <small style="color: #6e789d; font-size: 10px">Connected knowledge. Considered action.</small>
+    </div>
+  </section>
+
+  <section style="display: grid; place-items: center; background: #fff; padding: 45px">
+    <div style="max-width: 360px; width: 100%">
+      <img src="logo.png" alt="Digital Brain" style="width: 260px; display: block; margin: -15px 0 39px -25px">
+
+      <p style="font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #7c849d; margin: 0 0 10px">WELCOME BACK</p>
+      <h2 style="font-size: 24px; letter-spacing: -0.75px; margin: 0 0 9px; color: #172037">Sign in to your workspace</h2>
+      <p style="font-size: 12px; color: #6d768c; margin: 0 0 30px">Use the account provided by your administrator.</p>
+
+      <div style="display: flex; flex-direction: column; gap: 20px">
+        <div>
+          <label for="a-user" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Username</label>
+          <input id="a-user" class="field-input" type="text" value="">
+        </div>
+        <div>
+          <label for="a-pass" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Password</label>
+          <input id="a-pass" class="field-input" type="password" value="">
+        </div>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; border: 1px solid transparent; border-radius: 7px; background: #4145c8; color: #fff; font-weight: 600; font-size: 12px; padding: 13px 17px; font-family: inherit; cursor: pointer">
+          <span>Sign in</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </button>
+      </div>
+
+      <p style="font-size: 12px; color: #58627a; text-align: center; margin: 24px 0 0">Need access? Contact your organization administrator.</p>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+</body>
+</html>

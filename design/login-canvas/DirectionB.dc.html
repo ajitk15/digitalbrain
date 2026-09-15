@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: "Inter var", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    a { color: #4145c8; text-decoration: none; }
+    a:hover { color: #363ebb; text-decoration: underline; }
+    .field-input {
+      width: 100%; padding: 11px 12px; border: 1px solid #d9deeb; border-radius: 6px;
+      background: #fff; color: #202b43; font: inherit; font-size: 14px; box-sizing: border-box;
+    }
+  </style>
+</helmet>
+
+<!-- Restraint. No pitch, no split: the canvas colour the whole application
+     already sits on, and one card. An internal tool is opened by people who
+     know what it is; the fastest thing you can do for them is get out of the
+     way. -->
+<div style="min-height: 900px; background: #f5f6fa; display: grid; place-items: center; padding: 45px; box-sizing: border-box">
+
+  <div style="width: 100%; max-width: 420px">
+
+    <img src="logo.png" alt="Digital Brain" style="width: 208px; display: block; margin: 0 auto 36px">
+
+    <div style="background: #fff; border: 1px solid #e5e8f1; border-radius: 14px; box-shadow: 0 4px 12px rgba(16, 24, 40, 0.06); overflow: hidden">
+
+      <div style="height: 3px; background: #4145c8"></div>
+
+      <div style="padding: 40px">
+        <p style="font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #7c849d; margin: 0 0 10px">WELCOME BACK</p>
+        <h2 style="font-size: 24px; letter-spacing: -0.75px; margin: 0 0 9px; color: #172037">Sign in to your workspace</h2>
+        <p style="font-size: 12px; color: #6d768c; margin: 0 0 30px">Use the account provided by your administrator.</p>
+
+        <div style="display: flex; flex-direction: column; gap: 20px">
+          <div>
+            <label for="b-user" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Username</label>
+            <input id="b-user" class="field-input" type="text" value="">
+          </div>
+          <div>
+            <label for="b-pass" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Password</label>
+            <input id="b-pass" class="field-input" type="password" value="">
+          </div>
+          <button type="button" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; border: 1px solid transparent; border-radius: 7px; background: #4145c8; color: #fff; font-weight: 600; font-size: 12px; padding: 13px 17px; font-family: inherit; cursor: pointer">
+            <span>Sign in</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p style="font-size: 12px; color: #58627a; text-align: center; margin: 24px 0 0">Need access? Contact your organization administrator.</p>
+
+    <p style="font-size: 10px; color: #858ba0; text-align: center; margin: 32px 0 0; letter-spacing: 0.2px">Connected knowledge. Considered action.</p>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

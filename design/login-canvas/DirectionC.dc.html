@@ -1,0 +1,82 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: "Inter var", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    a { color: #4145c8; text-decoration: none; }
+    a:hover { color: #363ebb; text-decoration: underline; }
+    .field-input {
+      width: 100%; padding: 11px 12px; border: 1px solid #d9deeb; border-radius: 6px;
+      background: #fff; color: #202b43; font: inherit; font-size: 14px; box-sizing: border-box;
+    }
+  </style>
+</helmet>
+
+<!-- Editorial. The brand tint floods the page instead of being a hairline, the
+     statement is set at poster scale, and the card breaks the grid rather than
+     sitting centred in it. Same palette, far more voice. -->
+<div style="position: relative; min-height: 900px; background: #eeefff; overflow: hidden; box-sizing: border-box">
+
+  <div style="position: absolute; right: -180px; top: -180px; width: 720px; height: 720px; border-radius: 50%; background: #f1f2fc"></div>
+  <div style="position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: #4145c8"></div>
+
+  <div style="position: relative; display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 64px; align-items: center; padding: 96px 88px; min-height: 900px; box-sizing: border-box">
+
+    <div>
+      <img src="logo.png" alt="Digital Brain" style="width: 224px; display: block; margin: 0 0 56px -6px">
+
+      <p style="font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #4145c8; margin: 0 0 20px">WORKSPACE ACCESS</p>
+
+      <h1 style="font-size: 86px; line-height: 0.96; letter-spacing: -3.5px; margin: 0 0 28px; color: #172037; font-weight: 600; text-wrap: balance">Your knowledge.<br><span style="color: #4145c8">Your next move.</span></h1>
+
+      <p style="font-size: 15px; line-height: 1.65; color: #39455e; max-width: 430px; margin: 0 0 40px">A focused home for application knowledge, collaboration and controlled execution.</p>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 10px">
+        <span style="display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid #d9d8fa; border-radius: 999px; padding: 7px 14px; font-size: 11px; font-weight: 600; color: #353fc4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2z"/><path d="M9 8h6"/></svg>
+          Knowledge
+        </span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid #d9d8fa; border-radius: 999px; padding: 7px 14px; font-size: 11px; font-weight: 600; color: #353fc4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 8-4 4 4 4"/><path d="m15 8 4 4-4 4"/></svg>
+          Code Factory
+        </span>
+        <span style="display: inline-flex; align-items: center; gap: 7px; background: #fff; border: 1px solid #d9d8fa; border-radius: 999px; padding: 7px 14px; font-size: 11px; font-weight: 600; color: #353fc4">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></svg>
+          Chat
+        </span>
+      </div>
+    </div>
+
+    <div style="background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(16, 24, 40, 0.12); padding: 44px 40px; transform: translateY(24px)">
+      <p style="font-size: 10px; letter-spacing: 1.6px; font-weight: 700; color: #7c849d; margin: 0 0 10px">WELCOME BACK</p>
+      <h2 style="font-size: 24px; letter-spacing: -0.75px; margin: 0 0 9px; color: #172037">Sign in</h2>
+      <p style="font-size: 12px; color: #6d768c; margin: 0 0 30px">Use the account provided by your administrator.</p>
+
+      <div style="display: flex; flex-direction: column; gap: 20px">
+        <div>
+          <label for="c-user" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Username</label>
+          <input id="c-user" class="field-input" type="text" value="">
+        </div>
+        <div>
+          <label for="c-pass" style="display: block; margin-bottom: 7px; font-size: 12px; font-weight: 600; color: #4f5a72">Password</label>
+          <input id="c-pass" class="field-input" type="password" value="">
+        </div>
+        <button type="button" style="display: inline-flex; align-items: center; justify-content: space-between; gap: 20px; width: 100%; border: 1px solid transparent; border-radius: 7px; background: #4145c8; color: #fff; font-weight: 600; font-size: 12px; padding: 13px 17px; font-family: inherit; cursor: pointer">
+          <span>Sign in</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+        </button>
+      </div>
+
+      <p style="font-size: 12px; color: #58627a; text-align: center; margin: 24px 0 0">Need access? Contact your administrator.</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

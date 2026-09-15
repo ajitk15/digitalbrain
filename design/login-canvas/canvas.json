@@ -1,0 +1,38 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "A — Living graph wall", "x": 0, "y": 0, "w": 1440, "h": 900 },
+    { "file": "DirectionB.dc.html", "title": "B — Centred minimal", "x": 1560, "y": 0, "w": 1440, "h": 900 },
+    { "file": "DirectionC.dc.html", "title": "C — Editorial", "x": 3120, "y": 0, "w": 1440, "h": 900 }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -300,
+      "w": 620,
+      "text": "Three directions for the sign-in page.\n\nAll three use the real tokens: brand #4145c8, ink #172037, canvas #f5f6fa, lines #d9deeb, 7px button radius, 6px inputs, the 10px/1.6px eyebrow, and the system font stack (no webfont is downloaded today).\n\nPick one and I'll build it properly — desktop, phone and the error/loading states."
+    },
+    {
+      "id": "note-a",
+      "x": 700,
+      "y": -300,
+      "w": 380,
+      "text": "A — Living graph wall\n\nKeeps today's 45/55 split and the 01/02/03 lines, but draws the product instead of only describing it: the dark panel carries a quiet node-and-edge motif in the graph kind colours.\n\nWhy: it is the one piece of imagery that is honestly about this product.\n\nTradeoff: the most conservative of the three. If the current page already feels dated, this refines rather than answers that."
+    },
+    {
+      "id": "note-b",
+      "x": 1560,
+      "y": -300,
+      "w": 380,
+      "text": "B — Centred minimal\n\nNo pitch, no split. The app's own canvas colour, one card, a 3px brand edge.\n\nWhy: people who open an internal tool already know what it is. This is the fastest path to the field, and the cheapest to keep correct.\n\nTradeoff: says nothing. If this page is ever shown to a prospect or a new client team, it does no work for you."
+    },
+    {
+      "id": "note-c",
+      "x": 3120,
+      "y": -300,
+      "w": 380,
+      "text": "C — Editorial\n\nThe brand tint floods the page, the statement is set at poster scale, and the card breaks the grid rather than sitting in it.\n\nWhy: the most voice, and the most memorable — same palette, far more confidence.\n\nTradeoff: 86px type needs the copy to stay short, and the offset card is the most fragile of the three at narrow widths."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

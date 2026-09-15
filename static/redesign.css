@@ -1009,6 +1009,30 @@
   .error-page .actions { justify-content: center; }
   /* Sign-in help ran at 10px and #949caf - about 2.75:1 on white, under the 4.5:1
      WCAG asks for normal text, at a size that makes it worse. */
+  /* The sign-in panel's graph motif.
+     It is a sibling of the story content, never a wrapper: app.css addresses
+     that content with direct-child selectors (`.login-story > .pill`,
+     `> p`, `> small`), so wrapping it in a positioning div would silently
+     drop three rules. The siblings are lifted above the motif instead. */
+  .login-graph {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .login-story > :not(.login-graph) { position: relative; z-index: 1; }
+  .login-graph-edges { fill: none; stroke: #2d3566; stroke-width: 1; }
+  .login-graph-doc { fill: var(--c-kind-document); }
+  .login-graph-record { fill: var(--c-kind-record); }
+  .login-graph-value { fill: var(--c-kind-value); }
+  /* A decorative motif is not worth the contrast cost on a narrow screen,
+     where the story panel is already the thing being scrolled past. */
+  @media (max-width: 700px) {
+    .login-graph { display: none; }
+  }
   .login-help { font-size: var(--t-12); color: var(--c-ink-3); }
   .error-mark {
     display: inline-grid;
