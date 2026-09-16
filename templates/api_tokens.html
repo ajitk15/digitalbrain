@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% load icons %}{% load workspace %}
 {% block title %}API access · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}{% settings_nav %}
-<div class="page-heading"><div><h1>API access</h1><p class="muted">Query this application's published knowledge graph from your own code, or connect an MCP client. Retrieval only: these endpoints return verified graph evidence and never call a model, so they cannot spend your AI budget.</p></div></div>
+<div class="page-heading"><div><h1>API access</h1><p class="muted">Query this application's published knowledge graph from your own code, connect an MCP client, or build your own chat client. <strong>REST</strong> and <strong>MCP</strong> are retrieval only &mdash; they return verified graph evidence and never call a model, so they cannot spend your AI budget. <strong>Chat</strong> does call one, and is off until an owner turns it on.</p></div></div>
 
 {% if created %}
 <section class="card section token-reveal"><h2><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Copy this token now</h2>
@@ -27,18 +27,21 @@
 </tbody></table></div></section>
 
 <section class="card section"><h2>Using it</h2>
-<h3 class="panel-label">REST</h3>
+<div class="endpoint-tabs tabbed">
+<input type="radio" name="endpoint" id="tab-rest" class="tab-radio" checked><input type="radio" name="endpoint" id="tab-mcp" class="tab-radio"><input type="radio" name="endpoint" id="tab-chat" class="tab-radio">
+<div class="tab-strip"><label for="tab-rest">{% icon "code" 13 %}REST</label><label for="tab-mcp">{% icon "plug" 13 %}MCP</label><label for="tab-chat">{% icon "chat" 13 %}Chat</label></div>
+<div class="tab-panels">
+<section class="tab-panel" aria-label="REST endpoint">
 <div class="copy-row"><code class="copy-url" id="rest-url">{{ base }}{% url 'api-graph-search' application.slug %}</code><button type="button" class="copy-button" data-copy-target="#rest-url" aria-label="Copy the REST endpoint URL" hidden>Copy</button></div>
 <div class="copy-head"><span class="panel-label">Example request</span><button type="button" class="copy-button" data-copy-target="#rest-example" aria-label="Copy the example request" hidden>Copy</button></div>
 <pre class="source-text" id="rest-example">curl -H "Authorization: Bearer YOUR_TOKEN" "{{ base }}{% url 'api-graph-search' application.slug %}?q=which+servers+run+under+NODE1"</pre>
-<p class="muted">Returns matching relationships with the source document and the exact quoted evidence for each. Add <code>&amp;version=2</code> to pin a graph version; without it the latest <strong>published</strong> version answers, never a draft. Every response states the version that produced it.</p>
-<h3 class="panel-label">MCP</h3>
+<p class="muted">Returns matching relationships with the source document and the exact quoted evidence for each. Add <code>&amp;version=2</code> to pin a graph version; without it the latest <strong>published</strong> version answers, never a draft. Every response states the version that produced it. Never calls a model.</p>
+</section>
+<section class="tab-panel" aria-label="MCP endpoint">
 <div class="copy-row"><code class="copy-url" id="mcp-url">{{ base }}{% url 'api-mcp' application.slug %}</code><button type="button" class="copy-button" data-copy-target="#mcp-url" aria-label="Copy the MCP endpoint URL" hidden>Copy</button></div>
-<p class="muted">Exposes one tool, <code>search_knowledge_graph</code>, taking a question and an optional version. Rate limit: 120 requests per minute per token.</p>
-<p class="muted">These addresses name this application <code>{{ application.slug }}</code>. Its identifier <code>{{ application.pk }}</code> still works in the same place, so anything already configured keeps running.</p>
-
-<h3 class="panel-label">Connect a client</h3>
-<div class="client-tabs"><input type="radio" name="connect-client" id="tab-claude-code" class="tab-radio" checked><input type="radio" name="connect-client" id="tab-claude-desktop" class="tab-radio"><input type="radio" name="connect-client" id="tab-vscode" class="tab-radio"><input type="radio" name="connect-client" id="tab-cursor" class="tab-radio"><input type="radio" name="connect-client" id="tab-kiro" class="tab-radio"><input type="radio" name="connect-client" id="tab-chatgpt" class="tab-radio"><input type="radio" name="connect-client" id="tab-python" class="tab-radio"><input type="radio" name="connect-client" id="tab-curl" class="tab-radio">
+<p class="muted">Exposes one tool, <code>search_knowledge_graph</code>, taking a question and an optional version. Rate limit: 120 requests per minute per token. Never calls a model.</p>
+<h3 class="panel-label">{% icon "plug" %}Connect a client</h3>
+<div class="client-tabs tabbed"><input type="radio" name="connect-client" id="tab-claude-code" class="tab-radio" checked><input type="radio" name="connect-client" id="tab-claude-desktop" class="tab-radio"><input type="radio" name="connect-client" id="tab-vscode" class="tab-radio"><input type="radio" name="connect-client" id="tab-cursor" class="tab-radio"><input type="radio" name="connect-client" id="tab-kiro" class="tab-radio"><input type="radio" name="connect-client" id="tab-chatgpt" class="tab-radio"><input type="radio" name="connect-client" id="tab-python" class="tab-radio"><input type="radio" name="connect-client" id="tab-curl" class="tab-radio">
 <div class="tab-strip"><label for="tab-claude-code">Claude Code</label><label for="tab-claude-desktop">Claude Desktop</label><label for="tab-vscode">VS Code</label><label for="tab-cursor">Cursor</label><label for="tab-kiro">Kiro</label><label for="tab-chatgpt">ChatGPT</label><label for="tab-python">Python</label><label for="tab-curl">curl</label></div>
 <div class="tab-panels">
 <section class="tab-panel" aria-label="Claude Code">
@@ -177,5 +180,16 @@ print(response.json())</pre>
 </section>
 </div>
 </div>
+</section>
+<section class="tab-panel" aria-label="Chat endpoint">
+<div class="copy-row"><code class="copy-url" id="chat-url">{{ base }}{% url 'api-chat' application.slug %}</code><button type="button" class="copy-button" data-copy-target="#chat-url" aria-label="Copy the chat endpoint URL" hidden>Copy</button></div>
+{% if chat_api_enabled %}<div class="copy-head"><span class="panel-label">Example request</span><button type="button" class="copy-button" data-copy-target="#chat-example" aria-label="Copy the example request" hidden>Copy</button></div>
+<pre class="source-text" id="chat-example">curl -X POST "{{ base }}{% url 'api-chat' application.slug %}"   -H "Authorization: Bearer YOUR_TOKEN"   -H "Content-Type: application/json"   -d '{"question": "which servers run under NODE1?"}'</pre>
+<p class="muted">Answers with this application&rsquo;s own model and returns the verified citations behind the answer, so you can build your own chat client against it. Send the <code>conversation_id</code> back to ask a follow-up. Add <code>"stream": true</code> for a <code>202</code> and a <code>stream_url</code> to read as <code>text/event-stream</code>. <strong>This is the one endpoint that spends this application&rsquo;s provider budget</strong> &mdash; REST and MCP never call a model.</p>
+{% else %}<p class="notice" role="note">{% icon "info" %}<span><strong>The Chat API is switched off.</strong> It is the one endpoint that calls a model and spends this application&rsquo;s provider budget, so it stays off until an owner turns it on{% if grant.role == 'owner' %} under <a href="{% url 'application-features' application.pk %}">Settings &rsaquo; Features</a>{% else %} under Settings &rsaquo; Features{% endif %}. REST and MCP are unaffected.</span></p>
+{% endif %}
+</section>
+</div></div>
+<p class="muted">These addresses name this application <code>{{ application.slug }}</code>. Its identifier <code>{{ application.pk }}</code> still works in the same place, so anything already configured keeps running.</p>
 </section>
 {% endblock %}

@@ -12,9 +12,15 @@ from platform_core import (
     views,
     workbench,
 )
+from platform_core.utility import api_chat
 
 urlpatterns = [
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
+    path(
+        "applications/<uuid:pk>/graph/generate/",
+        graphs.graph_generate,
+        name="graph-generate",
+    ),
     path("applications/<uuid:pk>/code-graph/", code_graph.code_graph, name="code-graph"),
     path(
         "applications/<uuid:pk>/code-graph/files/<uuid:file_id>/",
@@ -41,6 +47,14 @@ urlpatterns = [
         name="api-graph-search",
     ),
     path("api/v1/applications/<str:reference>/mcp/", api.mcp, name="api-mcp"),
+    # The one API surface that calls a model. Gated on the `chat_api` feature
+    # switch, which an owner has to turn on.
+    path("api/v1/applications/<str:reference>/chat/", api_chat.chat, name="api-chat"),
+    path(
+        "api/v1/applications/<str:reference>/chat/<uuid:message_id>/stream/",
+        api_chat.chat_stream,
+        name="api-chat-stream",
+    ),
     path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path(

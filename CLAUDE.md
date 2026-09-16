@@ -62,10 +62,16 @@ The one exception is `claude_use_host_login = true` in `config/local.toml`, a
 development convenience that lets the CLI see the real `~/.claude` when an
 application has no mounted Claude credential. `load_config` **refuses** it when
 `mode = "production"` rather than ignoring it, `settings.CLAUDE_USE_HOST_LOGIN`
-forces it off there anyway, a mounted credential always takes precedence over it,
-and the chat page states plainly when answers are being billed to the machine's own
-login. A missing secret with the setting off is still an error — it must never
+forces it off there anyway, and a mounted credential always takes precedence over
+it. A missing secret with the setting off is still an error — it must never
 quietly become "spend the operator's account".
+
+**AI settings is the only place that says so**, and it is owner-only. Chat carried
+the same notice and it was removed as redundant for owners, which is a deliberate
+trade: on a shared development instance a viewer asking questions is not told whose
+account is paying. The AI settings notice says that too, so the page cannot imply a
+warning nobody sees. Mount `claude_<application id>` before other people use that
+instance, rather than putting the banner back.
 
 **API tokens are users, not a second permission model.** `api_auth.authenticate`
 returns (user, application); `api.authorize` then runs the same `access()` checks a
@@ -74,6 +80,21 @@ the point is that revoking a grant closes the token with no extra code. Bearer o
 on `/api/v1/`, cookies only on the browser routes; accepting both would make the API
 CSRF-able. Secrets are stored as a SHA-256 digest and compared with
 `hmac.compare_digest`.
+
+`graph/search/` and the MCP server call no model. `utility/api_chat.py` does - it is the
+one API surface that spends the application's provider budget - so it is gated on
+the `chat_api` feature switch, which is **opt-in**: `services.OPT_IN_FEATURES`
+keeps it unticked on the create form, and migration 0036 wrote an explicit
+disabled row for every application that already existed. `feature_enabled` still
+reads a missing row as enabled; that rule is untouched, and this works by never
+leaving the row missing. It answers through `workbench.answer_question` and the
+browser's own streaming worker - no second answering path, and no way for a
+caller to choose a model or a credential.
+
+`platform_core/utility/` holds surfaces built **on** the platform rather than
+part of it. The dependency runs one way: nothing in `platform_core` imports from
+it, so anything in there can be deleted without the platform noticing. Not named
+`tools` because `agent_runtime/tools.py` already owns that word.
 
 **Outbound fetches are address-checked and pinned.** `platform_core/fetching.py` is
 the only place this server retrieves a user-supplied URL. It resolves first, refuses

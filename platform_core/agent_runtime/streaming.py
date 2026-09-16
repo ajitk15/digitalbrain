@@ -114,11 +114,6 @@ def request_stop(message_id):
     return True
 
 
-def active_streams():
-    with _lock:
-        return len(_sessions)
-
-
 def encode(event, data, sequence):
     """One SSE frame. `data` is always a JSON object so the client parse is uniform."""
     body = json.dumps(data, separators=(",", ":"))

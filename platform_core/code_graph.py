@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from .code_graph_analysis import ROLES
 from .code_graph_ingest import register
 from .connectors import credential_location
 from .models import ApplicationGrant, CodeFile, CodeRepository
@@ -106,12 +107,19 @@ def reach(snapshot, start_id, upstream):
 
 
 def rings(snapshot, hops):
-    """Reached files grouped by hop distance, nearest first."""
+    """Reached files grouped by hop distance, nearest first.
+
+    Scoped to the snapshot rather than trusting the ids: `hops` is derived from
+    that snapshot's own edges, so the filter costs nothing and is what keeps the
+    guarantee local instead of resting on how the caller built the set.
+    """
     if not hops:
         return []
     found = {
         item.pk: item
-        for item in CodeFile.objects.filter(pk__in=hops).defer("content", "symbols", "imports")
+        for item in CodeFile.objects.filter(snapshot=snapshot, pk__in=hops).defer(
+            "content", "symbols", "imports"
+        )
     }
     grouped = {}
     for file_id, distance in hops.items():
@@ -289,6 +297,7 @@ def code_graph(request, pk):
             "query": search,
             "more_files": more_files,
             "languages": languages,
+            "roles": ROLES,
             "shown_count": len(listed_files),
             "edge_count": len(edges),
             # The same file the GitHub connector uses. Indexing fails here long

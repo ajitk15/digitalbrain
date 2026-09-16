@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Max
@@ -392,11 +392,28 @@ def process_next_graph():
     return False
 
 
-def revision_readable(revision, app_id):
+def revision_drift(revision, app_id):
+    """How far a revision has moved from its sources: (changed, recorded).
+
+    Counts the sources this revision recorded whose digest has since changed
+    or which are no longer active. It cannot see sources *added* afterwards -
+    the same blind spot `publish_revision` has - so it answers "how much of
+    what this version read is still true", not "is this version current".
+
+    Not blocking on drift is deliberate: answering from a published snapshot
+    is the whole point. Not telling anyone was never decided on purpose, which
+    is why this is also read for the revision that is currently answering.
+    """
     current = {str(pk): digest for pk, digest in sources_for(app_id).values_list("id", "digest")}
-    return all(
-        current.get(source["id"]) == source["digest"] for source in revision.data.get("sources", [])
-    )
+    recorded = revision.data.get("sources", [])
+    # A record with no digest cannot be shown to still read, so it counts as
+    # drifted rather than raising - older revisions may predate the field.
+    changed = sum(1 for source in recorded if current.get(source["id"]) != source.get("digest"))
+    return changed, len(recorded)
+
+
+def revision_readable(revision, app_id):
+    return revision_drift(revision, app_id)[0] == 0
 
 
 #: How long a "building" run may go quiet before it is treated as interrupted.
@@ -490,6 +507,37 @@ def queue_generation(request, app, pk):
         else "Structural graph generation queued. No AI model is used and nothing is charged.",
     )
     return redirect("graph", pk=pk)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def graph_generate(request, pk):
+    """The generate form on its own URL, so it can be a popup.
+
+    `static/modal.js` lifts <main> out of a real page and posts the form back to
+    the same address, so this must render and submit on its own - with
+    JavaScript off the button is an ordinary link to an ordinary form. The POST
+    path is `queue_generation`, unchanged, so the popup and the plain page
+    cannot diverge.
+    """
+    app, grant = access(request.user, pk, "knowledge")
+    if grant.role not in {"owner", "contributor"}:
+        raise PermissionDenied("Only an owner or contributor may generate a graph.")
+    if request.method == "POST":
+        access(request.user, pk, "knowledge", write=True)
+        return queue_generation(request, app, pk)
+    return render(
+        request,
+        "graph_generate.html",
+        {
+            "application": app,
+            "model_choices": MODEL_CHOICES,
+            "has_versions": GraphRevision.objects.filter(application=app).exists(),
+            "graph_ai_configured": AIConfiguration.objects.filter(
+                application=app, purpose="graph_generation", enabled=True
+            ).exists(),
+        },
+    )
 
 
 @login_required
@@ -595,6 +643,10 @@ def graph_view(request, pk):
         response["Content-Disposition"] = f'attachment; filename="graph-{app.pk}.json"'
         return response
     published = published_revision(pk)
+    latest_revision = GraphRevision.objects.filter(application=app).first()
+    # Drift on the revision that is actually answering. Display only - the
+    # answer still comes from the snapshot, which is the point of publishing.
+    published_changed, published_total = revision_drift(published, pk) if published else (0, 0)
     # The Sources rail reuses the documents screen's own gating rather than
     # reimplementing it, so one set of rules governs both places.
     from .documents import LinkForm, intake_enabled
@@ -613,12 +665,16 @@ def graph_view(request, pk):
     document_total = (
         Document.objects.filter(application=app).exclude(status="deleted").count()
     )
+    # A connector import is a source with no Document behind it, so the rail's
+    # own list can never be the source count. Counted rather than subtracted:
+    # a document whose conversion failed has no entry either, so the two
+    # totals do not differ by one thing.
+    imported_total = KnowledgeEntry.objects.filter(
+        application=app, active=True, document__isnull=True
+    ).count()
     tab = request.GET.get("tab", "graph")
     if tab not in {"graph", "quality", "versions"}:
         tab = "graph"
-    panel = request.GET.get("panel", "health")
-    if panel not in {"health", "evaluation"}:
-        panel = "health"
     health = None
     if graph and current:
         from .graph_quality import health_report
@@ -640,6 +696,9 @@ def graph_view(request, pk):
             ).get_page(request.GET.get("page")),
             "source_count": sources_for(pk).count(),
             "published": published,
+            "latest_revision": latest_revision,
+            "published_changed": published_changed,
+            "published_total": published_total,
             "is_published": bool(selected and selected.published_at),
             "model_choices": MODEL_CHOICES,
             "graph_ai_configured": AIConfiguration.objects.filter(
@@ -662,13 +721,13 @@ def graph_view(request, pk):
                 and not run_in_flight(active_graph)
                 and active_graph.status in {"failed", "building"}
             ),
-            "panel": panel,
             "health": health,
             "can_upload": can_upload,
             "recent_documents": recent_documents,
             "link_form": LinkForm(),
             "sharepoint_ready": sharepoint_available(app),
             "document_total": document_total,
+            "imported_total": imported_total,
             "pending_documents": Document.objects.filter(
                 application=app, status__in=["queued", "converting"]
             ).count(),

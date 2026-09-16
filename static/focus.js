@@ -12,6 +12,13 @@
  *
  * It deliberately never touches sidebar.hidden. navigation.js owns that property,
  * so leaving focus mode restores whatever sidebar preference the user had.
+ *
+ * The preference key is read from <html> and written back to the same place. It
+ * used to be declared twice - once here and once on the button - and the button's
+ * copy rendered without the user id, because application_nav is an inclusion tag
+ * whose context holds only `application`, so `request` was undefined in it. The
+ * toggle wrote a key nothing read, and focus mode silently reset on every
+ * navigation. One declaration cannot drift from itself.
  */
 (() => {
   const root = document.documentElement;
@@ -41,7 +48,7 @@
       toggle.setAttribute("aria-label", label);
       toggle.title = label;
       try {
-        localStorage.setItem(toggle.dataset.preferenceKey, on ? "on" : "off");
+        if (key) localStorage.setItem(key, on ? "on" : "off");
       } catch {
         /* private mode: the preference simply does not persist */
       }

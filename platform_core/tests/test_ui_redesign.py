@@ -56,6 +56,21 @@ class RedesignWorkflowTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
 
+    def test_focus_mode_is_remembered_across_the_application_tabs(self):
+        """The key is declared once. Two copies drifted and focus mode reset on
+        every navigation: the button rendered `request.user.pk` from inside an
+        inclusion tag whose context has no `request`, so it wrote an id-less key
+        that the pre-paint read never looked at."""
+        key = f'data-focus-key="digital-brain.focus.{self.owner.pk}"'
+        for name in ["graph", "code-graph", "chat"]:
+            with self.subTest(page=name):
+                body = self.client.get(reverse(name, args=[self.app.pk])).content.decode()
+                self.assertIn(key, body)
+                self.assertIn('id="focus-toggle"', body)
+                # Nothing but <html> may name the preference; one declaration
+                # cannot disagree with itself.
+                self.assertNotIn("data-preference-key=\"digital-brain.focus", body)
+
     def test_library_combines_documents_and_records_without_duplicate_content(self):
         doc = Document.objects.create(
             application=self.app, uploaded_by=self.owner, name="Guide.pdf", size=100,
@@ -74,14 +89,16 @@ class RedesignWorkflowTests(TestCase):
         self.assertEqual(response.context["page"].paginator.count, 3)
         self.assertContains(response, "Imported ticket")
         self.assertContains(response, "Conversion failed")
-        self.assertContains(response, "View searchable content")
+        # The link to a document's searchable content; its label was shortened
+        # when the table was compacted, so pin the destination, not the wording.
+        self.assertContains(response, reverse("knowledge-detail", args=[self.app.pk, entry.pk]))
         self.assertEqual(self.client.get(url, {"q": "Unique search phrase"})
                          .context["page"].paginator.count, 1)
         self.assertEqual(self.client.get(reverse("knowledge", args=[self.app.pk]))
                          .context["page"].paginator.count, 3)
         entry.active = False
         entry.save(update_fields=["active"])
-        self.assertContains(self.client.get(url), "No active searchable content")
+        self.assertContains(self.client.get(url), "No content")
         self.assertEqual(self.client.get(url, {"q": "Unique search phrase"})
                          .context["page"].paginator.count, 0)
 

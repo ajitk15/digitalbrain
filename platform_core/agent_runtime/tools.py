@@ -137,8 +137,6 @@ FETCH_SOURCE = ToolSpec(
     run=fetch_source,
 )
 
-TOOL_SPECS = [SEARCH_KNOWLEDGE, FETCH_SOURCE]
-
 SEARCH_SCHEMA = {
     "type": "object",
     "properties": {
@@ -156,8 +154,6 @@ FETCH_SCHEMA = {
     },
     "required": ["source_id"],
 }
-
-SCHEMAS = {"search_knowledge": SEARCH_SCHEMA, "fetch_source": FETCH_SCHEMA}
 
 
 class CitationRecorder:

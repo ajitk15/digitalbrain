@@ -32,7 +32,6 @@ GRAPH_GENERATION_ADVICE = (
     "which tends to return few relationships or ones that fail quote verification. "
     "Chat can stay on a cheaper model."
 )
-RECOMMENDED_GRAPH_MODEL = "claude:claude-sonnet-5"
 
 
 # One line per purpose, so the settings page can say what each model is actually

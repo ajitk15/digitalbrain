@@ -97,6 +97,58 @@
   }
   .tile small { display: block; font-size: var(--t-11); color: var(--c-ink-muted); }
   .tile small span { display: block; font-size: var(--t-10); color: var(--c-ink-faint); }
+  /* A long label in a narrow track wraps rather than pushing past the border. */
+  .tile small, .tile small span { overflow-wrap: anywhere; }
+
+  /*
+   * Each tile is a disclosure: the figure is the summary, how it is counted and
+   * what moves it are inside. A native <details> rather than a title attribute,
+   * which no keyboard or touch user can reach, and rather than script, which
+   * would put the explanation behind JavaScript for no reason.
+   */
+  details.tile { padding: 0; }
+  details.tile > summary {
+    padding: var(--s-3);
+    padding-right: var(--s-5);
+    position: relative;
+    cursor: pointer;
+    list-style: none;
+    font-weight: inherit;
+  }
+  details.tile > summary::-webkit-details-marker { display: none; }
+  details.tile > summary::after {
+    content: "?";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 15px;
+    height: 15px;
+    display: grid;
+    place-items: center;
+    border-radius: var(--r-pill);
+    background: var(--c-subtle);
+    color: var(--c-ink-faint);
+    font-size: 10px;
+    font-weight: 700;
+  }
+  details.tile[open] > summary::after { content: "×"; background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  details.tile > summary:hover::after { background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  .tile-help {
+    margin: 0;
+    padding: 0 var(--s-3) var(--s-3);
+    font-size: var(--t-10);
+    line-height: var(--lh-body);
+    color: var(--c-ink-muted);
+    overflow-wrap: anywhere;
+  }
+  /* `.tile strong` is the 20px figure; the label inside the help text is not. */
+  .tile-help strong {
+    display: inline;
+    font-size: inherit;
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--c-ink-2);
+  }
 
   .panel-label {
     font-size: var(--t-10);
@@ -165,6 +217,7 @@
     min-width: 44px;
     text-align: right;
   }
+
 
   @media (max-width: 700px) {
     .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -445,7 +498,107 @@
     border-bottom: 1px solid var(--c-line-soft);
   }
   .kb-pane > header h2 { font-size: var(--t-13); margin: 0; }
-  .kb-pane > header small { font-size: var(--t-10); }
+  .kb-pane > header small { font-size: var(--t-10); text-align: right; min-width: 0; }
+  /*
+   * The same tile grid renders in the wide Quality tab and in this ~260px
+   * rail, and a viewport media query cannot tell the two apart: on a wide
+   * screen the rail still got three columns, 65px a tile, and four of the six
+   * spilled their text outside the border. The rail is always narrow, so it
+   * says so here rather than guessing from the window.
+   */
+  .kb-quality .tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  /*
+   * Upload and Import used to be two stacked full-width cards, each with its
+   * own border, summary row and a text input stretched across the page. They
+   * are the same job - put a source in - so they are one card with two
+   * columns, and the page-heading button opens it.
+   */
+  /*
+   * A container query, not a media query: the rule has to draw a vertical line
+   * only while there are two columns, and the column count comes from how wide
+   * this card is, not how wide the window is. Two separate breakpoints could
+   * disagree and leave a divider down the left edge of a stacked layout.
+   */
+  /*
+   * The sources table had six columns in ~700px, so every cell wrapped and a
+   * row ran to 180px. Type now rides on the line that already carried the file
+   * size, the graph-usage pills flow inline instead of stacking, and the long
+   * repository name truncates rather than forcing a third line.
+   */
+  /*
+   * The Quality tab carried a four-tile strip whose Nodes and Relationships
+   * were repeated as tiles in the Health panel directly below it. Only the two
+   * figures the panels do not report survive, on one line, and the version
+   * reads the same here as it does in the graph toolbar and the versions table.
+   */
+  .quality-title { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+  .quality-title h2 { margin: 0; }
+  .quality-facts {
+    font-size: var(--t-12);
+    margin: calc(-1 * var(--s-2)) 0 var(--s-3);
+  }
+  .quality-facts strong { color: var(--c-ink); font-variant-numeric: tabular-nums; }
+
+  .sources-table table { font-size: var(--t-12); }
+  .sources-table th { padding: var(--s-2) var(--s-3); }
+  .sources-table td { padding: var(--s-2) var(--s-3); vertical-align: top; }
+  .sources-table td > a > strong { font-weight: 600; }
+  .sources-table td small.muted { display: block; margin-top: 2px; font-size: var(--t-10); }
+  .sources-table .pill { margin: 0 var(--s-1) 2px 0; }
+  .sources-table .code-usage {
+    display: block;
+    margin-top: 2px;
+    font-size: var(--t-10);
+    max-width: 22ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sources-table details summary { font-size: var(--t-10); font-weight: 500; }
+  /* Short cells that were breaking mid-word ("Det/ails", "View/content"); the
+     Source column absorbs the width instead, and it is the one with room. */
+  .sources-table td:nth-child(2),
+  .sources-table td:last-child { white-space: nowrap; }
+  .sources-table td:first-child { width: 40%; }
+
+  .source-intake { container-type: inline-size; }
+  .source-intake .intake-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    align-items: start;
+    margin-top: var(--s-3);
+  }
+  @container (min-width: 640px) {
+    .source-intake .intake-columns {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      column-gap: var(--s-5);
+    }
+    .source-intake .intake-part + .intake-part {
+      border-left: 1px solid var(--c-line);
+      padding-left: var(--s-5);
+    }
+  }
+  .intake-part > .panel-label {
+    display: flex;
+    align-items: center;
+    gap: var(--s-1);
+    margin-top: 0;
+  }
+  .intake-part > .panel-label svg { width: 13px; height: 13px; }
+  /* The legacy rule lays this form out as a row - input beside button - which
+     was right across a full page and is not in a 325px column. */
+  .intake-part form { display: block; margin: 0; }
+  .intake-part form p { margin-bottom: var(--s-2); }
+  .intake-part input[type=file] { width: 100%; }
+  .intake-part .helptext { display: block; font-size: var(--t-11); }
+  .intake-part .muted { font-size: var(--t-11); margin: var(--s-2) 0 0; max-width: none; }
+  .link-page-form .button { margin-top: var(--s-2); }
+  /* The second column has no long prose under it, so it must not stretch the
+     row; both columns start at the top instead. */
+  .intake-part { min-width: 0; }
+  .kb-pane > header h2 { min-width: 0; overflow-wrap: anywhere; }
   .kb-pane-body { flex: 1; min-height: 0; overflow: auto; padding: var(--s-4); }
 
   /* The canvas must keep its 900x540 aspect: graph.js compares the rendered
@@ -478,6 +631,19 @@
   .upload-drop:hover { border-color: var(--c-brand); color: var(--c-brand-strong); }
   .upload-drop input { display: block; width: 100%; margin-top: var(--s-2); font-size: var(--t-11); }
   .rail-upload { margin-bottom: var(--s-3); }
+  /*
+   * This is the form's submit, and it used to be `button secondary wide`:
+   * white on a white rail, a pale grey border, and `wide`'s
+   * `space-between` left-aligning a single label - which is what a text input
+   * looks like, directly under a dashed dropzone that really is an input. It
+   * is the primary action here, so it is styled as one. The sibling link form
+   * below already submits with a primary button.
+   */
+  .rail-add {
+    width: 100%;
+    margin-top: var(--s-2);
+    gap: var(--s-2);
+  }
   .rail-link {
     display: block;
     font-size: var(--t-12);
@@ -767,6 +933,44 @@
   .pill.status-failed,
   .pill.status-rejected { background: var(--c-bad-bg); color: var(--c-bad); }
   .doc-failed { border-color: var(--c-bad-line); }
+
+  /*
+   * One chip per graph version. The number and its state used to be two
+   * elements that wrapped onto two lines in a column only wide enough for
+   * "v19", which made every row taller than its content. Here the state IS the
+   * background, so the cell stays one line - and the word is kept, because a
+   * colour on its own is not a label for anyone who cannot see it.
+   */
+  .version-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--s-1);
+    white-space: nowrap;
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-sm);
+    padding: 4px 8px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    background: var(--c-subtle);
+    color: var(--c-ink-2);
+  }
+  .version-chip .state {
+    display: inline;
+    font-size: var(--t-10);
+    font-weight: 600;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+  }
+  .version-chip.is-draft {
+    background: var(--c-warn-bg);
+    border-color: var(--c-warn-bg);
+    color: var(--c-warn);
+  }
+  .version-chip.is-published {
+    background: var(--c-ok-bg);
+    border-color: var(--c-ok-bg);
+    color: var(--c-ok);
+  }
   /* Before a first graph exists there are only two panes. */
   .kb-panes-empty { grid-template-columns: var(--w-kb-rail) minmax(0, 1fr); }
   .kb-empty { display: flex; flex-direction: column; justify-content: center; }
@@ -930,58 +1134,95 @@
      radio group gives keyboard navigation and a working selection for free.
      The radios stay in the accessibility tree (not display:none) so they can
      still be focused and driven with the arrow keys. */
+  /*
+   * `.tabbed` carries the behaviour, so a second tab group reuses it rather
+   * than copying 24 nth-of-type rules. Radio inputs and sibling selectors, not
+   * script: `script-src 'self'` allows a file but these need no file, and the
+   * tabs keep working with JavaScript off.
+   */
   .client-tabs { margin: var(--s-3) 0 var(--s-5); }
-  .client-tabs .tab-radio {
+  .endpoint-tabs { margin: var(--s-3) 0 var(--s-4); }
+  .endpoint-tabs .tab-panel > .copy-row:first-child { margin-top: 0; }
+  .tabbed .tab-radio {
     position: absolute;
     width: 1px;
     height: 1px;
     opacity: 0;
     pointer-events: none;
   }
-  .tab-strip {
-    display: flex;
+  /*
+   * A segmented control rather than an underline: this page has two tab groups
+   * and the settings sub-nav above them, and three sets of underlined text was
+   * three things competing to look like the page's navigation. A filled
+   * segment reads as "a switch inside this card" instead.
+   */
+  .tabbed .tab-strip {
+    display: inline-flex;
     flex-wrap: wrap;
-    gap: var(--s-4);
-    border-bottom: 1px solid var(--c-line);
+    /* Without this the wrapped flex line is taller than the segments in it,
+       and the strip gets 5px above the pills and 10px below. */
+    align-items: center;
+    align-content: center;
+    line-height: 1;
+    gap: 3px;
+    padding: 4px;
+    border: 1px solid var(--c-line);
+    border-radius: 10px;
+    background: var(--c-subtle);
     margin-bottom: var(--s-4);
+    max-width: 100%;
   }
-  .tab-strip label {
-    padding: var(--s-2) 0;
-    margin-bottom: -1px;
-    border-bottom: 2px solid transparent;
+  .tabbed .tab-strip label {
+    /* The global `label` rule adds a bottom margin for form fields. These are
+       not form fields, and it was pushing the strip 5px taller than its own
+       segments - 5px of padding above the pills and 10px below. */
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 32px;
+    padding: 0 14px;
+    border-radius: 7px;
     font-size: var(--t-13);
     font-weight: 600;
+    letter-spacing: -0.01em;
     color: var(--c-ink-3);
     cursor: pointer;
     white-space: nowrap;
+    transition: background .12s ease, color .12s ease;
   }
-  .tab-strip label:hover { color: var(--c-ink-2); }
+  .tabbed .tab-strip label svg { color: var(--c-ink-faint); }
+  .tabbed .tab-strip label:hover svg { color: inherit; }
+  .tabbed .tab-strip label svg { flex: none; }
+  .tabbed .tab-radio:checked ~ .tab-strip > label svg { color: inherit; }
+  .tabbed .tab-strip label:hover { color: var(--c-brand-strong); background: var(--c-brand-tint); }
   .tab-panel { display: none; }
   .tab-panel > p:first-child { margin-top: 0; }
-  .client-tabs .tab-radio:nth-of-type(1):checked ~ .tab-strip > label:nth-of-type(1) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(1):checked ~ .tab-panels > .tab-panel:nth-of-type(1) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(1):focus-visible ~ .tab-strip > label:nth-of-type(1) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(2):checked ~ .tab-strip > label:nth-of-type(2) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(2):checked ~ .tab-panels > .tab-panel:nth-of-type(2) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(2):focus-visible ~ .tab-strip > label:nth-of-type(2) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(3):checked ~ .tab-strip > label:nth-of-type(3) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(3):checked ~ .tab-panels > .tab-panel:nth-of-type(3) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(3):focus-visible ~ .tab-strip > label:nth-of-type(3) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(4):checked ~ .tab-strip > label:nth-of-type(4) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(4):checked ~ .tab-panels > .tab-panel:nth-of-type(4) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(4):focus-visible ~ .tab-strip > label:nth-of-type(4) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(5):checked ~ .tab-strip > label:nth-of-type(5) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(5):checked ~ .tab-panels > .tab-panel:nth-of-type(5) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(5):focus-visible ~ .tab-strip > label:nth-of-type(5) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(6):checked ~ .tab-strip > label:nth-of-type(6) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(6):checked ~ .tab-panels > .tab-panel:nth-of-type(6) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(6):focus-visible ~ .tab-strip > label:nth-of-type(6) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(7):checked ~ .tab-strip > label:nth-of-type(7) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(7):checked ~ .tab-panels > .tab-panel:nth-of-type(7) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(7):focus-visible ~ .tab-strip > label:nth-of-type(7) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
-  .client-tabs .tab-radio:nth-of-type(8):checked ~ .tab-strip > label:nth-of-type(8) { color: var(--c-brand); border-bottom-color: var(--c-brand); }
-  .client-tabs .tab-radio:nth-of-type(8):checked ~ .tab-panels > .tab-panel:nth-of-type(8) { display: block; }
-  .client-tabs .tab-radio:nth-of-type(8):focus-visible ~ .tab-strip > label:nth-of-type(8) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(1):checked ~ .tab-strip > label:nth-of-type(1) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(1):checked ~ .tab-panels > .tab-panel:nth-of-type(1) { display: block; }
+  .tabbed .tab-radio:nth-of-type(1):focus-visible ~ .tab-strip > label:nth-of-type(1) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(2):checked ~ .tab-strip > label:nth-of-type(2) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(2):checked ~ .tab-panels > .tab-panel:nth-of-type(2) { display: block; }
+  .tabbed .tab-radio:nth-of-type(2):focus-visible ~ .tab-strip > label:nth-of-type(2) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(3):checked ~ .tab-strip > label:nth-of-type(3) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(3):checked ~ .tab-panels > .tab-panel:nth-of-type(3) { display: block; }
+  .tabbed .tab-radio:nth-of-type(3):focus-visible ~ .tab-strip > label:nth-of-type(3) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(4):checked ~ .tab-strip > label:nth-of-type(4) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(4):checked ~ .tab-panels > .tab-panel:nth-of-type(4) { display: block; }
+  .tabbed .tab-radio:nth-of-type(4):focus-visible ~ .tab-strip > label:nth-of-type(4) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(5):checked ~ .tab-strip > label:nth-of-type(5) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(5):checked ~ .tab-panels > .tab-panel:nth-of-type(5) { display: block; }
+  .tabbed .tab-radio:nth-of-type(5):focus-visible ~ .tab-strip > label:nth-of-type(5) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(6):checked ~ .tab-strip > label:nth-of-type(6) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(6):checked ~ .tab-panels > .tab-panel:nth-of-type(6) { display: block; }
+  .tabbed .tab-radio:nth-of-type(6):focus-visible ~ .tab-strip > label:nth-of-type(6) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(7):checked ~ .tab-strip > label:nth-of-type(7) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(7):checked ~ .tab-panels > .tab-panel:nth-of-type(7) { display: block; }
+  .tabbed .tab-radio:nth-of-type(7):focus-visible ~ .tab-strip > label:nth-of-type(7) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .tabbed .tab-radio:nth-of-type(8):checked ~ .tab-strip > label:nth-of-type(8) { color: var(--c-brand-strong); background: var(--c-surface); box-shadow: 0 1px 2px rgba(23, 32, 55, .12), 0 0 0 1px rgba(23, 32, 55, .05); }
+  .tabbed .tab-radio:nth-of-type(8):checked ~ .tab-panels > .tab-panel:nth-of-type(8) { display: block; }
+  .tabbed .tab-radio:nth-of-type(8):focus-visible ~ .tab-strip > label:nth-of-type(8) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
   .run-banner p { margin: 0 0 var(--s-2); }
   /* Notices --------------------------------------------------------------
      A notice used to be green whatever it said, so every messages.error was
@@ -1236,6 +1477,81 @@
   .workspace-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
   .workspace-tools button[aria-expanded=true] { background: var(--c-brand-tint); border-color: var(--c-brand-border); color: var(--c-brand-strong); }
   .workspace-tools .muted { margin-left: auto; font-size: var(--t-12); }
+  .workspace-tools .revision-line { flex: 1 1 auto; }
+  /*
+   * The graph toolbar is the whole header now. A metrics strip above it
+   * repeated the version, the node and relationship counts, and the timestamp
+   * that the panes below already carried - four rows to say what this one line
+   * says, on the screen where vertical space is the graph.
+   *
+   * Each count sits on the control that opens the detail behind it, so the
+   * number and the thing it describes cannot drift apart.
+   */
+  .workspace-tools .tool-count {
+    display: inline-grid;
+    place-items: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    margin-left: var(--s-2);
+    border-radius: var(--r-pill);
+    background: var(--c-brand-tint);
+    color: var(--c-brand-strong);
+    font-size: var(--t-10);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .workspace-tools button[aria-expanded=true] .tool-count {
+    background: var(--c-brand-strong);
+    color: #fff;
+  }
+  .workspace-tools .version-chip { margin-right: var(--s-1); }
+  /* What answers, and what is newest - the two facts the versions tab exists
+     to settle, said once on the screen people actually work on. It sits at the
+     right end of the toolbar, so the left of that row stays the controls. */
+  .revision-line {
+    margin: 0 0 0 auto;
+    font-size: var(--t-11);
+    text-align: right;
+  }
+  .revision-line strong { color: var(--c-ink-2); font-variant-numeric: tabular-nums; }
+
+  /*
+   * One row for every graph control. Find, expand, filter and zoom used to sit
+   * on three stacked rows above a canvas that wanted the height. They wrap
+   * together when the pane is too narrow to hold them, rather than being
+   * stacked by default at every width.
+   */
+  /* Not `.graph-controls`: Code Graph already owns that name for an absolutely
+     positioned overlay on its own canvas, and it is declared later in this
+     file, so it silently won and threw this row into the page corner. */
+  .kb-graph-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    margin-bottom: var(--s-3);
+  }
+  .kb-graph-bar > label { margin: 0; white-space: nowrap; }
+  .kb-graph-bar #graph-search { flex: 1 1 160px; width: auto; min-width: 0; }
+  .kb-graph-bar #graph-node { flex: 0 1 180px; width: auto; min-width: 0; }
+  .kb-graph-bar .graph-filters { flex: 0 1 auto; }
+  /* Rebuilding is not exploring: it keeps the far end of the row to itself. */
+  .graph-regenerate { margin-left: auto; }
+  /*
+   * Square, icon-only. The name lives in aria-label and title rather than in
+   * visible text, so it is still announced and still hoverable - an icon with
+   * no accessible name is just a decoration nobody can use.
+   */
+  .button.icon-only {
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0;
+    gap: 0;
+    flex: none;
+  }
+  .button.icon-only svg { flex: none; }
   .kb-panes { grid-template-columns: minmax(0, 1fr); min-height: 0; }
   .kb-panes:not(.panels-ready) .kb-pane { max-height: none; }
   .kb-panes.panels-ready { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
@@ -1278,14 +1594,50 @@
   #graph-canvas[data-canvas="light"] ~ #graph-minimap { background: rgba(236, 238, 244, .85); border-color: var(--c-line-soft); }
   .graph-theme { position: absolute; left: 10px; top: 10px; width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; border: 1px solid #323b52; background: #1a1f2e; color: #b8c1d9; padding: 0; font-size: 14px; }
   .graph-theme:hover { background: #222839; filter: none; }
-  .graph-overview { margin-bottom: var(--s-3); font-size: var(--t-13); }
-  .graph-overview[open] > summary { margin-bottom: var(--s-3); }
   .shell:has(.kb-panes) .page-heading p { margin-top: var(--s-1); }
   .shell:has(.kb-panes) .breadcrumbs { margin-bottom: var(--s-2); }
   .shell:has(.kb-panes) .tabs { margin-bottom: var(--s-3); }
   #graph-inspector { width: auto; max-height: 300px; overflow: auto; border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-4); }
   .graph-help { font-size: var(--t-12); line-height: var(--lh-body); margin: var(--s-2) 0; }
-  .graph-zoom button { min-width: 36px; min-height: 36px; }
+  /*
+   * A joined segmented control, not three underlined links. These sit beside
+   * Regenerate in the same row, and underlined blue text next to a bordered
+   * button reads as "these are not the same kind of thing" when in fact they
+   * are all buttons. Border and colours are the secondary button's, so the row
+   * is one family.
+   */
+  .graph-zoom {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    border: 1px solid var(--c-line-strong);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: var(--c-surface);
+  }
+  .graph-zoom button {
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0 var(--s-2);
+    border: 0;
+    border-left: 1px solid var(--c-line);
+    border-radius: 0;
+    background: none;
+    color: var(--c-ink-3);
+    font-size: var(--t-12);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .graph-zoom button:first-child { border-left: 0; }
+  .graph-zoom button:hover {
+    background: var(--c-brand-tint);
+    color: var(--c-brand-strong);
+    text-decoration: none;
+    filter: none;
+  }
+  .graph-zoom button:focus-visible { outline: 2px solid var(--c-brand); outline-offset: -2px; }
+  #graph-zoom-out, #graph-zoom-in { font-size: var(--t-14); line-height: 1; }
   .graph-filter { font-size: var(--t-12); min-height: 32px; }
   .graph-filter input { width: auto; }
   .kb-graph .actions { flex-wrap: wrap; }
@@ -1440,9 +1792,12 @@
   /* Radio-driven tabs: the file page must render and stay usable with scripting
      off, and the inspector lifts this markup verbatim. */
   .file-tabs .tab-radio { position: absolute; opacity: 0; pointer-events: none; }
-  .tab-strip { display: flex; flex-wrap: wrap; gap: var(--s-4); border-bottom: 1px solid var(--c-line); margin-bottom: var(--s-4); }
-  .tab-strip label { margin: 0; padding: 0 0 var(--s-2); font-size: var(--t-13); font-weight: 600; color: var(--c-ink-3); cursor: pointer; border-bottom: 2px solid transparent; }
-  .tab-strip label:hover { color: var(--c-ink); }
+  /* Scoped to .file-tabs: an unscoped `.tab-strip` here sat later in the file
+     than the segmented tabs on API access and silently won, leaving that page
+     with underline padding inside a pill. */
+  .file-tabs .tab-strip { display: flex; flex-wrap: wrap; gap: var(--s-4); border-bottom: 1px solid var(--c-line); margin-bottom: var(--s-4); }
+  .file-tabs .tab-strip label { margin: 0; padding: 0 0 var(--s-2); font-size: var(--t-13); font-weight: 600; color: var(--c-ink-3); cursor: pointer; border-bottom: 2px solid transparent; }
+  .file-tabs .tab-strip label:hover { color: var(--c-ink); }
   .tab-pane { display: none; }
   #file-tab-overview:checked ~ .tab-strip label[for="file-tab-overview"],
   #file-tab-deps:checked ~ .tab-strip label[for="file-tab-deps"],

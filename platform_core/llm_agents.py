@@ -17,12 +17,10 @@ from django.core.exceptions import ValidationError
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
 
 from .agent_runtime.prompts import INSTRUCTIONS
-from .agent_runtime.runtime import evidence_payload, recent_turns
+from .agent_runtime.runtime import RESPONSES_MODELS, evidence_payload, recent_turns
 from .agent_runtime.usage import checked_answer, checked_request_id, openai_usage
 
 __all__ = ["INSTRUCTIONS", "completion"]
-
-RESPONSES_MODELS = ("gpt-6", "gpt-5.6")
 
 
 def _http_client():

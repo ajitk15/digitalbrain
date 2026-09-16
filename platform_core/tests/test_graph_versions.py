@@ -11,6 +11,7 @@ from platform_core.graph_ai import (
     graph_citations,
     graph_snapshot,
 )
+from platform_core.graphs import revision_drift, revision_readable
 from platform_core.models import ChatConversation, GraphRevision
 from platform_core.workbench import add_knowledge
 
@@ -53,7 +54,7 @@ class GraphVersionSelectionTests(TestCase):
                     "inferred": True,
                 }
             ],
-            "sources": [{"id": str(self.source.pk)}],
+            "sources": [{"id": str(self.source.pk), "digest": self.source.digest}],
         }
         return GraphRevision.objects.create(
             application=self.app,
@@ -222,6 +223,57 @@ class GraphPublishingTests(TestCase):
         response = self.client.post(self.url, {"action": "publish", "version": "1"})
         self.assertEqual(response.status_code, 302)
         self.assertIsNone(GraphRevision.objects.get(number=1).published_at)
+
+    def test_drift_on_the_answering_version_is_counted_and_shown(self):
+        """Not blocking on drift is deliberate; not telling anyone never was."""
+        self.revision(1)
+        self.client.post(self.url, {"action": "publish", "version": "1"})
+        revision = GraphRevision.objects.get(number=1)
+        self.assertEqual(revision_drift(revision, self.app.pk), (0, 1))
+        response = self.client.get(self.url, {"tab": "versions"})
+        self.assertNotContains(response, "have changed since")
+
+        # Replacing the evidence archives the old row and writes a new one.
+        self.source.active = False
+        self.source.save(update_fields=["active"])
+        self.assertEqual(revision_drift(revision, self.app.pk), (1, 1))
+        response = self.client.get(self.url, {"tab": "versions"})
+        self.assertContains(response, "1 of its 1 source(s) have changed since")
+        # Display only: the published version still answers.
+        _, number = graph_snapshot(self.app.pk)
+        self.assertEqual(number, 1)
+
+    def test_the_chat_header_carries_the_same_drift_count(self):
+        """Only where graph answers are possible; elsewhere it names nothing real."""
+        from platform_core.models import AIConfiguration
+
+        self.revision(1)
+        self.client.post(self.url, {"action": "publish", "version": "1"})
+        self.source.active = False
+        self.source.save(update_fields=["active"])
+        chat = reverse("chat", args=[self.app.pk])
+        self.assertNotContains(self.client.get(chat), "have changed since it was published")
+
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="graph_retrieval",
+            provider="claude",
+            model="claude-sonnet-5",
+            enabled=True,
+            input_rate=Decimal("2"),
+            output_rate=Decimal("10"),
+            configured_by=self.owner,
+        )
+        self.assertContains(self.client.get(chat), "1 of its 1 source(s) have changed")
+
+    def test_readability_is_the_drift_count_being_zero(self):
+        """One implementation, so the publish gate and the signal cannot disagree."""
+        self.revision(1)
+        revision = GraphRevision.objects.get(number=1)
+        self.assertTrue(revision_readable(revision, self.app.pk))
+        self.source.active = False
+        self.source.save(update_fields=["active"])
+        self.assertFalse(revision_readable(revision, self.app.pk))
 
     def test_publishing_an_unknown_version_is_rejected(self):
         for value in ["99", "abc", ""]:

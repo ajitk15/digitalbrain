@@ -58,7 +58,7 @@ def basic(user, secret):
     return "Basic " + base64.b64encode(f"{user}:{secret}".encode()).decode()
 
 
-def https_base(value, field="base_url"):
+def https_base(value):
     """A validated https origin for a user-supplied instance URL.
 
     Refuses an address that obviously points inside the network at configuration
@@ -86,7 +86,13 @@ def https_base(value, field="base_url"):
     return f"https://{host}{port}"
 
 
-def text(value, limit=MAX_BODY_CHARACTERS):
+def text(value):
+    """A string, or "" for whatever else the provider put in that field.
+
+    No length cap here on purpose: the one cap that matters is applied where the
+    record is stored, in `connectors.sync`. A second limit here would only be a
+    quieter place for the two numbers to disagree.
+    """
     return value if isinstance(value, str) else ""
 
 
@@ -295,9 +301,13 @@ def servicenow_token(config, secret):
     except FetchError as failure:
         raise ValidationError(f"ServiceNow sign-in: {failure}") from None
     try:
-        token = json.loads(raw).get("access_token")
+        payload = json.loads(raw)
     except ValueError:
-        token = None
+        payload = None
+    # A sign-in endpoint that answers with a list or a bare string is still a
+    # refusal to authenticate. Reading it as a dictionary regardless turned that
+    # into an AttributeError and a 500 instead of the message below.
+    token = payload.get("access_token") if isinstance(payload, dict) else None
     if not isinstance(token, str) or not token:
         raise ValidationError("ServiceNow did not return an access token.")
     return token

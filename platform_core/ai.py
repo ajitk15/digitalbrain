@@ -141,8 +141,15 @@ def seed_application_ai(user, app, provider=None):
         # O_EXCL with the mode set at creation: never briefly world-readable, and
         # never overwriting a credential someone mounted on purpose.
         descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-            output.write(source.read_text(encoding="utf-8").strip())
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(source.read_text(encoding="utf-8").strip())
+        except OSError:
+            # A half-written key is worse than no key: the file now exists, so the
+            # O_EXCL guard above would refuse to seed it ever again and every run
+            # would fail authentication against a truncated secret.
+            target.unlink(missing_ok=True)
+            raise
     model = DEFAULT_MODELS[provider]
     listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
     for purpose, _ in AI_PURPOSES:

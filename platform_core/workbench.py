@@ -120,7 +120,13 @@ def retrieve(app, question):
 @login_required
 @require_http_methods(["GET", "POST"])
 def knowledge(request, pk):
-    app, grant = access(request.user, pk, "knowledge")
+    """The old sources list, now the documents page under its own URL.
+
+    The check runs here as well as in `documents` so a caller with no grant gets
+    the same 404 from either URL, rather than one of them confirming the
+    application exists by the shape of its refusal.
+    """
+    access(request.user, pk, "knowledge")
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
         return HttpResponseNotAllowed(["GET"])
@@ -364,20 +370,6 @@ def published_graph_version(app_id):
     return revision.number if revision else None
 
 
-def host_login_notice(app, config):
-    """Non-empty when answers would be billed to this machine's own Claude login."""
-    from .agent_runtime.credentials import host_login_enabled
-
-    if not config or config.provider != "claude" or not host_login_enabled():
-        return ""
-    if (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file():
-        return ""
-    return (
-        "Development mode: answers use this machine's Claude Code login, "
-        "not a credential belonging to this application."
-    )
-
-
 def credential_available(config, app):
     """Whether a run could authenticate, by mounted secret or development host login."""
     from .agent_runtime.credentials import host_login_enabled
@@ -408,14 +400,6 @@ def mode_options(ai_enabled, graph_ai_enabled):
         }
         for value, label in CHAT_MODES
     ]
-
-
-def selectable_modes(ai_enabled, graph_ai_enabled):
-    return {
-        option["value"]
-        for option in mode_options(ai_enabled, graph_ai_enabled)
-        if option["available"]
-    }
 
 
 def available_modes(graph_ai_enabled):
@@ -561,7 +545,13 @@ def chat(request, pk):
         application=app, purpose="graph_retrieval", enabled=True
     ).exists()
     graph_versions = graph_version_choices(app.pk) if graph_ai_enabled else []
-    published_graph = published_graph_version(app.pk)
+    from .graphs import published_revision, revision_drift
+
+    published = published_revision(app.pk)
+    published_graph = published.number if published else None
+    # How far the revision answering here has moved from its sources. Shown,
+    # never enforced: reproducibility is why answers come from a snapshot.
+    published_changed, published_total = revision_drift(published, app.pk) if published else (0, 0)
     # Mode is a property of the conversation. A new conversation may be started in a
     # chosen mode; sending a message can never change it, so a paid mode is never
     # entered by accident.
@@ -645,7 +635,8 @@ def chat(request, pk):
             "graph_versions": graph_versions,
             "retention_days": retention_days(app),
             "published_graph": published_graph,
-            "host_login": host_login_notice(app, chat_config),
+            "published_changed": published_changed,
+            "published_total": published_total,
         },
     )
 
@@ -1018,7 +1009,7 @@ class DraftForm(forms.Form):
 @require_http_methods(["GET", "POST"])
 def plans(request, pk):
     from .code_factory import ticket_choices
-    from .models import Connector, FactoryRun  # noqa: F811 - local to this view only
+    from .models import Connector, FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
     form = PlanForm(request.POST or None)
@@ -1029,7 +1020,6 @@ def plans(request, pk):
     ).exists()
     if request.method == "POST" and request.POST.get("action") == "analyse":
         from .code_factory import start_run
-        from .models import Connector
 
         access(request.user, pk, "code_factory", write=True)
         entry = get_object_or_404(
@@ -1154,29 +1144,32 @@ def review_plan(user, app_id, plan_id, decision, note):
 @login_required
 @require_http_methods(["GET", "POST"])
 def plan_detail(request, pk, plan_id):
-    from .code_factory import deliver, write_credential
-    from .models import FactoryRun
+    from .code_factory import confirm_repository, deliver, write_credential
 
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
     run = plan.runs.first()
     if request.method == "POST" and request.POST.get("action") == "confirm-repository":
-        # The repository came out of ticket text. Confirming it is a person
-        # saying "yes, that one" - the ticket's author does not get to decide.
+        # The repository was guessed - from ticket text, or from this
+        # application's registry when the ticket named nothing. Confirming it
+        # is a person saying "yes, that one"; whoever can file a ticket does
+        # not get to decide where this platform writes.
         access(request.user, pk, "code_factory", write=True)
         if run is None or not grant.can_approve:
             raise PermissionDenied
-        FactoryRun.objects.filter(pk=run.pk).update(
-            proposed_repository=(request.POST.get("repository") or "").strip()[:200],
-            base_branch=(request.POST.get("base_branch") or "main").strip()[:200],
-            repository_confirmed=True,
-        )
+        try:
+            confirmed = confirm_repository(
+                run, request.POST.get("repository"), request.POST.get("base_branch")
+            )
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+            return redirect("plan-detail", pk=pk, plan_id=plan_id)
         audit(
             request.user,
             "factory.repository_confirmed",
             run.pk,
             app.product.portfolio.organization,
-            details={"repository": request.POST.get("repository", "")[:200]},
+            details={"repository": confirmed, "base_branch": run.base_branch},
         )
         messages.success(request, "Repository confirmed. Delivery can now be requested.")
         return redirect("plan-detail", pk=pk, plan_id=plan_id)

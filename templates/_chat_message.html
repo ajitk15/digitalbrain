@@ -1,6 +1,11 @@
 {% load chat_text %}
 {% if message.role == 'user' %}
-<article class="chat-message chat-user" id="message-{{ message.pk }}"><div class="message-meta">You · {{ message.created_at|date:"M d, H:i" }} UTC</div><div class="message-body">{{ message.body|linebreaksbr }}</div></article>
+<article class="chat-message chat-user" id="message-{{ message.pk }}"><div class="message-meta">You · {{ message.created_at|date:"M d, H:i" }} UTC</div><div class="message-body">{{ message.body|linebreaksbr }}</div>
+{# A plain details/form pair: with JavaScript off it opens and posts on its own.
+   chat.js's optimistic bubble is built without it, because a question that has
+   not been written yet has no id to post to; it is there on the next load. #}
+<div class="message-actions"><details class="edit-question"><summary>Edit</summary><form method="post" action="{% url 'chat-edit' application.pk message.pk %}">{% csrf_token %}<label class="sr-only" for="edit-{{ message.pk }}">Edit this question</label><textarea id="edit-{{ message.pk }}" name="question" rows="3" maxlength="2000" required>{{ message.body }}</textarea><div class="actions"><button type="submit" class="button">Ask again</button></div><p class="muted">Asking again replaces this question and removes everything after it.</p></form></details></div>
+</article>
 {% else %}
 <article class="chat-message chat-assistant" id="message-{{ message.pk }}" data-status="{{ message.status }}"><div class="message-meta">Digital Brain · {% if message.mode == 'ai' %}AI answer{% elif message.mode == 'graph' %}Graph answer{% else %}Source excerpts{% endif %}{% if message.status == 'stopped' %} · stopped{% elif message.status == 'failed' %} · failed{% endif %}</div><div class="message-body">{{ message.body|chat_text }}</div>
 {% if message.error %}<p class="message-error">{{ message.error }}</p>{% endif %}

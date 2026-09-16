@@ -30,11 +30,10 @@ from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
 from .prompts import TOOL_INSTRUCTIONS
-from .runtime import evidence_payload, recent_turns
+from .runtime import RESPONSES_MODELS, evidence_payload, recent_turns
 from .tools import FETCH_SOURCE, SEARCH_KNOWLEDGE, run_tool
 from .usage import TurnUsage, checked_answer, checked_request_id, openai_usage
 
-RESPONSES_MODELS = ("gpt-6", "gpt-5.6")
 MAX_TURNS = 4
 RUN_TIMEOUT = 120
 CANCEL_POLL = 0.25

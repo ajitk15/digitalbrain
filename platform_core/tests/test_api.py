@@ -390,21 +390,26 @@ class TokenManagementTests(TestCase):
         self.assertNotIn("dbk_", body)
 
     def test_every_tab_has_a_panel_and_exactly_one_opens_by_default(self):
-        """A count mismatch would leave a tab that reveals the wrong panel."""
+        """A count mismatch would leave a tab that reveals the wrong panel.
+
+        Two groups now: the three endpoints, and the MCP clients nested inside
+        the MCP one. Counted per group, because a page-wide total would pass
+        while one group was short and the other long.
+        """
         body = self.client.get(self.url).content.decode()
-        radios = body.count('name="connect-client"')
-        panels = body.count('<section class="tab-panel"')
-        self.assertEqual(radios, panels)
-        self.assertEqual(radios, 8)
-        # Without exactly one default the section opens with every panel hidden.
-        self.assertEqual(body.count('class="tab-radio" checked'), 1)
+        self.assertEqual(body.count('name="endpoint"'), 3)
+        self.assertEqual(body.count('name="connect-client"'), 8)
+        self.assertEqual(body.count('<section class="tab-panel"'), 11)
+        # One default per group, or a group opens with every panel hidden.
+        self.assertEqual(body.count('class="tab-radio" checked'), 2)
 
     def test_the_tabs_carry_no_inline_script_or_handler(self):
         """The CSP forbids both; these tabs are radio inputs and CSS only."""
         body = self.client.get(self.url).content.decode()
         self.assertNotIn("<script>", body)
         self.assertNotIn("onclick", body)
-        self.assertIn('class="client-tabs"', body)
+        self.assertIn('class="client-tabs tabbed"', body)
+        self.assertIn('class="endpoint-tabs tabbed"', body)
 
     def test_the_client_tabs_do_not_reuse_the_settings_nav_class(self):
         """`tabs` already belongs to the settings sub-nav; sharing it restyles that."""

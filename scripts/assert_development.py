@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from digitalbrain.configuration import load_config  # noqa: E402
+from digitalbrain.configuration import load_config
 
 mode = load_config()["mode"]
 if mode != "development":

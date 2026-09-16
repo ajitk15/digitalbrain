@@ -5,7 +5,7 @@ from django import forms
 from PIL import Image, UnidentifiedImageError
 
 from .models import ApplicationGrant, ChatRetention, Portfolio, Product, User
-from .services import available_features
+from .services import OPT_IN_FEATURES, available_features
 
 
 class ResourceForm(forms.Form):
@@ -76,7 +76,7 @@ class ApplicationForm(ResourceForm):
         # row means enabled. Unticking one writes an ApplicationFeature row.
         for key, label in available_features():
             self.fields[f"feature_{key}"] = forms.BooleanField(
-                required=False, initial=True, label=label
+                required=False, initial=key not in OPT_IN_FEATURES, label=label
             )
 
     @property
@@ -116,7 +116,7 @@ class ApplicationForm(ResourceForm):
         taken literally, including all of them being off.
         """
         if not self.data.get("features_declared"):
-            return dict.fromkeys((key for key, _ in available_features()), True)
+            return {key: key not in OPT_IN_FEATURES for key, _ in available_features()}
         return {
             name.removeprefix("feature_"): bool(value)
             for name, value in self.cleaned_data.items()

@@ -3,7 +3,7 @@
 
 <section class="card section credential-status">
 <div class="card-heading"><h2>Credentials</h2><span class="pill {% if openai_mounted or claude_mounted or host_login %}{% else %}pending{% endif %}">{% if openai_mounted or claude_mounted %}Mounted{% elif host_login %}Development login{% else %}Not configured{% endif %}</span></div>
-{% if host_login %}<p class="notice" role="note">Claude answers use this machine's own Claude Code login, not a credential belonging to {{ application.name }}. Spend is billed to that login while usage is still recorded here. This is refused outright in production.</p>{% endif %}
+{% if host_login %}<p class="notice" role="note">Claude answers use this machine's own Claude Code login, not a credential belonging to {{ application.name }}. Spend is billed to that login while usage is still recorded here. This is refused outright in production. <strong>Nobody using Chat is told this</strong> &mdash; this page is owner-only, so mount <code class="mono">{{ claude_secret }}</code> before other people ask questions here.</p>{% endif %}
 <div class="cred-rows">
 <div class="list-row"><div><strong>Claude</strong><small class="mono">{{ claude_secret }}</small></div><span class="pill {% if not claude_mounted and not host_login %}pending{% endif %}">{% if claude_mounted %}Mounted{% elif host_login %}Host login{% else %}Missing{% endif %}</span></div>
 <div class="list-row"><div><strong>OpenAI</strong><small class="mono">{{ openai_secret }}</small></div><span class="pill {% if not openai_mounted %}pending{% endif %}">{% if openai_mounted %}Mounted{% else %}Missing{% endif %}</span></div>

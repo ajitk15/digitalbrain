@@ -29,7 +29,17 @@ FEATURES = {
     "code_graph": ("Code Graph", True),
     "code_factory": ("Code Factory plans", True),
     "connectors": ("External connectors", True),
+    "chat_api": ("Chat API", True),
 }
+
+#: Features an owner must switch on deliberately, rather than ones they may
+#: switch off. `feature_enabled` still reads a missing row as enabled - that
+#: rule is untouched - so these are given an explicit disabled row instead:
+#: by migration for applications that already exist, and by an unticked box on
+#: the create form for new ones. `chat_api` is here because it is the only API
+#: surface that calls a model, and nothing should start spending an
+#: application's provider budget because a release shipped.
+OPT_IN_FEATURES = {"chat_api"}
 
 
 def available_features():

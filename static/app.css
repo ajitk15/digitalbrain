@@ -119,6 +119,19 @@ textarea:focus{outline:2px solid #ededff;border-color:#6664da}
 .conversation-mode select{width:auto;font-size:11px;padding:5px}
 .message-actions{display:flex;gap:12px;margin-top:10px;opacity:0;transition:opacity .12s}
 .chat-assistant:hover .message-actions,.chat-assistant:focus-within .message-actions{opacity:1}
+.chat-user:hover .message-actions,.chat-user:focus-within .message-actions{opacity:1}
+/* Opacity alone would leave the control unreachable but still focusable, so an
+   open editor stays shown whatever the pointer is doing. */
+.chat-user .message-actions:has(details[open]){opacity:1}
+.chat-user .message-actions{justify-content:flex-end}
+.edit-question{width:100%}
+.edit-question>summary{list-style:none;cursor:pointer;font-size:11px;color:#353fc4;text-decoration:underline;text-align:right}
+.edit-question>summary::-webkit-details-marker{display:none}
+.edit-question form{margin-top:8px;text-align:left}
+.edit-question textarea{width:100%;font:inherit;font-size:12px;padding:6px}
+.edit-question p{font-size:11px;margin:6px 0 0}
+/* Referenced by templates that label a control for screen readers only. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 .message-error{font-size:11px;color:#a3364a;margin:8px 0 0}
 .chat-assistant[data-status=streaming] .message-body::after{content:"\25AE";margin-left:2px;color:#7a86a0;animation:chat-caret 1s steps(1) infinite}
 @keyframes chat-caret{50%{opacity:0}}

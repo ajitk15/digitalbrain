@@ -1,7 +1,7 @@
 {
   "status": "application-workflows-and-organization-tree",
   "tests": {
-    "passed": 120,
+    "passed": 637,
     "failed": 0,
     "database": "SQLite"
   },
@@ -28,8 +28,10 @@
   "local_url": "http://127.0.0.1:8000",
   "limitations": [
     "Live OpenAI/Claude/GitHub calls not validated; credentials required. SDK provider calls use test doubles. Claude bundled CLI version check passed.",
-    "Code Factory implements planning, independent approval and export; isolated execution and PR automation pending",
-    "Embedding retrieval, semantic entailment scoring, Graphify integration, Jira and ServiceNow connectors pending",
+    "Code Factory delivers a draft pull request, but only by replacing files it first read; creating or deleting a file is refused, and no build or test suite is run.",
+    "Embedding retrieval, semantic entailment scoring, Graphify integration, and scheduled or write-back connector operations pending.",
+    "Code Graph reads GitHub only; a run pins one snapshot. Chat cannot read Code Graph at all.",
+    "Correctness depends on a single worker process: the stream registry and the API rate limit are process-local.",
     "PostgreSQL concurrency/RLS, SSO/MFA and disaster recovery not validated"
   ],
   "documents": {
@@ -57,15 +59,33 @@
     "versioning": "Numbered persisted snapshots; current snapshot preserved as v1; per-version views/quality/exports; unavailable if sources removed or changed",
     "rendering_fix": "CSP explicitly allows same-origin external scripts; inline/eval remain disallowed",
     "retrieval": "Graph endpoint/relation matching and one-hop expansion, up to eight source citations, selected graph retrieval model",
-    "failure_policy": "No automatic retry of failed/interrupted AI calls; explicit retry available"
+    "failure_policy": "No automatic retry of failed/interrupted AI calls; explicit retry available",
+    "drift": "The published revision's drift from its sources is counted and shown on the Versions tab and the chat header; it is never enforced, because answering from a snapshot is the point"
   },
   "chat": {
     "history": "Persisted conversations scoped to current user and application; legacy history migration tested",
     "context": "Up to 8 prior turns; removed/changed sources excluded; follow-up lexical retrieval",
     "presentation": "Chronological messages, safe Markdown subset, collapsed sources, sending status, preserved error drafts",
-    "validation": "120 tests passed; default AI routing, greetings without evidence, missing-setup/no-fallback behavior verified with mocked provider",
-    "llm": "OpenAI Agents SDK 0.22.2 and Claude Agent SDK 0.2.152; independent per-application/per-task provider/model; tools disabled",
-    "default": "AI conversation; source excerpts require explicit selection; visible missing model/key status",
-    "local_configuration_status": "MQACEKnowledge: no AI configuration or mounted OpenAI/Claude key file at diagnosis; live LLM connection not verified"
+    "validation": "637 tests passed; default AI routing, greetings without evidence, missing-setup/no-fallback behavior verified with mocked provider",
+    "llm": "OpenAI Agents SDK 0.22.2 and Claude Agent SDK 0.2.152; independent per-application/per-task provider/model; two scoped knowledge tools (search_knowledge, fetch_source), bounded to four model turns and eight tool calls; every built-in provider tool disabled",
+    "default": "AI mode; Sources mode requires explicit selection; visible missing model/key status",
+    "local_configuration_status": "MQACEKnowledge: no AI configuration or mounted OpenAI/Claude key file at diagnosis; live LLM connection not verified",
+    "api": "POST /api/v1/applications/<id>/chat/ answers with the application's own model; JSON, or 202 plus an SSE stream_url with \"stream\": true. Server-side conversations scoped to the token's user. Gated on the opt-in chat_api feature switch, off for every application until an owner enables it - the only API surface that spends a provider budget."
+  },
+  "connectors": {
+    "kinds": "GitHub issues, Jira issues, ServiceNow table records",
+    "bounds": "100 most recently updated records per import, deduplicated by digest",
+    "schedule": "manual only; nothing imports on a timer and nothing is written back to the tracker"
+  },
+  "code_graph": {
+    "scope": "GitHub only; the remote host is hardcoded and no URL is accepted",
+    "indexing": "clone at the resolved commit, index files/symbols/imports, delete the checkout; 500 files, 400 KB per file, 20 MiB total",
+    "consumers": "Code Factory analysis and design only; chat cannot read it"
+  },
+  "code_factory": {
+    "pipeline": "triage, analysis, design, human approval, implementation, verification, delivery",
+    "gates": "a different user with can_approve must approve; the repository must be confirmed; a github_write_<application> credential distinct from the read credential must be mounted",
+    "delivery": "draft pull request on a digital-brain/ branch; replaces only files it first read at the base branch; 20 files, 400 KB each; no creation, deletion or merge",
+    "outcome": "not read back - merge state and CI results are not recorded"
   }
 }

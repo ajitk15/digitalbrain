@@ -13,7 +13,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "digitalbrain.settings")
 
-import django  # noqa: E402
+import django
 
 django.setup()
 

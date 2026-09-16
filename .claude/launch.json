@@ -4,8 +4,25 @@
     {
       "name": "digitalbrain",
       "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["manage.py", "runserver", "127.0.0.1:8055", "--noreload"],
+      "runtimeArgs": [
+        "manage.py",
+        "runserver",
+        "127.0.0.1:8055",
+        "--noreload"
+      ],
       "port": 8055
+    },
+    {
+      "name": "diagrams",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8781",
+        "--directory",
+        "docs/diagrams"
+      ],
+      "port": 8781
     }
   ]
 }

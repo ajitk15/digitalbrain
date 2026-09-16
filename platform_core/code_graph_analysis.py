@@ -380,13 +380,17 @@ def relationships(files):
     ]
 
 
-#: What a file is within its own repository, decided by what points at it.
+#: What a file is within its own repository, decided by what points at it, with
+#: the short label the graph legend shows for each. `classify` below is the only
+#: thing that assigns these, and the legend renders from this list rather than
+#: spelling the five out again in the template. `static/code_graph.js` carries a
+#: longer wording of its own for card tooltips, where there is room to explain.
 ROLES = [
     ("entry", "Entry point"),
     ("service", "Module"),
     ("leaf", "Leaf"),
-    ("orphan", "No detected links"),
-    ("circular", "In a circular dependency"),
+    ("orphan", "No links"),
+    ("circular", "Circular"),
 ]
 
 

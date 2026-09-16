@@ -180,10 +180,15 @@ class StreamingRuntimeTests(SimpleTestCase):
             "type": "function",
             "function": {"name": "search_knowledge", "arguments": '{"query":"NODE1"}'},
         }
+        # `_call` is a coroutine function, so patch() replaces it with an
+        # AsyncMock and `return_value` is what the await produces. Handing it a
+        # coroutine instead made the tool return the coroutine *object* - the
+        # model saw "<coroutine object sleep>" as its evidence, and the suite
+        # reported an unawaited coroutine at exit.
         with patch(
             "platform_core.agent_runtime.openai_runtime._call",
-            return_value=asyncio.sleep(0, result="one matching passage"),
-        ):
+            return_value="one matching passage",
+        ) as call:
             turns, answer = self.run_runtime(
                 sse(chunk(tool=tool_chunk), chunk(finish="tool_calls"), chunk(usage=USAGE)),
                 sse(chunk(content="Three servers."), chunk(finish="stop"), chunk(usage=USAGE)),
@@ -191,6 +196,10 @@ class StreamingRuntimeTests(SimpleTestCase):
             )
         tools = [data["name"] for event, data in self.events if event == "tool"]
         self.assertEqual(tools, ["search_knowledge"])
+        # The tool's result reached the model: awaited exactly once, for the
+        # query the stream asked for.
+        call.assert_awaited_once()
+        self.assertEqual(call.await_args.args[2], {"query": "NODE1", "limit": 5})
         self.assertEqual(answer, "Three servers.")
         # One receipt per model turn: the tool turn and the answering turn.
         self.assertEqual(len(turns), 2)

@@ -1,6 +1,6 @@
 # Digital Brain
 
-Working Python/Django SaaS foundation using the selected Digital Brain logo, with a compact responsive interface. This repository previously contained architecture documents only. The implementation covers administration, private local document intake, automatic background MarkItDown conversion, searchable knowledge, optional OpenAI answers and cost receipts, GitHub issue import, and change-plan approvals. See [feature workflows and setup](docs/feature-workflows.md) for configuration and remaining production integrations.
+Working Python/Django SaaS foundation using the selected Digital Brain logo, with a compact responsive interface. This repository previously contained architecture documents only. The implementation covers administration, private local document intake, automatic background MarkItDown conversion, searchable knowledge, streaming cited answers from either OpenAI or Claude with cost receipts, GitHub/Jira/ServiceNow issue import, a GitHub repository index, and a gated pipeline from ticket to draft pull request. See [feature workflows and setup](docs/feature-workflows.md) for configuration and remaining production integrations.
 
 ## First run on a new machine
 
@@ -128,11 +128,13 @@ Mounted secret loading follows [Django's deployment checklist](https://docs.djan
 | Documents | Multi-file uploads (20 files / 20 MB total), private originals, automatic MarkItDown conversion, Markdown/graph-input export, scoped deletion; optional scanning |
 | Knowledge graph | Automatic structural graph generation, interactive exploration, evidence links, measured structural quality and numbered version history |
 | Knowledge & chat | Searchable immutable sources, verified citation excerpts, per-user conversations, streaming tool-using answers from either Agent SDK |
-| Code Factory | Immutable source-pinned plans, independent approval/rejection, approved-plan JSON export; code execution pending |
-| Connectors | Read-only GitHub issue import with deduplication and revision history |
+| Code Factory | Six-phase pipeline from ticket to draft pull request: graph-cited plans with pinned sources, independent approval by a different user, confirmed repository, a verification pass, then a draft PR on its own branch. Replaces files it first read; never creates, deletes or merges |
+| Code Graph | GitHub repositories indexed at one commit on their own worker lane: files, symbols and import relationships, with the remote host hardcoded and no URL accepted. Feeds Code Factory analysis and design |
+| Machine surfaces | Bearer-token REST graph search and an MCP server under /api/v1/, returning the same verified evidence as chat and calling no model |
+| Connectors | Read-only GitHub, Jira and ServiceNow imports, bounded to 100 records, deduplicated by digest with revision history |
 | Navigation | Organization tree at left; functional menus at top; current application highlighted |
 | Governance | Scoped, paginated audit events with actor, time, resource, request ID and structured change details |
-| Features | Six global/application feature switches; global disable overrides application enable; connector/provider setup remains explicit |
+| Features | Seven global/application feature switches; global disable overrides application enable; connector/provider setup remains explicit |
 | AI accounting | Exact decimal amounts, currency, provider/model, token counts, estimated/reported status, duplicate/conflicting receipt detection |
 | Operations | Liveness/readiness, safe structured logs, request IDs, limits, static compression, production security defaults, local lifecycle scripts |
 

@@ -1,4 +1,5 @@
 import hashlib
+from functools import lru_cache
 from pathlib import Path
 
 from django.conf import settings
@@ -66,15 +67,27 @@ def ready(request):
     return JsonResponse({"status": "ready"})
 
 
+@lru_cache(maxsize=1)
+def default_logo():
+    """The shipped logo and its digest, read once.
+
+    Every page asks for this, the response must revalidate, and an unbranded
+    deployment has no Branding row - so without the cache each request re-read a
+    third of a megabyte off disk and hashed it again. A missing file is answered
+    with an empty body rather than a 500: this endpoint is on the sign-in page, and
+    a deployment that lost one static file should still let people sign in.
+    """
+    try:
+        content = (Path(settings.BASE_DIR) / "static/brand/default-logo.png").read_bytes()
+    except OSError:
+        content = b""
+    return content, hashlib.sha256(content).hexdigest()
+
+
 @require_GET
 def logo(request):
     brand = Branding.objects.filter(pk=1).first()
-    content = (
-        bytes(brand.png)
-        if brand
-        else (Path(settings.BASE_DIR) / "static/brand/default-logo.png").read_bytes()
-    )
-    digest = brand.digest if brand else hashlib.sha256(content).hexdigest()
+    content, digest = (bytes(brand.png), brand.digest) if brand else default_logo()
     etag = f'"{digest}"'
     if request.headers.get("If-None-Match") == etag:
         response = HttpResponse(status=304)
@@ -634,5 +647,9 @@ def api_tokens(request, pk):
             # The origin callers will use, so the page can show - and copy - a
             # complete URL rather than a path the reader has to assemble.
             "base": f"{request.scheme}://{request.get_host()}",
+            # Shown either way: the address is worth knowing before it is
+            # switched on, and hiding it would make the page look like the
+            # endpoint does not exist.
+            "chat_api_enabled": feature_enabled("chat_api", app),
         },
     )

@@ -1,10 +1,16 @@
 import uuid
 from unittest.mock import patch
 
+from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.code_factory import code_context_for, run_triage
+from platform_core.code_factory import (
+    code_context_for,
+    confirm_repository,
+    run_design,
+    run_triage,
+)
 from platform_core.code_graph_analysis import facts, relationships
 from platform_core.code_graph_ingest import index_repository, register, showcase_repository
 from platform_core.models import (
@@ -160,6 +166,124 @@ class CodeGraphTests(TestCase):
         run.refresh_from_db()
         self.assertIsNone(run.code_snapshot_id)
         self.assertEqual(run.proposed_repository, "acme/widgets")
+
+    def _registered(self, name, number=1):
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id=name,
+            name=name, source_url=f"https://github.com/{name}", status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(
+            repository=repository, number=number, ref="main", commit_sha=str(number) * 40,
+            manifest_digest="m" * 64,
+        )
+        CodeFile.objects.create(
+            snapshot=snapshot, path="billing/service.py", language="python", digest="d" * 64,
+            content="def charge():\n    pass", lines=2,
+        )
+        return repository, snapshot
+
+    @patch("platform_core.code_factory.ask")
+    def test_a_ticket_naming_nothing_uses_the_only_registered_repository(self, ask):
+        """Most tickets name no repository, and the run used to see no code at all."""
+        _, snapshot = self._registered("acme/widgets")
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        ask.return_value = '{"kind":"fix","summary":"x","requirements":[],"repository":""}'
+        run_triage(run, "Billing charges twice")
+        run.refresh_from_db()
+        self.assertEqual(run.code_snapshot, snapshot)
+        self.assertEqual(run.proposed_repository, "acme/widgets")
+        # The registry is a guess like ticket text is; it passes the same gate.
+        self.assertFalse(run.repository_confirmed)
+
+    @patch("platform_core.code_factory.ask")
+    def test_several_registered_repositories_leave_the_choice_to_the_gate(self, ask):
+        self._registered("acme/widgets")
+        self._registered("acme/billing", number=2)
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        ask.return_value = '{"kind":"fix","summary":"x","requirements":[],"repository":""}'
+        run_triage(run, "Billing charges twice")
+        run.refresh_from_db()
+        self.assertIsNone(run.code_snapshot_id)
+        self.assertEqual(run.proposed_repository, "")
+
+    @patch("platform_core.code_factory.ask")
+    def test_the_fallback_does_not_apply_when_the_feature_is_off(self, ask):
+        self._registered("acme/widgets")
+        ApplicationFeature.objects.update_or_create(
+            application=self.app, key="code_graph", defaults={"enabled": False}
+        )
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        ask.return_value = '{"kind":"fix","summary":"x","requirements":[],"repository":""}'
+        run_triage(run, "Billing charges twice")
+        run.refresh_from_db()
+        self.assertIsNone(run.code_snapshot_id)
+        self.assertEqual(run.proposed_repository, "")
+
+    @patch("platform_core.code_factory.ask")
+    def test_the_design_phase_is_told_which_files_exist(self, ask):
+        """Design names the paths implementation reads, so it must see them."""
+        run = self._pinned_run()
+        ask.return_value = '{"items": []}'
+        run_design(
+            run,
+            {"summary": "Billing", "requirements": []},
+            [{"title": "Charged twice", "explanation": "the billing service charge path"}],
+        )
+        question = ask.call_args.args[4]
+        self.assertIn("Pinned code structure:", question)
+        self.assertIn("billing/service.py", question)
+
+    @patch("platform_core.code_factory.ask")
+    def test_an_unpinned_run_designs_without_a_code_block(self, ask):
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        ask.return_value = '{"items": []}'
+        run_design(run, {"summary": "x", "requirements": []}, [{"title": "t", "explanation": "e"}])
+        self.assertNotIn("Pinned code structure:", ask.call_args.args[4])
+
+    def test_confirming_a_different_repository_repins_the_snapshot(self):
+        """Delivering to one repository while reasoning about another is a lie."""
+        _, first = self._registered("acme/widgets")
+        _, second = self._registered("acme/billing", number=2)
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        FactoryRun.objects.filter(pk=run.pk).update(
+            proposed_repository="acme/widgets", code_snapshot=first
+        )
+        run.refresh_from_db()
+        confirm_repository(run, "acme/billing", "release")
+        run.refresh_from_db()
+        self.assertEqual(run.code_snapshot, second)
+        self.assertEqual(run.base_branch, "release")
+        self.assertTrue(run.repository_confirmed)
+
+    def test_confirming_an_unregistered_repository_clears_a_stale_snapshot(self):
+        _, first = self._registered("acme/widgets")
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        FactoryRun.objects.filter(pk=run.pk).update(code_snapshot=first)
+        run.refresh_from_db()
+        confirm_repository(run, "https://github.com/acme/unknown.git", "")
+        run.refresh_from_db()
+        self.assertIsNone(run.code_snapshot_id)
+        self.assertEqual(run.proposed_repository, "acme/unknown")
+        self.assertEqual(run.base_branch, "main")
+
+    def test_an_unusable_repository_is_refused_rather_than_confirmed(self):
+        """The name is interpolated into a GitHub API path, so it is checked here."""
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        for value in ["", "   ", "widgets", "acme/widgets/extra", "../etc", "a/../b"]:
+            with self.subTest(repository=value):
+                with self.assertRaises(ValidationError):
+                    confirm_repository(run, value, "main")
+        run.refresh_from_db()
+        self.assertFalse(run.repository_confirmed)
+
+    def test_a_branch_that_could_escape_the_ref_path_is_refused(self):
+        run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
+        for value in ["../../pulls", "a b", "-x", "a/../b"]:
+            with self.subTest(branch=value):
+                with self.assertRaises(ValidationError):
+                    confirm_repository(run, "acme/widgets", value)
+        run.refresh_from_db()
+        self.assertFalse(run.repository_confirmed)
 
     def test_unreadable_repository_id_falls_back_instead_of_claiming_emptiness(self):
         repository = CodeRepository.objects.create(

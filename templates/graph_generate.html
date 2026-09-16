@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% load icons %}{% block title %}Generate graph · {{ application.name }}{% endblock %}{% block content %}
+<h1>{% if has_versions %}Regenerate graph{% else %}Generate graph{% endif %}</h1>
+<p class="muted">Graph extraction is harder than chat: a strong reasoning model finds far more usable relationships. Choosing a model here applies to this run only and does not change your saved settings.</p>
+<form method="post" action="{% url 'graph-generate' application.pk %}" class="form-card">{% csrf_token %}
+<input type="hidden" name="action" value="generate">
+<p><label for="graph-model">Model</label>
+<select name="model_choice" id="graph-model">
+<option value="structural">Structural only · no AI, no charge</option>
+{% for group, options in model_choices %}{% if group != 'Custom' %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+</select>
+<span class="helptext">{% if not graph_ai_configured %}Enable Graph generation in <a href="{% url 'ai-settings' application.pk %}">AI settings</a> before choosing a model.{% else %}Provider charges may apply when a model is chosen.{% endif %}</span></p>
+<p class="notice" role="note">{% icon "history" %}<span>The new version is saved as a <strong>draft</strong>. Publish it under <strong>Versions</strong> before Chat and Code Factory answer from it.</span></p>
+<div class="actions"><button class="button" type="submit">{% icon "graph" %}{% if has_versions %}Regenerate{% else %}Generate{% endif %}</button></div>
+</form>{% endblock %}

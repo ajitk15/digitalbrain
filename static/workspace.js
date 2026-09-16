@@ -49,7 +49,18 @@
     const disclosureLink = event.target.closest("a[href='#upload'], a[href='#add-source']");
     if (disclosureLink) {
       const upload = document.getElementById(disclosureLink.hash.slice(1));
-      if (upload) upload.open = true;
+      if (upload) {
+        // Expand in place. The href is the path for a browser without
+        // JavaScript, where navigating to the anchor is the only way to reach
+        // the panel; with script the jump and the #upload left in the address
+        // bar are noise, because the panel is already on screen. Focus moves
+        // to the summary instead, which also scrolls it into view - minimally,
+        // and only when it was actually out of view.
+        event.preventDefault();
+        upload.open = true;
+        const summary = upload.querySelector("summary");
+        if (summary) summary.focus();
+      }
     }
     document.querySelectorAll(".nav-disclosure[open]").forEach((menu) => {
       if (!menu.contains(event.target)) menu.open = false;

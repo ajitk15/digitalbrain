@@ -168,8 +168,12 @@ class GraphTests(TestCase):
         self.assertEqual(json.loads(response.content)["version_number"], 1)
         self.assertEqual(json.loads(response.content)["graph"], first.data)
         response = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
-        self.assertContains(response, ">v1</strong>")
-        self.assertContains(response, ">v2</strong>")
+        # Both rows are listed, and the newest carries the draft state on the
+        # same chip as its number rather than in a pill beside it.
+        self.assertContains(response, '<span class="version-chip">v1</span>')
+        self.assertContains(
+            response, '<span class="version-chip is-draft">v2<span class="state">Draft</span>'
+        )
 
     def test_historical_graph_cannot_restore_deleted_source_content(self):
         entry = self.source()
@@ -239,6 +243,47 @@ class GraphRunTests(TestCase):
 
     def graph(self):
         return KnowledgeGraph.objects.get(application=self.app)
+
+    def test_the_generate_popup_is_a_page_that_stands_on_its_own(self):
+        """modal.js lifts <main> out of a real page, so this must be one.
+
+        With JavaScript off the button is an ordinary link to an ordinary form;
+        there is no fragment mode, and the POST is the same `queue_generation`
+        the plain page used, so the two paths cannot diverge.
+        """
+        page = reverse("graph-generate", args=[self.app.pk])
+        response = self.client.get(page)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "<main")
+        self.assertContains(response, f'action="{page}"')
+        self.assertContains(response, 'name="model_choice"')
+
+        posted = self.client.post(page, {"action": "generate", "model_choice": "structural"})
+        # A redirect is the contract for "accepted"; modal.js follows it.
+        self.assertEqual(posted.status_code, 302)
+        self.assertEqual(posted.headers["Location"], reverse("graph", args=[self.app.pk]))
+        self.assertEqual(self.graph().status, "queued")
+        # Structural asks for no model, so nothing can be billed for it.
+        self.assertEqual(self.graph().requested_model, "")
+
+    def test_a_viewer_cannot_reach_the_generate_page(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        for method in (self.client.get, self.client.post):
+            with self.subTest(method=method.__name__):
+                response = method(reverse("graph-generate", args=[self.app.pk]))
+                self.assertEqual(response.status_code, 403)
+
+    def test_the_graph_tab_names_what_answers_and_what_is_newest(self):
+        from platform_core.models import GraphRevision
+
+        rebuild(self.app.pk)
+        revision = GraphRevision.objects.filter(application=self.app).first()
+        revision.published_at = timezone.now()
+        revision.published_by = self.owner
+        revision.save(update_fields=["published_at", "published_by"])
+        body = self.client.get(self.url).content.decode()
+        self.assertIn(f"Published <strong>v{revision.number}</strong>", body)
+        self.assertIn(f"Latest <strong>v{revision.number}</strong>", body)
 
     def test_a_second_generation_is_refused_while_one_is_running(self):
         self.generate()
@@ -312,9 +357,9 @@ class GraphRunTests(TestCase):
         self.assertContains(response, "run-banner")
         self.assertContains(response, "claude-sonnet-5")
         # ...and the published graph is still rendered beneath it, not replaced.
-        self.assertContains(response, "Generated graph")
-        self.assertContains(response, "Latest available version")
-        self.assertNotContains(response, "Return to current")
+        self.assertContains(response, 'id="graph-canvas"')
+        self.assertContains(response, "latest available version")
+        self.assertNotContains(response, "return to current")
 
     def test_a_failed_run_still_shows_the_previous_version_and_offers_retry(self):
         from platform_core.models import GraphRevision
@@ -329,7 +374,7 @@ class GraphRunTests(TestCase):
         self.assertContains(response, "The last graph generation failed")
         self.assertContains(response, "nothing was lost")
         self.assertContains(response, 'value="retry"')
-        self.assertContains(response, "Generated graph")
+        self.assertContains(response, 'id="graph-canvas"')
 
     def test_a_failure_says_what_to_do_about_it(self):
         """"It failed" is not actionable; the reason is recorded and shown."""

@@ -186,8 +186,13 @@ works with no secret file at all.
 Its limits are deliberate. Configuration **refuses** the setting when `mode = "production"`
 rather than ignoring it, so a production deployment cannot believe it is using per-application
 credentials while actually sharing one identity. A mounted credential always wins over it. With
-the setting off, a missing secret stays an error. And the chat page says plainly when answers are
-being billed to the machine's own login rather than to the application.
+the setting off, a missing secret stays an error. **AI settings** says plainly when answers are
+being billed to the machine's own login rather than to the application, and shows a
+*Development login* badge on the Credentials card.
+
+Chat does not say it. That page is read by everyone with chat access; AI settings is owner-only,
+so the one person who sees the notice is the one who configured it. This is the trade the
+paragraph below makes explicit.
 
 This is a convenience for one developer on one machine. A deployment serving other people should
 mount per-application credentials, which is what the per-application pricing and usage receipts
@@ -245,7 +250,7 @@ answer also records the mode that actually produced it, so the transcript stays 
 the conversation's mode is changed. Missing setup or keys produce a visible setup message and
 preserve the draft, never a silent source-search fallback.
 
-**Search source excerpts** is bounded local lexical search with no LLM. **AI conversation** uses
+**Sources** is bounded local lexical search with no LLM. **AI** uses
 the chat task model, seeded with up to five matching passages, and may call the knowledge tools
 described below. **Graph answer** uses the graph retrieval task model: lexical matching of saved
 graph endpoints/relations plus one-hop neighbours, with up to eight verified source citations. It
@@ -315,8 +320,8 @@ A published snapshot is pinned, so archiving a cited source no longer makes grap
 each affected relationship simply fails verification and the answer has nothing to cite.
 
 When a run is requested, enrichment happens under the configuring owner's current application
-access. The chosen provider/model extracts at most 25 relationships
-from at most 10 sources / 12,000 characters each. An exact source quote and both named entities
+access. The chosen provider/model extracts at most 60 relationships
+from at most 25 sources / 24,000 characters each. An exact source quote and both named entities
 must be present in the supplied text before a relationship is accepted. Unsupported results are
 excluded. Entity identity is source-local; matching labels do not silently merge distinct entities.
 Semantic meaning is not independently verified and quality explicitly requests human review.
@@ -374,9 +379,17 @@ plan pins the current source IDs and SHA-256 hashes. A different user with expli
 permission must approve or reject it and provide a review note. Approval fails if pinned sources
 were archived or changed. Decisions are atomic and cannot be applied twice.
 
-Approved plans can be exported as JSON for implementation handoff. The current scope covers
-planning, review and export. Isolated repository execution, generated diffs, automated tests,
-PR creation and merge-policy enforcement are not implemented. Approval never executes code.
+Approved plans can be exported as JSON for implementation handoff. Approving a plan still
+executes nothing: writing to a repository is a second decision, gated on `repository_confirmed`
+and on a `github_write_APPLICATION_UUID` credential that is a different file from the read-only
+connector token.
+
+Once both gates are passed, delivery runs implementation, then a verification pass, then opens a
+**draft** pull request on a `digital-brain/` branch. What it will not do: create or delete a
+file - only a file it first read at the base branch may be replaced, and a path that did not come
+back from a read is refused rather than sanitised (20 files, 400 KB each); run a build or a test
+suite, because this platform holds knowledge about the application, not a checkout of it; or
+merge anything. Merge-policy enforcement stays where it already is.
 
 When **Code Factory drafting** is configured, owners and contributors can describe a requirement
 and have a draft written into the proposal form. The draft is exactly that: it pre-fills the form
@@ -385,7 +398,109 @@ against live sources the same way graph relationships are, and unverifiable ones
 counted. Source pinning, independent approval by a different user, and the rule that approval
 never runs code are all unchanged.
 
-## GitHub connector
+## Chat API
+
+`POST /api/v1/applications/<id>/chat/` answers a question with the application's own model, so a
+team can build their own chat client - a plain HTML page, a React app - against the same evidence
+the built-in Chat uses. It is the **only** API surface that calls a model.
+
+The address, an example request and the current on/off state are on **Settings > API access**,
+beside the REST and MCP endpoints. The code is `platform_core/utility/api_chat.py`: that package
+holds surfaces built *on* the platform, and nothing in `platform_core` imports from it.
+
+**It is off until an owner turns it on.** Settings > Features > *Chat API*. Every application
+that existed before this shipped has an explicit disabled row, and a new one starts unticked, so
+no provider budget starts being spent because a release went out. Authorization is the same
+bearer token as the retrieval endpoints, subject to the same 120 requests per minute.
+
+Ask a question:
+
+```json
+POST /api/v1/applications/<id>/chat/
+Authorization: Bearer <token>
+
+{ "question": "How does Alpha reach Beta?", "mode": "ai" }
+```
+
+The reply carries the answer, the conversation to continue, and the citations that survived
+verification:
+
+```json
+{
+  "conversation_id": "…",
+  "message_id": "…",
+  "answer": "…",
+  "mode": "ai",
+  "citations": [{ "source_id": "…", "source_title": "…", "evidence": "…" }]
+}
+```
+
+Send `conversation_id` back to ask a follow-up. History, the eight-turn context window and Chat
+history retention all apply exactly as they do in the browser, and the thread keeps the mode it
+started in - a later request cannot move it onto a paid mode.
+
+`mode` is `ai` (default), `search` for lexical excerpts with no model call, or `graph` to answer
+from the published graph. A conversation belongs to the user who issued the token; another
+user's conversation reads as **not found**, never as forbidden.
+
+### Streaming
+
+Streaming applies to `ai` and `graph` only. `search` calls no model and so has nothing to
+stream; asking for it there simply returns the answer synchronously, exactly as the browser
+does.
+
+Send `"stream": true` and the POST returns `202` with a `stream_url` instead of an answer:
+
+```json
+{ "conversation_id": "…", "message_id": "…", "stream_url": "/api/v1/applications/<id>/chat/<message_id>/stream/", "mode": "ai" }
+```
+
+`GET` that address with the same bearer token for `text/event-stream`. It uses the browser's own
+streaming worker, so the single-worker-process constraint in
+[`deployment.md`](deployment.md) applies to it too.
+
+### What it does not do
+
+No model or credential is chosen by the caller - the application's AI settings decide both, and
+usage is recorded against the application as `AIUsage` like any other call. There is no token
+role and no second permission model: revoke the user's grant and the endpoint closes. The source
+digest is never returned, as on the retrieval endpoints.
+
+## Code Graph
+
+Owners and contributors register a GitHub repository as `owner/name`. A background worker lane,
+separate from the knowledge-graph lane and sharing nothing with its fingerprint, clones the
+repository at the resolved commit, indexes files, symbols, routes and import relationships, and
+deletes the checkout. Bounds: 500 files, 400 KB per file, 20 MiB in total, a five-minute clone
+timeout. Snapshots are numbered per repository; an unchanged commit produces no new snapshot.
+
+The clone reads content and never runs it. Hooks are redirected to an empty directory,
+submodules are not followed, and `HOME` / `USERPROFILE` / git config point at a scratch
+directory, so a run cannot reach the operator's own git credentials. A mounted
+`github_APPLICATION_UUID` token is written into that scratch config rather than passed in argv,
+where the process list would expose it.
+
+**No input chooses the host.** The remote is built against a hardcoded `github.com` from a name
+validated as two path-safe segments. This is the one place the platform retrieves a remote
+resource outside `fetching.py`, and it is allowed to be because it takes no URL. Repositories on
+other hosts cannot be read at all.
+
+Code Graph feeds **Code Factory**: a run pins one snapshot, and the analysis and design phases
+are given a bounded neighbourhood of it - matching files with their symbols, plus import
+relationships. The snapshot is chosen from a repository the ticket names, or from the
+application's registry when it holds exactly one, and is confirmed by the same person at the same
+approval gate. Access and the feature switch are re-checked on every use: withdrawing either
+removes the code context rather than failing the run. Code Graph never joins the knowledge graph,
+and **chat cannot read it**.
+
+## Connectors
+
+Three kinds ship: **GitHub** issues, **Jira** issues and **ServiceNow** table records. All three
+are owner-configured, manual, read-only and bounded to the 100 most recently updated records.
+Credentials are mounted per application and per kind as `KIND_APPLICATION_UUID`; nothing is
+scheduled and nothing is written back to the tracker.
+
+### GitHub
 
 Application owners configure an owner/repository pair and an enable switch. Mount a read-only
 token as `github_APPLICATION_UUID` in the secret directory. **Import latest issues** reads the
@@ -395,9 +510,28 @@ archive the old source and create a new immutable revision.
 
 Requests use only api.github.com, reject redirects, have a 15-second timeout and a 4 MiB response
 limit. This is a bounded manual import, not a full historical synchronization or deletion mirror.
-Jira, ServiceNow, GitHub Enterprise and local Git adapters remain pending.
 
 Reference: [GitHub repository issues API](https://docs.github.com/en/rest/issues/issues).
+
+### Jira
+
+An owner configures the site URL and a JQL query. Jira Cloud authenticates with the account email
+plus a mounted API token; Data Center takes the token as a bearer. Issue descriptions arrive as
+Atlassian Document Format and are flattened to text. The title and body become one immutable
+source per issue, deduplicated by digest like any other import.
+
+### ServiceNow
+
+An owner configures the instance, the table to read, and which fields carry the title and the
+body - so incidents, problems, changes and knowledge articles all import through one adapter.
+OAuth client credentials are used when configured, basic authentication otherwise.
+
+Structure is deliberately not preserved: severity, state and timestamps arrive as prose inside
+the body rather than as columns, so the platform can retrieve "incidents mentioning this service"
+but cannot aggregate over them. See the gap list in
+[`sdlc-scenarios.md`](sdlc-scenarios.md#gaps-and-how-to-fill-them).
+
+GitHub Enterprise and local Git adapters remain pending.
 
 ## Verification limits
 

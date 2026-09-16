@@ -310,7 +310,12 @@ class FeatureSelectionTests(TestCase):
         An unticked checkbox is simply absent from the POST, so "all off" and
         "never mentioned" are the same bytes. Without the marker the defaults
         must win, or an application would silently arrive with nothing enabled.
+
+        The defaults are "everything except the opt-in features", so those are
+        the only rows a silent caller produces.
         """
+        from platform_core.services import OPT_IN_FEATURES
+
         response = self.client.post(
             reverse("application-create", args=[self.org.pk]),
             {
@@ -322,7 +327,11 @@ class FeatureSelectionTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         app = Application.objects.get(name="Untouched")
-        self.assertFalse(ApplicationFeature.objects.filter(application=app).exists())
+        written = dict(
+            ApplicationFeature.objects.filter(application=app).values_list("key", "enabled")
+        )
+        self.assertEqual(set(written), OPT_IN_FEATURES)
+        self.assertFalse(any(written.values()))
 
     def test_declaring_features_with_none_ticked_disables_them_all(self):
         """The other half of the marker: an explicit "all off" is honoured."""

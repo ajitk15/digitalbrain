@@ -162,7 +162,7 @@ has not actually changed.
 | --- | --- | --- | --- |
 | A Jira issue or ServiceNow incident was closed | Settings → **Connectors** | Press **Import** on that connector (owner only) | The record's text has changed, so the old source is archived and a new immutable one is written |
 | Someone wrote a postmortem, RFC or runbook | Knowledge → **Sources** | Upload the file, or **Import from a link** | Quarantine, scan, offline conversion, then a new source |
-| A pull request merged | **Code Graph** | Refresh the repository | A new commit means a new `CodeSnapshot`; the same commit costs nothing and reuses the existing one |
+| A pull request merged | **Code Graph** | Refresh the repository | A new commit means a new `CodeSnapshot`; an unchanged commit still clones and parses, but reuses the snapshot it already has rather than writing another |
 
 The two right-hand columns are the part people get wrong. A **source** change moves the
 fingerprint, so the graph rebuilds itself and a new draft revision appears — but somebody
@@ -227,9 +227,9 @@ platform created, reviewed by a human twice on the way.
 | **1** Ground | Imports the latest issues from a connector | Deduplicates, creates an immutable source per issue, archives the previous revision when text changed | `KnowledgeEntry`, audit event |
 | **2** Ground | Adds `owner/repository` to Code Graph | Clones at the current commit, indexes files and roles, deletes the checkout | `CodeRepository`, `CodeSnapshot`, `CodeFile` |
 | **3** Triage | Starts a run against one ticket | Asks what the ticket is actually requesting | `RunPhase("triage")` + `AIUsage` |
-| **4** Analysis | — | Finds functional and non-functional gaps against the rubric: security and privacy, availability and operability, performance and resource limits, auditability and correctness | `RunPhase("analysis")`, `PlanItem` rows |
-| **5** Design | — | For each gap, says what changes and in which file | `RunPhase("design")`, `ChangePlan` |
-| **6** **Approval gate** | **A different user with approve permission reads the plan, confirms the repository and base branch, and approves or rejects with a note** | **Nothing. The run stops at `awaiting_review`** | `ChangePlan.status`, review note |
+| **4** Analysis | — | Finds functional and non-functional gaps against the rubric: security and privacy, availability and operability, performance and resource limits, auditability and correctness | `RunPhase("analysis")` |
+| **5** Design | — | For each gap, says what changes and in which file, reading the pinned code snapshot | `RunPhase("design")`, then `ChangePlan` and its `PlanItem` rows in one transaction |
+| **6** **Approval gate** | **A different user with approve permission reads the plan and approves or rejects it with a note, then confirms the repository and base branch** | **Nothing. The run stops at `awaiting_review`** | `ChangePlan.status`, review note, `repository_confirmed` |
 | **7** Implementation | — | Returns whole file contents for the files the design named | `RunPhase("implementation")` |
 | **8** **Verification gate** | — | Checks what is about to be written, *before* writing it | `RunPhase("verification")` |
 | **9** Delivery | — | Creates a `digital-brain/…` branch, commits, opens a **draft** pull request | `FactoryRun.pull_request_url`, status `delivered` |
@@ -287,10 +287,15 @@ The platform produces evidence and hands it to a responder. It has no action to 
 because it was never given one: there is no runbook executor, no ticket transition, no
 remediation API.
 
-That is also true of the machine surfaces. `/api/v1/applications/<id>/graph/search/` and
-the MCP server at `/api/v1/applications/<id>/mcp/` return the same verified evidence chat
-returns, and **neither calls a model**, so no caller can spend the application's provider
-budget through them. A token acts as the person who issued it, inside one application:
+That is also true of the two retrieval surfaces. `/api/v1/applications/<id>/graph/search/`
+and the MCP server at `/api/v1/applications/<id>/mcp/` return the same verified evidence
+chat returns, and **neither calls a model**, so no caller can spend the application's
+provider budget through them.
+
+`/api/v1/applications/<id>/chat/` is the exception and is meant to be: it answers with the
+application's own model so a team can build their own chat client against it. That is why
+it is the only API surface behind an opt-in switch - **off for every application until an
+owner turns it on** under Settings > Features. A token acts as the person who issued it, inside one application:
 revoke that person's grant and the token closes with no extra code.
 
 Two operational consequences worth stating to whoever runs this:
@@ -390,7 +395,9 @@ Repository indexing is its own worker lane with its own trigger, and it shares n
 with the knowledge-graph fingerprint. Registering or refreshing a repository queues it;
 the worker clones at the resolved commit, indexes files, symbols and import relationships,
 and deletes the checkout. If the commit has not moved since the last run, the existing
-`CodeSnapshot` is reused rather than re-analysed.
+`CodeSnapshot` is reused rather than duplicated — but the clone and the parse still happen,
+because the manifest digest that decides reuse is computed *from* the parse. A refresh is cheap
+in rows, not in work.
 
 This separation is correct and should stay. Code changes on every merge and documents
 change rarely; folding code into `fingerprint()` would invalidate the knowledge graph at
@@ -412,11 +419,12 @@ actually do is small, and it is worth writing into a runbook:
 ### What is not automatic, and you should know it
 
 - Nothing re-imports on a schedule. See **Imports are manual** below.
-- **Nothing tells you the published revision has fallen behind.** The function that
-  answers this already exists and is only consulted at publish time, never for the
-  revision that is currently answering. See **Published drift is invisible** below.
-- A source has no owner, no review date and no age displayed anywhere. The platform is
-  excellent at proving what a document said and silent about whether it is still true.
+- **Nothing re-imports, and nothing publishes, on your behalf.** Drift on the published
+  revision is now shown — see **Published drift** below — but acting on it is still a person's
+  job.
+- A source shows when it was added, and nothing else about its currency: no owner of record,
+  no review date, no staleness signal. The platform is excellent at proving what a document
+  said and silent about whether it is still true.
 
 ## Target state: closing the loop automatically
 
@@ -470,10 +478,10 @@ from without a person doing it. That is worth more than the click it costs. Auto
 on a quality heuristic would mean a bad import could silently become the thing every answer
 cites.
 
-*What we do instead:* surface the drift. Show "answering from v7; 3 of its 22 sources have
-changed since" using `revision_readable`, which already exists and is already computed at
-publish time. That turns *somebody must remember* into *somebody must click once*, without
-giving up the property.
+*What we do instead:* surface the drift — **done**. "Answering from v7; 3 of its 22 sources
+have changed since" is now on the Versions tab and the chat header, via `revision_drift`.
+That turns *somebody must remember* into *somebody must click once*, without giving up the
+property.
 
 ### What this adds
 
@@ -481,7 +489,7 @@ giving up the property.
 | --- | --- | --- |
 | Run self-record | One write at the end of `deliver()`, superseding by pull request URL | `code_factory` only |
 | Merge-state polling | Read the pull request through the existing fetcher and credential, and fold the result into that same record | `github_write`, three `FactoryRun` fields, one worker step |
-| Drift signal | Call `revision_readable` for the published revision and display it | Templates and one view |
+| ~~Drift signal~~ | Done: `revision_drift` for the published revision, shown on the Versions tab and the chat header | Templates and two views |
 
 No new fetcher, no new credential, no new permission model, no new connector kind, and no
 new model beyond three nullable columns.
@@ -506,38 +514,46 @@ Before implementation starts, these three should be explicitly agreed:
 
 ## Gaps, and how to fill them
 
-Honest list. Each is something a real bug-fix or incident workflow runs into, with the
-change that would close it and the invariant that must survive the change.
+Honest list, checked against the code rather than remembered. Each is something a real
+bug-fix or incident workflow runs into, with the change that would close it and the
+invariant that must survive the change. Closed items are kept, struck through, so the
+register stays a record rather than a wish list.
 
-### Code Factory almost never sees the code
+### ~~Code Factory almost never sees the code~~ — closed
 
-The sharpest one, because the feature is built and correct and simply not reached. A run
-gets code context only if triage extracts an `owner/name` **from the ticket text** and that
-exact repository is already registered and indexed for the application. Most bug tickets
-name no repository, so `code_snapshot` stays null, `code_context_for` returns an empty
-string on its first line, and analysis and design — the phases that decide which files
-change — run knowing nothing about the codebase.
+A run used to get code context only if triage extracted an `owner/name` **from ticket
+text** and that exact repository was already registered. Most bug tickets name no
+repository, so `code_snapshot` stayed null and `code_context_for` returned an empty string
+on its first line.
 
-**Fill it:** when the application has exactly one registered repository, use it. When it
-has several and the ticket names none, ask at the approval gate, which is already the
-human checkpoint where `repository_confirmed` is set. This moves a decision the platform
-currently guesses badly into a gate that already exists, and needs no new invariant.
+**Closed by** `code_factory.pin_repository`: when the ticket names nothing and the
+application has exactly one indexed repository, that one is used. Several registered
+repositories and no name still leaves the run unpinned, because that ambiguity belongs to
+the person at the gate — who can now also correct the repository, which re-pins the
+snapshot instead of leaving the run delivering to one repository while reasoning about
+another. The fallback reads the application's own registry, never ticket text, and passes
+the same `repository_confirmed` gate, so nothing was widened.
 
-### Published drift is invisible
+`run_design` now receives the same bounded code context `run_analysis` does. It is the
+phase that names the file paths implementation later reads, and it was the one phase that
+could not see which files exist.
 
-`revision_readable()` compares a revision's stored source digests against the current ones.
-It is consulted only when publishing, never for the revision that is actually answering. So
-a published graph can drift arbitrarily far from its sources and nobody is told.
+### ~~Published drift is invisible~~ — closed
 
-To be clear: *not blocking* on live drift is deliberate and right — reproducibility is the
-whole point of answering from a published snapshot. But not blocking and not telling anyone
-are different decisions, and only the first was made on purpose.
+`revision_readable()` was consulted only when publishing and when an older version was
+opened by hand — never for the revision that was actually answering. A published graph
+could drift arbitrarily far from its sources and nobody was told.
 
-**Fill it:** call the function that already exists on the graph page and in the chat
-header — "answering from v7; 3 of its 22 sources have changed since". Display only, no
-behaviour change, no new invariant. Pair it with a last-imported timestamp on each
-connector and an age on each source, so a responder can see how old the ground truth is
-before they act on it.
+**Closed by** `graphs.revision_drift`, which returns `(changed, recorded)` and which
+`revision_readable` is now defined in terms of, so the publish gate and the signal cannot
+disagree. The Versions tab and the chat header both read "N of its M source(s) have changed
+since". Display only: answers still come from the published snapshot, because
+reproducibility is the point.
+
+*Known limit:* it counts the sources a revision **recorded**, so it cannot see sources
+added afterwards — the same blind spot `publish_revision` has. Still open alongside it:
+an age or staleness signal on each source, which would let a responder judge how old the
+ground truth is before acting on it.
 
 ### Delivery cannot create a file
 
@@ -623,9 +639,13 @@ The stream registry in `agent_runtime/streaming.py` is process-local. Correct fo
 single managed worker process; a second process means a user's Stop silently fails to
 cancel a running provider call they are still being billed for.
 
+The same is true of the per-token API rate limit in `api_auth.py`, which is process-local
+for the same reason and therefore multiplies by the number of processes.
+
 **Fill it:** a shared cancellation channel — a guarded database row is enough, given the
-single-writer rule already in place — *before* scaling out, not after. Until then, treat
-"one worker process" as a deployment constraint and say so in `docs/deployment.md`.
+single-writer rule already in place — *before* scaling out, not after. Until then it is a
+deployment constraint, and `docs/deployment.md` now says so at the step that starts the
+server.
 
 ### No test makes a real provider call
 
@@ -638,14 +658,60 @@ at all.
 asserting specifically that the CLI cannot see `~/.claude`. The invariant is
 load-bearing for per-application billing; it deserves one real execution per release.
 
-### The feature docs have drifted
+### ~~The feature docs have drifted~~ — closed
 
-[`feature-workflows.md`](feature-workflows.md) still says PR creation is not implemented
-and that Jira and ServiceNow adapters remain pending. Both shipped: `connector_kinds.KINDS`
-has `jira` and `servicenow`, and `code_factory.run_delivery` opens draft pull requests.
+[`feature-workflows.md`](feature-workflows.md) said PR creation was not implemented and
+that Jira and ServiceNow adapters were pending; both had shipped. It also carried three
+wrong extraction limits and no Code Graph section at all. `README.md` counted six feature
+switches when there are seven, `verification.json` reported 120 tests when the suite runs
+621 and claimed chat tools were disabled, and `deployment.md` never recorded the
+single-process constraint.
 
-**Fill it:** correct those two sections. Worth doing before this document is shown to
-anyone, because they contradict each other.
+**Closed by** correcting all four, and by checking this document against the code too —
+three of its own claims were wrong: an unchanged commit does not cost nothing, analysis
+does not write `PlanItem` rows, and a source's added-at date *is* displayed.
+
+### Found while checking, and still open
+
+Smaller than the entries above, but each is a real divergence between what the code does
+and what this document or the diagrams say.
+
+- **A Code Factory run with no published revision proceeds ungrounded, and says nothing.**
+  `evidence_for` swallows the `ValidationError` and returns `[]`, so the run produces a
+  plan with no citations at all. Chat and `/graph/search/` treat the same condition as an
+  error (409). "No published revision is an error, not a silent fallback" holds everywhere
+  except here. **Fill it:** fail the run with that reason on the phase row.
+- **Chat drops unverifiable citations without counting them.** The citation gate is real,
+  but `CitationRecorder.verified_citations()` returns only survivors. Code Factory records
+  `citations_verified` / `citations_rejected` on each `RunPhase`, and graph enrichment
+  reports rejected relationships; chat reports nothing. **Fill it:** carry the rejected
+  count onto `ChatMessage` the way `RunPhase` already does.
+- **`PlanItem.status` is never written.** There is no per-item accept or reject anywhere,
+  so the three `items.exclude(status="rejected")` filters in `code_factory` are no-ops and
+  `accepted` / `rejected` are dead choices. Either build the per-item decision the model
+  implies, or drop the field.
+- **Two other dead status values.** `FactoryRun.status = "complete"` and
+  `RunPhase.status = "skipped"` are never set. `delivered` is terminal.
+- **Phase ordering is control flow, not a guard.** `start_phase` never inspects the
+  previous phase's status; the order holds only because `execute()` and `deliver()` call
+  the phases in sequence. This document calls `RunPhase` rows "the state machine", which
+  overstates it. `deliver()` likewise never checks that the run is at `awaiting_review`.
+- **Publish cannot see added sources.** `revision_drift` — and therefore
+  `revision_readable` — iterates only the sources a revision recorded, so a revision
+  publishes even when newer sources exist.
+- **Retry leaves the old failure reason on the row.** The Generate path clears
+  `failure_reason`; the Retry path does not.
+- **A conversation pins no graph version unless graph retrieval is configured.**
+  `new_graph_version` returns `None` immediately when it is not, so a conversation in
+  Sources or AI mode freezes on nothing.
+- **Diagram 04 shows chat reading the code snapshot.** The `Code snapshot → Answer` edge
+  labelled "where in code", and the promise in [Scenario 2](#scenario-2--service-operations-incident-management)
+  that a responder learns where the behaviour lives. Chat has exactly two tools,
+  `search_knowledge` and `fetch_source`, and no chat path touches `CodeSnapshot`,
+  `CodeFile` or `CodeRelationship` — only Code Factory reads code. **Open decision:**
+  either delete the edge, or give chat a third scoped tool over the application's code
+  snapshot, which would need a citation story for code, since a code excerpt has no
+  source digest to verify against.
 
 ## Scenarios still to document
 

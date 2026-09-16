@@ -3,6 +3,8 @@
 Both surfaces answer the same question - "what does the published graph say about
 this?" - and both return the same verified evidence chat would use. Neither calls
 a model, so a caller cannot spend the application's provider budget through them.
+The chat endpoint in `utility/api_chat.py` does call one, which is why it is the only
+API surface behind an opt-in feature switch; these two stay free.
 
 Authorization is the browser's, not a parallel one: the bearer token names a user
 and an application, and `access` then runs the same checks a session request runs.

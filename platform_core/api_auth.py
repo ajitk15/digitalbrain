@@ -35,6 +35,10 @@ SECRET_BYTES = 24
 RATE_LIMIT = 120
 RATE_WINDOW = 60
 
+#: Expired windows are dropped once the map is larger than this. Sweeping on
+#: every request would walk the whole map for nothing on a quiet deployment.
+SWEEP_AT = 256
+
 
 class ApiError(Exception):
     """An error safe to return to an API caller."""
@@ -150,6 +154,13 @@ def throttle(token):
         window_start, count = now, 0
     count += 1
     _recent[token.pk] = (window_start, count)
+    if len(_recent) > SWEEP_AT:
+        # Tokens get created, revoked and deleted; their windows were not. The
+        # map only ever grew, so the sweep is what keeps "process memory" an
+        # honest description of the cost.
+        stale = [pk for pk, (start, _) in _recent.items() if now - start >= RATE_WINDOW]
+        for pk in stale:
+            del _recent[pk]
     if count > RATE_LIMIT:
         raise ApiError(
             f"Rate limit exceeded: {RATE_LIMIT} requests per {RATE_WINDOW} seconds.",

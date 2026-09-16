@@ -77,6 +77,14 @@ MAX_QUOTE_CHARACTERS = 300
 MAX_ITEM_CHARACTERS = 4000
 
 BUILD_A = ("triage", "analysis", "design")
+#: Build B's phases, named here beside Build A's rather than next to the code
+#: that runs them, because what matters about them is the order.
+BUILD_B = ("implementation", "verification", "delivery")
+
+#: The whole run, in order. `start_phase` reads a phase's number out of this, so
+#: the six numbers that used to be written at the call sites cannot drift from
+#: the order the phases actually run in.
+PHASES = BUILD_A + BUILD_B
 
 AGENTS = {
     "triage": "Ticket triage",
@@ -207,9 +215,11 @@ def repository_from(value):
     return f"{owner}/{name}"
 
 
-def start_phase(run, name, sequence):
+def start_phase(run, name):
     phase, _ = RunPhase.objects.get_or_create(
-        run=run, name=name, defaults={"sequence": sequence, "agent": AGENTS.get(name, name)}
+        run=run,
+        name=name,
+        defaults={"sequence": PHASES.index(name) + 1, "agent": AGENTS.get(name, name)},
     )
     RunPhase.objects.filter(pk=phase.pk).update(
         status="running", started_at=timezone.now(), error="", agent=AGENTS.get(name, name)
@@ -284,7 +294,7 @@ def ticket_question(run, extra=""):
 
 def run_triage(run, body):
     started = time.monotonic()
-    phase = start_phase(run, "triage", 1)
+    phase = start_phase(run, "triage")
     RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of(body))
     receipt = {}
     try:
@@ -317,30 +327,92 @@ def run_triage(run, body):
         )
         raise
     finish_phase(phase, "ok", started, output=output, usage=receipt)
-    if output["repository"]:
-        from .models import CodeRepository
-        from .services import feature_enabled
-
-        repository = (
-            CodeRepository.objects.filter(
-                application_id=run.application_id,
-                provider="github",
-                external_id=output["repository"].lower(),
-                status__in=["ready", "partial"],
-            ).first()
-            if feature_enabled("code_graph", run.application)
-            else None
-        )
-        snapshot = repository.snapshots.first() if repository else None
-        FactoryRun.objects.filter(pk=run.pk).update(
-            proposed_repository=output["repository"], code_snapshot=snapshot
-        )
-        run.code_snapshot = snapshot
+    pin_repository(run, output["repository"])
     return output
 
 
+def pin_repository(run, named):
+    """Choose the repository this run reasons about, and pin its snapshot.
+
+    Two ways in, and both are guesses that reach delivery only through the
+    approval gate. The first is a name triage read out of the ticket. The
+    second is the application's own registry, used when the ticket named
+    nothing and exactly one repository is registered - which is the common
+    case, and without it most runs decide which files change while knowing
+    nothing about the codebase.
+
+    The fallback does not weaken "ticket text is evidence, not instruction":
+    it does not come from ticket text at all, and it is confirmed by the same
+    person at the same gate. Ambiguity is not resolved here - several
+    registered repositories and no name in the ticket leaves the run unpinned,
+    because that question belongs to the human.
+    """
+    from .models import CodeRepository
+    from .services import feature_enabled
+
+    if not feature_enabled("code_graph", run.application):
+        # Still record what the ticket said; a person may register it later.
+        if named:
+            FactoryRun.objects.filter(pk=run.pk).update(proposed_repository=named)
+            run.proposed_repository = named
+        return
+    registered = CodeRepository.objects.filter(
+        application_id=run.application_id, provider="github", status__in=["ready", "partial"]
+    )
+    if named:
+        repository = registered.filter(external_id=named.lower()).first()
+    else:
+        candidates = list(registered[:2])
+        repository = candidates[0] if len(candidates) == 1 else None
+        if repository is None:
+            return
+    snapshot = repository.snapshots.first() if repository else None
+    proposed = repository.external_id if repository else named
+    FactoryRun.objects.filter(pk=run.pk).update(
+        proposed_repository=proposed, code_snapshot=snapshot
+    )
+    run.proposed_repository = proposed
+    run.code_snapshot = snapshot
+
+
+#: A git ref the API path can carry. Checked because `branch_head` interpolates
+#: it into `git/ref/heads/<branch>`, the same reason `safe_path` exists.
+BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]*")
+
+
+def confirm_repository(run, repository, base_branch):
+    """A person putting their name to where this run may write.
+
+    The repository is interpolated straight into a GitHub API path, so it is
+    checked here rather than trusted from the form: the template's `required`
+    is a convenience, and an empty POST used to set the confirmed flag with no
+    repository at all. A bad name is refused, never sanitised.
+
+    Confirming also re-pins the snapshot, because a reviewer who corrects the
+    repository would otherwise leave the run delivering to one repository
+    while the code it reasoned about belongs to another.
+    """
+    from .code_graph_ingest import valid_name
+
+    name = (repository or "").strip().removeprefix("https://github.com/")
+    name = name.removesuffix(".git").strip("/")
+    parts = valid_name(name)
+    normalized = f"{parts[0].lower()}/{parts[1].lower()}"
+    branch = (base_branch or "").strip() or "main"
+    if len(branch) > 200 or ".." in branch or not BRANCH.fullmatch(branch):
+        raise ValidationError("Enter a branch name.")
+    pin_repository(run, normalized)
+    FactoryRun.objects.filter(pk=run.pk).update(
+        proposed_repository=normalized, base_branch=branch, repository_confirmed=True
+    )
+    run.proposed_repository = normalized
+    run.base_branch = branch
+    run.repository_confirmed = True
+    return normalized
+
+
 def code_context_for(run, question):
-    """A bounded structural neighborhood from the snapshot pinned by triage.
+    """A bounded structural neighborhood from the snapshot pinned for this run.
 
     Access is re-checked here rather than trusted from triage, because a run
     sits in a queue and a grant or the feature can be withdrawn while it waits.
@@ -454,7 +526,7 @@ def collect_items(run, payload, citations):
 
 def run_analysis(run, triage, body):
     started = time.monotonic()
-    phase = start_phase(run, "analysis", 2)
+    phase = start_phase(run, "analysis")
     asked = "\n".join(triage["requirements"])
     question = ticket_question(run, f"{triage['summary']}\n\nAsked for:\n{asked}\n\n{body}")
     code_context = code_context_for(run, question)
@@ -517,13 +589,18 @@ def run_analysis(run, triage, body):
 
 def run_design(run, triage, items):
     started = time.monotonic()
-    phase = start_phase(run, "design", 3)
+    phase = start_phase(run, "design")
     numbered = [
         {"id": index, "title": item["title"], "explanation": item["explanation"]}
         for index, item in enumerate(items)
     ]
     question = ticket_question(run, json.dumps({"items": numbered}))
-    RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of(numbered))
+    # Design is the phase that names the files implementation will read, so it
+    # is the phase that most needs to know which files exist.
+    code_context = code_context_for(run, question)
+    if code_context:
+        question = f"{question}\n\nPinned code structure:\n{code_context}"
+    RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of([numbered, code_context]))
     receipt = {}
     try:
         answer = ask(
@@ -736,8 +813,6 @@ def connector_prefix(connector):
 
 # --------------------------------------------------------------------- Build B
 
-BUILD_B = ("implementation", "verification", "delivery")
-
 #: Text a model leaves behind when it abbreviates instead of writing the file.
 ELISIONS = ("... rest of", "# ...", "// ...", "<!-- ... -->", "unchanged ...", "... (")
 
@@ -792,7 +867,7 @@ def run_implementation(run, token):
     from .github_write import MAX_FILES, read_file
 
     started = time.monotonic()
-    phase = start_phase(run, "implementation", 4)
+    phase = start_phase(run, "implementation")
     files = []
     for path in target_paths(run.plan)[:MAX_FILES]:
         found = read_file(run.proposed_repository, path, run.base_branch, token)
@@ -893,7 +968,7 @@ def run_verification(run, changes, token):
     from .github_write import read_file, safe_path
 
     started = time.monotonic()
-    phase = start_phase(run, "verification", 5)
+    phase = start_phase(run, "verification")
     findings = []
     for change in changes:
         try:
@@ -937,7 +1012,7 @@ def run_delivery(run, changes, token):
     )
 
     started = time.monotonic()
-    phase = start_phase(run, "delivery", 6)
+    phase = start_phase(run, "delivery")
     branch = f"{BRANCH_PREFIX}{run.ticket_external_id or 'change'}-{str(run.pk)[:8]}".lower()
     try:
         head = branch_head(run.proposed_repository, run.base_branch, token)

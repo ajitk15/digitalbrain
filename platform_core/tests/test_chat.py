@@ -221,6 +221,19 @@ class ConversationTests(TestCase):
             conversation.messages.filter(role="user").get().body, "Refund deadline?"
         )
 
+    def test_the_chat_page_offers_the_edit_form_on_a_question(self):
+        """The view was reachable only by URL: nothing rendered a form at it.
+
+        Pinned here because an unlinked POST view looks healthy from the server
+        side - it is wired, it is tested, and no one can use it.
+        """
+        self.send()
+        question = ChatMessage.objects.get(role="user")
+        page = self.client.get(self.url).content.decode()
+        action = reverse("chat-edit", args=[self.app.pk, question.pk])
+        self.assertIn(f'action="{action}"', page)
+        self.assertIn('name="question"', page)
+
     def test_editing_a_question_drops_every_later_message(self):
         self.send()
         conversation = ChatConversation.objects.get()

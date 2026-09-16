@@ -10,6 +10,12 @@ from dataclasses import dataclass
 HISTORY_TURNS = 8
 HISTORY_ANSWER_LIMIT = 4000
 
+#: Model families that take the Responses API rather than Chat Completions, which
+#: decides the client class, where the token cap goes and how usage is read back.
+#: Defined once: both adapters had their own copy, so a new family would have had
+#: to be added twice and would have looked like it worked after the first.
+RESPONSES_MODELS = ("gpt-6", "gpt-5.6")
+
 
 @dataclass(frozen=True)
 class HistoryTurn:
