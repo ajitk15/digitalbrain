@@ -1,0 +1,208 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Knowledge graph management",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    {
+      "id": "main",
+      "label": "From arrival to answering"
+    },
+    {
+      "id": "runs",
+      "label": "Requested runs"
+    },
+    {
+      "id": "stale",
+      "label": "After publishing"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ph_free",
+      "label": "Automatic and free",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "ph_human",
+      "label": "A human acts",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    }
+  ],
+  "mainPath": [
+    "intake",
+    "source",
+    "working",
+    "draft",
+    "published"
+  ],
+  "nodes": [
+    {
+      "id": "intake",
+      "lane": "main",
+      "col": 0,
+      "width": 132,
+      "type": "external",
+      "label": "Intake",
+      "sublabel": "downloaded, converted"
+    },
+    {
+      "id": "source",
+      "lane": "main",
+      "col": 1,
+      "width": 132,
+      "type": "database",
+      "label": "Active source",
+      "sublabel": "never edited"
+    },
+    {
+      "id": "working",
+      "lane": "main",
+      "col": 2,
+      "width": 132,
+      "type": "backend",
+      "label": "Working graph",
+      "sublabel": "rebuilt on any change"
+    },
+    {
+      "id": "draft",
+      "lane": "main",
+      "col": 3,
+      "width": 132,
+      "type": "database",
+      "label": "Draft revision",
+      "sublabel": "answers nothing"
+    },
+    {
+      "id": "published",
+      "lane": "main",
+      "col": 4,
+      "width": 132,
+      "type": "database",
+      "label": "Published revision",
+      "sublabel": "the one that answers"
+    },
+    {
+      "id": "enrich",
+      "lane": "runs",
+      "col": 2,
+      "width": 132,
+      "type": "messagebus",
+      "label": "Requested AI run",
+      "sublabel": "the only paid path"
+    },
+    {
+      "id": "failed",
+      "lane": "runs",
+      "col": 3,
+      "width": 132,
+      "type": "messagebus",
+      "label": "Generation failed",
+      "sublabel": "never retried on its own"
+    },
+    {
+      "id": "drifted",
+      "lane": "stale",
+      "col": 4,
+      "width": 132,
+      "type": "external",
+      "label": "Answering from older",
+      "sublabel": "normal, but unsignalled"
+    },
+    {
+      "id": "readers",
+      "lane": "stale",
+      "col": 3,
+      "width": 132,
+      "type": "frontend",
+      "label": "Chat, REST and MCP",
+      "sublabel": "retrieval only, no model"
+    }
+  ],
+  "edges": [
+    {
+      "from": "intake",
+      "to": "source",
+      "label": "digest decides",
+      "variant": "emphasis"
+    },
+    {
+      "from": "source",
+      "to": "working",
+      "label": "fingerprint moves",
+      "variant": "emphasis"
+    },
+    {
+      "from": "working",
+      "to": "draft",
+      "label": "saves a draft",
+      "variant": "emphasis"
+    },
+    {
+      "from": "draft",
+      "to": "published",
+      "label": "a human publishes",
+      "variant": "dashed"
+    },
+    {
+      "from": "working",
+      "to": "enrich",
+      "label": "on request"
+    },
+    {
+      "from": "enrich",
+      "to": "draft",
+      "label": "one paid run"
+    },
+    {
+      "from": "enrich",
+      "to": "failed",
+      "label": "provider error",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "from": "published",
+      "to": "drifted",
+      "label": "sources move on"
+    },
+    {
+      "from": "failed",
+      "to": "enrich",
+      "label": "a human retries",
+      "variant": "dashed"
+    },
+    {
+      "from": "published",
+      "to": "readers",
+      "label": "verified evidence",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Currency is automatic; publishing is not",
+      "items": [
+        "The worker compares a fingerprint over every active source and rebuilds on any change",
+        "A structural rebuild is free and always saves a draft revision",
+        "Only a human promotes a draft, and publish refuses one whose evidence has moved"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Who reads it, and how",
+      "items": [
+        "Chat, /graph/search/ and the MCP server all answer from the published revision",
+        "Neither machine surface calls a model, so no caller can spend the AI budget",
+        "A request may pin a version; every response states which one answered",
+        "No published revision is a 409, never a quiet fallback to a draft"
+      ]
+    }
+  ]
+}

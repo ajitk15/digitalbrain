@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "Overview",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1085,
+      510
+    ],
+    "views": [
+      {
+        "id": "knowledge",
+        "label": "The knowledge plane",
+        "focus": [
+          "docs",
+          "repo",
+          "sources",
+          "snapshot",
+          "working",
+          "published"
+        ],
+        "note": "Each door is optional and independent. Whatever arrives becomes a source."
+      },
+      {
+        "id": "sdlc",
+        "label": "The SDLC plane",
+        "focus": [
+          "published",
+          "snapshot",
+          "chat",
+          "factory",
+          "answer",
+          "pr"
+        ],
+        "note": "Two kinds of work consume the same evidence: operations reads it, change proposes against it."
+      },
+      {
+        "id": "loop",
+        "label": "The loop back",
+        "focus": [
+          "answer",
+          "pr",
+          "writeup",
+          "sources"
+        ],
+        "note": "What the work produces re-enters as ordinary evidence for the next question."
+      },
+      {
+        "id": "proposed",
+        "label": "What we would automate",
+        "focus": [
+          "pr",
+          "writeup",
+          "sources"
+        ],
+        "note": "The two dashed arrows are carried by a person today. Nothing else changes."
+      }
+    ],
+    "legend": {
+      "mode": "auto",
+      "entries": {
+        "emphasis": {
+          "label": "the grounded path"
+        },
+        "security": {
+          "label": "a human gate"
+        },
+        "dashed": {
+          "label": "manual today, to automate"
+        },
+        "database": {
+          "label": "immutable store"
+        },
+        "default": {
+          "label": "supporting input"
+        }
+      }
+    }
+  },
+  "stages": [
+    {
+      "label": "Outside · any, or none"
+    },
+    {
+      "label": "Immutable record"
+    },
+    {
+      "label": "Published knowledge"
+    },
+    {
+      "label": "SDLC work"
+    },
+    {
+      "label": "Outcome"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "docs",
+      "type": "external",
+      "stage": 0,
+      "row": 0,
+      "width": 152,
+      "label": "1 · Documents",
+      "sublabel": "upload or link",
+      "height": 74,
+      "tag": "manual"
+    },
+    {
+      "id": "repo",
+      "type": "external",
+      "stage": 0,
+      "row": 2,
+      "width": 152,
+      "label": "1 · Repository",
+      "sublabel": "one commit",
+      "height": 74,
+      "tag": "on request"
+    },
+    {
+      "id": "sources",
+      "type": "database",
+      "stage": 1,
+      "row": 0,
+      "width": 176,
+      "label": "2 · Knowledge sources",
+      "sublabel": "digest decides",
+      "tag": "immutable",
+      "height": 74
+    },
+    {
+      "id": "snapshot",
+      "type": "database",
+      "stage": 1,
+      "row": 2,
+      "width": 176,
+      "label": "2 · Code snapshot",
+      "sublabel": "files, imports",
+      "height": 74,
+      "tag": "immutable"
+    },
+    {
+      "id": "working",
+      "type": "backend",
+      "stage": 2,
+      "row": 0,
+      "width": 176,
+      "label": "3 · Working graph",
+      "sublabel": "rebuilt on drift",
+      "height": 74,
+      "tag": "automatic"
+    },
+    {
+      "id": "published",
+      "type": "database",
+      "stage": 2,
+      "row": 1,
+      "width": 176,
+      "label": "4 · Published revision",
+      "sublabel": "what answers",
+      "tag": "a human act",
+      "height": 74
+    },
+    {
+      "id": "chat",
+      "type": "frontend",
+      "stage": 3,
+      "row": 0,
+      "width": 176,
+      "label": "5 · Chat Application",
+      "height": 74,
+      "tag": "read only"
+    },
+    {
+      "id": "factory",
+      "type": "backend",
+      "stage": 3,
+      "row": 1,
+      "width": 176,
+      "label": "5 · Code Factory",
+      "sublabel": "triage to design",
+      "height": 74,
+      "tag": "gated"
+    },
+    {
+      "id": "answer",
+      "type": "external",
+      "stage": 4,
+      "row": 0,
+      "width": 176,
+      "label": "6 · Cited answer",
+      "height": 74,
+      "tag": "outside"
+    },
+    {
+      "id": "pr",
+      "type": "external",
+      "stage": 4,
+      "row": 1,
+      "width": 176,
+      "label": "6 · Draft pull request",
+      "sublabel": "own branch",
+      "height": 74,
+      "tag": "draft"
+    },
+    {
+      "id": "writeup",
+      "type": "database",
+      "stage": 4,
+      "row": 2,
+      "width": 176,
+      "label": "7 · New evidence",
+      "sublabel": "write-ups, merged PRs",
+      "height": 74,
+      "tag": "back in"
+    }
+  ],
+  "flows": [
+    {
+      "from": "docs",
+      "to": "sources",
+      "label": "files",
+      "channelX": 218
+    },
+    {
+      "from": "repo",
+      "to": "snapshot",
+      "label": "clone"
+    },
+    {
+      "from": "sources",
+      "to": "working",
+      "label": "drift",
+      "variant": "emphasis"
+    },
+    {
+      "from": "working",
+      "to": "published",
+      "label": "publish",
+      "variant": "emphasis",
+      "classification": "a human act",
+      "labelDy": 24
+    },
+    {
+      "from": "published",
+      "to": "chat",
+      "label": "evidence",
+      "variant": "emphasis"
+    },
+    {
+      "from": "published",
+      "to": "factory",
+      "label": "evidence",
+      "variant": "emphasis",
+      "channelX": 637,
+      "labelAt": [
+        638,
+        332
+      ]
+    },
+    {
+      "from": "snapshot",
+      "to": "factory",
+      "label": "code",
+      "toSide": "bottom",
+      "classification": "pinned commit",
+      "fromSide": "right",
+      "via": [
+        [
+          745,
+          393
+        ]
+      ],
+      "labelAt": [
+        560,
+        393
+      ]
+    },
+    {
+      "from": "chat",
+      "to": "answer",
+      "label": "quotes"
+    },
+    {
+      "from": "factory",
+      "to": "pr",
+      "label": "change",
+      "variant": "security"
+    },
+    {
+      "from": "pr",
+      "to": "writeup",
+      "label": "shipped",
+      "labelAt": [
+        960,
+        336
+      ],
+      "variant": "dashed",
+      "classification": "manual today"
+    },
+    {
+      "from": "writeup",
+      "to": "sources",
+      "label": "a new immutable source",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          1058,
+          393
+        ],
+        [
+          1058,
+          96
+        ],
+        [
+          315,
+          96
+        ]
+      ],
+      "classification": "manual today",
+      "labelAt": [
+        660,
+        86
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Steps 1-4 · building the evidence",
+      "items": [
+        "1 · Documents or a repository — neither one is required",
+        "2 · Each becomes an immutable source; code stays separate",
+        "3 · The worker rebuilds the graph whenever a digest changes",
+        "4 · A person publishes a revision; nothing answers until then"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Steps 5-7 · using it, and closing the loop",
+      "items": [
+        "5 · Chat and Code Factory read that same published revision",
+        "6 · A cited answer, or a draft pull request behind two gates",
+        "7 · What returns: a postmortem, an RFC, a merged pull request",
+        "7 · Dashed = you carry it today; proposed to be automatic"
+      ]
+    }
+  ]
+}

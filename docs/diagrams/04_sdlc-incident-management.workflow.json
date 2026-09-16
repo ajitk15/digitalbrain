@@ -1,0 +1,297 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Incident management",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ground",
+        "label": "Grounding the incident",
+        "focus": [
+          "raised",
+          "import",
+          "graph",
+          "code"
+        ],
+        "note": "An incident record becomes an immutable source and reaches a published graph revision."
+      },
+      {
+        "id": "answer",
+        "label": "Answering with evidence",
+        "focus": [
+          "ask",
+          "answer",
+          "cited",
+          "handover"
+        ],
+        "note": "Every quote is re-checked against the live source before a responder reads it."
+      },
+      {
+        "id": "learn",
+        "label": "Closing the loop",
+        "focus": [
+          "mitigate",
+          "close",
+          "fix",
+          "postmortem"
+        ],
+        "note": "The write-up is imported, so the next incident starts better grounded."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "record",
+      "label": "Incident record"
+    },
+    {
+      "id": "evidence",
+      "label": "Verified evidence"
+    },
+    {
+      "id": "responder",
+      "label": "Responder"
+    },
+    {
+      "id": "bounds",
+      "label": "Boundaries and hand-offs",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ph_ground",
+      "label": "Ground",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "ph_answer",
+      "label": "Answer with evidence",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "ph_act",
+      "label": "Act and learn",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "raised",
+    "import",
+    "graph",
+    "ask",
+    "answer",
+    "cited",
+    "handover",
+    "mitigate",
+    "close"
+  ],
+  "nodes": [
+    {
+      "id": "raised",
+      "lane": "record",
+      "col": 0,
+      "width": 168,
+      "type": "messagebus",
+      "label": "Incident raised",
+      "sublabel": "ServiceNow or Jira"
+    },
+    {
+      "id": "import",
+      "lane": "record",
+      "col": 1,
+      "width": 160,
+      "type": "external",
+      "label": "Record import",
+      "sublabel": "bounded, manual pull",
+      "tag": "an immutable source"
+    },
+    {
+      "id": "postmortem",
+      "lane": "record",
+      "col": 5,
+      "width": 160,
+      "type": "database",
+      "label": "Write-up",
+      "sublabel": "imported like any doc"
+    },
+    {
+      "id": "graph",
+      "lane": "evidence",
+      "col": 2,
+      "width": 160,
+      "type": "database",
+      "label": "Published graph",
+      "sublabel": "never a draft"
+    },
+    {
+      "id": "code",
+      "lane": "evidence",
+      "col": 3,
+      "width": 160,
+      "type": "cloud",
+      "label": "Code snapshot",
+      "sublabel": "cloned at a commit"
+    },
+    {
+      "id": "ask",
+      "lane": "responder",
+      "col": 2,
+      "width": 160,
+      "type": "frontend",
+      "label": "Chat Application",
+      "sublabel": "Sources, AI, Graph answer"
+    },
+    {
+      "id": "answer",
+      "lane": "responder",
+      "col": 3,
+      "width": 160,
+      "type": "backend",
+      "label": "Answer",
+      "sublabel": "streamed, with quotes"
+    },
+    {
+      "id": "mitigate",
+      "lane": "responder",
+      "col": 4,
+      "width": 160,
+      "type": "external",
+      "label": "Mitigate",
+      "sublabel": "a person acts"
+    },
+    {
+      "id": "close",
+      "lane": "responder",
+      "col": 5,
+      "width": 160,
+      "type": "backend",
+      "label": "Resolve",
+      "sublabel": "impact ends"
+    },
+    {
+      "id": "cited",
+      "lane": "bounds",
+      "col": 3,
+      "width": 160,
+      "type": "security",
+      "label": "Citation check",
+      "sublabel": "live source, exact quote"
+    },
+    {
+      "id": "handover",
+      "lane": "bounds",
+      "col": 4,
+      "width": 160,
+      "type": "security",
+      "label": "Hand-over",
+      "sublabel": "evidence, not action",
+      "tag": "nothing is executed"
+    },
+    {
+      "id": "fix",
+      "lane": "bounds",
+      "col": 5,
+      "width": 160,
+      "type": "backend",
+      "label": "Code Factory",
+      "sublabel": "when code must change"
+    }
+  ],
+  "edges": [
+    {
+      "from": "raised",
+      "to": "import",
+      "label": "pulled in"
+    },
+    {
+      "from": "import",
+      "to": "graph",
+      "label": "regenerate",
+      "variant": "emphasis"
+    },
+    {
+      "from": "graph",
+      "to": "ask",
+      "variant": "emphasis"
+    },
+    {
+      "from": "ask",
+      "to": "answer",
+      "label": "question",
+      "variant": "emphasis"
+    },
+    {
+      "from": "code",
+      "to": "answer",
+      "label": "where in code"
+    },
+    {
+      "from": "answer",
+      "to": "cited",
+      "variant": "emphasis"
+    },
+    {
+      "from": "cited",
+      "to": "handover",
+      "label": "verified",
+      "variant": "emphasis"
+    },
+    {
+      "from": "handover",
+      "to": "mitigate",
+      "variant": "emphasis"
+    },
+    {
+      "from": "mitigate",
+      "to": "close",
+      "label": "recovered",
+      "variant": "emphasis"
+    },
+    {
+      "from": "close",
+      "to": "fix",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "close",
+      "to": "postmortem",
+      "role": "async",
+      "variant": "dashed"
+    },
+    {
+      "from": "postmortem",
+      "to": "import",
+      "label": "grounds the next one",
+      "role": "return",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "An incident record is just a source",
+      "items": [
+        "ServiceNow, Jira and GitHub imports are bounded and manual, not a mirror",
+        "Each record becomes an immutable source with a SHA-256 digest",
+        "A changed record archives the old revision instead of overwriting it"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "The platform never touches the service",
+      "items": [
+        "No runbook is executed, no ticket is updated, no action is taken",
+        "REST and MCP callers get the same verified evidence and call no model",
+        "A code change goes back through the Code Factory gates, not around them"
+      ]
+    }
+  ]
+}

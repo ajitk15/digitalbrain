@@ -1,0 +1,300 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Bug fix",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ground",
+        "label": "Grounding the run",
+        "focus": [
+          "connectors",
+          "graph",
+          "codegraph",
+          "triage"
+        ],
+        "note": "Evidence is a published graph revision and a repository pinned to one commit."
+      },
+      {
+        "id": "describe",
+        "label": "Describe the work, then stop",
+        "focus": [
+          "triage",
+          "analysis",
+          "design",
+          "approve",
+          "halted"
+        ],
+        "note": "Three phases produce a description of work. Nothing is written yet."
+      },
+      {
+        "id": "write",
+        "label": "Writing to the repository",
+        "focus": [
+          "approve",
+          "implement",
+          "verify",
+          "deliver",
+          "refused"
+        ],
+        "note": "Approving a description is one decision; writing to a repository is another."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "evidence",
+      "label": "Verified evidence"
+    },
+    {
+      "id": "factory",
+      "label": "Code Factory run"
+    },
+    {
+      "id": "gates",
+      "label": "Gates"
+    },
+    {
+      "id": "stopped",
+      "label": "Refused or stopped",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ph_ground",
+      "label": "Ground",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "ph_describe",
+      "label": "Describe the work",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "ph_write",
+      "label": "Write and deliver",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "connectors",
+    "triage",
+    "analysis",
+    "design",
+    "approve",
+    "implement",
+    "verify",
+    "deliver"
+  ],
+  "nodes": [
+    {
+      "id": "connectors",
+      "lane": "evidence",
+      "col": 0,
+      "type": "external",
+      "width": 168,
+      "label": "Ticket import",
+      "sublabel": "Jira, GitHub, ServiceNow",
+      "tag": "ticket is data"
+    },
+    {
+      "id": "graph",
+      "lane": "evidence",
+      "col": 1,
+      "type": "database",
+      "width": 168,
+      "label": "Published graph",
+      "sublabel": "never a draft"
+    },
+    {
+      "id": "codegraph",
+      "lane": "evidence",
+      "col": 3,
+      "type": "cloud",
+      "width": 160,
+      "label": "Code snapshot",
+      "sublabel": "cloned at a commit"
+    },
+    {
+      "id": "triage",
+      "lane": "factory",
+      "col": 1,
+      "type": "backend",
+      "label": "Triage",
+      "sublabel": "what is being asked",
+      "width": 160
+    },
+    {
+      "id": "analysis",
+      "lane": "factory",
+      "col": 2,
+      "type": "backend",
+      "label": "Analysis",
+      "sublabel": "gaps against the rubric",
+      "width": 160
+    },
+    {
+      "id": "design",
+      "lane": "factory",
+      "col": 3,
+      "type": "backend",
+      "label": "Design",
+      "sublabel": "which files change",
+      "width": 160
+    },
+    {
+      "id": "implement",
+      "lane": "factory",
+      "col": 4,
+      "type": "backend",
+      "label": "Implement",
+      "sublabel": "whole file contents",
+      "width": 160
+    },
+    {
+      "id": "deliver",
+      "lane": "factory",
+      "col": 5,
+      "type": "backend",
+      "width": 160,
+      "label": "Delivery",
+      "sublabel": "branch and draft PR",
+      "tag": "digital-brain/*"
+    },
+    {
+      "id": "approve",
+      "lane": "gates",
+      "col": 3,
+      "type": "security",
+      "label": "Approval",
+      "sublabel": "a pinned ChangePlan",
+      "tag": "a second person",
+      "width": 160
+    },
+    {
+      "id": "verify",
+      "lane": "gates",
+      "col": 4,
+      "type": "security",
+      "label": "Verification",
+      "sublabel": "checked before writing",
+      "width": 160
+    },
+    {
+      "id": "halted",
+      "lane": "stopped",
+      "col": 2,
+      "type": "messagebus",
+      "label": "Run halted",
+      "sublabel": "the record says why",
+      "width": 160
+    },
+    {
+      "id": "refused",
+      "lane": "stopped",
+      "col": 5,
+      "type": "messagebus",
+      "width": 160,
+      "label": "Delivery refused",
+      "sublabel": "no write credential"
+    }
+  ],
+  "edges": [
+    {
+      "from": "connectors",
+      "to": "graph",
+      "label": "regenerate"
+    },
+    {
+      "from": "connectors",
+      "to": "triage",
+      "label": "start a run",
+      "variant": "emphasis"
+    },
+    {
+      "from": "graph",
+      "to": "triage",
+      "label": "cited evidence"
+    },
+    {
+      "from": "codegraph",
+      "to": "design",
+      "label": "files and roles"
+    },
+    {
+      "from": "triage",
+      "to": "analysis",
+      "label": "scope",
+      "variant": "emphasis"
+    },
+    {
+      "from": "analysis",
+      "to": "design",
+      "label": "ranked gaps",
+      "variant": "emphasis"
+    },
+    {
+      "from": "design",
+      "to": "approve",
+      "variant": "emphasis"
+    },
+    {
+      "from": "approve",
+      "to": "implement",
+      "label": "approved, repo confirmed",
+      "variant": "emphasis"
+    },
+    {
+      "from": "implement",
+      "to": "verify",
+      "variant": "emphasis"
+    },
+    {
+      "from": "verify",
+      "to": "deliver",
+      "label": "passes",
+      "variant": "emphasis"
+    },
+    {
+      "from": "analysis",
+      "to": "halted",
+      "label": "phase failed",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "from": "verify",
+      "to": "refused",
+      "label": "nothing written",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "The ticket is data, never instruction",
+      "items": [
+        "Ticket text is evidence about a want, not a command to obey",
+        "A repository named in a ticket is confirmed by a person first",
+        "Each cited quote is re-checked against the live source"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Two gates, both owned by people",
+      "items": [
+        "Approval needs a different user holding the approve permission",
+        "Approving a description does not authorise a repository write",
+        "Delivery has its own credential and opens a draft PR on its own branch"
+      ]
+    }
+  ]
+}
