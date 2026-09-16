@@ -30,6 +30,9 @@ function Get-AdminState {
     }
 }
 
+#: Offered when the person just presses Enter at the sign-in prompt.
+$DefaultAdministrator = 'siteadmin@db.com'
+
 function Install-Administrator {
     if ((Get-AdminState) -eq 'present') {
         Write-Output 'A platform administrator already exists; nothing to install.'
@@ -49,8 +52,10 @@ function Install-Administrator {
         }
     }
     if (-not $identity) {
-        $identity = (Read-Host 'Choose the administrator sign-in ID').Trim()
-        if (-not $identity) { throw 'An administrator sign-in ID is required for -Install.' }
+        # Offered, not imposed: pressing Enter is the common case and should not
+        # require inventing an identifier before the project has ever started.
+        $identity = (Read-Host "Administrator sign-in ID [$DefaultAdministrator]").Trim()
+        if (-not $identity) { $identity = $DefaultAdministrator }
         # .env may legally hold this one key and nothing else, so writing the
         # whole file is not data loss - but only do it when the key is absent.
         Set-Content -LiteralPath $envFile -Encoding utf8 -Value @(
@@ -60,6 +65,9 @@ function Install-Administrator {
         )
         Write-Output "Wrote .env with SITE_ADMIN_USER_ID=$identity"
     }
+    Write-Output ''
+    Write-Output "Choose a password for $identity. It is read hidden and never stored"
+    Write-Output 'in a file, an argument or this window''s history.'
     # bootstrap_admin prompts for the password itself and reads it hidden, so it
     # never reaches a file, an argument or this console's history.
     & $PythonExecutable 'manage.py' 'bootstrap_admin'
@@ -82,6 +90,20 @@ try {
     $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $Port)
     try { $listener.Start() } catch { throw "Port $Port is already occupied; choose -Port." }
     finally { $listener.Stop() }
+    # A run with no virtual environment is not the "ordinary start" that is meant
+    # to stay predictable - it is a first run, and the only thing it can do is
+    # fail. Windows ships with LocalMachine set to Restricted, so the advice to
+    # "run ./start-all.ps1 -Install" named a command the machine refuses to
+    # execute; the person is then stuck with no working path at all. Detecting
+    # the state removes the dead end, so double-clicking start-all.cmd on a new
+    # laptop sets the project up instead of explaining why it cannot.
+    if (-not $Install -and -not (Test-Path -LiteralPath $PythonExecutable)) {
+        Write-Output 'No virtual environment here yet, so this is a first run.'
+        Write-Output 'Setting up: install uv, build .venv, create the database, then ask you'
+        Write-Output 'for an administrator sign-in and which AI provider to use.'
+        Write-Output ''
+        $Install = [switch]$true
+    }
     Initialize-Environment -AllowInstall ($Install.IsPresent)
     # Run on every start, not only when the file is absent: config/local.toml
     # records an absolute secret_directory, so a project folder that was moved or
@@ -132,7 +154,7 @@ try {
     if (-not $Install -and (Get-AdminState) -eq 'missing') {
         Write-Output ''
         Write-Output 'No administrator account exists yet, so nobody can sign in.'
-        Write-Output 'Run ./stop-all.ps1, then ./start-all.ps1 -Install to set this project up.'
+        Write-Output 'Run  stop-all.cmd  then  start-all.cmd -Install  to finish setting up.'
         Write-Output ''
     }
     Write-Output 'Stop with ./stop-all.ps1. Logs: .runtime/server-error.log'

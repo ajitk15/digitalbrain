@@ -4,41 +4,55 @@ Working Python/Django SaaS foundation using the selected Digital Brain logo, wit
 
 ## First run on a new machine
 
-One command, from this folder, in PowerShell or from `cmd.exe`:
+**Double-click `start-all.cmd`.** That is the whole thing — no arguments, no
+prerequisites, no PowerShell settings to change. A folder with no `.venv` is a first
+run by definition, so it sets the project up and then starts it.
 
-```powershell
-.\start-all.ps1 -Install
+Use `start-all.cmd`, not `start-all.ps1`. Windows ships with the `LocalMachine`
+execution policy set to `Restricted`, which blocks `.ps1` files outright, so
+`.\start-all.ps1` fails on a clean laptop before it runs a line. The `.cmd` wrapper
+passes `-ExecutionPolicy Bypass` for that one process — nothing machine-wide changes
+— and holds the window open if something goes wrong, which is exactly the first-run
+case where the message matters.
+
+From a terminal, the same thing:
+
+```
+start-all.cmd
 ```
 
-`-Install` is the full setup path. It installs `uv` if the machine does not have it
-(via `winget`, falling back to the official user-scoped installer), builds `.venv` and
-installs the locked dependencies, creates the local configuration and database, asks
-for the first administrator, and asks which AI provider to use. If `uv` cannot be
-installed at all — no network, a locked-down machine — it falls back to
-`python -m venv` plus `pip install -e .`, which needs Python 3.12, 3.13 or 3.14 and
-resolves versions fresh rather than from `uv.lock`. Nothing is installed machine-wide
-and no elevation is requested.
+Setup installs `uv` if the machine does not have it (via `winget`, falling back to
+the official user-scoped installer), builds `.venv` and installs the locked
+dependencies, creates the local configuration and database, asks for the first
+administrator — press Enter to take the default `siteadmin@db.com` — then asks for
+that account's password, and finally which AI provider to use. The password is read
+hidden and never reaches a file, an argument or the shell history. If `uv` cannot be installed at
+all — no network, a locked-down machine — it falls back to `python -m venv` plus a
+`pip install` of the dependencies exported from `pyproject.toml`, which needs Python
+3.12, 3.13 or 3.14 and resolves versions fresh rather than from `uv.lock`. Nothing is
+installed machine-wide and no elevation is requested.
+
+`start-all.cmd -Install` re-runs setup deliberately on a project that already has a
+`.venv` — worth knowing, but not needed for a first run.
 
 There is no `requirements.txt`: dependencies live in `pyproject.toml`, pinned by
 `uv.lock`.
 
 ## Start and stop
 
-```powershell
-.\start-all.ps1
-.\stop-all.ps1
+```
+start-all.cmd
+stop-all.cmd
 ```
 
 An ordinary start keeps an existing environment up to date but never downloads a
-toolchain; if the project is not set up yet it says so and points at `-Install`.
+toolchain. The one exception is a folder with no `.venv`, which is a first run
+rather than an ordinary start, and sets itself up.
 
-Double-clickable equivalents: `start-all.cmd` and `stop-all.cmd`. Prefer these if
-PowerShell reports *"running scripts is disabled on this system"* — they pass
-`-ExecutionPolicy Bypass` for that one process, so no machine-wide setting has to
-change, and they hold the window open if something fails. To run the `.ps1` files
-directly instead, allow local scripts once with
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. An alternative port can be
-selected with `./start-all.ps1 -Port 8123`.
+The `.ps1` files do the actual work and take the same arguments, but Windows blocks
+them by default. To call them directly, allow local scripts once with
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. An alternative port:
+`start-all.cmd -Port 8123`.
 
 ### Moving or copying the project folder
 
@@ -55,11 +69,11 @@ Start-all checks configuration, applies local migrations, collects assets, launc
 
 No default administrator, default password, or test account is installed.
 
-```powershell
-.\start-all.ps1 -Install
+```
+start-all.cmd -Install
 ```
 
-`-Install` asks for the sign-in ID, writes it to `.env` as the only key that file
+Setup asks for the sign-in ID, writes it to `.env` as the only key that file
 accepts, and runs `bootstrap_admin`, which prompts for the password itself and
 reads it hidden. The password never reaches a file, a command-line argument or
 the shell history. Starting without `-Install` when no administrator exists says
@@ -69,7 +83,7 @@ neither elevate nor reset an account.
 ## AI provider
 
 ```powershell
-.\start-all.ps1 -ConfigureAI
+start-all.cmd -ConfigureAI
 ```
 
 Asks whether to use Claude or OpenAI and mounts the credential. `-Install` runs this

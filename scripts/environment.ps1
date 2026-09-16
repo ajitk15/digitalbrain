@@ -175,7 +175,10 @@ function Initialize-Environment {
     } elseif ($AllowInstall) {
         Install-WithPip
     } else {
-        throw 'This project is not set up yet. Run:  ./start-all.ps1 -Install'
+        # start-all.ps1 turns a missing .venv into a first run, so this is only
+        # reached by a caller that passed -AllowInstall:$false deliberately. It
+        # still names the .cmd: Windows blocks .ps1 files out of the box.
+        throw 'This project is not set up yet. Run:  start-all.cmd -Install'
     }
 
     # Reached only when uv did not do the install, so nothing guarantees the

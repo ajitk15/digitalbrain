@@ -41,7 +41,7 @@ per provider per application, owner-only permissions on POSIX. Never environment
 variables, never the database, never a form field. `.env` accepts only
 `SITE_ADMIN_USER_ID`.
 
-`scripts/ai_setup.py` (run by `start-all.ps1 -Install` / `-ConfigureAI`) asks for the
+`scripts/ai_setup.py` (run by `start-all.cmd` on a first run, or `-ConfigureAI`) asks for the
 credential once on a console and writes `<provider>_default`. That file is a **template,
 not a fallback**: `ai.seed_application_ai` *copies* it to `<provider>_<application id>`
 when an application is created, and `provider_credential` still resolves only the
