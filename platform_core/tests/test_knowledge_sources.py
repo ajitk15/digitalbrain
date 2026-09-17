@@ -523,6 +523,24 @@ class KnowledgeHeadingTests(TestCase):
         )
         rebuild(self.app.pk)
 
+    def test_a_view_note_fits_on_one_line(self):
+        """Four of these sit above the fold; a second line each is real estate.
+
+        .view-note is capped at 78ch, so a note longer than that wraps. The
+        budget is the point: what does not fit is said by the page itself --
+        the table columns, the published-version notice, a node's own tooltip.
+        """
+        import re
+
+        for name, response in self.views().items():
+            with self.subTest(view=name):
+                note = re.search(
+                    r'<p class="view-note">(.*?)</p>', response.content.decode(), re.S
+                )
+                self.assertIsNotNone(note)
+                text = re.sub(r"<[^>]+>", "", note.group(1))
+                self.assertLessEqual(len(text), 78, text)
+
     def test_no_two_views_carry_the_same_description(self):
         """The old sentence described the section, so it read the same on all of them."""
         import re
