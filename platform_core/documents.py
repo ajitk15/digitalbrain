@@ -17,7 +17,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
 from .fetching import FetchError
-from .models import ApplicationGrant, Document, KnowledgeEntry
+from .models import ApplicationGrant, Document, KnowledgeEntry, KnowledgeSource
 from .policy import application_for
 from .services import audit, feature_enabled
 from .source_library import graph_usage, library_context
@@ -311,6 +311,48 @@ def document_detail(request, pk, document_id):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+@login_required
+@require_http_methods(["GET", "POST"])
+def source_delete(request, pk, source_id):
+    """Stop tracking an origin, and decide what happens to what it brought in.
+
+    Two different things get called "delete a source", and which one somebody
+    means is not guessable: forgetting where documents came from, or removing
+    the documents as well. The dialog asks, and names the count either way,
+    rather than picking the destructive reading on their behalf.
+
+    Forgetting is the safe one and is offered first. The documents stay and
+    reappear under everything else; what is lost is the ability to check the
+    origin again, which is recoverable by importing the address once more.
+    """
+    from .knowledge_sources import forget
+
+    app, grant = application_for(request.user, pk)
+    if grant.role != "owner":
+        raise PermissionDenied
+    source = get_object_or_404(KnowledgeSource, pk=source_id, application=app)
+    files = Document.objects.filter(source=source).exclude(status="deleted")
+    if request.method == "POST":
+        remove_documents = request.POST.get("documents") == "delete"
+        kept, removed = forget(request.user, pk, source_id, remove_documents=remove_documents)
+        if removed:
+            messages.success(
+                request, f"Source removed, along with {removed} document(s) it brought in."
+            )
+        else:
+            messages.success(
+                request,
+                f"Source removed. {kept} document(s) it brought in were kept and now "
+                "appear under everything else.",
+            )
+        return redirect("documents", pk=pk)
+    return render(
+        request,
+        "source_delete.html",
+        {"application": app, "source": source, "file_count": files.count()},
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 def source_resync(request, pk, source_id):

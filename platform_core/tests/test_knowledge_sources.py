@@ -278,12 +278,12 @@ class SourceDisclosureTests(TestCase):
     def test_an_origin_is_a_disclosure_that_works_without_javascript(self):
         """A native details element, like every other disclosure on the site."""
         body = self.body()
-        self.assertIn('<details class="origin', body)
-        self.assertIn("<summary", body.split('<details class="origin')[1][:400])
+        self.assertIn('<div class="origin origin-', body)
+        self.assertIn("<details><summary", body)
 
     def test_it_is_closed_until_somebody_opens_it(self):
         """What have I got is asked far more often than what is in this one."""
-        panel = self.body().split('<details class="origin')[1][:200]
+        panel = self.body().split("<details>")[1][:200]
         self.assertNotIn(" open", panel)
 
     def test_opening_it_lists_the_files_that_came_from_it(self):
@@ -298,11 +298,21 @@ class SourceDisclosureTests(TestCase):
         self.assertIn("No longer at origin", listing)
         self.assertIn("is-orphaned", listing)
 
-    def test_the_resync_button_is_inside_the_disclosure(self):
-        """Nothing acts from a row someone has not opened and looked at."""
+    def test_the_controls_sit_on_the_summary_line(self):
+        """Reachable without opening the origin first, by request.
+
+        They are siblings of the details rather than children of the summary: a
+        summary is already a button, and nesting a button inside one is neither
+        valid nor operable by keyboard in the way either promises.
+        """
         body = self.body()
-        opened = body.split('class="origin-body"')[1].split("</details>")[0]
-        self.assertIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), opened)
+        tools = body.split('class="origin-tools"')[1].split("</div>")[0]
+        self.assertIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), tools)
+        self.assertIn(self.source.url, tools)
+        # Nothing interactive inside the summary itself.
+        summary = body.split("<summary")[1].split("</summary>")[0]
+        for tag in ("<button", "<form", "<a "):
+            self.assertNotIn(tag, summary)
 
     def test_a_viewer_sees_the_files_but_no_resync(self):
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
@@ -372,3 +382,83 @@ class NoDuplicationTests(TestCase):
         """Splitting the page must not make the total shrink."""
         body = self.page()
         self.assertIn('<span class="count">2</span>', body)
+
+
+@settings_for_tests
+class SourceDeleteTests(TestCase):
+    """Removing an origin, and deciding what happens to what it brought in."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        self.source = register(self.owner, self.app, "github", TREE)
+        from platform_core.link_sources import submit
+
+        with patch(
+            "platform_core.link_sources.github_plan",
+            return_value=[("docs/f0.md", FILE_ZERO), ("docs/f1.md", FILE_ONE)],
+        ):
+            submit(self.owner, self.app.pk, TREE, source=self.source)
+
+    def url(self):
+        return reverse("source-delete", args=[self.app.pk, self.source.pk])
+
+    def live(self):
+        return Document.objects.filter(application=self.app).exclude(status="deleted").count()
+
+    def test_it_asks_before_it_does_anything(self):
+        """A GET is the dialog, not the deletion."""
+        response = self.client.get(self.url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(KnowledgeSource.objects.filter(pk=self.source.pk).exists())
+        self.assertEqual(self.live(), 2)
+
+    def test_the_dialog_names_both_outcomes_and_the_count(self):
+        """Which one "delete a source" means is not guessable, so it is asked."""
+        body = self.client.get(self.url()).content.decode()
+        self.assertIn("Remove source, keep documents", body)
+        self.assertIn("Remove source and 2 documents", body)
+
+    def test_keeping_the_documents_leaves_them_without_an_origin(self):
+        self.client.post(self.url(), {"documents": "keep"})
+        self.assertFalse(KnowledgeSource.objects.filter(pk=self.source.pk).exists())
+        self.assertEqual(self.live(), 2)
+        self.assertEqual(Document.objects.filter(source__isnull=True).count(), 2)
+
+    def test_kept_documents_reappear_under_everything_else(self):
+        self.client.post(self.url(), {"documents": "keep"})
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        self.assertIn("docs/f0.md", body.split("sources-table")[1])
+
+    def test_removing_them_marks_them_deleted_rather_than_erasing_them(self):
+        """The same path the single-document delete uses, so history survives."""
+        self.client.post(self.url(), {"documents": "delete"})
+        self.assertFalse(KnowledgeSource.objects.filter(pk=self.source.pk).exists())
+        self.assertEqual(self.live(), 0)
+        self.assertEqual(Document.objects.filter(status="deleted").count(), 2)
+
+    def test_anything_other_than_delete_is_read_as_keep(self):
+        """The destructive reading is never the default of an unclear request."""
+        self.client.post(self.url(), {})
+        self.assertEqual(self.live(), 2)
+
+    def test_a_contributor_cannot_remove_a_source(self):
+        """Resyncing is contributor work; removing the origin is the owner's."""
+        from platform_core.models import ApplicationGrant
+
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            role="contributor"
+        )
+        self.assertEqual(self.client.post(self.url(), {"documents": "keep"}).status_code, 403)
+        self.assertTrue(KnowledgeSource.objects.filter(pk=self.source.pk).exists())
+
+    def test_removal_is_recorded(self):
+        from platform_core.models import AuditEvent
+
+        self.client.post(self.url(), {"documents": "keep"})
+        self.assertTrue(AuditEvent.objects.filter(action="source.forgotten").exists())
+
+    def test_the_control_opens_a_dialog_rather_than_deleting_on_click(self):
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        tools = body.split('class="origin-tools"')[1].split("</div>")[0]
+        self.assertIn(self.url(), tools)
+        self.assertIn("data-modal", tools)

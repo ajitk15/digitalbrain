@@ -223,3 +223,47 @@ def resync(user, app_id, source_id):
             details={"queued": len(created), "orphaned": orphaned},
         )
     return len(created), orphaned
+
+
+def forget(user, app_id, source_id, *, remove_documents=False):
+    """Stop tracking an origin. Returns (kept, removed).
+
+    Removing the documents uses the same path the delete button on a single
+    document uses - the stored file unlinked, the converted entry removed, the
+    row marked deleted rather than erased - so an audit trail survives a source
+    being forgotten. Nothing here erases history.
+    """
+    from .documents import document_path
+    from .models import Document, KnowledgeEntry
+
+    app, grant = application_for(user, app_id)
+    if grant.role != "owner":
+        raise PermissionDenied
+    source = KnowledgeSource.objects.filter(pk=source_id, application=app).first()
+    if source is None:
+        raise ValidationError("That source no longer exists.")
+
+    files = list(Document.objects.filter(source=source).exclude(status="deleted"))
+    removed = 0
+    with transaction.atomic():
+        if remove_documents:
+            for document in files:
+                path = document_path(app, document.pk)
+                path.unlink(missing_ok=True)
+                KnowledgeEntry.objects.filter(document=document).delete()
+                Document.objects.filter(pk=document.pk).update(
+                    status="deleted", conversion_error=""
+                )
+                audit(user, "document.deleted", document.pk, app.product.portfolio.organization)
+                removed += 1
+        audit(
+            user,
+            "source.forgotten",
+            source.pk,
+            app.product.portfolio.organization,
+            details={"kept": 0 if remove_documents else len(files), "removed": removed},
+        )
+        # The documents' own rows survive either way; `source` is SET_NULL, so
+        # the ones that were kept simply stop belonging to an origin.
+        source.delete()
+    return (0 if remove_documents else len(files)), removed

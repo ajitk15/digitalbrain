@@ -1,0 +1,8 @@
+{% extends 'base.html' %}{% load workspace %}{% block content %}{% application_nav %}<h1>Remove source?</h1>{% include 'knowledge_nav.html' with knowledge_view='documents' %}<section class="card form-card"><p><strong>{{ source.name }}</strong></p><p class="muted">{{ source.url }}</p>
+{% comment %}Two different things get called "delete a source", and which one somebody means is not guessable. Both are offered, named, and the safe one is first and is the ordinary button; the one that removes documents wears the destructive styling.{% endcomment %}
+<p>This origin brought in <strong>{{ file_count }}</strong> document{{ file_count|pluralize }}. Choose what happens to {{ file_count|pluralize:"it,them" }}.</p>
+<form method="post">{% csrf_token %}
+<div class="choice-card"><h3>Keep the documents</h3><p class="muted">The {{ file_count }} document{{ file_count|pluralize }} stay{{ file_count|pluralize:"s," }} and appear under <em>Everything else</em>. What is lost is the ability to check this origin for changes — importing the address again restores it.</p><button class="button" name="documents" value="keep">Remove source, keep documents</button></div>
+<div class="choice-card"><h3>Remove them as well</h3><p class="muted">The stored file and converted Markdown of each document are removed, exactly as deleting them one by one would. Chat excerpts already given and the audit record remain.</p><button class="button danger" name="documents" value="delete">Remove source and {{ file_count }} document{{ file_count|pluralize }}</button></div>
+<div class="actions"><a class="button secondary" data-modal-close href="{% url 'documents' application.pk %}">Cancel</a></div>
+</form></section>{% endblock %}

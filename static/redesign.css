@@ -2238,3 +2238,57 @@
 .origin-table table { font-size: var(--t-11); }
 .origin-table th { background: none; padding: 6px 10px; }
 .origin-table td { padding: 8px 10px; }
+
+/* The controls sit on the summary line, visible without opening the origin -
+   but as siblings of the <details>, not inside the <summary>. A summary is
+   already a button, and a button inside a button is neither valid nor operable
+   by keyboard in the way either one promises. Absolute positioning is what puts
+   them on the same line without nesting them. */
+.origin { position: relative; }
+.origin > details > summary.origin-row { padding-right: 96px; }
+
+.origin-tools {
+  position: absolute;
+  top: var(--s-3);
+  right: var(--s-4);
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  z-index: 1;
+}
+.origin-tools .inline-action { display: inline-flex; }
+
+.origin-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--c-ink-faint);
+}
+.origin-tool:hover {
+  border-color: var(--c-line-strong);
+  background: var(--c-surface);
+  color: var(--c-brand-strong);
+  text-decoration: none;
+}
+.origin-tool.is-danger:hover { color: var(--c-bad); border-color: var(--c-bad-line, #f0d6d6); }
+
+/* Two named outcomes rather than one ambiguous confirmation. */
+.choice-card {
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  padding: var(--s-4);
+  margin-bottom: var(--s-3);
+}
+.choice-card h3 { margin: 0 0 var(--s-1); font-size: var(--t-14); }
+.choice-card p { margin-bottom: var(--s-3); font-size: var(--t-12); }
+
+@media (max-width: 700px) {
+  .origin > details > summary.origin-row { padding-right: 0; }
+  .origin-tools { position: static; justify-content: flex-end; margin-bottom: var(--s-2); }
+}
