@@ -508,21 +508,10 @@ class KnowledgeHeadingTests(TestCase):
         self.assertNotContains(sources, '<p class="eyebrow">')
 
     def test_each_view_says_what_it_is_for(self):
-        """Restored by request, but one line per view rather than one repeated.
-
-        Sources and Graph carry a note under the tabs; Quality and Versions
-        carry a heading and their own paragraph, which say the same thing in a
-        different place.
-        """
-        views = self.views()
-        for name in ("sources", "graph"):
+        """Restored by request, but one line per view rather than one repeated."""
+        for name, response in self.views().items():
             with self.subTest(view=name):
-                self.assertContains(views[name], 'class="view-note"')
-        # Quality reports on a graph, so it needs one before it has a heading
-        # to report under.
-        self.build_graph()
-        self.assertContains(self.views()["quality"], "<h2>Graph quality</h2>")
-        self.assertContains(views["versions"], "<h2>Graph versions</h2>")
+                self.assertContains(response, 'class="view-note"')
 
     def build_graph(self):
         from platform_core.graphs import rebuild
@@ -553,19 +542,36 @@ class KnowledgeHeadingTests(TestCase):
             with self.subTest(view=name):
                 self.assertContains(response, 'aria-current="page"')
 
-    def test_the_view_headings_are_on_the_page(self):
-        """Put back by request after being hidden for space."""
-        versions = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
-        self.assertContains(versions, "<h2>Graph versions</h2>")
-        self.assertNotContains(versions, 'class="sr-only">Graph versions')
+    TITLES = {"sources": "Sources", "graph": "Graph", "quality": "Quality",
+              "versions": "Versions"}
 
-    def test_the_sources_view_is_named_on_the_page(self):
-        """The other three views print their own name; this one had none.
+    def test_every_view_is_named_on_the_page(self):
+        """Put back by request after being hidden for space.
 
-        Graph, Quality and Versions each carry a visible heading, so Sources
-        reading as an unlabelled table under a tab strip was the odd one out.
+        The heading is the tab's own word, so the thing that says which view
+        this is and the thing that switched to it cannot drift apart.
         """
-        self.assertContains(self.views()["sources"], '<h2 class="view-title">Sources</h2>')
+        self.build_graph()
+        views = self.views()
+        for name, title in self.TITLES.items():
+            with self.subTest(view=name):
+                self.assertContains(views[name], f'<h2 class="view-title">{title}</h2>')
+                self.assertNotContains(views[name], f'class="sr-only">{title}')
+
+    def test_no_view_prints_its_own_name_twice(self):
+        """Each view used to be headed again by the one thing it contains.
+
+        Versions was headed "Graph versions" over its only table and Quality
+        "Graph quality" over its only report, which with the view named above
+        them said the same thing twice. Panels inside the graph carry their own
+        names and are not this.
+        """
+        self.build_graph()
+        views = self.views()
+        for name, title in self.TITLES.items():
+            with self.subTest(view=name):
+                body = views[name].content.decode()
+                self.assertEqual(body.count(f">{title}</h2>"), 1, body.count(f">{title}</h2>"))
 
     def test_the_view_name_is_not_also_the_table_heading(self):
         """With one list there is no second list to tell it apart from.
