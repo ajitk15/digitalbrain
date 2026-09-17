@@ -19,6 +19,7 @@ the shared unauthenticated rate limit applies.
 
 import json
 import re
+import time
 
 from .fetching import DOCUMENT_SUFFIXES, FetchError, fetch
 
@@ -90,6 +91,38 @@ def headers(token):
     return value
 
 
+def quota_message(token):
+    """Why GitHub refused, when the refusal was a rate limit.
+
+    Asked only on the error path, and `/rate_limit` is itself exempt from the
+    quota, so this costs nothing that was going to work anyway. Returning None
+    means the refusal was not about the quota and the caller should say
+    something else.
+    """
+    try:
+        body, _, _, _ = fetch(f"{API}/rate_limit", headers=headers(token))
+        core = json.loads(body)["resources"]["core"]
+        remaining, limit, reset = core["remaining"], core["limit"], core["reset"]
+    except Exception:
+        # The diagnosis is a courtesy. Failing to obtain it must not replace the
+        # original refusal with an error about the diagnosis.
+        return None
+    if remaining > 0:
+        return None
+    minutes = max(0, int((reset - time.time()) // 60))
+    when = "in under a minute" if minutes < 1 else f"in about {minutes} minute(s)"
+    if token:
+        return (
+            f"GitHub's rate limit is used up: {limit} requests an hour for this credential. "
+            f"It resets {when}."
+        )
+    return (
+        f"GitHub's rate limit is used up: {limit} requests an hour for anonymous access, and "
+        f"one import spends one request per folder. It resets {when}. Mounting a GitHub "
+        "credential for this application raises the limit to 5,000 an hour."
+    )
+
+
 def _api(url, token, *, missing=None):
     """Call the contents API.
 
@@ -97,12 +130,24 @@ def _api(url, token, *, missing=None):
     reader can act on. GitHub answers 404 both for "no such thing" and for
     "private, and you sent no credential", so the wording has to cover both
     without asserting which - it cannot tell them apart either.
+
+    A 403 gets the same treatment. GitHub reports an exhausted rate limit as 403
+    rather than 429, so "api.github.com returned HTTP 403" was the one thing a
+    reader saw, and it names neither the cause nor the wait.
     """
     try:
         body, _, _, _ = fetch(url, headers=headers(token))
     except FetchError as failure:
         if missing and "HTTP 404" in str(failure):
             raise FetchError(missing) from None
+        if "HTTP 403" in str(failure) or "HTTP 429" in str(failure):
+            explained = quota_message(token)
+            if explained:
+                raise FetchError(explained) from None
+            raise FetchError(
+                "GitHub refused the request. If the repository is private, mount a GitHub "
+                "credential for this application."
+            ) from None
         raise
     try:
         return json.loads(body)

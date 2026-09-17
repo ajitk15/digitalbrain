@@ -7,6 +7,7 @@ and was wrong anyway, since the repository had importable files at its root.
 """
 
 import json
+import time
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -169,3 +170,86 @@ class TreeBoundTests(SimpleTestCase):
         with patch.object(github_sources, "_api", return_value=self.listing(40)):
             found = github_sources.tree("o", "r", "main", "docs", "")
         self.assertEqual(len(found), 40)
+
+
+class RateLimitMessageTests(SimpleTestCase):
+    """What a reader is told when GitHub refuses.
+
+    GitHub reports an exhausted rate limit as 403, not 429, so the one thing a
+    reader saw was "api.github.com returned HTTP 403" - which names neither the
+    cause nor the wait, and reads as though the import is broken.
+    """
+
+    def quota(self, remaining, limit=60, in_seconds=1800):
+        return api({
+            "resources": {
+                "core": {
+                    "remaining": remaining,
+                    "limit": limit,
+                    "reset": int(time.time()) + in_seconds,
+                }
+            }
+        })
+
+    def test_an_exhausted_anonymous_quota_names_the_cause_and_the_wait(self):
+        def responses(url, **kwargs):
+            if url.endswith("/rate_limit"):
+                return self.quota(0)
+            raise FetchError("api.github.com returned HTTP 403.")
+
+        with patch("platform_core.github_sources.fetch", side_effect=responses):
+            with self.assertRaises(FetchError) as raised:
+                plan(urlparse("https://github.com/o/r/tree/main/docs"))
+        message = str(raised.exception)
+        self.assertIn("rate limit is used up", message)
+        self.assertIn("60 requests an hour", message)
+        self.assertIn("about 29 minute(s)", message)
+        self.assertIn("5,000 an hour", message)
+        self.assertNotIn("HTTP 403", message)
+
+    def test_a_credentialled_quota_does_not_suggest_mounting_one(self):
+        def responses(url, **kwargs):
+            if url.endswith("/rate_limit"):
+                return self.quota(0, limit=5000)
+            raise FetchError("api.github.com returned HTTP 403.")
+
+        with patch("platform_core.github_sources.fetch", side_effect=responses):
+            with self.assertRaises(FetchError) as raised:
+                plan(urlparse("https://github.com/o/r/tree/main/docs"), "a-token")
+        message = str(raised.exception)
+        self.assertIn("5000 requests an hour for this credential", message)
+        self.assertNotIn("Mounting a GitHub credential", message)
+
+    def test_a_403_that_is_not_the_quota_says_something_else(self):
+        """Quota intact means the refusal was about access, not about volume."""
+
+        def responses(url, **kwargs):
+            if url.endswith("/rate_limit"):
+                return self.quota(59)
+            raise FetchError("api.github.com returned HTTP 403.")
+
+        with patch("platform_core.github_sources.fetch", side_effect=responses):
+            with self.assertRaises(FetchError) as raised:
+                plan(urlparse("https://github.com/o/r/tree/main/docs"))
+        self.assertIn("GitHub refused the request", str(raised.exception))
+        self.assertIn("mount a GitHub credential", str(raised.exception))
+
+    def test_a_failed_diagnosis_does_not_replace_the_refusal_with_its_own_error(self):
+        """The explanation is a courtesy; failing to get one must not mask the refusal."""
+
+        def responses(url, **kwargs):
+            raise FetchError("api.github.com returned HTTP 403.")
+
+        with patch("platform_core.github_sources.fetch", side_effect=responses):
+            with self.assertRaises(FetchError) as raised:
+                plan(urlparse("https://github.com/o/r/tree/main/docs"))
+        self.assertIn("GitHub refused the request", str(raised.exception))
+
+    def test_other_failures_are_still_reported_as_they_were(self):
+        with patch(
+            "platform_core.github_sources.fetch",
+            side_effect=FetchError("api.github.com returned HTTP 500."),
+        ):
+            with self.assertRaises(FetchError) as raised:
+                plan(urlparse("https://github.com/o/r/tree/main/docs"))
+        self.assertIn("HTTP 500", str(raised.exception))
