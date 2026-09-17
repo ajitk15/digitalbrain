@@ -288,13 +288,13 @@ class SourceDisclosureTests(TestCase):
 
     def test_opening_it_lists_the_files_that_came_from_it(self):
         body = self.body()
-        listing = body.split('class="origin-files"')[1].split("</ul>")[0]
+        listing = body.split("origin-table")[1].split("</table>")[0]
         self.assertIn("docs/f0.md", listing)
         self.assertIn("docs/f1.md", listing)
 
     def test_a_file_no_longer_at_the_origin_is_marked_in_the_listing(self):
         Document.objects.filter(source_url=FILE_ONE).update(orphaned=True)
-        listing = self.body().split('class="origin-files"')[1].split("</ul>")[0]
+        listing = self.body().split("origin-table")[1].split("</table>")[0]
         self.assertIn("No longer at origin", listing)
         self.assertIn("is-orphaned", listing)
 
@@ -309,3 +309,66 @@ class SourceDisclosureTests(TestCase):
         body = self.body()
         self.assertIn("docs/f0.md", body)
         self.assertNotIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), body)
+
+
+@settings_for_tests
+class NoDuplicationTests(TestCase):
+    """A file appears once: under its origin, or in the table, never both."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        self.source = register(self.owner, self.app, "github", TREE)
+        from platform_core.link_sources import submit
+
+        with patch(
+            "platform_core.link_sources.github_plan",
+            return_value=[("docs/imported.md", FILE_ZERO)],
+        ):
+            submit(self.owner, self.app.pk, TREE, source=self.source)
+        self.uploaded = Document.objects.create(
+            application=self.app,
+            uploaded_by=self.owner,
+            name="uploaded-by-hand.md",
+            size=1,
+            sha256="a" * 64,
+            status="ready",
+            origin="upload",
+        )
+
+    def page(self, query=None):
+        url = reverse("knowledge", args=[self.app.pk])
+        return self.client.get(f"{url}?q={query}" if query else url).content.decode()
+
+    def table(self, body):
+        return body.split('class="table-wrap sources-table"')[1]
+
+    def test_an_imported_file_is_listed_under_its_origin_only(self):
+        body = self.page()
+        self.assertIn("docs/imported.md", body.split("origin-table")[1])
+        self.assertNotIn("docs/imported.md", self.table(body))
+
+    def test_an_upload_is_listed_in_the_table_only(self):
+        """It came from nowhere, so it belongs to no origin."""
+        body = self.page()
+        self.assertIn("uploaded-by-hand.md", self.table(body))
+        listing = body.split("origin-table")[1].split("</table>")[0]
+        self.assertNotIn("uploaded-by-hand.md", listing)
+
+    def test_searching_finds_a_file_wherever_it_lives(self):
+        """Grouping the answer would hide matches inside unopened sources."""
+        body = self.page(query="imported")
+        self.assertIn("docs/imported.md", self.table(body))
+
+    def test_searching_puts_the_origins_panel_away(self):
+        """One list at a time: the grouped view is not the shape of an answer."""
+        self.assertIn("Where these came from", self.page())
+        self.assertNotIn("Where these came from", self.page(query="imported"))
+
+    def test_the_table_says_what_it_is_holding(self):
+        self.assertIn("Everything else", self.page())
+        self.assertIn("Search results", self.page(query="imported"))
+
+    def test_the_count_in_the_heading_still_counts_everything(self):
+        """Splitting the page must not make the total shrink."""
+        body = self.page()
+        self.assertIn('<span class="count">2</span>', body)

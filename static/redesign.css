@@ -2227,3 +2227,14 @@
   .origin > summary.origin-row { flex-wrap: wrap; }
   .origin-identity { flex: 1 1 100%; }
 }
+
+/* The table's own heading, now that it sits below the grouped origins rather
+   than being the only list on the page. */
+.table-title { margin: var(--s-6) 0 var(--s-1); font-size: var(--t-15); }
+
+/* The table inside an origin. Same columns as the one below it - it is the same
+   partial - but it sits within a card, so it drops the outer frame. */
+.origin-table { margin-top: 0; border: 0; border-radius: 0; }
+.origin-table table { font-size: var(--t-11); }
+.origin-table th { background: none; padding: 6px 10px; }
+.origin-table td { padding: 8px 10px; }

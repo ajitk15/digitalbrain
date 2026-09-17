@@ -61,6 +61,16 @@ def library_context(app, request):
             Q(title__icontains=search) | Q(content__icontains=search)
             | Q(source__icontains=search)
         )
+    else:
+        # Without a search, a document that came from a source is listed under
+        # that source and nowhere else. Listing it here as well put every
+        # imported file on the page twice - once under the origin it belongs to
+        # and once in a table it shared with everything else.
+        #
+        # Searching is the exception, and deliberately so: someone looking for a
+        # file by name wants it found wherever it lives, and grouping the answer
+        # by origin would hide matches inside sources they have not opened.
+        documents = documents.filter(source__isnull=True)
     inventory = documents.order_by().annotate(
         kind=Value("document", output_field=CharField())
     ).values_list("pk", "created_at", "kind")
@@ -91,16 +101,19 @@ def library_context(app, request):
         if feature_enabled("code_graph", app)
         else {}
     )
-    rows = []
-    for pk, created_at, kind in selected:
-        doc = docs.get(pk) if kind == "document" else None
-        entry = by_document.get(pk) if doc else by_id.get(pk)
+    def build_row(doc, entry, created_at):
+        """One table row, whether it is shown in the table or under its origin.
+
+        Both views carry the same columns, so both are built here. Writing the
+        row twice is how the two quietly come to disagree about what a source
+        looks like.
+        """
         code_repository = (
             code_repositories.get(repository_of(doc.source_url))
             if doc and doc.origin == "github"
             else None
         )
-        rows.append({
+        return {
             "document": doc, "entry": entry,
             "title": doc.name if doc else entry.title,
             "origin": doc.get_origin_display() if doc else (
@@ -110,37 +123,66 @@ def library_context(app, request):
             "versions": usage.get(str(entry.pk), []) if entry else [],
             "code_repository": code_repository,
             "code_snapshot": code_repository.snapshots.first() if code_repository else None,
-        })
+        }
+
+    rows = []
+    for pk, created_at, kind in selected:
+        doc = docs.get(pk) if kind == "document" else None
+        entry = by_document.get(pk) if doc else by_id.get(pk)
+        rows.append(build_row(doc, entry, created_at))
     page.object_list = rows
+
+    origins = list(
+        KnowledgeSource.objects.filter(application=app)
+        .prefetch_related(
+            # One query for every source's files, however many sources there
+            # are. Reading them per source would be a query per row, which is
+            # the shape this page spent a release getting rid of.
+            Prefetch(
+                "documents",
+                queryset=Document.objects.exclude(status="deleted").order_by("name"),
+                to_attr="files",
+            )
+        )
+        .annotate(
+            file_count=Count(
+                "documents", filter=~Q(documents__status="deleted"), distinct=True
+            ),
+            orphan_count=Count(
+                "documents",
+                filter=Q(documents__orphaned=True) & ~Q(documents__status="deleted"),
+                distinct=True,
+            ),
+        )
+        .order_by("name")
+    )
+    if origins:
+        # The rows under each origin need what the table's rows need: the
+        # converted entry, which graph versions used it, and the repository it
+        # belongs to. Gathered for every origin at once rather than per origin,
+        # so the cost does not grow with the number of sources.
+        grouped_documents = [doc for origin in origins for doc in origin.files]
+        grouped_entries = (
+            list(entries.filter(document_id__in=[d.pk for d in grouped_documents]).defer("content"))
+            if enabled and grouped_documents
+            else []
+        )
+        grouped_by_document = {entry.document_id: entry for entry in grouped_entries}
+        usage.update(graph_usage(app, grouped_entries))
+        for origin in origins:
+            origin.rows = [
+                build_row(doc, grouped_by_document.get(doc.pk), doc.created_at)
+                for doc in origin.files
+            ]
     return {
         "page": page, "query": search, "source_count": count,
+        # The grouped view answers "what came from where"; the table answers
+        # "find me this file". Only one of them is the right shape at a time.
+        "grouped": not search,
         # The places documents came from, so the list can be read as "these
         # twenty-seven files, from here" rather than as twenty-seven unrelated
         # rows that happen to share a prefix.
-        "origins": list(
-            KnowledgeSource.objects.filter(application=app)
-            .prefetch_related(
-                # One query for every source's files, however many sources there
-                # are. Reading them per source would be a query per row, which is
-                # the shape this page spent a release getting rid of.
-                Prefetch(
-                    "documents",
-                    queryset=Document.objects.exclude(status="deleted").order_by("name"),
-                    to_attr="files",
-                )
-            )
-            .annotate(
-                file_count=Count(
-                    "documents", filter=~Q(documents__status="deleted"), distinct=True
-                ),
-                orphan_count=Count(
-                    "documents",
-                    filter=Q(documents__orphaned=True) & ~Q(documents__status="deleted"),
-                    distinct=True,
-                ),
-            )
-            .order_by("name")
-        ),
+        "origins": origins,
         "knowledge_enabled": enabled,
         "conversion_pending": documents.filter(status__in=Document.IN_FLIGHT).exists(),
     }
