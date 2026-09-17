@@ -115,7 +115,5 @@ def library_context(app, request):
     return {
         "page": page, "query": search, "source_count": count,
         "knowledge_enabled": enabled,
-        "conversion_pending": documents.filter(status__in=[
-            "pending", "fetching", "queued", "converting"
-        ]).exists(),
+        "conversion_pending": documents.filter(status__in=Document.IN_FLIGHT).exists(),
     }

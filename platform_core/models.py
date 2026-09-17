@@ -179,6 +179,17 @@ class AIUsage(models.Model):
 
 
 class Document(models.Model):
+    #: A document on its way in: queued to download, downloading, queued to
+    #: convert, or converting. Every one of these is transient - the intake lane
+    #: always moves a row out of them, to `ready` or to `failed`.
+    #:
+    #: Named once because three places disagreed about it. The graph worker
+    #: waited only for `queued` and `converting`, so during a link import - where
+    #: documents sit at `pending` while they queue for download one at a time -
+    #: it saw no work in progress between each conversion and rebuilt the graph.
+    #: A twenty-seven file import produced twenty-four saved versions.
+    IN_FLIGHT = ("pending", "fetching", "queued", "converting")
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT, related_name="documents")
     uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)

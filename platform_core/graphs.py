@@ -369,8 +369,11 @@ def process_next_graph():
             or not feature_enabled("knowledge", app)
         ):
             continue
+        # Nothing is rebuilt while intake is still running. Waiting for the
+        # whole batch rather than for each file is what keeps one import to one
+        # version instead of one version per document.
         if Document.objects.filter(
-            application_id=app_id, status__in=["queued", "converting"]
+            application_id=app_id, status__in=Document.IN_FLIGHT
         ).exists():
             continue
         graph = KnowledgeGraph.objects.filter(application_id=app_id).first()
@@ -729,7 +732,7 @@ def graph_view(request, pk):
             "document_total": document_total,
             "imported_total": imported_total,
             "pending_documents": Document.objects.filter(
-                application=app, status__in=["queued", "converting"]
+                application=app, status__in=Document.IN_FLIGHT
             ).count(),
         },
     )

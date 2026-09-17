@@ -12,7 +12,9 @@ from platform_core.graphs import STALL_MINUTES, build_graph, process_next_graph,
 from platform_core.models import (
     AIConfiguration,
     ApplicationGrant,
+    Document,
     FeatureSwitch,
+    GraphRevision,
     KnowledgeGraph,
 )
 from platform_core.workbench import add_knowledge
@@ -443,3 +445,79 @@ class ProviderDiagnosisTests(SimpleTestCase):
 
     def test_anything_unrecognised_falls_back_to_the_generic_message(self):
         self.assertIn("response unavailable", self.diagnose(ValueError("weird internal state")))
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class IntakeSettlingTests(TestCase):
+    """One import, one version.
+
+    The graph worker waited only for documents that were `queued` or
+    `converting`. A link import creates them all as `pending` and downloads them
+    one at a time, so between each conversion nothing was in either of those two
+    states and the worker rebuilt. Twenty-seven files produced twenty-four saved
+    versions - every one of them a full graph build, and every one of them a row
+    somebody has to look past to find the version they published.
+    """
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Configuration",
+            "| Node | Queue |\n| --- | --- |\n| NODE1 | Q1 |",
+        )
+
+    def waiting(self, status):
+        return Document.objects.create(
+            application=self.app,
+            uploaded_by=self.owner,
+            name=f"waiting-{status}.md",
+            size=1,
+            sha256=status.ljust(64, "0"),
+            status=status,
+            origin="github",
+        )
+
+    def revisions(self):
+        return GraphRevision.objects.filter(application=self.app).count()
+
+    def test_a_document_waiting_to_download_holds_the_rebuild(self):
+        """`pending` is the state most of a link import sits in."""
+        self.waiting("pending")
+        self.assertFalse(process_next_graph())
+        self.assertEqual(self.revisions(), 0)
+
+    def test_a_document_downloading_holds_the_rebuild(self):
+        self.waiting("fetching")
+        self.assertFalse(process_next_graph())
+        self.assertEqual(self.revisions(), 0)
+
+    def test_a_document_converting_still_holds_the_rebuild(self):
+        self.waiting("converting")
+        self.assertFalse(process_next_graph())
+        self.assertEqual(self.revisions(), 0)
+
+    def test_the_batch_produces_one_version_once_it_settles(self):
+        documents = [self.waiting(status) for status in ("pending", "pending", "fetching")]
+        for _ in range(3):
+            self.assertFalse(process_next_graph())
+        self.assertEqual(self.revisions(), 0)
+        # The batch finishes: every row leaves the in-flight set.
+        Document.objects.filter(pk__in=[d.pk for d in documents]).update(status="ready")
+        self.assertTrue(process_next_graph())
+        self.assertEqual(self.revisions(), 1)
+
+    def test_a_terminal_document_never_holds_the_rebuild(self):
+        """A failed download must not block the graph for ever."""
+        for status in ("failed", "rejected", "deleted"):
+            with self.subTest(status=status):
+                self.assertNotIn(status, Document.IN_FLIGHT)
+
+    def test_every_in_flight_state_is_one_intake_moves_out_of(self):
+        """The guard is only safe because each of these states is transient."""
+        self.assertEqual(Document.IN_FLIGHT, ("pending", "fetching", "queued", "converting"))
