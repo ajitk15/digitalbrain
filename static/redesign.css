@@ -2340,3 +2340,35 @@
   .origin-identity { flex: 1 1 100%; }
   .origin-when { margin-left: 0; }
 }
+
+/* ---------------------------------------------------------------------------
+   The controls, in the flow instead of floating over it.
+
+   They were positioned absolutely at a fixed distance from the top, against a
+   row whose height changes with the length of the name and the address - so
+   they were only ever aligned by luck, and the row had to reserve a matching
+   width by hand. A flex header puts them beside the disclosure instead: the
+   disclosure takes the room that is left, the controls take what they need, and
+   neither has to be told about the other's size.
+   --------------------------------------------------------------------------- */
+
+.origin-head { display: flex; align-items: flex-start; gap: var(--s-2); }
+.origin-head > details { flex: 1 1 auto; min-width: 0; }
+
+.origin-tools {
+  position: static;
+  flex: none;
+  /* Aligned with the middle of the summary's first line - which is where the
+     state pill sits - rather than with the middle of a card that grows when it
+     opens. Measured, not guessed: 1px left the strip four pixels high. */
+  margin-top: 5px;
+}
+
+/* The width no longer has to be reserved by hand, so it no longer has to be
+   kept in step with the strip. */
+.origin details > summary.origin-row { padding-right: 0; }
+.origin { --origin-tools-width: 0; }
+
+@media (max-width: 980px) {
+  .origin-head { align-items: flex-start; }
+}
