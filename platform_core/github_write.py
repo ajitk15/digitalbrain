@@ -14,10 +14,20 @@ uses ``github_write_<app>``. They are different files, so granting an applicatio
 the ability to import issues does not grant it the ability to push. An
 application with no write credential mounted simply cannot deliver, and says so.
 
-**Only files that already exist.** Paths come from a model, so a change may only
-replace a file the platform first read from the repository at the branch it is
-about to write to. Nothing is created, nothing is deleted, and a path that did
-not come back from a read is refused rather than sanitised.
+**Only paths a person approved.** Paths come from a plan a second person
+approved, never from the model that writes the contents -- that one addresses
+files by the number it was shown them with and cannot name a path at all. A
+change either replaces a file the platform first read at the branch it is about
+to write to, or creates one the plan named that is not there.
+
+**Creation is explicit at every step.** A path counts as new only when GitHub
+answers 404, which is why `absent_path` exists rather than reading "read_file
+returned None" as "not there" -- that also covers a file too large to read, a
+binary, and a directory, and creating over any of those would be a silent
+overwrite. Verification re-checks the path is still absent, and the commit
+carries no blob sha, so GitHub refuses it if something appeared in between.
+Nothing is deleted, and a path that fails `safe_path` is refused rather than
+sanitised.
 """
 
 import base64
@@ -52,7 +62,9 @@ def call(url, token, *, method="GET", payload=None, label="GitHub"):
     try:
         raw, _, _, _ = fetch(url, headers=headers(token), method=method, body=body)
     except FetchError as failure:
-        raise ValidationError(f"{label}: {failure}") from None
+        error = ValidationError(f"{label}: {failure}")
+        error.status = failure.status
+        raise error from None
     if not raw:
         return {}
     try:
@@ -104,6 +116,25 @@ def read_file(repository, path, ref, token):
     return {"path": path, "text": text, "sha": data.get("sha")}
 
 
+def absent_path(repository, path, ref, token):
+    """The normalised path when GitHub says nothing is there, otherwise None.
+
+    Deliberately not "read_file returned None": that also means too large,
+    binary, or a directory, and treating any of those as absent would turn a
+    creation into an overwrite of something nobody read. Only a 404 counts. A
+    path `safe_path` refuses is not absent either -- it is not a path.
+    """
+    try:
+        safe = safe_path(path)
+    except ValidationError:
+        return None
+    try:
+        call(f"{API}/repos/{repository}/contents/{safe}?ref={ref}", token, label="GitHub read")
+    except ValidationError as failure:
+        return safe if getattr(failure, "status", None) == 404 else None
+    return None
+
+
 def default_branch(repository, token):
     data = call(f"{API}/repos/{repository}", token, label="GitHub repository")
     branch = data.get("default_branch") if isinstance(data, dict) else None
@@ -135,23 +166,29 @@ def create_branch(repository, name, from_sha, token):
     return name
 
 
-def commit_file(repository, branch, path, text, sha, message, token):
-    """Replace one existing file on a branch this platform created."""
+def commit_file(repository, branch, path, text, sha, message, token, *, create=False):
+    """Write one file on a branch this platform created.
+
+    `sha` names the blob being replaced. Creating instead is a separate act the
+    caller has to ask for by name, so a missing sha can never quietly become a
+    new file: without `create` it is still refused, and with it a sha would mean
+    the caller believes two contradictory things about the same path.
+    """
     if not branch.startswith(BRANCH_PREFIX):
         raise ValidationError("Refusing to commit outside this platform's branch prefix.")
-    if not sha:
+    if create and sha:
+        raise ValidationError(f"Refusing to create {path}: it already has contents to replace.")
+    if not create and not sha:
         raise ValidationError(f"Refusing to create {path}: only existing files are changed.")
     encoded = base64.b64encode(text.encode("utf-8")).decode()
+    payload = {"message": message[:200], "content": encoded, "branch": branch}
+    if sha:
+        payload["sha"] = sha
     call(
         f"{API}/repos/{repository}/contents/{safe_path(path)}",
         token,
         method="PUT",
-        payload={
-            "message": message[:200],
-            "content": encoded,
-            "sha": sha,
-            "branch": branch,
-        },
+        payload=payload,
         label="GitHub commit",
     )
 

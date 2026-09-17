@@ -76,6 +76,15 @@ DOCUMENT_SUFFIXES = tuple(
 class FetchError(Exception):
     """A URL could not be retrieved. The message is safe to show a user."""
 
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        #: The HTTP status, when the failure was one. A caller that has to tell
+        #: "there is nothing there" from "that could not be read" needs the code
+        #: rather than the sentence. Everything refused before the response --
+        #: resolution, a private address, a redirect, the size caps -- leaves it
+        #: None, so a missing status never reads as a successful 404.
+        self.status = status
+
 
 def _blocked(address):
     """True for any address a user must not be able to aim this server at."""
@@ -235,7 +244,9 @@ def fetch(raw, *, headers=None, method="GET", body=None):
             )
         # 201 is how an API reports something created; it is a success here.
         if response.status not in {200, 201}:
-            raise FetchError(f"{parsed.hostname} returned HTTP {response.status}.")
+            raise FetchError(
+                f"{parsed.hostname} returned HTTP {response.status}.", status=response.status
+            )
         declared = response.getheader("Content-Length")
         if declared and declared.isdigit() and int(declared) > MAX_BYTES:
             raise FetchError("That document is larger than 8 MB.")

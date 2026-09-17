@@ -1,7 +1,7 @@
 {
   "status": "application-workflows-and-organization-tree",
   "tests": {
-    "passed": 637,
+    "passed": 767,
     "failed": 0,
     "database": "SQLite"
   },
@@ -28,7 +28,7 @@
   "local_url": "http://127.0.0.1:8000",
   "limitations": [
     "Live OpenAI/Claude/GitHub calls not validated; credentials required. SDK provider calls use test doubles. Claude bundled CLI version check passed.",
-    "Code Factory delivers a draft pull request, but only by replacing files it first read; creating or deleting a file is refused, and no build or test suite is run.",
+    "Code Factory delivers a draft pull request that replaces files it first read and creates paths the approved plan named that are not there; deleting a file is refused, and no build or test suite is run.",
     "Embedding retrieval, semantic entailment scoring, Graphify integration, and scheduled or write-back connector operations pending.",
     "Code Graph reads GitHub only; a run pins one snapshot. Chat cannot read Code Graph at all.",
     "Correctness depends on a single worker process: the stream registry and the API rate limit are process-local.",
@@ -85,7 +85,8 @@
   "code_factory": {
     "pipeline": "triage, analysis, design, human approval, implementation, verification, delivery",
     "gates": "a different user with can_approve must approve; the repository must be confirmed; a github_write_<application> credential distinct from the read credential must be mounted",
-    "delivery": "draft pull request on a digital-brain/ branch; replaces only files it first read at the base branch; 20 files, 400 KB each; no creation, deletion or merge",
-    "outcome": "not read back - merge state and CI results are not recorded"
+    "delivery": "draft pull request on a digital-brain/ branch; replaces files it first read at the base branch and creates approved paths GitHub reports as absent, re-checked still absent before writing and committed without a blob sha; 20 files, 400 KB each; no deletion or merge",
+    "outcome": "not read back - merge state and CI results are not recorded",
+    "creation": "a path counts as new only on a 404, never on an unreadable read; the path comes from a plan item a second person approved, and the implementing model addresses files by number and cannot name a path"
   }
 }

@@ -818,13 +818,14 @@ ELISIONS = ("... rest of", "# ...", "// ...", "<!-- ... -->", "unchanged ...", "
 
 IMPLEMENTATION_INSTRUCTIONS = GROUND_RULES + (
     "You are given the current contents of files from a repository, each with a "
-    "number. Apply the approved changes described to you. Return only a JSON "
-    "object with a files array, each entry having: file (the number of the file "
-    "you are changing) and content (that file's complete new text). Return only "
-    "files you are actually changing, and return each one in full - not a diff, "
-    "not an excerpt, and never a placeholder or an elision. If a change cannot be "
-    "made from what you were given, leave that file out and explain why in a "
-    "notes string on the object."
+    "number. An entry marked NEW FILE does not exist yet and has no contents: "
+    "the approved work is to write it from nothing. Apply the approved changes "
+    "described to you. Return only a JSON object with a files array, each entry "
+    "having: file (the number of the file you are changing) and content (that "
+    "file's complete new text). Return only files you are actually changing, and "
+    "return each one in full - not a diff, not an excerpt, and never a "
+    "placeholder or an elision. If a change cannot be made from what you were "
+    "given, leave that file out and explain why in a notes string on the object."
 )
 
 
@@ -862,9 +863,21 @@ def target_paths(plan):
     return paths
 
 
+#: Shown in place of contents for a path the approved plan named that is not
+#: there. A fix is not only an edit: the change that proves a bug is fixed is
+#: usually a test file that does not exist yet.
+NEW_FILE = "NEW FILE. This path does not exist in the repository. Write it in full."
+
+
 def run_implementation(run, token):
-    """Ask for the new contents of the files the design named."""
-    from .github_write import MAX_FILES, read_file
+    """Ask for the new contents of the files the design named.
+
+    A named path that is not in the repository becomes a file to write rather
+    than one to skip. That is safe here and nowhere else in the pipeline: the
+    path was named by a plan item a second person approved, and this model
+    never sees a path -- it answers by the number each entry was shown with.
+    """
+    from .github_write import MAX_FILES, absent_path, read_file
 
     started = time.monotonic()
     phase = start_phase(run, "implementation")
@@ -873,10 +886,15 @@ def run_implementation(run, token):
         found = read_file(run.proposed_repository, path, run.base_branch, token)
         if found:
             files.append(found)
+            continue
+        missing = absent_path(run.proposed_repository, path, run.base_branch, token)
+        if missing:
+            files.append({"path": missing, "text": "", "sha": None})
     if not files:
         message = (
             "None of the files the design named could be read from "
-            f"{run.proposed_repository} at {run.base_branch}. Nothing was changed."
+            f"{run.proposed_repository} at {run.base_branch}, and none of them are "
+            "paths that are simply not there. Nothing was changed."
         )
         finish_phase(phase, "failed", started, error=message)
         raise ValidationError(message)
@@ -884,8 +902,8 @@ def run_implementation(run, token):
         {
             "id": str(index),
             "title": found["path"],
-            "excerpt": found["text"][:20000],
-            "digest": found["sha"],
+            "excerpt": found["text"][:20000] if found["sha"] else NEW_FILE,
+            "digest": found["sha"] or "",
         }
         for index, found in enumerate(files, start=1)
     ]
@@ -923,7 +941,12 @@ def run_implementation(run, token):
         output={
             "notes": str(payload.get("notes") or "")[:1000],
             "files": [
-                {"path": change["path"], "bytes": len(change["content"])} for change in changes
+                {
+                    "path": change["path"],
+                    "bytes": len(change["content"]),
+                    "new": change["sha"] is None,
+                }
+                for change in changes
             ],
         },
         usage=receipt,
@@ -932,7 +955,13 @@ def run_implementation(run, token):
 
 
 def collect_changes(payload, files):
-    """The proposed new contents, matched back to files we actually read."""
+    """The proposed new contents, matched back to the entries we showed.
+
+    A change carries the blob sha it was read at, or None when the entry was a
+    path that is not in the repository. That sha is what tells the two later
+    steps apart: verification re-reads one and re-checks the other is still
+    absent, and delivery replaces one and creates the other.
+    """
     from .github_write import MAX_FILE_BYTES
 
     by_number = {str(index): found for index, found in enumerate(files, start=1)}
@@ -965,7 +994,7 @@ def run_verification(run, changes, token):
     where code should be, a file that moved underneath us - and say plainly that
     it did no more than that rather than implying a green build.
     """
-    from .github_write import read_file, safe_path
+    from .github_write import absent_path, read_file, safe_path
 
     started = time.monotonic()
     phase = start_phase(run, "verification")
@@ -978,6 +1007,13 @@ def run_verification(run, changes, token):
             continue
         if any(marker in change["content"] for marker in ELISIONS):
             findings.append(f"{change['path']}: contains an elision where code should be.")
+        if change["sha"] is None:
+            # The staleness check for a file being created: it was not there
+            # when we looked, and it must still not be there now. Somebody
+            # else adding it in between is exactly the case this catches.
+            if absent_path(run.proposed_repository, change["path"], run.base_branch, token) is None:
+                findings.append(f"{change['path']}: exists now, having been absent when read.")
+            continue
         current = read_file(run.proposed_repository, change["path"], run.base_branch, token)
         if current is None:
             findings.append(f"{change['path']}: could not be re-read before writing.")
@@ -992,9 +1028,11 @@ def run_verification(run, changes, token):
         started,
         output={
             "checked": [change["path"] for change in changes],
+            "created": [change["path"] for change in changes if change["sha"] is None],
             "limits": (
-                "Paths, elisions and staleness were checked. No build or test suite was "
-                "run: this platform holds knowledge about the application, not a checkout."
+                "Paths, elisions and staleness were checked, and each new path was "
+                "confirmed still absent. No build or test suite was run: this platform "
+                "holds knowledge about the application, not a checkout."
             ),
         },
     )
@@ -1018,21 +1056,24 @@ def run_delivery(run, changes, token):
         head = branch_head(run.proposed_repository, run.base_branch, token)
         create_branch(run.proposed_repository, branch, head, token)
         for change in changes:
+            creating = change["sha"] is None
             commit_file(
                 run.proposed_repository,
                 branch,
                 change["path"],
                 change["content"],
                 change["sha"],
-                f"{run.ticket_external_id or 'Change'}: {change['path']}",
+                f"{run.ticket_external_id or 'Change'}: "
+                f"{'add' if creating else 'update'} {change['path']}",
                 token,
+                create=creating,
             )
         url = open_pull_request(
             run.proposed_repository,
             branch,
             run.base_branch,
             run.plan.title,
-            pull_request_body(run),
+            pull_request_body(run, changes),
             token,
         )
     except ValidationError as failure:
@@ -1043,8 +1084,14 @@ def run_delivery(run, changes, token):
     return url
 
 
-def pull_request_body(run):
-    """What a reviewer on the repository side needs without opening this platform."""
+def pull_request_body(run, changes=()):
+    """What a reviewer on the repository side needs without opening this platform.
+
+    New files are named rather than left for the reviewer to notice in the diff:
+    adding one is the more consequential half of what this can do, and somebody
+    deciding how closely to read should be told which it is before they start.
+    """
+    created = [change["path"] for change in changes if change["sha"] is None]
     lines = [
         f"Raised from {run.ticket_url or run.ticket_external_id}.",
         "",
@@ -1070,6 +1117,12 @@ def pull_request_body(run):
         "\n---\nOpened as a draft by Digital Brain. Every quotation above was verified "
         "against its source before this was raised. No build or test suite was run."
     )
+    if created:
+        lines.insert(
+            len(lines) - 1,
+            "\n**New files in this change:** "
+            + ", ".join(f"`{path}`" for path in created),
+        )
     return "\n".join(lines)
 
 

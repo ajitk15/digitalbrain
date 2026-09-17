@@ -11,7 +11,13 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from platform_core.code_factory import collect_changes, deliver, target_paths
-from platform_core.github_write import BRANCH_PREFIX, commit_file, create_branch, safe_path
+from platform_core.github_write import (
+    BRANCH_PREFIX,
+    absent_path,
+    commit_file,
+    create_branch,
+    safe_path,
+)
 from platform_core.models import ApplicationGrant, ChangePlan, FactoryRun, PlanItem
 
 from . import test_documents
@@ -43,10 +49,55 @@ class PathSafetyTests(SimpleTestCase):
         with self.assertRaises(ValidationError):
             commit_file("o/r", "main", "a.py", "x", "sha", "m", "token")
 
-    def test_creating_a_file_that_did_not_exist_is_refused(self):
-        """Only files the platform first read may be replaced."""
+    def test_creating_a_file_is_refused_unless_it_is_asked_for_by_name(self):
+        """A missing sha must never quietly become a new file."""
         with self.assertRaises(ValidationError):
             commit_file("o/r", f"{BRANCH_PREFIX}x", "new.py", "x", "", "m", "token")
+
+    def test_a_creation_carrying_a_sha_is_refused(self):
+        """The caller would be saying the path both does and does not exist."""
+        with self.assertRaises(ValidationError):
+            commit_file(
+                "o/r", f"{BRANCH_PREFIX}x", "new.py", "x", "sha", "m", "token", create=True
+            )
+
+    def test_an_asked_for_creation_sends_no_sha(self):
+        """GitHub refuses a sha-less PUT to a path that exists. That is the backstop."""
+        with patch("platform_core.github_write.call") as call:
+            commit_file("o/r", f"{BRANCH_PREFIX}x", "new.py", "x", None, "m", "tok", create=True)
+        self.assertNotIn("sha", call.call_args.kwargs["payload"])
+
+
+class AbsentPathTests(SimpleTestCase):
+    """Telling "not there" apart from "could not be read".
+
+    read_file returns None for a file that is too large, binary, or a directory
+    as well as for one that does not exist. Creating over any of those would be
+    a silent overwrite of something nobody read, so only a 404 counts.
+    """
+
+    def failure(self, status):
+        error = ValidationError("GitHub read: nope")
+        error.status = status
+        return error
+
+    def test_only_a_404_means_the_path_is_not_there(self):
+        for status, expected in ((404, "src/new.py"), (403, None), (500, None), (None, None)):
+            with self.subTest(status=status):
+                with patch(
+                    "platform_core.github_write.call", side_effect=self.failure(status)
+                ):
+                    self.assertEqual(absent_path("o/r", "src/new.py", "main", "tok"), expected)
+
+    def test_a_path_that_reads_back_is_not_absent(self):
+        with patch("platform_core.github_write.call", return_value={"type": "file"}):
+            self.assertIsNone(absent_path("o/r", "src/new.py", "main", "tok"))
+
+    def test_a_path_that_is_not_a_path_is_not_absent(self):
+        """A refused path is not a place to write; it is not a place at all."""
+        with patch("platform_core.github_write.call") as call:
+            self.assertIsNone(absent_path("o/r", "../escape", "main", "tok"))
+        call.assert_not_called()
 
 
 class ChangeCollectionTests(SimpleTestCase):
@@ -69,6 +120,14 @@ class ChangeCollectionTests(SimpleTestCase):
     def test_an_empty_body_is_not_a_change(self):
         with self.assertRaises(ValidationError):
             collect_changes({"files": [{"file": "1", "content": "   "}]}, self.files())
+
+    def test_a_new_file_is_collected_with_no_sha(self):
+        """None is what later tells delivery to create rather than replace."""
+        entry = [{"path": "tests/test_queue.py", "text": "", "sha": None}]
+        payload = {"files": [{"file": "1", "content": "def test_it(): assert True"}]}
+        changes = collect_changes(payload, entry)
+        self.assertEqual(changes[0]["sha"], None)
+        self.assertEqual(changes[0]["path"], "tests/test_queue.py")
 
 
 @override_settings(**SETTINGS)
@@ -145,11 +204,13 @@ class DeliveryGateTests(TestCase):
         self.assertIn("already opened", " ".join(raised.exception.messages))
 
     def test_nothing_is_written_when_no_named_file_can_be_read(self):
+        """Unreadable is not absent: a file too large or binary is not created over."""
         with patch("platform_core.code_factory.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=None):
-                with patch("platform_core.github_write.create_branch") as branch:
-                    with self.assertRaises(ValidationError):
-                        self.deliver()
+                with patch("platform_core.github_write.absent_path", return_value=None):
+                    with patch("platform_core.github_write.create_branch") as branch:
+                        with self.assertRaises(ValidationError):
+                            self.deliver()
         branch.assert_not_called()
         self.run.refresh_from_db()
         self.assertEqual(self.run.status, "failed")
@@ -207,6 +268,58 @@ class DeliveryGateTests(TestCase):
         self.assertEqual(self.run.status, "delivered")
         self.assertEqual(self.run.pull_request_url, url)
         self.assertEqual(self.run.phases.get(name="delivery").status, "ok")
+
+    def new_file_run(self, absent, answer=None, **extra):
+        """Deliver a plan whose one named path is not in the repository."""
+        answer = answer or json.dumps(
+            {"files": [{"file": "1", "content": "def test_bound(): assert True"}]}
+        )
+        patches = {
+            "platform_core.code_factory.write_credential": {"return_value": "tok"},
+            "platform_core.github_write.read_file": {"return_value": None},
+            "platform_core.github_write.absent_path": absent,
+            "platform_core.ai.invoke_ai": {"return_value": answer},
+            "platform_core.github_write.branch_head": {"return_value": "head"},
+            "platform_core.github_write.create_branch": {},
+            "platform_core.github_write.commit_file": {},
+            "platform_core.github_write.open_pull_request": {
+                "return_value": "https://github.com/acme/widgets/pull/9"
+            },
+        }
+        patches.update(extra)
+        started = [patch(target, **options) for target, options in patches.items()]
+        mocks = {target: item.start() for target, item in zip(patches, started, strict=True)}
+        self.addCleanup(lambda: [item.stop() for item in started])
+        return mocks
+
+    def test_a_named_path_that_is_not_there_is_written_rather_than_skipped(self):
+        """A fix is not only an edit. The test that proves it is a file that is not there yet."""
+        mocks = self.new_file_run({"return_value": "tests/test_queue.py"})
+        url = self.deliver()
+        self.assertEqual(url, "https://github.com/acme/widgets/pull/9")
+        commit = mocks["platform_core.github_write.commit_file"]
+        self.assertEqual(commit.call_args.args[2], "tests/test_queue.py")
+        self.assertIsNone(commit.call_args.args[4])
+        self.assertTrue(commit.call_args.kwargs["create"])
+        phase = self.run.phases.get(name="implementation")
+        self.assertTrue(phase.output["files"][0]["new"])
+
+    def test_a_new_file_that_appeared_since_it_was_read_is_refused(self):
+        """Somebody else adding that path in between is the staleness case for a creation."""
+        mocks = self.new_file_run({"side_effect": ["tests/test_queue.py", None]})
+        with self.assertRaises(ValidationError) as raised:
+            self.deliver()
+        self.assertIn("exists now", " ".join(raised.exception.messages))
+        mocks["platform_core.github_write.create_branch"].assert_not_called()
+        self.assertEqual(self.run.phases.get(name="verification").status, "failed")
+
+    def test_the_pull_request_names_the_files_it_creates(self):
+        """Adding a file is the more consequential half; a reviewer is told before reading."""
+        mocks = self.new_file_run({"return_value": "tests/test_queue.py"})
+        self.deliver()
+        body = mocks["platform_core.github_write.open_pull_request"].call_args.args[4]
+        self.assertIn("New files in this change:", body)
+        self.assertIn("tests/test_queue.py", body)
 
     def test_opening_a_pull_request_is_audited(self):
         from platform_core.models import AuditEvent

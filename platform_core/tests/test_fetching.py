@@ -20,6 +20,22 @@ def addrinfo(*literals):
     ]
 
 
+class FailureStatusTests(SimpleTestCase):
+    """A caller that has to tell "not there" from "could not be read" needs the code.
+
+    github_write.absent_path is the one that does: it may only report a path as
+    absent on a real 404, because creating over a file that merely could not be
+    read would be an overwrite of something nobody saw.
+    """
+
+    def test_an_http_failure_carries_its_status(self):
+        self.assertEqual(FetchError("nope", status=404).status, 404)
+
+    def test_a_failure_that_never_reached_a_response_carries_none(self):
+        """Resolution, a private address, a redirect and the size caps all land here."""
+        self.assertIsNone(FetchError("that host could not be resolved.").status)
+
+
 class UrlValidationTests(SimpleTestCase):
     def test_a_bare_host_is_assumed_https(self):
         self.assertEqual(normalise("example.com/docs").scheme, "https")
