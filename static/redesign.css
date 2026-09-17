@@ -2230,7 +2230,13 @@
 
 /* The table's own heading, now that it sits below the grouped origins rather
    than being the only list on the page. */
-.table-title { margin: var(--s-6) 0 var(--s-1); font-size: var(--t-15); }
+/* The heading over the sources table names that table, not the view — the
+   view is named above the tabs. When nothing splits the list there is no
+   table to distinguish, so only the lede is rendered and the wrapper keeps
+   the spacing the heading used to provide. */
+.table-intro { margin-top: var(--s-6); }
+.table-intro > p { margin: 0; }
+.table-title { margin: 0 0 var(--s-1); font-size: var(--t-15); }
 
 /* The table inside an origin. Same columns as the one below it - it is the same
    partial - but it sits within a card, so it drops the outer frame. */
@@ -2418,6 +2424,10 @@
 /* The line under the tabs saying what this view is for. One per view: the
    sentence it replaces described the whole section, so it read identically on
    the graph, the quality report and the version list. */
+/* The view's own name, under the tabs that switch between views. */
+.view-title { margin: var(--s-4) 0 0; font-size: var(--t-17); }
+.view-title + .view-note { margin-top: var(--s-1); }
+
 .view-note {
   margin: var(--s-3) 0 0;
   max-width: 78ch;

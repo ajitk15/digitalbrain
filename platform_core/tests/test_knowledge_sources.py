@@ -559,6 +559,27 @@ class KnowledgeHeadingTests(TestCase):
         self.assertContains(versions, "<h2>Graph versions</h2>")
         self.assertNotContains(versions, 'class="sr-only">Graph versions')
 
+    def test_the_sources_view_is_named_on_the_page(self):
+        """The other three views print their own name; this one had none.
+
+        Graph, Quality and Versions each carry a visible heading, so Sources
+        reading as an unlabelled table under a tab strip was the odd one out.
+        """
+        self.assertContains(self.views()["sources"], '<h2 class="view-title">Sources</h2>')
+
+    def test_the_view_name_is_not_also_the_table_heading(self):
+        """With one list there is no second list to tell it apart from.
+
+        The table used to be headed "Sources" itself, which with the view named
+        above it printed the same word twice for one table.
+        """
+        Document.objects.create(
+            application=self.app, uploaded_by=self.owner, name="one.md", size=1,
+            sha256="c" * 64, status="ready", origin="upload",
+        )
+        body = self.client.get(reverse("documents", args=[self.app.pk])).content.decode()
+        self.assertEqual(body.count(">Sources</h2>"), 1)
+
     def test_the_source_count_moves_onto_the_tab_it_belongs_to(self):
         """Removing the heading must not take the number with it."""
         Document.objects.create(
