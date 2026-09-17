@@ -211,6 +211,35 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
   .masthead{padding-top:2.2rem}
 }
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+/* ── print / PDF ───────────────────────────────────────────
+   Paper is light whatever the screen is set to, the rail is
+   navigation nobody can click, and a section should not be
+   torn across a page boundary mid-card. */
+@media print{
+  :root,[data-theme="dark"],[data-theme="light"]{
+    --bg:#fff; --bg-soft:#fff;
+    --panel:#fff; --panel-solid:#fff; --border:#c7d2de; --border-soft:#e2e8f0;
+    --text:#0f172a; --muted:#334155; --dim:#64748b;
+    --cyan:#0e7490; --emerald:#047857; --amber:#b45309; --violet:#6d28d9; --rose:#be123c;
+    --node:#fff; --glow:none;
+  }
+  @page{margin:14mm 12mm}
+  html,body{background:#fff!important;background-image:none!important;font-size:10.5pt}
+  .rail,.tbtn,.rail-foot{display:none!important}
+  .shell{display:block}
+  main{padding:0}
+  .wrap{max-width:none}
+  .masthead{padding:0 0 1.2rem;border-bottom:1px solid var(--border)}
+  section{padding:1.4rem 0;border-bottom:0;break-before:page}
+  #overview{break-before:auto}
+  h2,h3{break-after:avoid}
+  .card,.stat,.band,figure,.table-wrap,.frame,.why>div,tr{break-inside:avoid}
+  .frame{box-shadow:none}
+  .frame-bar a{display:none}
+  pre,.svg-wrap,.card,.band,.table-wrap{box-shadow:none}
+  a{color:inherit;text-decoration:none}
+}
 </style>
 </head>
 <body>
@@ -521,12 +550,6 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
         <a href="01_overview.html" target="_blank" rel="noopener">Open standalone — guided views, export ↗</a>
       </div>
       <iframe data-src="01_overview.html" data-vw="1085" data-vh="510" loading="lazy" title="Digital Brain overview dataflow diagram"></iframe>
-    </div>
-    <div class="legend">
-      <span><i class="sw em"></i>the grounded path</span>
-      <span><i class="sw se"></i>a human gate</span>
-      <span><i class="sw da"></i>manual today, to automate</span>
-      <span><i class="sw"></i>supporting input</span>
     </div>
 
     <div class="grid g2" style="margin-top:1.5rem">
