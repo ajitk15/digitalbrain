@@ -462,3 +462,50 @@ class SourceDeleteTests(TestCase):
         tools = body.split('class="origin-tools"')[1].split("</div>")[0]
         self.assertIn(self.url(), tools)
         self.assertIn("data-modal", tools)
+
+
+@settings_for_tests
+class KnowledgeHeadingTests(TestCase):
+    """One name for one section, said once.
+
+    The section description was printed above the tab strip on all four views,
+    so the same sentence introduced the graph, the quality report and the
+    version list. The heading itself said "Knowledge sources" on one view and
+    "Knowledge" on the other three, which made one place look like two.
+    """
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+
+    def views(self):
+        app = self.app.pk
+        return {
+            "sources": self.client.get(reverse("documents", args=[app])),
+            "graph": self.client.get(reverse("graph", args=[app])),
+            "quality": self.client.get(reverse("graph", args=[app]), {"tab": "quality"}),
+            "versions": self.client.get(reverse("graph", args=[app]), {"tab": "versions"}),
+        }
+
+    def test_every_view_uses_the_same_heading(self):
+        for name, response in self.views().items():
+            with self.subTest(view=name):
+                self.assertContains(response, "<h1>Knowledge")
+
+    def test_the_section_description_is_not_repeated_on_every_view(self):
+        for name, response in self.views().items():
+            with self.subTest(view=name):
+                self.assertNotContains(response, "Explore the generated graph")
+
+    def test_the_tab_strip_is_what_says_which_view_this_is(self):
+        """Dropping the descriptions is only safe because this still marks it."""
+        for name, response in self.views().items():
+            with self.subTest(view=name):
+                self.assertContains(response, 'aria-current="page"')
+
+    def test_a_heading_repeating_its_tab_stays_in_the_outline(self):
+        """Hidden from the page, kept for anyone navigating by heading."""
+        versions = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
+        self.assertContains(versions, '<h2 class="sr-only">Graph versions</h2>')
+
+    def test_the_source_count_survives_the_shorter_heading(self):
+        self.assertContains(self.views()["sources"], 'class="count"')

@@ -83,10 +83,13 @@ class GraphTests(TestCase):
         response = self.client.get(reverse("graph", args=[self.app.pk]))
         self.assertContains(response, 'id="graph-canvas"')
         self.assertContains(response, ">Quality</a>")
-        self.assertContains(
-            self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "quality"}),
-            "Graph quality",
-        )
+        # The quality view is identified by what it shows, not by a visible
+        # heading repeating the tab above it - that heading is now carried in
+        # the document outline for anyone navigating by heading and hidden from
+        # everyone else.
+        quality = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "quality"})
+        self.assertContains(quality, 'class="quality-title"')
+        self.assertContains(quality, "Structural coverage")
         response = self.client.get(reverse("graph", args=[self.app.pk]), {"format": "json"})
         payload = json.loads(response.content)
         self.assertEqual(payload["application_id"], str(self.app.pk))
