@@ -99,8 +99,14 @@ def preview(user, app_id, raw, notes=None):
     return "link", [(suggested_name(parsed, ""), parsed.geturl())]
 
 
-def submit(user, app_id, raw, notes=None):
+def submit(user, app_id, raw, notes=None, source=None):
     """Queue everything a link resolves to. Returns the created documents.
+
+    `source` is the `KnowledgeSource` this import belongs to. A first import
+    registers one; a resynchronisation passes the existing one back in. Either
+    way this is the only place that knows which files an address resolves to,
+    which is why the comparison against what is already stored belongs here and
+    not in the caller: doing it anywhere else means resolving the address twice.
 
     `notes` is appended to rather than returned, so a caller that does not care
     passes nothing and a view that wants to show the person what happened passes
@@ -121,13 +127,29 @@ def submit(user, app_id, raw, notes=None):
             notes.append(f"Only the first {ceiling} of {len(files)} files were queued.")
         files = files[:ceiling]
 
+    # A resynchronisation passes the source in; a fresh paste does not. The
+    # difference matters at the end: finding nothing new is an error for someone
+    # pasting a link they have already imported, and the ordinary answer for a
+    # source that is simply up to date.
+    resynchronising = source is not None
+    if source is None:
+        from .knowledge_sources import register
+
+        source = register(user, app, origin, raw)
+
     created = []
+    resolved = {url[:2000] for _name, url in files}
     with transaction.atomic():
         for name, url in files:
             existing = Document.objects.filter(
                 application=app, source_url=url
             ).exclude(status="deleted")
             if existing.exists():
+                # Adopted rather than skipped in silence. Documents imported
+                # before sources were recorded have none, and a source that
+                # cannot see the files it brought in cannot say what has since
+                # gone missing from the origin.
+                existing.filter(source__isnull=True).update(source=source)
                 continue
             document = Document.objects.create(
                 application=app,
@@ -138,8 +160,15 @@ def submit(user, app_id, raw, notes=None):
                 status="pending",
                 origin=origin,
                 source_url=url[:2000],
+                source=source,
             )
             created.append(document)
+        # What this source brought in before and the origin no longer offers.
+        # Marked, never removed: a file renamed upstream would otherwise delete
+        # a document that a published graph version cites.
+        under = Document.objects.filter(source=source).exclude(status="deleted")
+        under.exclude(source_url__in=resolved).update(orphaned=True)
+        under.filter(source_url__in=resolved, orphaned=True).update(orphaned=False)
         if origin == "github" and feature_enabled("code_graph", app):
             from .code_graph_ingest import showcase_repository
 
@@ -150,9 +179,14 @@ def submit(user, app_id, raw, notes=None):
             "document.linked",
             app.pk,
             app.product.portfolio.organization,
-            details={"origin": origin, "queued": len(created), "resolved": len(files)},
+            details={
+                "origin": origin,
+                "queued": len(created),
+                "resolved": len(files),
+                "source_id": str(source.pk),
+            },
         )
-    if not created:
+    if not created and not resynchronising:
         raise ValidationError("Everything at that link has already been imported.")
     return created
 

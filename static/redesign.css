@@ -2128,3 +2128,40 @@
   margin-right: var(--s-3);
 }
 .inline-action .text-button:hover { text-decoration: underline; }
+
+/* ---------------------------------------------------------------------------
+   Where a set of documents came from.
+
+   A link import used to leave twenty-seven unrelated-looking rows. Grouping
+   them under the address they share makes the list answerable: how many came
+   from here, when was it last looked at, has it moved since.
+   --------------------------------------------------------------------------- */
+
+.origins .card-heading small { margin-top: var(--s-1); font-weight: 400; }
+
+.origin {
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+  padding: var(--s-3) var(--s-4);
+  margin-bottom: var(--s-2);
+}
+/* Out of sync is the one state worth interrupting for. */
+.origin-stale { border-color: var(--c-warn-line); background: var(--c-warn-bg); }
+.origin-unreachable { border-color: var(--c-line-strong); }
+
+.origin-row { display: flex; align-items: center; gap: var(--s-4); flex-wrap: wrap; }
+.origin-identity { min-width: 0; margin-right: auto; }
+.origin-identity small { overflow-wrap: anywhere; }
+.origin-count, .origin-when { font-size: var(--t-12); color: var(--c-ink-muted); white-space: nowrap; }
+.origin-stale .origin-state { background: var(--c-warn-bg); color: var(--c-warn); }
+.origin-drift {
+  margin: var(--s-2) 0 0;
+  font-size: var(--t-12);
+  color: var(--c-warn);
+}
+
+@media (max-width: 700px) {
+  .origin-row { gap: var(--s-2); }
+  .origin-identity { margin-right: 0; width: 100%; }
+}

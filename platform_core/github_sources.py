@@ -20,6 +20,7 @@ the shared unauthenticated rate limit applies.
 import json
 import re
 import time
+from urllib.parse import quote
 
 from .fetching import DOCUMENT_SUFFIXES, FetchError, fetch
 
@@ -189,6 +190,27 @@ def single_file(owner, repo, ref, path, token):
     if not isinstance(data, dict) or data.get("type") != "file":
         raise FetchError("That link does not name a file.")
     return [(f"{repo}-{data.get('name') or path.rsplit('/', 1)[-1]}", _download_url(data))]
+
+
+def latest_commit(owner, repo, ref, path, token):
+    """The id of the most recent commit touching `path`, or "" if unknown.
+
+    One request, whatever the directory holds. Walking the tree to compare every
+    file would cost a request per folder, which a scheduled check cannot afford
+    against the sixty an hour anonymous access allows - and would answer a
+    question nobody asked yet. This answers the only one a schedule needs: has
+    anything moved since we last looked. What exactly moved is worked out when
+    somebody decides to do something about it.
+    """
+    query = f"?sha={quote(ref)}&per_page=1" + (f"&path={quote(path)}" if path else "")
+    try:
+        commits = _api(f"{API}/repos/{owner}/{repo}/commits{query}", token)
+    except FetchError:
+        return ""
+    if not isinstance(commits, list) or not commits:
+        return ""
+    first = commits[0]
+    return first.get("sha", "") if isinstance(first, dict) else ""
 
 
 def relative_name(entry_path, root):

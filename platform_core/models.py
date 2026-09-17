@@ -178,6 +178,69 @@ class AIUsage(models.Model):
         ]
 
 
+class KnowledgeSource(models.Model):
+    """A place documents came from, remembered so it can be checked again.
+
+    A link import used to resolve a directory into files and keep only each
+    file's own download address. Nothing recorded that twenty-seven documents
+    shared an origin, so there was nothing to re-check, nothing to group them
+    under, and no way to ask whether any of them had moved on.
+
+    Modelled on `CodeRepository`, which had this shape for code all along: a
+    registered thing with a status and a refresh somebody presses.
+
+    **Drift is detected automatically; nothing is synchronised automatically.**
+    The scheduled check reads one cheap signal per source and writes down that
+    the origin has moved. Acting on that - downloading anything, changing any
+    document - happens only when a person asks for it. The platform says what
+    changed and waits, in the same way Code Factory describes work and stops.
+    """
+
+    class Status(models.TextChoices):
+        READY = "ready", "In sync"
+        STALE = "stale", "Out of sync"
+        UNKNOWN = "unknown", "Not checked yet"
+        UNREACHABLE = "unreachable", "Could not be checked"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="knowledge_sources"
+    )
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    #: Matches Document.origin, so a source and the documents under it agree.
+    provider = models.CharField(max_length=10, default="link")
+    #: The address a person pasted, normalised. Unique per application, so
+    #: importing the same directory twice adds to one source instead of making
+    #: a second one that drifts separately.
+    url = models.CharField(max_length=2000)
+    name = models.CharField(max_length=240)
+    status = models.CharField(max_length=12, default=Status.UNKNOWN, choices=Status.choices)
+    #: The cheap signal the last check read - a commit id for GitHub, a change
+    #: token for a document library. Comparing it costs one request; comparing
+    #: every file would cost one per file, which is the whole reason a scheduled
+    #: check can afford to run at all.
+    fingerprint = models.CharField(max_length=120, blank=True)
+    #: What the last check found, in words meant for the person deciding
+    #: whether to press Resync.
+    drift_summary = models.CharField(max_length=500, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "url"], name="unique_knowledge_source"
+            )
+        ]
+        indexes = [models.Index(fields=["application", "status"])]
+
+    def __str__(self):
+        return self.name
+
+
 class Document(models.Model):
     #: A document on its way in: queued to download, downloading, queued to
     #: convert, or converting. Every one of these is transient - the intake lane
@@ -224,6 +287,20 @@ class Document(models.Model):
         ],
     )
     source_url = models.CharField(max_length=2000, blank=True)
+    #: The place this document was imported from, when it came from one. Null
+    #: for an upload, and for everything imported before sources were recorded.
+    source = models.ForeignKey(
+        "KnowledgeSource",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="documents",
+    )
+    #: Present at the origin as of the last resync. A file that disappears
+    #: upstream is marked rather than removed: renaming a file upstream would
+    #: otherwise delete a document that a published graph version cites, and
+    #: nothing here removes a person's data without being asked.
+    orphaned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     conversion_started_at = models.DateTimeField(null=True, blank=True)

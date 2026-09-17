@@ -134,7 +134,14 @@ def code_graph_steps():
 
 
 def maintenance_steps():
-    return (purge_chat_if_due,)
+    from .knowledge_sources import process_next_source
+
+    # Checking a source is maintenance, not intake: it reads one cheap signal,
+    # writes a status and touches no document. It shares the lane with the
+    # retention sweep because neither is urgent and neither may hold up a
+    # conversion - and because putting it in the intake lane would have it
+    # competing with the downloads it might one day cause.
+    return (purge_chat_if_due, process_next_source)
 
 
 #: Independent queues, each on its own thread.

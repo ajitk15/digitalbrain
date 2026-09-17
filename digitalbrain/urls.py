@@ -37,6 +37,11 @@ urlpatterns = [
         documents.document_retry,
         name="document-retry",
     ),
+    path(
+        "applications/<uuid:pk>/sources/<uuid:source_id>/resync/",
+        documents.source_resync,
+        name="source-resync",
+    ),
     path("applications/<uuid:pk>/ai/", ai.ai_settings, name="ai-settings"),
     path("applications/<uuid:pk>/knowledge/", workbench.knowledge, name="knowledge"),
     path(

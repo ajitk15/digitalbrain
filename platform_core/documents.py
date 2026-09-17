@@ -313,6 +313,38 @@ def document_detail(request, pk, document_id):
 @require_http_methods(["GET", "POST"])
 @login_required
 @require_http_methods(["POST"])
+def source_resync(request, pk, source_id):
+    """Bring a source up to date, because a person asked.
+
+    The scheduled check notices drift and stops there. This is the other half:
+    the only path that acts on what it found, and it exists only behind a button
+    somebody presses. A POST, because it downloads.
+    """
+    from .knowledge_sources import resync
+
+    try:
+        queued, orphaned = resync(request.user, pk, source_id)
+    except ValidationError as failure:
+        messages.error(request, " ".join(getattr(failure, "messages", [str(failure)])))
+        return redirect(return_route(request), pk=pk)
+    except FetchError as failure:
+        messages.error(request, str(failure))
+        return redirect(return_route(request), pk=pk)
+    if queued:
+        messages.success(request, f"Queued {queued} new or changed file(s) for download.")
+    else:
+        messages.success(request, "This source is already up to date.")
+    if orphaned:
+        messages.warning(
+            request,
+            f"{orphaned} document(s) under this source are no longer at the origin. "
+            "They are kept and marked, not deleted.",
+        )
+    return redirect(return_route(request), pk=pk)
+
+
+@login_required
+@require_http_methods(["POST"])
 def document_retry(request, pk, document_id):
     """Put a failed document back in the queue for the step that failed.
 

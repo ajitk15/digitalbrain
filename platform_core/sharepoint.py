@@ -204,3 +204,26 @@ def download_url(item_url, secret):
     if not isinstance(url, str) or not url.startswith("https://"):
         raise FetchError("Microsoft Graph did not provide a download link for that document.")
     return url, item.get("name") or ""
+
+
+def folder_signal(parsed, secret):
+    """A change indicator for a folder, or "" when it cannot be read.
+
+    Graph gives every item an eTag that changes when its contents change, so one
+    request answers "has anything moved" for a whole library folder - the same
+    bargain the GitHub signal makes, and for the same reason: a scheduled check
+    has to cost one request, not one per file.
+
+    **Written but never exercised against a live tenant.** No SharePoint tenant
+    was configured where this was developed, so it is covered by unit tests
+    against a mocked Graph and by nothing else. Treat the first run against a
+    real library as the test.
+    """
+    try:
+        token = access_token(secret)
+        item = _graph(f"{GRAPH}/shares/{share_id(parsed.geturl())}/driveItem", token)
+    except Exception:
+        return ""
+    if not isinstance(item, dict):
+        return ""
+    return str(item.get("eTag") or item.get("lastModifiedDateTime") or "")[:120]

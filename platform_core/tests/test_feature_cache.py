@@ -81,4 +81,27 @@ class FeatureCacheTests(TestCase):
         self.client.get(url)
         with CaptureQueriesContext(connection) as captured:
             self.client.get(url)
-        self.assertLess(len(captured), 20, "documents used to take 28 queries")
+        # Twenty-eight before the feature cache; the panel listing where
+        # documents came from costs one more, and the test below is what keeps
+        # that one from becoming one per source.
+        self.assertLess(len(captured), 21, "documents used to take 28 queries")
+
+    def test_the_source_panel_costs_one_query_however_many_sources_there_are(self):
+        """The counts are annotated, not counted per row.
+
+        A budget that is raised whenever something is added stops being a
+        budget. What makes the extra query acceptable is that it is a fixed
+        cost, so that is the part worth pinning.
+        """
+        from platform_core.knowledge_sources import register
+
+        url = reverse("documents", args=[self.app.pk])
+        self.client.get(url)
+        with CaptureQueriesContext(connection) as one_source:
+            register(self.owner, self.app, "github", "https://github.com/a/b/tree/main/x")
+            self.client.get(url)
+        for index in range(5):
+            register(self.owner, self.app, "github", f"https://github.com/a/b/tree/main/{index}")
+        with CaptureQueriesContext(connection) as six_sources:
+            self.client.get(url)
+        self.assertLessEqual(len(six_sources), len(one_source))

@@ -3,9 +3,9 @@
 from urllib.parse import urlparse
 
 from django.core.paginator import Paginator
-from django.db.models import CharField, Q, Value
+from django.db.models import CharField, Count, Q, Value
 
-from .models import CodeRepository, Document, GraphRevision, KnowledgeEntry
+from .models import CodeRepository, Document, GraphRevision, KnowledgeEntry, KnowledgeSource
 from .services import feature_enabled
 
 
@@ -114,6 +114,23 @@ def library_context(app, request):
     page.object_list = rows
     return {
         "page": page, "query": search, "source_count": count,
+        # The places documents came from, so the list can be read as "these
+        # twenty-seven files, from here" rather than as twenty-seven unrelated
+        # rows that happen to share a prefix.
+        "origins": list(
+            KnowledgeSource.objects.filter(application=app)
+            .annotate(
+                file_count=Count(
+                    "documents", filter=~Q(documents__status="deleted"), distinct=True
+                ),
+                orphan_count=Count(
+                    "documents",
+                    filter=Q(documents__orphaned=True) & ~Q(documents__status="deleted"),
+                    distinct=True,
+                ),
+            )
+            .order_by("name")
+        ),
         "knowledge_enabled": enabled,
         "conversion_pending": documents.filter(status__in=Document.IN_FLIGHT).exists(),
     }
