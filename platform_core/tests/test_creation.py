@@ -484,3 +484,92 @@ class CreatorAccessTests(TestCase):
         )
         app = Application.objects.get(name="Guarded")
         self.assertEqual(ApplicationGrant.objects.filter(application=app).count(), 1)
+
+
+@override_settings(
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    CLAUDE_USE_HOST_LOGIN=False,
+)
+class StructureVisibilityTests(TestCase):
+    """What an organization's shape looks like before anything is in it.
+
+    The sidebar tree was assembled purely from applications, so a portfolio
+    holding nothing yet could not appear: an admin created one, the sidebar did
+    not change, and the create looked as though it had failed. Empty levels are
+    exactly the ones whose "+" is needed next, so they are the ones that must
+    show.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user("structure-admin")
+        self.member = User.objects.create_user("structure-member")
+        self.org = Organization.objects.create(name="Shape")
+        OrganizationMember.objects.create(organization=self.org, user=self.admin, is_admin=True)
+        OrganizationMember.objects.create(organization=self.org, user=self.member)
+        self.empty = Portfolio.objects.create(organization=self.org, name="HealthCare")
+        self.filled = Portfolio.objects.create(organization=self.org, name="Middleware")
+        self.product = Product.objects.create(portfolio=self.filled, name="ACEandMQ")
+        self.barren = Product.objects.create(portfolio=self.filled, name="EventStreams")
+        self.app = Application.objects.create(product=self.product, name="MQACEKnowledge")
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+
+    def tree(self, user=None):
+        if user is not None:
+            self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+        body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
+        return body.split('aria-label="Organization tree"')[1].split("</nav>")[0]
+
+    def test_a_portfolio_holding_nothing_still_appears_in_the_tree(self):
+        self.assertIn("HealthCare", self.tree())
+
+    def test_a_product_holding_nothing_still_appears_in_the_tree(self):
+        self.assertIn("EventStreams", self.tree())
+
+    def test_an_empty_portfolio_carries_the_control_that_fills_it(self):
+        self.assertIn(reverse("product-new", args=[self.empty.pk]), self.tree())
+
+    def test_the_tree_still_withholds_an_application_without_a_grant(self):
+        """Scaffolding is the organization's shape. An application is not.
+
+        An admin sees portfolios and products because those are the
+        organization's own structure and the organization page already lists
+        them. Application names still arrive only through a grant.
+        """
+        self.assertNotIn(reverse("application", args=[self.app.pk]), self.tree())
+        ApplicationGrant.objects.create(application=self.app, user=self.admin, role="owner")
+        self.assertIn(reverse("application", args=[self.app.pk]), self.tree())
+
+    def test_a_member_who_does_not_administer_sees_no_scaffolding(self):
+        """A plain member's tree is still built from what they were granted."""
+        tree = self.tree(user=self.member)
+        self.assertNotIn("HealthCare", tree)
+        self.assertNotIn("EventStreams", tree)
+
+    def test_the_structure_panel_names_each_level(self):
+        body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
+        panel = body.split('class="card section hierarchy"')[1]
+        for kind in ("Portfolio", "Product", "Application"):
+            self.assertIn(f'<span class="level-kind">{kind}</span>', panel)
+
+    def test_the_structure_panel_says_what_an_empty_level_needs_next(self):
+        body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
+        self.assertIn("No products yet", body)
+        self.assertIn("No applications yet", body)
+
+    def test_an_application_the_admin_cannot_open_is_marked_and_not_linked(self):
+        """Administering an organization does not grant access to what is in it.
+
+        The panel names the application because the admin manages the structure,
+        and refuses to link it because the link would land on a 404 - the same
+        rule, shown rather than hidden.
+        """
+        body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
+        self.assertIn("MQACEKnowledge", body)
+        self.assertIn("No access", body)
+        self.assertNotIn(f'href="{reverse("application", args=[self.app.pk])}"', body)
+
+        ApplicationGrant.objects.create(application=self.app, user=self.admin, role="owner")
+        body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
+        self.assertIn(f'href="{reverse("application", args=[self.app.pk])}"', body)
+        self.assertNotIn("No access", body)

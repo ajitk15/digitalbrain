@@ -253,16 +253,22 @@ def organization(request, pk):
     admin = OrganizationMember.objects.filter(
         organization=org, user=request.user, is_admin=True
     ).exists()
+    accessible = applications_for(request.user).filter(product__portfolio__organization=org)
     return render(
         request,
         "organization.html",
         {
             "organization": org,
             "is_org_admin": admin,
-            "portfolios": org.portfolios.prefetch_related("products__applications"),
-            "accessible_applications": applications_for(request.user).filter(
-                product__portfolio__organization=org
+            "portfolios": org.portfolios.prefetch_related("products__applications").order_by(
+                "name", "pk"
             ),
+            "accessible_applications": accessible,
+            # Administering an organization does not grant access to what is in
+            # it, so the structure list names applications this person cannot
+            # open. Linking those would send them to a 404; the panel marks them
+            # instead, which is the honest reading of the same rule.
+            "accessible_ids": set(accessible.values_list("pk", flat=True)),
         },
     )
 

@@ -1,7 +1,7 @@
 from django import template
 from django.urls import reverse
 
-from platform_core.models import ApplicationGrant, OrganizationMember
+from platform_core.models import ApplicationGrant, OrganizationMember, Portfolio
 from platform_core.policy import applications_for, organizations_for
 from platform_core.services import feature_enabled
 
@@ -144,6 +144,36 @@ def organization_tree(context):
         }
         for org in organizations_for(request.user).order_by("name", "id")
     }
+    # Scaffolding first, and only where this person administers the organization.
+    # The tree used to be assembled purely from applications, which meant a
+    # portfolio holding nothing yet could not appear at all: an admin created one
+    # and the sidebar did not change, so the create looked as though it had
+    # failed. Empty levels are exactly the ones whose "+" is needed next.
+    #
+    # Portfolios and products are the organization's own shape, and an admin
+    # already sees all of them on the organization page. Applications are not
+    # added here - they still arrive only through `applications_for`, so a name
+    # nobody has been granted stays out of the tree.
+    for portfolio in (
+        Portfolio.objects.filter(organization_id__in=administered & set(tree))
+        .prefetch_related("products")
+        .order_by("name", "id")
+    ):
+        branch = tree[portfolio.organization_id]["portfolios"].setdefault(
+            portfolio.pk,
+            {"id": portfolio.pk, "name": portfolio.name, "products": {}, "current": False},
+        )
+        for product in sorted(portfolio.products.all(), key=lambda item: (item.name, item.pk)):
+            branch["products"].setdefault(
+                product.pk,
+                {
+                    "id": product.pk,
+                    "name": product.name,
+                    "applications": [],
+                    "current": False,
+                },
+            )
+
     for app in applications_for(request.user).order_by(
         "product__portfolio__name", "product__name", "name", "id"
     ):

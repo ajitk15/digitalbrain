@@ -1956,3 +1956,87 @@
   font-size: var(--t-12);
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------------
+   Organization structure panel.
+
+   Four nested levels used to render as four heading sizes with no indentation,
+   so a product sat at the same visual depth as the portfolio holding it and the
+   only clue to the hierarchy was the font size. Depth is now drawn: each level
+   carries its own kind label and its children are indented behind a rule, so
+   the shape is readable without reading the words.
+   --------------------------------------------------------------------------- */
+
+.hierarchy .card-heading { align-items: flex-start; }
+.hierarchy .card-heading small { margin-top: var(--s-1); font-weight: 400; }
+
+.hierarchy .level + .level { margin-top: var(--s-2); }
+
+.hierarchy .level-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+  background: var(--c-surface);
+}
+
+.hierarchy .level-portfolio > .level-row { background: var(--c-brand-tint); }
+
+.hierarchy .level-kind {
+  flex: none;
+  min-width: 74px;
+  font-size: var(--t-10);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c-ink-faint);
+}
+
+.hierarchy .level-name { font-weight: 600; overflow-wrap: anywhere; }
+.hierarchy .level-portfolio > .level-row .level-name { font-size: var(--t-15); }
+
+/* Pushes the count and the "+" to the right, so every level's control lands in
+   the same column however deep it sits. */
+.hierarchy .level-meta {
+  margin-left: auto;
+  font-size: var(--t-11);
+  color: var(--c-ink-muted);
+  white-space: nowrap;
+}
+.hierarchy .level-row form { margin: 0 0 0 auto; }
+.hierarchy .level-meta ~ form,
+.hierarchy .level-meta ~ .add-button { margin-left: 0; }
+.hierarchy .level-row .pill { margin-left: auto; }
+.hierarchy .level-row .pill ~ .pill,
+.hierarchy .level-row .pill ~ form { margin-left: 0; }
+
+.hierarchy .pill.quiet {
+  background: var(--c-subtle);
+  color: var(--c-ink-faint);
+  font-weight: 600;
+}
+
+/* The indent that carries the meaning. */
+.hierarchy .level-children {
+  margin: var(--s-2) 0 0 var(--s-5);
+  padding-left: var(--s-4);
+  border-left: 2px solid var(--c-line);
+}
+
+.hierarchy .level-empty {
+  margin: 0;
+  padding: var(--s-3) 0;
+  font-size: var(--t-12);
+  color: var(--c-ink-faint);
+}
+
+@media (max-width: 700px) {
+  .hierarchy .level-row { flex-wrap: wrap; gap: var(--s-2); }
+  .hierarchy .level-kind { min-width: 0; }
+  .hierarchy .level-meta { margin-left: 0; }
+  .hierarchy .level-row form,
+  .hierarchy .level-row .pill { margin-left: 0; }
+  .hierarchy .level-children { margin-left: var(--s-2); padding-left: var(--s-3); }
+}
