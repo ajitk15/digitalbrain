@@ -508,8 +508,15 @@ class CodeGraphTests(TestCase):
                 self.assertContains(response, "No GitHub credential is mounted")
                 self.assertContains(response, secret)
 
+                # Mounted the way a deployment has to mount it. `read_secret`
+                # refuses a secret readable by anyone but its owner, so writing
+                # this at the default 0644 left the file present and unreadable:
+                # the page went on saying no credential was mounted, and the
+                # test passed only on Windows, where the mode carries no such
+                # meaning and the check is skipped.
                 with open(secret, "w", encoding="utf-8") as handle:
                     handle.write("ghp_thismustnotreachthepage")
+                os.chmod(secret, 0o600)
                 response = self.client.get(url)
                 self.assertNotContains(response, "No GitHub credential is mounted")
                 self.assertNotContains(response, "ghp_thismustnotreachthepage")
