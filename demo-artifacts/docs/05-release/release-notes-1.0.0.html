@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release notes — CarePath 1.0.0</title>
+<style>
+:root { color-scheme: light dark; }
+body { font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+       max-width: 62rem; margin: 0 auto; padding: 2rem 1rem 6rem; color: #16191d;
+       background: #fff; }
+h1 { font-size: 2rem; line-height: 1.2; border-bottom: 3px solid #1f4e79;
+     padding-bottom: .4rem; }
+h2 { font-size: 1.35rem; margin-top: 2.4rem; color: #1f4e79; }
+h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: .92rem; }
+th, td { border: 1px solid #d3d8de; padding: .5rem .65rem; text-align: left;
+         vertical-align: top; }
+th { background: #eef2f6; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+code { font: .88em ui-monospace, Consolas, monospace; background: #f1f3f5;
+       padding: .1em .35em; border-radius: 3px; }
+pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; border-radius: 6px;
+      border: 1px solid #e3e7ec; }
+pre code { background: none; padding: 0; }
+blockquote { margin: 1.4rem 0; padding: .8rem 1.1rem; border-left: 4px solid #c9a227;
+             background: #fdf9ec; }
+.meta { font-size: .85rem; color: #5b6470; margin: -.4rem 0 2rem; }
+.notice { border: 1px solid #c9a227; background: #fdf9ec; padding: .9rem 1.1rem;
+          border-radius: 6px; font-size: .9rem; margin-bottom: 2rem; }
+hr { border: none; border-top: 1px solid #e3e7ec; margin: 2.5rem 0; }
+@media (prefers-color-scheme: dark) {
+  body { background: #14171a; color: #e6e9ec; }
+  th { background: #1e2429; } tr:nth-child(even) td { background: #181c20; }
+  th, td { border-color: #2d353d; }
+  h2 { color: #7fb3e0; } h1 { border-bottom-color: #7fb3e0; }
+  code, pre { background: #1b2025; } pre { border-color: #2d353d; }
+  blockquote, .notice { background: #241f10; }
+}
+</style></head><body>
+<h1>Release notes — CarePath 1.0.0</h1>
+<p class="notice">Demonstration artifact. Synthetic content only — not a clinical record and not a medical device.</p>
+<p><strong>Released</strong> 2026-06-04 · <strong>Audience</strong> pilot clinicians, coordinators, Northvale, Information Governance</p>
+<h2>What this release does</h2>
+<p>CarePath holds one record per patient across the network, tracks referrals from the moment they are raised until they close, and records who opened which record and why.</p>
+<h3>For clinicians</h3>
+<ul><li>Register a patient once, against their medical record number. A number already in use is refused rather than duplicated.</li><li>Record admissions, attendances and observations against a patient.</li><li>Raise a referral to a specialty. It starts as a draft — nothing leaves the organisation until it is submitted.</li><li>See a readmission risk score <strong>with the reasons behind it</strong>. The reasons are written to be said aloud to a patient.</li></ul>
+<h3>For care coordinators</h3>
+<ul><li>A risk score per patient, so the morning list is ordered by who is most likely to return rather than by who telephoned.</li><li>Move a referral through its lifecycle: submitted, accepted, scheduled, completed. The referring clinician sees where it is without a telephone call.</li><li>Record what a patient has agreed to. Decisions are kept in full — granting and later withdrawing leaves both, because when someone withdrew is the question that gets asked.</li></ul>
+<h3>For the compliance team</h3>
+<ul><li>Every access to a patient record is recorded with the actor, the action, the purpose and the time, and is written in the same transaction as the access itself.</li><li>An access report for any patient is now a single request.</li></ul>
+<h3>For Northvale</h3>
+<ul><li>A patient&#x27;s record as a FHIR R4 Bundle: Patient, Encounters, Observations. Base R4, no profile claimed (ADR-0004).</li></ul>
+<h2>What this release does not do</h2>
+<p>Scheduling, prescribing, results, imaging, clinical decision support and patient-facing access are all out of scope and are not planned for 1.0. See section 4 of the business requirements.</p>
+<p><strong>The risk score is not clinical advice.</strong> It ranks a worklist. The weights are illustrative and carry no clinical validity.</p>
+<h2>Known limitations</h2>
+<table><thead><tr><th>Limitation</th><th>Effect on you</th><th>Planned</th></tr></thead><tbody><tr><td>Patient search returns an unbounded number of results</td><td>A broad search may be slow</td><td>1.0.1</td></tr><tr><td>The scoring log line contains patient names</td><td>Internal; raised with Information Governance</td><td>1.0.1</td></tr><tr><td>The export does not check consent before releasing a record</td><td><strong>Confirm consent before requesting an export</strong></td><td>1.0.1</td></tr><tr><td>Referral status changes are not recorded in the audit trail</td><td>A status change will not appear on an access report</td><td>1.0.1</td></tr><tr><td>Erasure requests are handled manually</td><td>Allow five working days</td><td>2.0</td></tr></tbody></table>
+<p>The third row is the one to read twice. Until 1.0.1, a partner export does not consult the patient&#x27;s consent decision, so the check has to be made by the person requesting it.</p>
+<h2>Upgrading</h2>
+<p>No action. The pilot database is created on first start.</p>
+<h2>Support</h2>
+<p>Service desk, referencing the <code>x-correlation-id</code> from the response — it joins your request to the service log and to the audit trail.</p>
+</body></html>

@@ -1,0 +1,51 @@
+[project]
+name = "carepath"
+version = "1.0.0"
+description = "CarePath - care coordination and referral service for a regional health network"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "pydantic>=2.9,<3",
+  "uvicorn[standard]>=0.30,<1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3,<9",
+  "httpx>=0.27,<1",
+  "ruff>=0.12,<1",
+  "coverage>=7.6,<8",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/carepath"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["carepath"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares dependencies as call expressions in parameter defaults.
+# That is the framework contract, not the mutable-default mistake B008 is for.
+extend-immutable-calls = [
+  "fastapi.Depends",
+  "fastapi.Query",
+  "fastapi.Header",
+  # Builds a dependency and returns it. Nothing it returns is mutated.
+  "carepath.api.deps.require",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

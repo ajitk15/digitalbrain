@@ -1,0 +1,103 @@
+# Operations runbook — CarePath
+
+| | |
+| --- | --- |
+| **Document** | OPS-CAREPATH-002 |
+| **Version** | 1.3 |
+| **Status** | Active |
+| **Owner** | Platform Lead |
+| **Last reviewed** | 2026-03-18 |
+
+> Reviewed before release 1.0.0 was planned. A review against the deployed shape
+> is on the release plan's open items list and is overdue.
+
+## Service at a glance
+
+| | |
+| --- | --- |
+| **Deployments** | `carepath-api-blue` (serving), `carepath-api-green` (standby) |
+| **Ingress** | `carepath.riverside.example`, TLS terminated at the ingress |
+| **Database** | SQLite on the `carepath-data` volume, snapshot nightly |
+| **Secrets** | File-mounted, owner-only, at `/run/secrets/` |
+| **Logs** | JSON, one object per line, shipped to the platform aggregator |
+| **Health** | `/health/live` (process), `/health/ready` (process plus database) |
+
+## Finding one request
+
+Every response carries `x-correlation-id`. It appears in every log line for that
+request **and** in any audit event the request wrote. Given a user complaint,
+ask for the identifier from the response before asking for anything else.
+
+```bash
+platformctl logs carepath-api-blue --since 1h | grep '"correlation_id":"<id>"'
+```
+
+To join it to the audit trail, query `audit_event` for the same value.
+
+## Common situations
+
+### Readiness is failing
+
+1. `/health/live` still answering? If yes, the process is fine and the database is not — do **not** restart.
+2. Check the volume is mounted and not full.
+3. Check the slow-query log for a transaction held open past the 2s ceiling (NFR-11).
+4. If the database is unrecoverable, fail over to the standby deployment against the previous snapshot, accepting the data loss window, and raise Sev-1.
+
+### Latency has risen
+
+1. Check request volume. A coordinator opening a 400-patient worklist produces a burst.
+2. Check for a broad patient search. `GET /patients` has no upper bound on `limit`, so a single request can read the whole table; this is T-01 and is fixed in 1.0.1.
+3. Check snapshot timing — a snapshot during peak contends for I/O.
+
+### An audit write failed
+
+**Sev-1, page immediately.** The service must not continue serving patient data
+while failing to record access.
+
+1. Confirm the scope from the logs: which accesses, over what window.
+2. If the audit table is unwritable, take the service out of the pool. A disclosure we cannot record is a disclosure we do not make.
+3. Notify Information Governance the same day. This is potentially notifiable under REG-01.
+
+### A partner reports a failed export
+
+1. Confirm the token is current — rotation is 90 days (ADR-0002).
+2. Confirm the patient exists and the caller holds the partner role.
+3. Confirm the patient's consent position for `data-exchange`.
+
+Note for step 3: the export path in 1.0.0 does not itself consult consent
+(T-03), so a *successful* export is not evidence that consent was in place. If
+the question is whether an export should have happened, check the consent table
+directly against the export's timestamp in the audit trail.
+
+### Rotating a token
+
+1. Generate the new secret out of band.
+2. Add its SHA-256 digest to the directory and deploy.
+3. Give the holder the new token.
+4. Remove the old digest and deploy again.
+
+Two deployments, deliberately. One deployment that swaps both at once has a
+window in which the holder's old token is dead and they do not yet have the new
+one.
+
+## Routine tasks
+
+| Task | Frequency | Owner |
+| --- | --- | --- |
+| Snapshot restore rehearsal | Quarterly | Platform |
+| Token rotation | 90 days | Platform |
+| Audit reconciliation | Quarterly | Information Governance |
+| Log sampling review for PHI (NFR-04) | Each sprint | Engineering |
+| Archive audit events past six years | Annually, **after** the retention date | Platform |
+| Runbook review against the deployed shape | Each release | Platform |
+
+## Escalation
+
+| Severity | Route | Response time |
+| --- | --- | --- |
+| Sev-1 | Page the on-call platform engineer; inform the Clinical Systems Board within 1 hour | 15 minutes |
+| Sev-2 | Page during working hours, ticket outside | 1 hour |
+| Sev-3 | Ticket | Next working day |
+
+Anything touching the audit trail or a disclosure also goes to Information
+Governance, regardless of severity.

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture — CarePath 1.0</title>
+<style>
+:root { color-scheme: light dark; }
+body { font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+       max-width: 62rem; margin: 0 auto; padding: 2rem 1rem 6rem; color: #16191d;
+       background: #fff; }
+h1 { font-size: 2rem; line-height: 1.2; border-bottom: 3px solid #1f4e79;
+     padding-bottom: .4rem; }
+h2 { font-size: 1.35rem; margin-top: 2.4rem; color: #1f4e79; }
+h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: .92rem; }
+th, td { border: 1px solid #d3d8de; padding: .5rem .65rem; text-align: left;
+         vertical-align: top; }
+th { background: #eef2f6; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+code { font: .88em ui-monospace, Consolas, monospace; background: #f1f3f5;
+       padding: .1em .35em; border-radius: 3px; }
+pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; border-radius: 6px;
+      border: 1px solid #e3e7ec; }
+pre code { background: none; padding: 0; }
+blockquote { margin: 1.4rem 0; padding: .8rem 1.1rem; border-left: 4px solid #c9a227;
+             background: #fdf9ec; }
+.meta { font-size: .85rem; color: #5b6470; margin: -.4rem 0 2rem; }
+.notice { border: 1px solid #c9a227; background: #fdf9ec; padding: .9rem 1.1rem;
+          border-radius: 6px; font-size: .9rem; margin-bottom: 2rem; }
+hr { border: none; border-top: 1px solid #e3e7ec; margin: 2.5rem 0; }
+@media (prefers-color-scheme: dark) {
+  body { background: #14171a; color: #e6e9ec; }
+  th { background: #1e2429; } tr:nth-child(even) td { background: #181c20; }
+  th, td { border-color: #2d353d; }
+  h2 { color: #7fb3e0; } h1 { border-bottom-color: #7fb3e0; }
+  code, pre { background: #1b2025; } pre { border-color: #2d353d; }
+  blockquote, .notice { background: #241f10; }
+}
+</style></head><body>
+<h1>Architecture — CarePath 1.0</h1>
+<p class="meta"><strong>Document</strong> DES-CAREPATH-001 · <strong>Version</strong> 1.5 · <strong>Status</strong> Approved · <strong>Owner</strong> Principal Engineer, Integrated Care · <strong>Reviewed</strong> Architecture Review Board, 2026-03-04</p>
+<p class="notice">Demonstration artifact. Synthetic content only — not a clinical record and not a medical device.</p>
+<h2>1. Context</h2>
+<pre><code>   Dr Okafor            Joseph Mbeki          Compliance          Northvale
+   (clinician)          (coordinator)         (auditor)           (partner system)
+        |                     |                    |                    |
+        +---------------------+--------------------+--------------------+
+                                       |
+                                   HTTPS, bearer
+                                       |
+                             +---------v---------+
+                             |     CarePath      |
+                             |   FastAPI / ASGI  |
+                             +---------+---------+
+                                       |
+                             +---------v---------+
+                             |   SQLite (1.0)    |
+                             |  PostgreSQL (2.0) |
+                             +-------------------+</code></pre>
+<p>CarePath is a coordination layer. It is not the record system for prescribing, results or imaging, and it does not attempt to become one.</p>
+<h2>2. Layers</h2>
+<p>The dependency direction runs one way, top to bottom. Nothing below a line imports anything above it, which is what lets a service be called from a batch job with no web framework in scope.</p>
+<table><thead><tr><th>Layer</th><th>Package</th><th>Knows about</th><th>Must not know about</th></tr></thead><tbody><tr><td>Transport</td><td><code>carepath.api</code></td><td>HTTP, status codes, FastAPI</td><td>SQL</td></tr><tr><td>Application</td><td><code>carepath.services</code></td><td>Use cases, transactions, audit</td><td>HTTP</td></tr><tr><td>Domain</td><td><code>carepath.domain</code></td><td>Rules that hold regardless of storage or transport</td><td>Both of the above</td></tr><tr><td>Persistence</td><td><code>carepath.db</code></td><td>SQL, schema, transactions</td><td>Use cases</td></tr><tr><td>Cross-cutting</td><td><code>carepath.security</code>, <code>carepath.logging_setup</code></td><td>Identity, audit, redaction, correlation</td><td>Use cases</td></tr></tbody></table>
+<p><strong>HTTP status codes appear in exactly one place</strong>: the error map in <code>carepath.app</code>. A service raises <code>NotFound</code>; only the edge decides that this is a 404. This is what makes the services reusable from a scheduled job.</p>
+<h2>3. Request path</h2>
+<pre><code>request
+  -&gt; correlation middleware      mint or accept x-correlation-id        NFR-08
+  -&gt; authentication dependency   bearer token -&gt; Principal              NFR-05, REG-02
+  -&gt; authorisation dependency    role -&gt; permission, before the body    NFR-05, REG-03
+  -&gt; unit-of-work dependency     open a transaction
+       -&gt; service                use case
+            -&gt; audit.record      IN THE SAME TRANSACTION                NFR-03, REG-01
+            -&gt; repository        SQL
+       &lt;- commit, or roll back both the work and its audit row
+  &lt;- response, carrying x-correlation-id</code></pre>
+<p>The authorisation check is a <strong>dependency declared in the route signature</strong>, not a call in the handler body. A reviewer can see what a route requires without reading its implementation, and a handler cannot forget the check, because the check runs before the handler does.</p>
+<h2>4. The audit invariant</h2>
+<p>This is the design decision the rest of the service is arranged around.</p>
+<p>The audit write shares the request&#x27;s transaction. Three consequences follow, and all three are intended:</p>
+<ol><li>A read that rolls back leaves <strong>no</strong> audit row claiming it happened.</li><li>A read that commits <strong>cannot</strong> leave the trail behind — there is no ordering in which one lands and the other does not.</li><li>An audit write that fails fails the request. A disclosure we cannot record is a disclosure we do not make.</li></ol>
+<p>The third is the uncomfortable one. It means an audit-table problem is an outage. That is the correct trade for a system whose second-most-cited business requirement (BR-04) is the access report.</p>
+<h2>5. Component responsibilities</h2>
+<table><thead><tr><th>Component</th><th>Responsibility</th><th>Requirements</th></tr></thead><tbody><tr><td><code>api/deps.py</code></td><td>Connection, principal, permission. <code>require()</code> builds a dependency, so the permission is declarative</td><td>NFR-05</td></tr><tr><td><code>security/auth.py</code></td><td>Token digest comparison with <code>hmac.compare_digest</code>; every candidate compared so timing does not leak position</td><td>NFR-05, REG-02</td></tr><tr><td><code>security/rbac.py</code></td><td>One grant table. An unlisted role holds <strong>no</strong> permissions, so adding a role without deciding its grants grants nothing</td><td>REG-03</td></tr><tr><td><code>security/audit.py</code></td><td>The only writer of <code>audit_event</code>. No update path, no delete path</td><td>NFR-03, NFR-09, REG-01</td></tr><tr><td><code>security/phi.py</code></td><td>Redaction of shaped identifiers from anything emitted</td><td>NFR-04</td></tr><tr><td><code>domain/referral_state.py</code></td><td>The lifecycle map, testable without a web server</td><td>FR-08</td></tr><tr><td><code>domain/risk.py</code></td><td>Transparent arithmetic returning factors alongside the score</td><td>FR-06, BR-03</td></tr><tr><td><code>services/consent.py</code></td><td>Append-only decisions; absent consent reads as withheld</td><td>FR-09, BR-05</td></tr><tr><td><code>fhir.py</code></td><td>Base FHIR R4 resource construction</td><td>FR-10, REG-07</td></tr></tbody></table>
+<h2>6. Quality attribute scenarios</h2>
+<table><thead><tr><th>Scenario</th><th>Stimulus</th><th>Response</th><th>Measure</th></tr></thead><tbody><tr><td>Coordinator opens the morning worklist</td><td>400 risk scores requested in five minutes</td><td>All served</td><td>p95 under 300ms (NFR-02)</td></tr><tr><td>Database becomes unreachable</td><td>Readiness probe fails</td><td>Instance leaves the pool; liveness still passes, so no restart loop</td><td>Removed within 30s (NFR-01)</td></tr><tr><td>Risk engine unavailable</td><td>Scoring dependency times out</td><td>Record returned with <code>degraded: true</code></td><td>No 5xx (NFR-10)</td></tr><tr><td>Auditor asks who read a record</td><td>Access report requested</td><td>Complete trail for that resource</td><td>Same working day (BR-04)</td></tr><tr><td>Partner requests a record for a patient who withdrew consent</td><td>Export requested</td><td>Refused</td><td>Zero exports without current consent (BR-05)</td></tr></tbody></table>
+<h2>7. Deferred, with reasons</h2>
+<table><thead><tr><th>Decision</th><th>1.0 position</th><th>Record</th></tr></thead><tbody><tr><td>SQLite rather than PostgreSQL</td><td>Pilot volumes are small and the schema is still moving</td><td>ADR-0001</td></tr><tr><td>Static bearer tokens rather than an identity provider</td><td>The network&#x27;s identity programme lands after the pilot</td><td>ADR-0002</td></tr><tr><td>In-process scoring rather than a model service</td><td>Explainability matters more than sophistication at this stage</td><td>ADR-0003</td></tr><tr><td>Base FHIR rather than US Core</td><td>Conformance is a claim that needs a validator to back it</td><td>ADR-0004</td></tr></tbody></table>
+</body></html>

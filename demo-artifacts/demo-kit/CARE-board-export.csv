@@ -1,0 +1,8 @@
+Issue key,Issue Type,Summary,Status,Priority,Reporter,Labels,Affects Version/s,Fix Version/s,Requirement,Traceability,Risk
+CARE-401,Bug,Patient consent is not checked before a record is exported to a partner,Open,Highest,Adaeze Nwosu,regulatory consent release-1.0.1 waived-w01,1.0.0,1.0.1,BR-05,T-03,R-01
+CARE-412,Bug,Patient search accepts an unbounded limit,Open,High,Sam Ferreira,availability incident-follow-up release-1.0.1 waived-w01,1.0.0,1.0.1,NFR-06,T-01,R-04
+CARE-418,Bug,Patient name and date of birth are written to the application log,Open,High,Priya Raghavan,privacy logging release-1.0.1 waived-w01,1.0.0,1.0.1,NFR-04,T-02,R-03
+CARE-425,Bug,Referral status changes are not written to the audit trail,Open,Medium,Adaeze Nwosu,regulatory audit release-1.0.1,1.0.0,1.0.1,NFR-03,T-04,R-02
+CARE-431,Bug,"An auditor receives the full patient record, including telephone and address",Open,Medium,Adaeze Nwosu,regulatory minimum-necessary release-1.1,1.0.0,1.1,REG-03,F-03,
+CARE-437,Story,Rate limit the authentication path,Open,Medium,Tomas Beck,security nfr-12 release-1.1,,1.1,NFR-12,T-05,R-05
+CARE-444,Task,Operations runbook names a deployment that was retired,Open,Low,Sam Ferreira,documentation operational-readiness,1.0.0,,,,R-11

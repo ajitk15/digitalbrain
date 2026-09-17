@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API specification — CarePath 1.0</title>
+<style>
+:root { color-scheme: light dark; }
+body { font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+       max-width: 62rem; margin: 0 auto; padding: 2rem 1rem 6rem; color: #16191d;
+       background: #fff; }
+h1 { font-size: 2rem; line-height: 1.2; border-bottom: 3px solid #1f4e79;
+     padding-bottom: .4rem; }
+h2 { font-size: 1.35rem; margin-top: 2.4rem; color: #1f4e79; }
+h3 { font-size: 1.1rem; margin-top: 1.8rem; }
+table { border-collapse: collapse; width: 100%; margin: 1.2rem 0; font-size: .92rem; }
+th, td { border: 1px solid #d3d8de; padding: .5rem .65rem; text-align: left;
+         vertical-align: top; }
+th { background: #eef2f6; font-weight: 600; }
+tr:nth-child(even) td { background: #fafbfc; }
+code { font: .88em ui-monospace, Consolas, monospace; background: #f1f3f5;
+       padding: .1em .35em; border-radius: 3px; }
+pre { background: #f6f8fa; padding: 1rem; overflow-x: auto; border-radius: 6px;
+      border: 1px solid #e3e7ec; }
+pre code { background: none; padding: 0; }
+blockquote { margin: 1.4rem 0; padding: .8rem 1.1rem; border-left: 4px solid #c9a227;
+             background: #fdf9ec; }
+.meta { font-size: .85rem; color: #5b6470; margin: -.4rem 0 2rem; }
+.notice { border: 1px solid #c9a227; background: #fdf9ec; padding: .9rem 1.1rem;
+          border-radius: 6px; font-size: .9rem; margin-bottom: 2rem; }
+hr { border: none; border-top: 1px solid #e3e7ec; margin: 2.5rem 0; }
+@media (prefers-color-scheme: dark) {
+  body { background: #14171a; color: #e6e9ec; }
+  th { background: #1e2429; } tr:nth-child(even) td { background: #181c20; }
+  th, td { border-color: #2d353d; }
+  h2 { color: #7fb3e0; } h1 { border-bottom-color: #7fb3e0; }
+  code, pre { background: #1b2025; } pre { border-color: #2d353d; }
+  blockquote, .notice { background: #241f10; }
+}
+</style></head><body>
+<h1>API specification — CarePath 1.0</h1>
+<p class="meta"><strong>Document</strong> BLD-CAREPATH-002 · <strong>Version</strong> 1.0.0 · <strong>Status</strong> Active · <strong>Base URL</strong> https://carepath.riverside.example · <strong>Live schema</strong> /docs (Swagger UI), /openapi.json</p>
+<p class="notice">Demonstration artifact. Synthetic content only — not a clinical record and not a medical device.</p>
+<p>This document is the reviewed narrative. The generated schema at <code>/openapi.json</code> is authoritative for shapes; if the two disagree, the generated one is right and this document has a defect.</p>
+<h2>Authentication</h2>
+<p>All endpoints except <code>/health/*</code> require a bearer token.</p>
+<pre><code>Authorization: Bearer &lt;token&gt;</code></pre>
+<table><thead><tr><th>Failure</th><th>Status</th></tr></thead><tbody><tr><td>No header, or a scheme other than <code>Bearer</code></td><td><code>401</code> with <code>WWW-Authenticate: Bearer</code></td></tr><tr><td>Token not in the directory</td><td><code>401</code></td></tr><tr><td>Token valid, role lacks the permission</td><td><code>403</code></td></tr></tbody></table>
+<h2>Correlation</h2>
+<p>Every response carries <code>x-correlation-id</code>. Supply your own on the request and it is echoed; omit it and one is minted. It is the join key between the response, the service logs and the audit trail (NFR-08).</p>
+<h2>Status codes</h2>
+<table><thead><tr><th>Code</th><th>Meaning in this API</th></tr></thead><tbody><tr><td><code>200</code> / <code>201</code></td><td>Success</td></tr><tr><td><code>401</code> / <code>403</code></td><td>Not authenticated / not permitted</td></tr><tr><td><code>404</code></td><td>Not found <strong>or</strong> not permitted to know it exists (REG-03)</td></tr><tr><td><code>409</code></td><td>The request contradicts recorded state — a duplicate number, a forbidden referral transition</td></tr><tr><td><code>422</code></td><td>Well-formed but unacceptable: a malformed medical record number, a limit above the maximum page size</td></tr><tr><td><code>503</code></td><td>A dependency is unavailable; readiness is failing</td></tr></tbody></table>
+<p><code>404</code> covering both &quot;absent&quot; and &quot;not yours&quot; is deliberate. Confirming that a patient exists is itself a disclosure.</p>
+<h2>Endpoints</h2>
+<h3>Health — FR-12</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Role</th><th>Notes</th></tr></thead><tbody><tr><td><code>GET</code></td><td><code>/health/live</code></td><td>none</td><td>Process is up. Consults nothing</td></tr><tr><td><code>GET</code></td><td><code>/health/ready</code></td><td>none</td><td>Consults the database. <code>503</code> when it cannot</td></tr></tbody></table>
+<h3>Patients — FR-01, FR-02, FR-03, FR-06</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/patients</code></td><td><code>patient:write</code></td><td><code>201</code>. <code>409</code> on a duplicate MRN, <code>422</code> on a malformed one</td></tr><tr><td><code>GET</code></td><td><code>/patients?family_name=&amp;limit=</code></td><td><code>patient:read</code></td><td>Prefix match. One audit event for the search</td></tr><tr><td><code>GET</code></td><td><code>/patients/{patient_id}</code></td><td><code>patient:read</code></td><td>Audited with purpose</td></tr><tr><td><code>GET</code></td><td><code>/patients/{patient_id}/risk</code></td><td><code>risk:read</code></td><td>Score plus the factors behind it</td></tr></tbody></table>
+<pre><code>curl -H &quot;Authorization: Bearer demo-clinician-token&quot; \
+     -H &quot;Content-Type: application/json&quot; \
+     -d &#x27;{&quot;mrn&quot;:&quot;RGH-0142857&quot;,&quot;given_name&quot;:&quot;Amara&quot;,&quot;family_name&quot;:&quot;Okonjo&quot;,&quot;birth_date&quot;:&quot;1943-03-11&quot;,&quot;postal_code&quot;:&quot;RG1 4QT&quot;}&#x27; \
+     https://carepath.riverside.example/patients</code></pre>
+<p>Risk response:</p>
+<pre><code>{
+  &quot;patient_id&quot;: &quot;4315c616d0f74449ae5ce9fea4435a92&quot;,
+  &quot;score&quot;: 0.72,
+  &quot;needs_outreach&quot;: true,
+  &quot;factors&quot;: [
+    {&quot;code&quot;: &quot;prior-admissions&quot;, &quot;description&quot;: &quot;1 admission(s) already recorded&quot;, &quot;weight&quot;: 0.18},
+    {&quot;code&quot;: &quot;abnormal-observations&quot;, &quot;description&quot;: &quot;3 observation(s) outside the expected range&quot;, &quot;weight&quot;: 0.27},
+    {&quot;code&quot;: &quot;age&quot;, &quot;description&quot;: &quot;Older than 75&quot;, &quot;weight&quot;: 0.15},
+    {&quot;code&quot;: &quot;length-of-stay&quot;, &quot;description&quot;: &quot;Longest stay 9 days&quot;, &quot;weight&quot;: 0.12}
+  ],
+  &quot;degraded&quot;: false
+}</code></pre>
+<p><code>degraded</code> is <code>true</code> when the score was produced without a dependency that was unavailable (NFR-10). The record is still returned.</p>
+<h3>Encounters and observations — FR-04, FR-05</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/patients/{patient_id}/encounters</code></td><td><code>encounter:write</code></td><td><code>422</code> if discharge precedes admission</td></tr><tr><td><code>GET</code></td><td><code>/patients/{patient_id}/encounters?limit=</code></td><td><code>encounter:read</code></td><td>Newest first. <code>422</code> above the maximum page size</td></tr><tr><td><code>POST</code></td><td><code>/encounters/{encounter_id}/observations</code></td><td><code>encounter:write</code></td><td>LOINC code, value, UCUM unit</td></tr></tbody></table>
+<h3>Referrals — FR-07, FR-08</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/patients/{patient_id}/referrals</code></td><td><code>referral:write</code></td><td>Created as <code>draft</code></td></tr><tr><td><code>GET</code></td><td><code>/patients/{patient_id}/referrals?limit=</code></td><td><code>referral:read</code></td><td>Newest first</td></tr><tr><td><code>POST</code></td><td><code>/referrals/{referral_id}/status</code></td><td><code>referral:write</code></td><td><code>409</code> on a forbidden transition</td></tr></tbody></table>
+<pre><code>draft ──&gt; submitted ──&gt; accepted ──&gt; scheduled ──&gt; completed
+  │           │                          
+  │           └──&gt; declined              
+  └───────────┴──────────────┴──&gt; cancelled</code></pre>
+<p>Completed, declined and cancelled are terminal.</p>
+<h3>Consent — FR-09, BR-05</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>POST</code></td><td><code>/patients/{patient_id}/consent</code></td><td><code>consent:write</code></td><td>Append-only. Purposes: <code>treatment</code>, <code>research</code>, <code>data-exchange</code></td></tr><tr><td><code>GET</code></td><td><code>/patients/{patient_id}/consent?limit=</code></td><td><code>consent:read</code></td><td>Full decision history, newest first</td></tr></tbody></table>
+<h3>FHIR export — FR-10, BR-06, REG-07</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>GET</code></td><td><code>/fhir/Patient/{patient_id}/$everything</code></td><td><code>fhir:export</code></td><td>Base FHIR R4 searchset Bundle</td></tr></tbody></table>
+<p>Returns <code>Patient</code>, then <code>Encounter</code> resources, then <code>Observation</code> resources. No profile conformance is claimed (ADR-0004).</p>
+<h3>Audit — FR-11, REG-01</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Permission</th><th>Notes</th></tr></thead><tbody><tr><td><code>GET</code></td><td><code>/audit/{resource_type}/{resource_id}</code></td><td><code>audit:read</code></td><td>Oldest first</td></tr></tbody></table>
+<p>Read-only by construction. There is no route that writes, updates or deletes an audit event.</p>
+<pre><code>[
+  {
+    &quot;id&quot;: &quot;0d41…&quot;, &quot;actor&quot;: &quot;dr.okafor@riverside.example&quot;, &quot;actor_role&quot;: &quot;clinician&quot;,
+    &quot;action&quot;: &quot;read&quot;, &quot;resource_type&quot;: &quot;patient&quot;, &quot;resource_id&quot;: &quot;4315…&quot;,
+    &quot;purpose&quot;: &quot;treatment&quot;, &quot;occurred_at&quot;: &quot;2026-04-01T09:14:58+00:00&quot;,
+    &quot;correlation_id&quot;: &quot;b439b6f92359434c935f8e63ef63c601&quot;
+  }
+]</code></pre>
+<h2>Permission matrix</h2>
+<table><thead><tr><th></th><th>clinician</th><th>coordinator</th><th>auditor</th><th>partner</th></tr></thead><tbody><tr><td><code>patient:read</code></td><td>●</td><td>●</td><td>●</td><td></td></tr><tr><td><code>patient:write</code></td><td>●</td><td></td><td></td><td></td></tr><tr><td><code>encounter:read</code> / <code>:write</code></td><td>●</td><td>read</td><td></td><td></td></tr><tr><td><code>referral:read</code> / <code>:write</code></td><td>●</td><td>●</td><td></td><td></td></tr><tr><td><code>consent:read</code></td><td>●</td><td>●</td><td></td><td></td></tr><tr><td><code>consent:write</code></td><td></td><td>●</td><td></td><td></td></tr><tr><td><code>risk:read</code></td><td>●</td><td>●</td><td></td><td></td></tr><tr><td><code>fhir:export</code></td><td></td><td></td><td></td><td>●</td></tr><tr><td><code>audit:read</code></td><td></td><td></td><td>●</td><td></td></tr></tbody></table>
+<h2>Demonstration tokens</h2>
+<p><code>demo-clinician-token</code>, <code>demo-coordinator-token</code>, <code>demo-auditor-token</code>, <code>demo-partner-token</code>.</p>
+<p>They protect nothing — there is no real data behind them. A deployment replaces the directory (ADR-0002).</p>
+</body></html>
