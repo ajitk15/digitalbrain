@@ -257,3 +257,55 @@ class ResyncTests(TestCase):
         body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
         self.assertIn("Where these came from", body)
         self.assertIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), body)
+
+
+@settings_for_tests
+class SourceDisclosureTests(TestCase):
+    """Each origin opens to show what came from it."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        self.source = register(self.owner, self.app, "github", TREE)
+        from platform_core.link_sources import submit
+
+        files = [("docs/f0.md", FILE_ZERO), ("docs/f1.md", FILE_ONE)]
+        with patch("platform_core.link_sources.github_plan", return_value=files):
+            submit(self.owner, self.app.pk, TREE, source=self.source)
+
+    def body(self):
+        return self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+
+    def test_an_origin_is_a_disclosure_that_works_without_javascript(self):
+        """A native details element, like every other disclosure on the site."""
+        body = self.body()
+        self.assertIn('<details class="origin', body)
+        self.assertIn("<summary", body.split('<details class="origin')[1][:400])
+
+    def test_it_is_closed_until_somebody_opens_it(self):
+        """What have I got is asked far more often than what is in this one."""
+        panel = self.body().split('<details class="origin')[1][:200]
+        self.assertNotIn(" open", panel)
+
+    def test_opening_it_lists_the_files_that_came_from_it(self):
+        body = self.body()
+        listing = body.split('class="origin-files"')[1].split("</ul>")[0]
+        self.assertIn("docs/f0.md", listing)
+        self.assertIn("docs/f1.md", listing)
+
+    def test_a_file_no_longer_at_the_origin_is_marked_in_the_listing(self):
+        Document.objects.filter(source_url=FILE_ONE).update(orphaned=True)
+        listing = self.body().split('class="origin-files"')[1].split("</ul>")[0]
+        self.assertIn("No longer at origin", listing)
+        self.assertIn("is-orphaned", listing)
+
+    def test_the_resync_button_is_inside_the_disclosure(self):
+        """Nothing acts from a row someone has not opened and looked at."""
+        body = self.body()
+        opened = body.split('class="origin-body"')[1].split("</details>")[0]
+        self.assertIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), opened)
+
+    def test_a_viewer_sees_the_files_but_no_resync(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        body = self.body()
+        self.assertIn("docs/f0.md", body)
+        self.assertNotIn(reverse("source-resync", args=[self.app.pk, self.source.pk]), body)

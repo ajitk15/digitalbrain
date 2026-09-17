@@ -2165,3 +2165,65 @@
   .origin-row { gap: var(--s-2); }
   .origin-identity { margin-right: 0; width: 100%; }
 }
+
+/* Each origin opens to show what came from it. A native <details>, so it works
+   with JavaScript off - the same contract every other disclosure on the site
+   keeps. Closed by default: the question "what have I got" is asked far more
+   often than "what is in this one". */
+.origin > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 0;
+}
+.origin > summary::-webkit-details-marker { display: none; }
+.origin > summary::before {
+  content: "\25B8";
+  flex: none;
+  color: var(--c-ink-faint);
+  transition: transform .12s;
+}
+.origin[open] > summary::before { transform: rotate(90deg); }
+.origin > summary:hover .origin-identity strong { color: var(--c-brand-strong); }
+
+.origin-body {
+  margin-top: var(--s-3);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--c-line);
+}
+.origin-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-3);
+  font-size: var(--t-12);
+}
+.origin-files { list-style: none; margin: 0; padding: 0; }
+.origin-files li {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 5px 0;
+  font-size: var(--t-12);
+  border-top: 1px solid var(--c-line-soft);
+}
+.origin-files li:first-child { border-top: 0; }
+.origin-files .is-orphaned a { color: var(--c-ink-muted); text-decoration: line-through; }
+
+/* The summary stays on one line. The identity is allowed to shrink and clip
+   rather than to grow: an address is long, and letting it set the row's width
+   pushed the status, the count and the control onto lines of their own. */
+.origin > summary.origin-row { flex-wrap: nowrap; }
+.origin-identity { flex: 1 1 200px; min-width: 0; }
+.origin-identity strong,
+.origin-identity small {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.origin-body .origin-actions { flex-wrap: wrap; }
+
+@media (max-width: 700px) {
+  .origin > summary.origin-row { flex-wrap: wrap; }
+  .origin-identity { flex: 1 1 100%; }
+}

@@ -3,7 +3,7 @@
 from urllib.parse import urlparse
 
 from django.core.paginator import Paginator
-from django.db.models import CharField, Count, Q, Value
+from django.db.models import CharField, Count, Prefetch, Q, Value
 
 from .models import CodeRepository, Document, GraphRevision, KnowledgeEntry, KnowledgeSource
 from .services import feature_enabled
@@ -119,6 +119,16 @@ def library_context(app, request):
         # rows that happen to share a prefix.
         "origins": list(
             KnowledgeSource.objects.filter(application=app)
+            .prefetch_related(
+                # One query for every source's files, however many sources there
+                # are. Reading them per source would be a query per row, which is
+                # the shape this page spent a release getting rid of.
+                Prefetch(
+                    "documents",
+                    queryset=Document.objects.exclude(status="deleted").order_by("name"),
+                    to_attr="files",
+                )
+            )
             .annotate(
                 file_count=Count(
                     "documents", filter=~Q(documents__status="deleted"), distinct=True
