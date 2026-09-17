@@ -59,8 +59,12 @@ class RepositoryWithoutReadmeTests(SimpleTestCase):
         ]
         with self.responses(self.not_found(), api(root)):
             found = plan(urlparse("https://github.com/o/r"))
-        # The .txt is documentation; the .esql is code and is left alone.
-        self.assertEqual(found, [("r-notes.txt", "https://raw.githubusercontent.com/o/r/main/notes.txt")])
+        # The .txt is documentation; the .esql is code and is left alone. The
+        # name is the path within the repository rather than the repository
+        # plus the path: the repository is the same for every file in an import,
+        # so repeating it in each name only pushes the part that differs out of
+        # sight.
+        self.assertEqual(found, [("notes.txt", "https://raw.githubusercontent.com/o/r/main/notes.txt")])
 
     def test_a_readme_is_still_preferred_when_there_is_one(self):
         readme = {"name": "README.md", "download_url": "https://raw.githubusercontent.com/o/r/main/README.md"}
@@ -253,3 +257,51 @@ class RateLimitMessageTests(SimpleTestCase):
             with self.assertRaises(FetchError) as raised:
                 plan(urlparse("https://github.com/o/r/tree/main/docs"))
         self.assertIn("HTTP 500", str(raised.exception))
+
+
+class DocumentNamingTests(SimpleTestCase):
+    """Names that read as the file, not as the path to it.
+
+    A folder import named every document after the repository plus the whole
+    path with the slashes turned into hyphens. Forty files then shared a
+    thirty-character prefix and differed only at the end, which is unreadable in
+    a list and identical once a graph label truncates it.
+    """
+
+    def test_the_directory_that_was_asked_for_is_not_repeated_in_every_name(self):
+        self.assertEqual(
+            github_sources.relative_name(
+                "demo-artifacts/docs/07-govern/risk-register.xlsx", "demo-artifacts/docs"
+            ),
+            "07-govern/risk-register.xlsx",
+        )
+
+    def test_the_folder_below_it_is_kept_because_it_tells_files_apart(self):
+        """Two README.md under different sections must not become one name."""
+        first = github_sources.relative_name("docs/a/README.md", "docs")
+        second = github_sources.relative_name("docs/b/README.md", "docs")
+        self.assertNotEqual(first, second)
+        self.assertEqual((first, second), ("a/README.md", "b/README.md"))
+
+    def test_a_root_import_keeps_the_whole_path(self):
+        self.assertEqual(github_sources.relative_name("docs/guide.md", ""), "docs/guide.md")
+
+    def test_a_path_that_does_not_start_with_the_root_is_left_alone(self):
+        self.assertEqual(github_sources.relative_name("other/guide.md", "docs"), "other/guide.md")
+
+    def test_a_name_is_bounded_for_the_column_that_stores_it(self):
+        self.assertLessEqual(len(github_sources.relative_name("x" * 400, "")), 200)
+
+    @override_settings(IMPORT_MAX_FILES=100)
+    def test_a_walk_names_its_files_relative_to_the_link(self):
+        listing = [
+            {
+                "type": "file",
+                "name": "risk-register.xlsx",
+                "path": "demo-artifacts/docs/07-govern/risk-register.xlsx",
+                "download_url": "https://raw.example/risk.xlsx",
+            }
+        ]
+        with patch.object(github_sources, "_api", return_value=listing):
+            found = github_sources.tree("o", "r", "main", "demo-artifacts/docs", "")
+        self.assertEqual(found[0][0], "07-govern/risk-register.xlsx")

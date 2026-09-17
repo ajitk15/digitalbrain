@@ -191,6 +191,18 @@ def single_file(owner, repo, ref, path, token):
     return [(f"{repo}-{data.get('name') or path.rsplit('/', 1)[-1]}", _download_url(data))]
 
 
+def relative_name(entry_path, root):
+    """A document name that reads as the file it is, not as where it lives.
+
+    `root` is the directory the link named, so its prefix carries no
+    information: everything in the import shares it. What is left is the path
+    below it, which is both short and unique within one import.
+    """
+    prefix = f"{root.strip('/')}/" if root else ""
+    relative = entry_path[len(prefix):] if prefix and entry_path.startswith(prefix) else entry_path
+    return (relative or entry_path)[:200]
+
+
 def tree(owner, repo, ref, path, token, notes=None):
     """Every documentation file under a directory, breadth-first and bounded.
 
@@ -225,8 +237,14 @@ def tree(owner, repo, ref, path, token, notes=None):
                     # many were left behind instead of only that some were.
                     skipped += 1
                     continue
-                label = (entry.get("path") or name).replace("/", "-")
-                found.append((f"{repo}-{label}", _download_url(entry)))
+                # Named relative to the directory that was asked for, with the
+                # separators kept. The old name was the repository plus the
+                # whole path with every slash turned into a hyphen, so a folder
+                # import produced forty names sharing a thirty-character prefix
+                # and differing only at the end - unreadable in a list, and
+                # identical once a graph label truncated them.
+                found.append((relative_name(entry.get("path") or name, path),
+                              _download_url(entry)))
     if skipped and notes is not None:
         notes.append(
             f"This link holds {len(found) + skipped} importable files and the limit is "

@@ -230,6 +230,24 @@
   //: Zoomed past this there is room on screen for every label at once.
   const LABEL_ALL_ZOOM = 1.6;
 
+  //: How much of a long label survives, and from which end.
+  //
+  // Cutting the tail off assumes the beginning is what tells two labels apart.
+  // For a document imported from a folder that is exactly backwards: every name
+  // carries the same repository and path prefix, and the filename - the only
+  // part anyone recognises - is at the end. A screen of
+  // "digitalbrain-demo-artifac..." is one label drawn forty times.
+  //
+  // Keeping both ends costs a few characters of prefix and returns the
+  // filename. The title element still carries the whole name for hovering.
+  const LABEL_MAX = 30;
+  const LABEL_HEAD = 8;
+
+  function shorten(text) {
+    if (text.length <= LABEL_MAX) return text;
+    return `${text.slice(0, LABEL_HEAD)}…${text.slice(-(LABEL_MAX - LABEL_HEAD - 1))}`;
+  }
+
   function applyView() {
     const viewport = canvas.querySelector("#graph-viewport");
     if (viewport) {
@@ -541,7 +559,7 @@
             "font-size": 10,
             class: "kg-label",
           },
-          node.label.length > 26 ? `${node.label.slice(0, 25)}…` : node.label
+          shorten(node.label)
         )
       );
       group.append(el("title", {}, `${node.label} (${node.kind})`));
