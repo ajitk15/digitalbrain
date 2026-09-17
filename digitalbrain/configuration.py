@@ -22,6 +22,7 @@ def load_config():
         "hosts",
         "csrf_origins",
         "secret_directory",
+        "managed_secret_directory",
         "database",
         "trust_proxy",
         "scanner",
@@ -46,6 +47,16 @@ def load_config():
     # removed the bound without removing the setting that claims to impose one.
     if type(limit) is not int or not 1 <= limit <= 1000:
         raise ImproperlyConfigured("import_max_files must be a whole number between 1 and 1000.")
+    managed = config.get("managed_secret_directory", "")
+    if not isinstance(managed, str):
+        raise ImproperlyConfigured("managed_secret_directory must be a path.")
+    if managed and Path(managed).resolve() == Path(config["secret_directory"]).resolve():
+        # Separate directories is what makes "an operator mount wins" decidable.
+        # One directory for both would let a value typed in the browser overwrite
+        # a credential the deployment projected from its secret manager.
+        raise ImproperlyConfigured(
+            "managed_secret_directory must differ from secret_directory."
+        )
     for field in ("sharepoint_tenant", "sharepoint_client_id"):
         value = config.get(field, "")
         if not isinstance(value, str):

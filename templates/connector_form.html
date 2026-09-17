@@ -2,17 +2,19 @@
 {% block title %}{{ kind.label }} · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}{% settings_nav %}
 <div class="page-heading"><div><h1>{% if connector %}Edit connector{% else %}{{ kind.label }}{% endif %}</h1><p class="muted">Read-only import. Nothing is written back to {{ kind.label }}.</p></div><a class="button secondary" href="{% url 'connectors' application.pk %}">{% icon "arrow-left" %}Back</a></div>
-{% if kind.credential_required and not credential %}<p class="notice notice-warning">{% icon "warning" %}<span>No credential is mounted for this system yet. Save the connector, then mount the secret file described below before importing.</span></p>{% endif %}
+{% if kind.credential_required and not credential %}<p class="notice notice-warning">{% icon "warning" %}<span>No credential is set for this system yet. Save the connector, then {% if location.manageable %}set one on <a href="{% url 'credentials' application.pk %}">Credentials</a>{% else %}mount the secret file described below{% endif %} before importing.</span></p>{% endif %}
 <section class="card form-card">
 <form method="post">{% csrf_token %}
 <p><label for="connector-name">Name</label><input type="text" id="connector-name" name="name" maxlength="120" value="{{ name_field.value }}" required>{% if name_field.error %}<span class="helptext">{{ name_field.error }}</span>{% endif %}<span class="helptext">How this connector appears in the list.</span></p>
 {{ form.as_p }}
+<p><label for="connector-interval">Import automatically</label><select id="connector-interval" name="interval">{% for choice in schedule.choices %}<option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>{% endfor %}</select><span class="helptext">An unattended import runs as the person who created this connector, and stops if their owner access is removed.</span></p>
+<p><label for="connector-prune"><input type="checkbox" id="connector-prune" name="prune"{% if schedule.prune %} checked{% endif %}> Retire knowledge for records that stop appearing</label><span class="helptext">Only tick this when the filter above returns the whole set. Under a narrowing filter — anything with a date range — a record that stops appearing has not been deleted, and its knowledge would be retired for no reason. Retired entries are kept and stop being cited, never deleted.</span></p>
 <button class="button" type="submit">{% icon "save" %}Save connector</button>
 </form>
 </section>
-<section class="card section"><h2>Credential</h2><p class="muted">{% if credential %}{% icon "success" %} A credential is currently mounted.{% else %}{% icon "warning" %} No credential is mounted.{% endif %}</p>
-<p class="muted">Mount the secret half as a file at this exact path, readable only by the service account. It is never entered in this form, stored in the database, or written to <code>.env</code>.</p>
+<section class="card section"><h2>Credential</h2><p class="muted">{% if location.source == "operator" %}{% icon "success" %} A credential is mounted by your operator.{% elif location.source == "managed" %}{% icon "success" %} A credential is set for this application.{% else %}{% icon "warning" %} No credential is set.{% endif %}</p>
+<p class="muted">{% if location.manageable %}Enter it on <a href="{% url 'credentials' application.pk %}">Credentials</a>, where it is written to the file below and never stored in the database. An operator can mount that file directly instead, and a mounted file takes precedence.{% else %}This deployment has no directory for credentials entered in the browser, so an operator mounts the secret half as a file at this exact path, readable only by the service account.{% endif %}</p>
 <p class="secret-path"><code>{{ location.path }}</code></p>
-<p class="muted">The file holds the secret and nothing else — no quotes, no key name, no trailing blank line. Create it, then reload this page to confirm it is picked up.</p>
+<p class="muted">The file holds the secret and nothing else — no quotes, no key name, no trailing blank line.</p>
 {% if kind.key == 'github' %}<p class="muted">This one file also authorises GitHub link imports and Code Graph indexing for this application. Without it GitHub allows only 60 anonymous requests an hour and hides private repositories; with it the limit is 5,000 an hour. A token needs read access to repository contents and nothing more.</p>{% endif %}</section>
 {% endblock %}

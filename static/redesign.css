@@ -2402,19 +2402,6 @@
 .view-bar .tabs { flex: 1 1 auto; margin-bottom: 0; }
 .view-bar > .button { margin-bottom: var(--s-3); }
 
-/* The count moves onto the tab it belongs to, rather than sitting beside a
-   heading that is no longer there. */
-.tab-count {
-  margin-left: var(--s-2);
-  padding: 1px 6px;
-  border-radius: var(--r-sm);
-  background: var(--c-wash, var(--c-subtle));
-  color: var(--c-ink-muted);
-  font-size: var(--t-10);
-  font-weight: 700;
-}
-.tabs a[aria-current] .tab-count { background: var(--c-brand-tint); color: var(--c-brand-strong); }
-
 @media (max-width: 700px) {
   .view-bar { align-items: stretch; }
   .view-bar > .button { margin-bottom: 0; }

@@ -27,6 +27,10 @@ SHAREPOINT_TENANT = CONFIG.get("sharepoint_tenant", "")
 SHAREPOINT_CLIENT_ID = CONFIG.get("sharepoint_client_id", "")
 DEBUG = False
 SECRET_DIRECTORY = CONFIG["secret_directory"]
+#: Where a credential set in the browser is written. Empty means an operator has
+#: provisioned no writable volume for it, and the Credentials screen says so
+#: rather than offering a control that cannot work.
+MANAGED_SECRET_DIRECTORY = CONFIG.get("managed_secret_directory", "")
 SECRET_KEY = read_secret(SECRET_DIRECTORY, "django_secret_key")
 if len(SECRET_KEY) < 50:
     raise ImproperlyConfigured("The signing key must contain at least 50 random characters.")

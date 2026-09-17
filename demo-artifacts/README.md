@@ -81,6 +81,7 @@ then waiver W-01, then risk R-01.
 | `jira-tickets.md` | Seven CARE tickets — five bugs, one story, one task |
 | `jira-export.json` | The same board in Jira Cloud's API shape, verified against the platform's own adapter |
 | `build_jira_export.py` | Regenerates that JSON from plain-text bodies |
+| `create_jira_issues.py` | Creates the same seven tickets in a live Jira Cloud project |
 | `CARE-board-export.csv` | The board as a tracker CSV export |
 | `factory-tickets.md` | Run sheet: which ticket for which audience, expected output per phase |
 | `seeded-gaps.md` | **Answer key. Operator only** — do not open in front of a customer, do not load as a source |

@@ -800,15 +800,21 @@ def ticket_choices(app, connector=None):
 
 
 def connector_prefix(connector):
-    """The URL prefix a connector's imports share, for filtering its queue."""
+    """The URL prefix a connector's imports share, for filtering its queue.
+
+    Defers to the registry rather than restating it: this function and
+    `Kind.namespace` had already drifted, this one returning a Jira site's whole
+    base URL where the records themselves carry `<base>/browse/`.
+    """
     from .connector_kinds import KINDS
 
-    config = connector.config or {}
-    if connector.kind == "github":
-        return f"https://github.com/{config.get('repository', '')}/"
-    if connector.kind in KINDS:
-        return config.get("base_url", "")
-    return ""
+    kind = KINDS.get(connector.kind)
+    if kind is None:
+        return ""
+    try:
+        return kind.namespace(connector.config or {})
+    except KeyError:
+        return ""
 
 
 # --------------------------------------------------------------------- Build B
@@ -836,15 +842,9 @@ def write_credential(app):
     also let it push. Absent is a state, not a failure - an application with no
     write credential simply cannot deliver, and is told so.
     """
-    from django.conf import settings
-    from django.core.exceptions import ImproperlyConfigured
+    from .secrets import application_secret
 
-    from digitalbrain.configuration import read_secret
-
-    try:
-        return read_secret(settings.SECRET_DIRECTORY, f"github_write_{app.pk}")
-    except ImproperlyConfigured:
-        return ""
+    return application_secret(app, "github_write")
 
 
 def target_paths(plan):

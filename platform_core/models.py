@@ -832,7 +832,24 @@ class Connector(models.Model):
     name = models.CharField(max_length=120, default="")
     config = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True)
-    last_synced_at = models.DateTimeField(null=True)
+    #: Minutes between unattended imports, or 0 for manual only. A ticket board
+    #: whose status only changes in the source system is stale knowledge the
+    #: moment somebody moves a card, and pressing Import is not a schedule.
+    sync_interval_minutes = models.PositiveIntegerField(default=0)
+    #: Opt-in, and deliberately not the default. When the filter returns the
+    #: whole set, a record that stops appearing has been deleted and its
+    #: knowledge should stop being citable. When the filter is narrow - "updated
+    #: in the last 30 days" - absence means nothing of the sort, which is why the
+    #: owner has to state that their filter is complete.
+    prune_missing = models.BooleanField(default=False)
+    # blank=True as well as null=True: a connector that has never run has no
+    # date, and full_clean refuses a null in a field that is not also blank -
+    # which made every new connector unsaveable through the form.
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    #: When an import was last *attempted*, successfully or not. The schedule is
+    #: measured from this rather than from last_synced_at, so a connector that
+    #: keeps failing waits its interval instead of being retried on every tick.
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
     last_count = models.PositiveIntegerField(default=0)
     # What happened last time, so a failure leaves a trace on the row rather than
     # only in a log nobody reads.
@@ -864,6 +881,43 @@ AI_PURPOSES = [
     ("plan_drafting", "Code Factory drafting"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
+
+
+class ManagedCredential(models.Model):
+    """Provenance for a credential an owner set from the browser.
+
+    The credential itself is **not** here. It lives in a file with owner-only
+    permissions, the same as one an operator mounts, and `secrets.py` is the only
+    thing that writes it. This row records who set it and when, plus a digest
+    salted with the file name so it can be shown for confirmation without being
+    comparable across applications.
+
+    The file is the truth. A row whose file has been removed under it means the
+    credential is gone, not that it is still configured - which is why the screen
+    reads presence from disk and uses this only for the "set by" line.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    #: The registry key - "jira", "openai" - never the file name, which is
+    #: derived from this and the application id where the file is written.
+    name = models.CharField(max_length=40)
+    digest = models.CharField(max_length=64)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "name"], name="unique_managed_credential"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} for {self.application_id}"
 
 
 class AIConfiguration(models.Model):

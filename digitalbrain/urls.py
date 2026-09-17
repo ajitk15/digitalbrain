@@ -9,6 +9,7 @@ from platform_core import (
     connectors,
     documents,
     graphs,
+    secrets,
     views,
     workbench,
 )
@@ -135,6 +136,7 @@ urlpatterns = [
     path("applications/<uuid:pk>/usage/", views.usage, name="usage"),
     path("applications/<uuid:pk>/features/", views.features, name="application-features"),
     path("applications/<uuid:pk>/chat-settings/", views.chat_settings, name="chat-settings"),
+    path("applications/<uuid:pk>/credentials/", secrets.credentials, name="credentials"),
     path(
         "applications/<uuid:pk>/connectors/new/",
         connectors.connector_form,

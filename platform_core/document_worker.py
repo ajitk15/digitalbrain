@@ -133,6 +133,12 @@ def code_graph_steps():
     return (process_next_repository,)
 
 
+def connector_steps():
+    from .connectors import process_next_connector
+
+    return (process_next_connector,)
+
+
 def maintenance_steps():
     from .knowledge_sources import process_next_source
 
@@ -163,6 +169,11 @@ LANES = (
     # Its own lane for the same reason graph has one: a Code Factory run makes
     # three provider calls in sequence and must not sit in front of an upload.
     ("factory", factory_steps, 2.0),
+    # Its own lane, not maintenance: an import waits on somebody else's instance
+    # and may take tens of seconds, which must not sit in front of the retention
+    # sweep. Ten seconds between ticks is ample when the shortest interval an
+    # owner can choose is fifteen minutes.
+    ("connectors", connector_steps, 10.0),
     ("maintenance", maintenance_steps, 30.0),
 )
 

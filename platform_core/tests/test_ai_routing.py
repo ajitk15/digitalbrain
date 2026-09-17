@@ -116,7 +116,7 @@ class AIRoutingTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("model", form.errors)
 
-    @patch("platform_core.ai.read_secret", return_value="scoped-key")
+    @patch("platform_core.secrets.application_secret", return_value="scoped-key")
     @patch("platform_core.claude_agents.completion")
     @patch("platform_core.ai.completion")
     def test_purpose_routes_provider_credentials_and_cost(self, openai, claude, secret):
@@ -129,16 +129,15 @@ class AIRoutingTests(TestCase):
         ]
         invoke_ai(self.owner, self.app.pk, "graph_retrieval", "Queue?", citations)
         openai.assert_not_called()
-        secret.assert_called_with(
-            __import__("django.conf", fromlist=["settings"]).settings.SECRET_DIRECTORY,
-            f"claude_{self.app.pk}",
-        )
+        # The credential fetched is this application's, for the provider the
+        # purpose routed to - not the one configured for chat.
+        secret.assert_called_with(self.app, "claude")
         receipt = AIUsage.objects.get()
         self.assertEqual(receipt.provider, "Anthropic")
         self.assertEqual(receipt.purpose, "graph_retrieval")
         self.assertEqual(receipt.amount, Decimal("0.0003"))
 
-    @patch("platform_core.ai.read_secret", return_value="scoped-key")
+    @patch("platform_core.secrets.application_secret", return_value="scoped-key")
     @patch("platform_core.claude_agents.completion")
     def test_graph_generation_uses_model_and_preserves_source_provenance(self, claude, secret):
         self.ai_config("graph_generation")
@@ -190,7 +189,7 @@ class AIRoutingTests(TestCase):
         config.save()
         self.assertNotEqual(fingerprint(self.app.pk), graph.fingerprint)
 
-    @patch("platform_core.ai.read_secret", return_value="scoped-key")
+    @patch("platform_core.secrets.application_secret", return_value="scoped-key")
     @patch("platform_core.claude_agents.completion", side_effect=ValidationError("Unavailable"))
     def test_failed_generation_does_not_repeat_paid_calls_automatically(self, claude, secret):
         self.ai_config("graph_generation")
@@ -204,7 +203,7 @@ class AIRoutingTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(KnowledgeGraph.objects.get().status, "queued")
 
-    @patch("platform_core.ai.read_secret", return_value="scoped-key")
+    @patch("platform_core.secrets.application_secret", return_value="scoped-key")
     @patch("platform_core.claude_agents.completion")
     def test_graph_answers_use_saved_edges_and_private_history(self, claude, secret):
         self.ai_config("graph_retrieval")
@@ -240,7 +239,7 @@ class AIRoutingTests(TestCase):
         self.assertContains(response, "must configure Chat conversation")
         self.assertFalse(ChatMessage.objects.exists())
 
-    @patch("platform_core.ai.read_secret", return_value="scoped-key")
+    @patch("platform_core.secrets.application_secret", return_value="scoped-key")
     @patch("platform_core.ai.completion")
     def test_default_chat_calls_llm_for_greetings_without_document_matches(self, provider, secret):
         self.ai_config("chat", "openai")
@@ -257,9 +256,8 @@ class AIRoutingTests(TestCase):
 
     def test_enabled_model_without_key_shows_setup_and_retains_draft(self):
         self.ai_config("chat", "openai")
-        from django.core.exceptions import ImproperlyConfigured
 
-        with patch("platform_core.ai.read_secret", side_effect=ImproperlyConfigured("missing")):
+        with patch("platform_core.secrets.application_secret", return_value=""):
             response = self.client.post(reverse("chat", args=[self.app.pk]), {"question": "Hello"})
         self.assertContains(response, "API key file is missing")
         self.assertContains(response, "gpt-5.6-luna")

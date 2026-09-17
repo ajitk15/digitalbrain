@@ -6,15 +6,13 @@ import re
 import threading
 import uuid
 from datetime import timedelta
-from pathlib import Path
 
 from django import forms
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Q
 from django.http import (
     Http404,
@@ -373,8 +371,9 @@ def published_graph_version(app_id):
 def credential_available(config, app):
     """Whether a run could authenticate, by mounted secret or development host login."""
     from .agent_runtime.credentials import host_login_enabled
+    from .secrets import source_of
 
-    if (Path(settings.SECRET_DIRECTORY) / f"{config.provider}_{app.pk}").is_file():
+    if source_of(app, config.provider):
         return True
     return config.provider == "claude" and host_login_enabled()
 
@@ -1012,6 +1011,7 @@ def plans(request, pk):
     from .models import Connector, FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
+    connectors = Connector.objects.filter(application=app, enabled=True)
     form = PlanForm(request.POST or None)
     draft_form = DraftForm()
     draft_notice = ""
@@ -1106,7 +1106,14 @@ def plans(request, pk):
             ),
             "runs": FactoryRun.objects.filter(application=app).prefetch_related("phases")[:10],
             "tickets": ticket_choices(app),
-            "connectors": Connector.objects.filter(application=app, enabled=True),
+            "connectors": connectors,
+            # The queue an analysis runs against defaults to the connector that
+            # imported most recently - the one whose tickets are on screen -
+            # rather than to "any". With a single connector configured, "any" and
+            # "that one" are the same choice, and the template drops it.
+            "default_connector": connectors.order_by(
+                models.F("last_synced_at").desc(nulls_last=True), "name"
+            ).first(),
         },
     )
 

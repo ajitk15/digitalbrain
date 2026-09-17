@@ -144,12 +144,16 @@ def chat_settings(request, pk):
     )
 
 
-@require_GET
 def server_error(request):
     """The 500 page, carrying the request id the operator will need.
 
     Django's default handler renders with an empty context, so the page could
     only mention that an id exists without ever showing it.
+
+    Deliberately undecorated. Django calls this for whatever method was in
+    flight, so a `require_GET` here answered every failed POST in the platform
+    with an empty 405 - the browser showing its own "this page isn't working"
+    instead of the page that carries the request id.
     """
     from django.shortcuts import render as _render
 

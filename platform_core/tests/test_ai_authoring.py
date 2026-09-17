@@ -133,11 +133,15 @@ class AIAuthoringTests(TestCase):
                     with self.assertRaises(ValidationError):
                         draft_plan(self.owner, self.app.pk, "Shorten refunds", self.citations())
 
-    def test_drafting_pre_fills_the_form_and_saves_nothing(self):
+    def test_drafting_saves_nothing(self):
+        """The "Propose a change" panel this fed has been removed from the Code
+        Factory screen, so the two assertions about its markup went with it. The
+        endpoint is still served and still refuses to write, which is the part
+        that mattered: drafting is not proposing, and approval is untouched."""
         self.configure("plan_drafting")
         url = reverse("plans", args=[self.app.pk])
         with (
-            patch("platform_core.ai.read_secret", return_value="scoped-key"),
+            patch("platform_core.secrets.application_secret", return_value="scoped-key"),
             patch(
                 "platform_core.claude_agents.completion",
                 return_value=(
@@ -148,9 +152,6 @@ class AIAuthoringTests(TestCase):
         ):
             response = self.client.post(url, {"action": "draft", "requirement": "Shorten refunds"})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Shorten the refund window")
-        self.assertContains(response, "Draft ready")
-        # Drafting is not proposing: approval semantics are untouched.
         self.assertFalse(ChangePlan.objects.exists())
 
     def test_a_viewer_cannot_draft(self):
@@ -162,8 +163,11 @@ class AIAuthoringTests(TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_the_draft_control_is_hidden_until_an_owner_configures_it(self):
+    def test_no_drafting_control_is_offered_on_the_screen(self):
+        """It used to appear once an owner configured plan_drafting. The panel
+        that held it is gone, and configuring the purpose must not bring it back
+        by some other route."""
+        self.configure("plan_drafting")
         response = self.client.get(reverse("plans", args=[self.app.pk]))
         self.assertNotContains(response, "Draft with AI")
-        self.configure("plan_drafting")
-        self.assertContains(self.client.get(reverse("plans", args=[self.app.pk])), "Draft with AI")
+        self.assertNotContains(response, "Propose a change")

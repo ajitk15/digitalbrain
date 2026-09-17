@@ -177,7 +177,7 @@ class WorkbenchTests(TestCase):
             self.client.get(reverse("connectors", args=[self.app.pk])).status_code, 403
         )
 
-    @patch("platform_core.connectors.read_secret", return_value="test-key")
+    @patch("platform_core.secrets.application_secret", return_value="test-key")
     @patch("platform_core.connector_kinds.api_json")
     def test_connector_import_is_idempotent_and_versions_updates(self, api, secret):
         connector = Connector.objects.create(
@@ -195,10 +195,10 @@ class WorkbenchTests(TestCase):
         self.assertEqual(sync(self.owner, connector.pk, self.app.pk), 1)
         self.assertEqual(KnowledgeEntry.objects.count(), 2)
         self.assertEqual(KnowledgeEntry.objects.filter(active=True).count(), 1)
-        secret.assert_called_with(
-            __import__("django.conf", fromlist=["settings"]).settings.SECRET_DIRECTORY,
-            f"github_{self.app.pk}",
-        )
+        # Still pinned: the credential is looked up for this application and no
+        # other. The lookup moved into secrets.application_secret, which resolves
+        # the file name from the application itself.
+        secret.assert_called_with(self.app, "github")
 
     @patch("platform_core.processing.scanner_path", return_value="test-scanner")
     @patch("platform_core.processing.subprocess.run")
@@ -272,7 +272,7 @@ class WorkbenchTests(TestCase):
         with self.assertRaises(ValueError):
             extract(path, ".pdf")
 
-    @patch("platform_core.ai.read_secret", return_value="test-key")
+    @patch("platform_core.secrets.application_secret", return_value="test-key")
     @patch("platform_core.ai.completion")
     def test_ai_usage_is_recorded_even_with_reports_disabled(self, completion, secret):
         AIConfiguration.objects.create(

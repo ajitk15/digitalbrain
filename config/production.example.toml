@@ -3,6 +3,14 @@ mode = "production"
 hosts = ["brain.example.com"]
 csrf_origins = ["https://brain.example.com"]
 secret_directory = "/run/secrets"
+# Optional, and off unless set. Where a credential entered by an application
+# owner on the Credentials screen is written. It must be a writable volume the
+# service account owns - /run/secrets is projected read-only - and a different
+# directory, because a credential your secret manager projects deliberately
+# takes precedence over one entered in the browser. On more than one replica it
+# has to be shared storage, or each replica sees only what was entered on it.
+# Leave it out to keep credentials operator-only, as they were before.
+# managed_secret_directory = "/var/lib/digitalbrain/credentials"
 # Enable ONLY behind a trusted proxy that strips client-supplied X-Forwarded-Proto.
 trust_proxy = false
 # How many files one import may take from a GitHub /tree/ link or a SharePoint

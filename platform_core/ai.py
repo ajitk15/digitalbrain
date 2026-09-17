@@ -15,8 +15,6 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
-from digitalbrain.configuration import read_secret
-
 from .llm_agents import completion
 from .model_catalog import (
     GRAPH_GENERATION_ADVICE,
@@ -83,13 +81,16 @@ def provider_credential(config, app):
     never quietly become "spend the operator's account".
     """
     from .agent_runtime.credentials import host_login_enabled
+    from .secrets import application_secret
 
-    try:
-        return read_secret(settings.SECRET_DIRECTORY, f"{config.provider}_{app.pk}")
-    except ImproperlyConfigured:
-        if config.provider == "claude" and host_login_enabled():
-            return ""
-        raise
+    value = application_secret(app, config.provider)
+    if value:
+        return value
+    if config.provider == "claude" and host_login_enabled():
+        return ""
+    raise ImproperlyConfigured(
+        f"Required credential is unavailable: {config.provider}_{app.pk}"
+    )
 
 
 #: Written once by scripts/ai_setup.py during first-run setup. Deliberately not
@@ -466,6 +467,7 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
 @require_http_methods(["GET", "POST"])
 def ai_settings(request, pk):
     from .agent_runtime.credentials import host_login_enabled
+    from .secrets import source_of
 
     app, grant = application_for(request.user, pk)
     if grant.role != "owner":
@@ -532,11 +534,10 @@ def ai_settings(request, pk):
             "pricing_note": PRICING_NOTE,
             "openai_secret": f"openai_{app.pk}",
             "claude_secret": f"claude_{app.pk}",
-            "openai_mounted": (Path(settings.SECRET_DIRECTORY) / f"openai_{app.pk}").is_file(),
-            "claude_mounted": (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file(),
+            "openai_mounted": bool(source_of(app, "openai")),
+            "claude_mounted": bool(source_of(app, "claude")),
             # True only when this application would actually fall back to it, so
             # the page can stop claiming a fallback never happens when it does.
-            "host_login": host_login_enabled()
-            and not (Path(settings.SECRET_DIRECTORY) / f"claude_{app.pk}").is_file(),
+            "host_login": host_login_enabled() and not source_of(app, "claude"),
         },
     )

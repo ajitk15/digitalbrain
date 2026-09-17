@@ -47,7 +47,11 @@ def api_json(url, headers, *, label):
     try:
         body, _, _, _ = fetch(url, headers=headers)
     except FetchError as failure:
-        raise ValidationError(f"{label}: {failure}") from None
+        refused = ValidationError(f"{label}: {failure}")
+        # The status travels with the error so a caller can tell "this endpoint
+        # no longer exists on this instance" from "this request failed".
+        refused.http_status = failure.status
+        raise refused from None
     try:
         return json.loads(body)
     except ValueError:
@@ -84,6 +88,30 @@ def https_base(value):
         raise forms.ValidationError("Enter the full host name of your instance.")
     port = f":{parsed.port}" if parsed.port else ""
     return f"https://{host}{port}"
+
+
+def named(value):
+    """The `name` of a nested provider object, or "" for anything else.
+
+    Providers wrap almost everything - a status, a priority, a type - in an
+    object with a name. Reading it defensively keeps a malformed record from
+    raising where it should simply be reported as unknown.
+    """
+    if isinstance(value, dict):
+        return text(value.get("name"))
+    return text(value)
+
+
+def header(pairs):
+    """The state lines that precede a record's own text.
+
+    Status belongs *in the body* rather than beside it: the stored content is
+    what the digest is computed over, so a ticket moving to Done has to change
+    the text or `sync` sees an identical record and imports nothing. Before this,
+    a board could be re-imported all day and never reflect a single transition.
+    """
+    lines = [f"{label}: {value}" for label, value in pairs if value]
+    return "\n".join(lines)
 
 
 def text(value):
@@ -134,11 +162,23 @@ def github_records(config, secret):
             continue
         if type(item.get("number")) is not int or not isinstance(item.get("title"), str):
             raise ValidationError("GitHub returned an unexpected issue record.")
+        labels = item.get("labels")
+        state = header(
+            [
+                ("Number", f"#{item['number']}"),
+                ("State", text(item.get("state"))),
+                (
+                    "Labels",
+                    " ".join(named(one) for one in labels) if isinstance(labels, list) else "",
+                ),
+                ("Updated", text(item.get("updated_at"))),
+            ]
+        )
         records.append(
             Record(
                 external_id=str(item["number"]),
                 title=item["title"][:200],
-                body=text(item.get("body")),
+                body=f"{state}\n\n{text(item.get('body'))}".strip(),
                 url=f"https://github.com/{repository}/issues/{item['number']}",
             )
         )
@@ -164,7 +204,7 @@ class JiraForm(forms.Form):
         max_length=200,
         required=False,
         label="Account email",
-        help_text="Jira Cloud only. The API token itself is mounted as a file, never entered here.",
+        help_text="Jira Cloud only. The token itself belongs on the Credentials screen, not here.",
     )
     jql = forms.CharField(
         max_length=400,
@@ -194,10 +234,10 @@ def jira_records(config, secret):
         {
             "jql": config.get("jql") or "order by updated DESC",
             "maxResults": MAX_RECORDS,
-            "fields": "summary,description,updated",
+            "fields": "summary,description,updated,status,priority,issuetype,labels",
         }
     )
-    payload = api_json(f"{base}/rest/api/3/search?{query}", headers, label="Jira")
+    payload = jira_search(base, headers, query)
     issues = payload.get("issues") if isinstance(payload, dict) else None
     if not isinstance(issues, list):
         raise ValidationError("Jira returned an unexpected issue list.")
@@ -206,15 +246,49 @@ def jira_records(config, secret):
         if not isinstance(issue, dict) or not isinstance(issue.get("key"), str):
             raise ValidationError("Jira returned an unexpected issue record.")
         fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
+        labels = fields.get("labels")
+        state = header(
+            [
+                ("Key", issue["key"]),
+                ("Type", named(fields.get("issuetype"))),
+                ("Status", named(fields.get("status"))),
+                ("Priority", named(fields.get("priority"))),
+                (
+                    "Labels",
+                    " ".join(text(one) for one in labels) if isinstance(labels, list) else "",
+                ),
+                ("Updated", text(fields.get("updated"))),
+            ]
+        )
         records.append(
             Record(
                 external_id=issue["key"],
                 title=text(fields.get("summary"))[:200] or issue["key"],
-                body=adf_text(fields.get("description")),
+                body=f"{state}\n\n{adf_text(fields.get('description'))}".strip(),
                 url=f"{base}/browse/{quote(issue['key'])}",
             )
         )
     return records
+
+
+def jira_search(base, headers, query):
+    """Run a JQL search against whichever search endpoint this instance has.
+
+    Jira Cloud removed `/rest/api/3/search` in 2025 and answers it with `410
+    Gone`; Data Center still serves it and has no `/search/jql`. The current
+    endpoint is tried first and the old one only when the instance says that URL
+    is not there, so a real failure - a rejected credential, a malformed JQL - is
+    reported once instead of being retried against a second URL and surfacing as
+    the wrong error.
+
+    Both return `{"issues": [...]}`, which is all the adapter below reads.
+    """
+    try:
+        return api_json(f"{base}/rest/api/3/search/jql?{query}", headers, label="Jira")
+    except ValidationError as failure:
+        if getattr(failure, "http_status", None) not in {404, 410}:
+            raise
+    return api_json(f"{base}/rest/api/3/search?{query}", headers, label="Jira")
 
 
 def adf_text(node, depth=0):
@@ -356,6 +430,18 @@ def servicenow_records(config, secret):
 # ------------------------------------------------------------------ registry
 
 
+def github_namespace(config):
+    return f"https://github.com/{config['repository']}/issues/"
+
+
+def jira_namespace(config):
+    return f"{config['base_url']}/browse/"
+
+
+def servicenow_namespace(config):
+    return f"{config['base_url']}/nav_to.do?uri={quote(config['table'])}.do"
+
+
 @dataclass(frozen=True)
 class Kind:
     key: str
@@ -372,6 +458,11 @@ class Kind:
     identity_field: str
     #: True when the mounted credential is required rather than optional.
     credential_required: bool
+    #: The URL prefix every record from this connector shares. Pruning needs to
+    #: know which knowledge is this connector's own, and a record's source URL is
+    #: the only thing tying the two together - KnowledgeEntry deliberately has no
+    #: connector, because knowledge outlives the connector that brought it in.
+    namespace: callable
 
     def identity(self, config):
         return (config or {}).get(self.identity_field, "")
@@ -390,6 +481,7 @@ KINDS = {
             github_records,
             "repository",
             False,
+            github_namespace,
         ),
         Kind(
             "jira",
@@ -400,6 +492,7 @@ KINDS = {
             jira_records,
             "base_url",
             True,
+            jira_namespace,
         ),
         Kind(
             "servicenow",
@@ -410,6 +503,7 @@ KINDS = {
             servicenow_records,
             "base_url",
             True,
+            servicenow_namespace,
         ),
     )
 }

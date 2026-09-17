@@ -33,6 +33,7 @@ def settings_sections(app, grant):
                 ("Connectors", "connectors",
                  {"connectors", "connector-new", "connector-edit"}, "plug")
             )
+        sections.append(("Credentials", "credentials", {"credentials"}, "lock"))
         sections.append(("People & access", "application-access", {"application-access"}, "people"))
         sections.append(("Features", "application-features", {"application-features"}, "toggle"))
         if feature_enabled("chat", app):

@@ -16,11 +16,9 @@ import hashlib
 import os
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
-
-from digitalbrain.configuration import read_secret
 
 from .documents import document_folder, document_path, intake_enabled
 from .fetching import FetchError, fetch, normalise, resolve, suggested_name
@@ -37,10 +35,9 @@ from .sharepoint import plan as sharepoint_plan
 
 def mounted(app, provider):
     """A per-application credential, when one is mounted. Absent is not an error."""
-    try:
-        return read_secret(settings.SECRET_DIRECTORY, f"{provider}_{app.pk}")
-    except ImproperlyConfigured:
-        return ""
+    from .secrets import application_secret
+
+    return application_secret(app, provider)
 
 
 def github_token(app):

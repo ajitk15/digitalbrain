@@ -30,6 +30,16 @@ operator's own login.
 
 Use workload identity to retrieve/project secrets, read-only mounts, owner-only file access, and a restricted network. No .env file is needed during normal operation. SITE_ADMIN_USER_ID may be supplied for the one-time interactive bootstrap.
 
+Two mount requirements are easy to miss. A Kubernetes Secret volume defaults to mode 0644 and read_secret refuses any file with group or other permission bits, so set defaultMode to 0400 or every credential is rejected as unreadable. Mount the whole directory rather than individual keys with subPath: a subPath mount never receives updates, so a credential added for a new application would need a redeploy, whereas a directory mount is picked up without restarting because nothing caches a secret in memory.
+
+## Credentials set by application owners
+
+Optional, and off unless configured. Setting managed_secret_directory lets an application owner set their own provider and connector credentials from the Credentials screen instead of raising a ticket for each one. Leave it unset and credentials stay operator-only, exactly as before.
+
+It must be a writable volume owned by the service account, and a different directory from secret_directory, which is projected read-only. A credential your secret manager projects always takes precedence over one entered in the browser, so migrating a credential into the secret manager needs no change in the product. On more than one replica it must be shared storage: a file written on one replica is otherwise invisible to the others.
+
+What is written there is a plain credential file, identical in name, shape and permissions to one the deployment mounts, so it needs the same protection as the secret mount: encryption at rest, exclusion from ordinary backups and from any log or metrics collection that reads the filesystem. Platform secrets - django_secret_key and database_password - cannot be set this way and remain operator-only.
+
 The PostgreSQL connection requires verify-full TLS. Select a non-superuser runtime role with no schema-management rights. Use a separate migration identity for schema changes. Establish database-level audit protections and row-level security before storing production application content.
 
 ## Release sequence

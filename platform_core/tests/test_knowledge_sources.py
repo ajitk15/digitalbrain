@@ -381,12 +381,13 @@ class NoDuplicationTests(TestCase):
     def test_the_total_still_counts_everything_after_the_split(self):
         """Splitting the page must not make the total shrink.
 
-        Two documents, one under an origin and one not, and the count beside the
-        tab is still two - it counts the application's sources, not whichever
-        list happens to be on screen.
+        Two documents, one under an origin and one not, and the total is still
+        two - it counts the application's sources, not whichever list happens to
+        be on screen. It used to be read off the badge on the Sources tab; that
+        badge has been removed, so the total is read where it is computed.
         """
-        self.assertIn('class="tab-count"', self.page())
-        self.assertIn(">2</span>", self.page())
+        response = self.client.get(reverse("knowledge", args=[self.app.pk]))
+        self.assertEqual(response.context["source_count"], 2)
 
 
 @settings_for_tests
@@ -604,16 +605,13 @@ class KnowledgeHeadingTests(TestCase):
         body = self.client.get(reverse("documents", args=[self.app.pk])).content.decode()
         self.assertEqual(body.count(">Sources</h2>"), 1)
 
-    def test_the_source_count_moves_onto_the_tab_it_belongs_to(self):
-        """Removing the heading must not take the number with it."""
+    def test_the_tabs_carry_no_count(self):
+        """The Sources tab used to wear a badge with the number of sources. The
+        count is on the page itself, and a tab that carries one while its three
+        siblings do not reads as the odd one out rather than as information."""
         Document.objects.create(
             application=self.app, uploaded_by=self.owner, name="one.md", size=1,
             sha256="b" * 64, status="ready", origin="upload",
         )
         sources = self.client.get(reverse("documents", args=[self.app.pk]))
-        self.assertContains(sources, 'class="tab-count"')
-        self.assertContains(sources, ">1</span>")
-
-    def test_no_badge_is_shown_when_there_is_nothing_to_count(self):
-        """A zero beside a tab reads as a defect rather than as an empty list."""
-        self.assertNotContains(self.views()["sources"], 'class="tab-count"')
+        self.assertNotContains(sources, "tab-count")

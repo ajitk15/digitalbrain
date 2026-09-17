@@ -13,24 +13,27 @@ Two boundaries this file exists to hold:
 """
 
 import hashlib
+import logging
 import time
+from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
-from django.db import transaction
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import models, transaction
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from digitalbrain.configuration import read_secret
-
-from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, kind_for
+from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, MAX_RECORDS, kind_for
 from .models import Connector, KnowledgeEntry
 from .services import audit, feature_enabled
 from .workbench import access, add_knowledge
+
+logger = logging.getLogger("digitalbrain.connectors")
 
 
 def credential(app, kind):
@@ -40,10 +43,9 @@ def credential(app, kind):
     connectors of the same kind in one application therefore share a credential -
     a deliberate consequence of that rule, not an oversight.
     """
-    try:
-        return read_secret(settings.SECRET_DIRECTORY, f"{kind}_{app.pk}")
-    except ImproperlyConfigured:
-        return ""
+    from .secrets import application_secret
+
+    return application_secret(app, kind)
 
 
 def credential_location(app, kind):
@@ -53,6 +55,8 @@ def credential_location(app, kind):
     without saying which file, in which directory, is a screen they cannot act
     on - which is what sent people to the filesystem to guess.
     """
+    from .secrets import manageable_here, source_of
+
     name = f"{kind}_{app.pk}"
     directory = str(settings.SECRET_DIRECTORY)
     return {
@@ -60,6 +64,8 @@ def credential_location(app, kind):
         "directory": directory,
         "path": str(Path(directory) / name),
         "mounted": bool(credential(app, kind)),
+        "source": source_of(app, kind),
+        "manageable": manageable_here(),
     }
 
 
@@ -115,15 +121,58 @@ def sync(user, connector_id, app_id):
             existing.update(active=False)
             add_knowledge(user, app_id, record.title, content, source=record.url)
             count += 1
+        pruned = prune(locked, app, kind, records)
         finish(locked, "ok", count, started, "")
         audit(
             user,
             "connector.synced",
             locked.pk,
             app.product.portfolio.organization,
-            details={"kind": locked.kind, "imported": count, "seen": len(records)},
+            details={
+                "kind": locked.kind,
+                "imported": count,
+                "seen": len(records),
+                "pruned": pruned,
+            },
         )
     return count
+
+
+def prune(connector, app, kind, records):
+    """Retire knowledge for records this connector no longer returns.
+
+    Three conditions, and all three are load-bearing:
+
+    * The owner ticked `prune_missing`. Absence only means deletion when the
+      filter returns the whole set; under `updated >= -30d` it means the ticket
+      is old. Only the person who wrote the filter knows which they have.
+    * The result was not truncated. At `MAX_RECORDS` the set is a page, not an
+      answer, and everything past the cap would look deleted.
+    * No other enabled connector shares this namespace. Two connectors onto one
+      Jira site with different filters would otherwise retire each other's
+      imports, each correctly concluding the records are not in *its* results.
+
+    Retiring is `active=False`, the same supersede the loop above performs. The
+    rows stay for plan hashes and audit evidence; nothing is deleted.
+    """
+    if not connector.prune_missing or len(records) >= MAX_RECORDS:
+        return 0
+    try:
+        namespace = kind.namespace(connector.config)
+    except KeyError:
+        return 0
+    rivals = Connector.objects.filter(
+        application=app, kind=connector.kind, enabled=True
+    ).exclude(pk=connector.pk)
+    for rival in rivals:
+        try:
+            if kind.namespace(rival.config) == namespace:
+                return 0
+        except KeyError:
+            continue
+    return KnowledgeEntry.objects.filter(
+        application=app, active=True, source__startswith=namespace
+    ).exclude(source__in=[record.url for record in records]).update(active=False)
 
 
 def finish(connector, status, count, started, error):
@@ -133,6 +182,10 @@ def finish(connector, status, count, started, error):
         last_error=error[:500],
         last_count=count if status == "ok" else connector.last_count,
         last_synced_at=timezone.now() if status == "ok" else connector.last_synced_at,
+        # Always, on both paths. The schedule counts from the attempt, so a
+        # connector whose instance is down waits its interval rather than being
+        # retried on every tick of the lane.
+        last_attempt_at=timezone.now(),
         last_duration_ms=int((time.monotonic() - started) * 1000),
     )
 
@@ -194,6 +247,7 @@ def connectors(request, pk):
                     "kind": KINDS.get(row.kind),
                     "target": KINDS[row.kind].identity(row.config) if row.kind in KINDS else "",
                     "credential": bool(credential(app, row.kind)),
+                    "schedule": dict(SYNC_INTERVALS).get(row.sync_interval_minutes, ""),
                 }
                 for row in rows
             ],
@@ -223,6 +277,7 @@ def connector_form(request, pk, connector_id=None):
         initial["name"] = connector.name
     form = kind.form(request.POST or None, initial=initial)
     name_field = forms_name(request, connector, kind)
+    schedule = forms_schedule(request, connector)
     if request.method == "POST" and form.is_valid() and name_field["value"]:
         config = {field: value for field, value in form.cleaned_data.items()}
         with transaction.atomic():
@@ -230,11 +285,13 @@ def connector_form(request, pk, connector_id=None):
                 connector = Connector(application=app, kind=key, created_by=request.user)
             connector.name = name_field["value"]
             connector.config = config
+            connector.sync_interval_minutes = schedule["interval"]
+            connector.prune_missing = schedule["prune"]
             try:
                 connector.full_clean(exclude=["created_by"])
                 connector.save()
             except ValidationError as failure:
-                messages.error(request, " ".join(failure.messages.get("__all__", failure.messages)))
+                messages.error(request, " ".join(failure.messages))
                 return redirect("connectors", pk=pk)
             if key == "github" and feature_enabled("code_graph", app):
                 from .code_graph_ingest import showcase_repository
@@ -259,11 +316,40 @@ def connector_form(request, pk, connector_id=None):
             "form": form,
             "connector": connector,
             "name_field": name_field,
+            "schedule": schedule,
             "secret_name": f"{key}_{app.pk}",
             "credential": bool(credential(app, key)),
             "location": credential_location(app, key),
         },
     )
+
+
+def forms_schedule(request, connector):
+    """How often this connector imports by itself, and whether it prunes.
+
+    Kept beside the name rather than inside the kind's form: every system is
+    imported on the same schedule mechanism, so repeating these two fields in
+    three per-kind forms would be three places for them to drift.
+    """
+    if request.method == "POST":
+        try:
+            interval = int(request.POST.get("interval") or 0)
+        except ValueError:
+            interval = 0
+        if interval not in dict(SYNC_INTERVALS):
+            interval = 0
+        prune_missing = request.POST.get("prune") == "on"
+    else:
+        interval = connector.sync_interval_minutes if connector else 0
+        prune_missing = connector.prune_missing if connector else False
+    return {
+        "interval": interval,
+        "prune": prune_missing,
+        "choices": [
+            {"value": value, "label": label, "selected": value == interval}
+            for value, label in SYNC_INTERVALS
+        ],
+    }
 
 
 def forms_name(request, connector, kind):
@@ -273,3 +359,86 @@ def forms_name(request, connector, kind):
     else:
         value = connector.name if connector else kind.label
     return {"value": value, "error": "" if value or request.method == "GET" else "Enter a name."}
+
+
+#: What an owner may choose on the form. Nothing shorter than a quarter of an
+#: hour: an import is a full pull of up to a hundred records against somebody
+#: else's rate limit, and a ticket board does not change faster than a person
+#: can read it.
+SYNC_INTERVALS = [
+    (0, "Manual only"),
+    (15, "Every 15 minutes"),
+    (60, "Every hour"),
+    (240, "Every 4 hours"),
+    (1440, "Once a day"),
+]
+
+
+def due_connector():
+    """The next enabled connector whose interval has elapsed, or None.
+
+    Ordered by how long it has been waiting, so a single slow instance cannot
+    starve every other connector behind it.
+    """
+    now = timezone.now()
+    candidates = Connector.objects.filter(enabled=True, sync_interval_minutes__gt=0).order_by(
+        models.F("last_attempt_at").asc(nulls_first=True)
+    )
+    for connector in candidates:
+        if connector.last_attempt_at is None:
+            return connector
+        if connector.last_attempt_at <= now - timedelta(minutes=connector.sync_interval_minutes):
+            return connector
+    return None
+
+
+def process_next_connector():
+    """Run one scheduled import. Returns True when there was work to do.
+
+    **An unattended run is still somebody's run.** It is performed as the person
+    who created the connector, and `sync` re-checks their owner grant exactly as
+    it does for a button press - so revoking a grant stops the schedule with no
+    extra code, the same property API tokens have. A connector whose creator has
+    been removed or demoted stops and says so on the row rather than falling back
+    to some privileged identity, because there isn't one.
+    """
+    connector = due_connector()
+    if connector is None:
+        return False
+    started = time.monotonic()
+    if connector.created_by is None or not connector.created_by.is_active:
+        finish(
+            connector,
+            "failed",
+            0,
+            started,
+            "Scheduled import needs the person who created this connector. "
+            "Import it by hand, or recreate it.",
+        )
+        return True
+    try:
+        count = sync(connector.created_by, connector.pk, connector.application_id)
+    except PermissionDenied:
+        finish(
+            connector,
+            "failed",
+            0,
+            started,
+            "Scheduled import stopped: the person who created this connector no "
+            "longer owns this application.",
+        )
+    except (ValidationError, Http404):
+        # sync already recorded the reason on the row, or the application is
+        # gone. Either way the lane keeps going.
+        pass
+    else:
+        logger.info(
+            "scheduled import finished",
+            extra={
+                "event": "connector_scheduled_sync",
+                "connector_id": str(connector.pk),
+                "kind": connector.kind,
+                "imported": count,
+            },
+        )
+    return True

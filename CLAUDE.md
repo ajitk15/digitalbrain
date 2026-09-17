@@ -36,10 +36,32 @@ each citation must still be active, have an unchanged digest, and its excerpt mu
 appear in the source. What the model claims is not evidence. Same discipline as the quote
 checking in `graph_ai.py`.
 
-**Secrets are file-mounted only.** `digitalbrain/configuration.py:read_secret`, one file
-per provider per application, owner-only permissions on POSIX. Never environment
-variables, never the database, never a form field. `.env` accepts only
-`SITE_ADMIN_USER_ID`.
+**Secrets live in files, never in the database.** `digitalbrain/configuration.py:read_secret`,
+one file per provider per application, owner-only permissions on POSIX. Never environment
+variables, never a database row, never an audit detail, never sent back to the browser.
+`.env` accepts only `SITE_ADMIN_USER_ID`.
+
+This rule used to end "never a form field" as well. **That half was traded, deliberately,
+for self-service**: an application owner can set their own credentials on the Credentials
+screen, because needing an operator for every Jira board made the platform unusable
+without one. `platform_core/secrets.py` is the only thing that writes them, and what it
+writes is a file with the same name, in the same shape, at mode 0600 — so every property
+the rule protected except "a secret never travels in a request body" is intact, and
+`test_managed_credentials.py` pins each one. The screen is owner-only, the value is never
+redisplayed, and `ManagedCredential` holds who set it, when, and a digest salted with the
+file name — never the secret.
+
+**Two directories, and the operator's wins.** `secret_directory` is what a deployment
+mounts, read-only, and `application_secret` reads it first. `managed_secret_directory` is
+where the browser writes, must be a different directory, and is **unset by default** — a
+deployment that does not configure it behaves exactly as it did before, credentials
+operator-only. A credential projected from a secret manager is never overridden by one
+someone typed into a form. `platform_core/secrets.py:MANAGEABLE` is the closed registry of
+what can be set this way: application-scoped credentials only. `django_secret_key` and
+`database_password` are deliberately absent — the process cannot serve the screen without
+them, so offering to set them there would be offering to lock the platform out of itself.
+A name never comes from a request: the form posts a registry key and the file name is
+built from that key and the application id.
 
 `scripts/ai_setup.py` (run by `start-all.cmd` on a first run, or `-ConfigureAI`) asks for the
 credential once on a console and writes `<provider>_default`. That file is a **template,
@@ -80,6 +102,32 @@ the point is that revoking a grant closes the token with no extra code. Bearer o
 on `/api/v1/`, cookies only on the browser routes; accepting both would make the API
 CSRF-able. Secrets are stored as a SHA-256 digest and compared with
 `hmac.compare_digest`.
+
+**A connector may import on its own, as the person who created it.** A ticket
+board is stale knowledge the moment somebody moves a card, so `Connector.sync_interval_minutes`
+lets an owner schedule an unattended import, run by the `connectors` worker lane.
+There is no background identity: `connectors.process_next_connector` calls the
+ordinary `sync` as `created_by`, which re-checks their owner grant inside the same
+transaction a button press does. **Revoking the grant stops the schedule, with no
+code that knows about schedules** - the same property API tokens have. A connector
+whose creator is gone or demoted records why on the row and stops. The schedule
+counts from `last_attempt_at`, written on success *and* failure, so an unreachable
+instance waits its interval instead of being retried every tick.
+
+**Status is part of the record, not metadata beside it.** `connector_kinds.header`
+puts type, status, priority and labels into the imported body, because the digest
+is computed over the stored content: with status outside it, a ticket moving to
+Done read as an identical record and imported nothing. A board could be synced all
+day and never show that anything had been fixed.
+
+**Absence is not deletion unless the owner says the filter is complete.**
+`connectors.prune` retires knowledge for records a connector no longer returns, and
+only when all three hold: `prune_missing` is ticked, the result was not at
+`MAX_RECORDS` (a full page is a page, not an answer), and no other enabled connector
+shares the same `Kind.namespace` (two connectors onto one Jira with different
+filters would otherwise retire each other's imports). Retiring is `active=False`,
+the same supersede an updated record performs - nothing is deleted. Leave it
+default-off: under `updated >= -30d`, absence means the ticket is old.
 
 `graph/search/` and the MCP server call no model. `utility/api_chat.py` does - it is the
 one API surface that spends the application's provider budget - so it is gated on

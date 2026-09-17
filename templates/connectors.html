@@ -9,7 +9,7 @@
 <td><div class="row-lead">{% if item.kind %}{% icon item.kind.icon %}{% endif %}<div><strong>{{ item.row.name }}</strong><small>{{ item.row.get_kind_display }}</small></div></div></td>
 <td class="mono">{{ item.target|default:"—" }}</td>
 <td>{% if not item.row.enabled %}<span class="pill">Disabled</span>{% elif item.row.last_status == 'failed' %}<span class="pill status-failed" title="{{ item.row.last_error }}">Failed</span>{% elif not item.credential and item.kind.credential_required %}<span class="pill status-queued">No credential</span>{% elif item.row.last_status == 'ok' %}<span class="pill status-ready">Ready</span>{% else %}<span class="pill">Never imported</span>{% endif %}</td>
-<td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}</td>
+<td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}{% if item.row.sync_interval_minutes %}<small>{{ item.schedule }}</small>{% endif %}</td>
 <td>{{ item.row.last_count }}</td>
 <td><div class="actions">
 <form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="sync" class="link-button">{% icon "download" 12 %}Import</button></form>
@@ -24,5 +24,5 @@
 <div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h3>No connectors yet</h3><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></p></div>
 {% endif %}
 
-<p class="muted section">Credentials are never entered here. Mount one file per system in the configured secret directory, named <code>&lt;system&gt;_{{ application.pk }}</code>, readable only by the service account.</p>
+<p class="muted section">A connector needs the credential for its system. Set it on <a href="{% url 'credentials' application.pk %}">Credentials</a>, or have an operator mount it as a file named <code>&lt;system&gt;_{{ application.pk }}</code> in the secret directory. Either way it is stored as a file readable only by the service account, never in the database.</p>
 {% endblock %}

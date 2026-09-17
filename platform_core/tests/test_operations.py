@@ -135,6 +135,18 @@ class OperationsTests(TestCase):
         self.assertNotIn("attacker-value", output)
         self.assertEqual(json.loads(output)["status"], 200)
 
+    def test_the_error_page_answers_the_method_that_failed(self):
+        """A failure on a POST has to render the page carrying the request id.
+        Decorated with require_GET it answered an empty 405 instead, and the
+        browser showed its own error page for every 500 raised by a form."""
+        from django.test import RequestFactory
+
+        from platform_core.views import server_error
+
+        for request in (RequestFactory().get("/x"), RequestFactory().post("/x")):
+            response = server_error(request)
+            self.assertEqual(response.status_code, 500)
+
     def test_oversized_request_rejected_before_view(self):
         response = self.client.post(
             reverse("branding"),
