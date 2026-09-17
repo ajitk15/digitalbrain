@@ -5,7 +5,32 @@ Budget 30 minutes the first time.
 
 ## 1. Create the application
 
-Portfolio *Healthcare*, product *Care Coordination*, application **CarePath**.
+| Level | Name |
+| --- | --- |
+| Organization | Riverside Health Network |
+| Portfolio | Integrated Care |
+| Product | Care Coordination |
+| Application | **CarePath** |
+
+The names come from the documents themselves — the business requirements name
+the network, and "Integrated Care" is the funding line that owns the work, named
+in the BRD, the architecture and the board's own title. Portfolio is not
+"Healthcare": that is the whole organisation, and a portfolio that broad tells a
+customer nothing about how the hierarchy is meant to be used.
+
+Two things to get right first time. The application **slug is unique across the
+whole platform**, not per organisation, because API and MCP addresses carry no
+organisation in the path — so `carepath` is taken permanently by the first one
+you create. If you expect to rebuild the demo, name later ones *CarePath Demo*
+or *CarePath Sandbox* rather than deleting and recreating. And all three levels
+are `PROTECT` on delete, so a portfolio cannot be removed while a product hangs
+off it.
+
+**Worth creating a second application.** *CareBridge*, under the same product,
+with no sources in it. Grant yourself access to CarePath only, then open
+CareBridge: you get a `404`, not a `403`. The platform does not confirm that an
+application you have no grant for exists at all. That one click makes the
+deny-by-default argument better than any slide, and it costs nothing to set up.
 
 Tick these features on the create form:
 
@@ -131,6 +156,7 @@ demo, not during it.
 ## Rehearsal checklist
 
 - [ ] Application created, features ticked, owner grant recorded
+- [ ] Second application *CareBridge* created, with no grant for you, for the closing
 - [ ] Credential mounted; a Chat question answers
 - [ ] Sources loaded in order; `seeded-gaps.md` **not** among them
 - [ ] Revision generated **and published**

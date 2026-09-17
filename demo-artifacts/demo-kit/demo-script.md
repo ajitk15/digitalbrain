@@ -161,7 +161,7 @@ with citations you can open.
 
 Four things to leave in the room:
 
-1. **Deny by default.** A user with no grant gets "not found", not "forbidden" — the platform does not confirm an application exists.
+1. **Deny by default.** A user with no grant gets "not found", not "forbidden" — the platform does not confirm an application exists. **Show this rather than saying it:** open *CareBridge*, the second application you have no grant for, and let the room watch it 404.
 2. **Citations are verified against live sources**, before anything is stored or rendered. Active source, unchanged digest, exact quote still present.
 3. **The human gate is not optional.** Code Factory stops in the middle, every time, and a second person approves.
 4. **Per-application isolation.** Credentials are file-mounted per application. One application cannot read another's.
