@@ -1371,6 +1371,14 @@
   }
   .modal-body .actions { margin-top: var(--s-4); gap: var(--s-2); }
   .modal-body form p:last-of-type { margin-bottom: 0; }
+  /* Dropping the last field's margin assumes something below it brings its own
+     spacing, which `.actions` does. A form ending in a bare submit button has
+     nothing, so the button met the field's bottom edge - and a focused input
+     draws its ring 4px outside itself, so the two genuinely overlapped. Any
+     control that follows the fields directly gets the gap `.actions` would
+     have given it. */
+  .modal-body form p:last-of-type ~ .button,
+  .modal-body form p:last-of-type ~ button { margin-top: var(--s-4); }
 
   /* The + control that opens a create popup. */
   .add-button {

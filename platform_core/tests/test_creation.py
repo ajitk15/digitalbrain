@@ -573,3 +573,61 @@ class StructureVisibilityTests(TestCase):
         body = self.client.get(reverse("organization", args=[self.org.pk])).content.decode()
         self.assertIn(f'href="{reverse("application", args=[self.app.pk])}"', body)
         self.assertNotIn("No access", body)
+
+
+@override_settings(
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    CLAUDE_USE_HOST_LOGIN=False,
+)
+class ModalFormLayoutTests(TestCase):
+    """Every page a popup opens has to end in an `.actions` wrapper.
+
+    `modal.js` appends its Cancel button into `.actions` when the page provides
+    one and to the end of the body when it does not, so a form ending in a bare
+    button put Cancel somewhere else entirely. The wrapper is also what carries
+    the gap above the submit control: inside a popup the last field's bottom
+    margin is dropped, and a focused input draws its ring outside itself, so
+    without it the two overlapped.
+    """
+
+    #: Every route reached with `data-modal`, and the arguments it needs.
+    MODAL_ROUTES = ["organization-members", "portfolio-new", "product-new", "application-create"]
+
+    def setUp(self):
+        self.admin = User.objects.create_user("modal-admin")
+        self.org = Organization.objects.create(name="Popups")
+        OrganizationMember.objects.create(organization=self.org, user=self.admin, is_admin=True)
+        self.portfolio = Portfolio.objects.create(organization=self.org, name="One")
+        self.product = Product.objects.create(portfolio=self.portfolio, name="Two")
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+
+    def page(self, route):
+        args = {
+            "organization-members": [self.org.pk],
+            "portfolio-new": [self.org.pk],
+            "product-new": [self.portfolio.pk],
+            "application-new": [self.product.pk],
+            "application-create": [self.org.pk],
+        }[route]
+        return self.client.get(reverse(route, args=args)).content.decode()
+
+    def test_every_popup_page_ends_its_form_in_an_actions_wrapper(self):
+        for route in self.MODAL_ROUTES:
+            with self.subTest(route=route):
+                self.assertIn('class="actions"', self.page(route))
+
+    def test_the_member_form_submit_is_inside_the_wrapper(self):
+        body = self.page("organization-members")
+        self.assertIn('<div class="actions"><button class="button">Add member</button></div>', body)
+
+    def test_a_popup_page_still_works_without_javascript(self):
+        """The wrapper is layout. The form underneath is still a real POST."""
+        target = User.objects.create_user("joiner")
+        response = self.client.post(
+            reverse("organization-members", args=[self.org.pk]), {"username": "joiner"}
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(
+            OrganizationMember.objects.filter(organization=self.org, user=target).exists()
+        )
