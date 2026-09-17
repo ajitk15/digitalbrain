@@ -222,3 +222,79 @@ class DocumentTests(TestCase):
         response = self.client.get(reverse("graph", args=[self.app.pk]))
         self.assertContains(response, ">Settings</a>")
         self.assertNotContains(response, ">AI costs</a>")
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class SourceListPagingTests(TestCase):
+    """Telling someone their import is longer than the page they are looking at.
+
+    A 27-file import showed 20 rows. The total was in the heading, several
+    screens up behind an open intake panel, and the only way to the rest was a
+    small right-aligned link below the twentieth row. The reasonable conclusion
+    was that seven files had been dropped - and that is the conclusion that was
+    drawn.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+
+    def add(self, count):
+        for index in range(count):
+            Document.objects.create(
+                application=self.app,
+                uploaded_by=self.owner,
+                name=f"source-{index:03}.md",
+                size=1,
+                sha256=f"{index:064x}",
+                status="ready",
+                origin="upload",
+            )
+
+    def page(self, number=None):
+        url = reverse("knowledge", args=[self.app.pk])
+        return self.client.get(f"{url}?page={number}" if number else url).content.decode()
+
+    def test_the_range_and_total_sit_beside_the_table(self):
+        self.add(27)
+        body = self.page()
+        self.assertIn('class="table-summary"', body)
+        summary = body.split('class="table-summary">')[1].split("</p>")[0]
+        self.assertIn("1&ndash;20", summary)
+        self.assertIn("27", summary)
+        self.assertIn("page 1 of 2", summary)
+
+    def test_the_second_page_says_which_rows_it_holds(self):
+        self.add(27)
+        summary = self.page(2).split('class="table-summary">')[1].split("</p>")[0]
+        self.assertIn("21&ndash;27", summary)
+        self.assertIn("page 2 of 2", summary)
+
+    def test_a_single_page_does_not_claim_to_be_one_of_several(self):
+        self.add(5)
+        summary = self.page().split('class="table-summary">')[1].split("</p>")[0]
+        self.assertIn("1&ndash;5", summary)
+        self.assertNotIn("page 1 of", summary)
+
+    def test_the_pager_names_the_page_rather_than_abbreviating_it(self):
+        self.add(27)
+        body = self.page()
+        self.assertIn("Page 1 of 2", body)
+        self.assertIn('href="?page=2"', body)
+
+    def test_a_single_page_shows_no_pager(self):
+        self.add(5)
+        self.assertNotIn('class="pagination"', self.page())
+
+    def test_the_pager_carries_the_search_across_pages(self):
+        """Paging out of a search must not silently drop it."""
+        self.add(27)
+        url = reverse("knowledge", args=[self.app.pk])
+        body = self.client.get(f"{url}?q=source-0").content.decode()
+        if 'class="pagination"' in body:
+            self.assertIn("q=source-0", body.split('class="pagination"')[1])
+        summary = body.split('class="table-summary">')[1].split("</p>")[0]
+        self.assertIn("matching", summary)

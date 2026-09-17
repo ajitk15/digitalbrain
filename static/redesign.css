@@ -2048,3 +2048,52 @@
   .hierarchy .level-row .pill { margin-left: 0; }
   .hierarchy .level-children { margin-left: var(--s-2); padding-left: var(--s-3); }
 }
+
+/* ---------------------------------------------------------------------------
+   Knowing there is more than one page.
+
+   A long table put the total in the heading and the pager at the foot, several
+   screens apart, and neither was visible while reading the rows. Someone who
+   imports twenty-seven files, sees twenty and can find no way to the rest
+   concludes the import dropped seven - which is what happened.
+   --------------------------------------------------------------------------- */
+
+.table-summary {
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-12);
+  color: var(--c-ink-muted);
+}
+.table-summary strong { color: var(--c-ink); font-weight: 600; }
+
+/* Given the weight of a control rather than a footnote. */
+.pagination {
+  align-items: center;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--c-line);
+  font-size: var(--t-12);
+}
+
+.pagination .page-of {
+  margin-right: auto;
+  color: var(--c-ink-muted);
+}
+
+.pagination .page-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 6px 12px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r-md);
+  font-weight: 600;
+  color: var(--c-brand-strong);
+  background: var(--c-surface);
+}
+.pagination .page-step:hover { border-color: var(--c-brand); text-decoration: none; }
+
+@media (max-width: 700px) {
+  .pagination { flex-wrap: wrap; gap: var(--s-2); }
+  .pagination .page-of { margin-right: 0; width: 100%; }
+}
