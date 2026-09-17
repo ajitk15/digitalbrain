@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digital Brain — System Documentation</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+<style>
+:root,[data-theme="dark"]{
+  --bg:#020617; --bg-soft:#060d1f;
+  --panel:rgba(15,23,42,.55); --panel-solid:#0b1324; --border:#1e293b; --border-soft:#172033;
+  --text:#f8fafc; --muted:#94a3b8; --dim:#64748b;
+  --cyan:#22d3ee; --emerald:#34d399; --amber:#fbbf24; --violet:#a78bfa; --rose:#fb7185;
+  --node:rgba(15,23,42,.9); --glow:0 18px 50px -30px rgba(0,0,0,.9);
+}
+[data-theme="light"]{
+  --bg:#f8fafc; --bg-soft:#f1f5f9;
+  --panel:rgba(255,255,255,.75); --panel-solid:#ffffff; --border:#e2e8f0; --border-soft:#eaeff5;
+  --text:#0f172a; --muted:#475569; --dim:#94a3b8;
+  --cyan:#0e7490; --emerald:#047857; --amber:#b45309; --violet:#6d28d9; --rose:#be123c;
+  --node:rgba(255,255,255,.95); --glow:0 18px 40px -32px rgba(15,23,42,.45);
+}
+:root{
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+  --rail:272px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--text); font-family:var(--sans);
+  font-size:15px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  background-image:
+    radial-gradient(900px 500px at 12% -8%,rgba(34,211,238,.07),transparent 60%),
+    radial-gradient(800px 460px at 92% 4%,rgba(52,211,153,.06),transparent 60%);
+  background-attachment:fixed;
+}
+
+/* layout */
+.shell{display:grid;grid-template-columns:var(--rail) minmax(0,1fr)}
+.rail{
+  position:sticky; top:0; height:100vh; overflow-y:auto; padding:1.6rem 1.1rem 2rem;
+  border-right:1px solid var(--border); background:var(--bg); backdrop-filter:blur(8px);
+}
+.rail::-webkit-scrollbar{width:6px}
+.rail::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+main{min-width:0;padding:0 clamp(1rem,3.4vw,3.2rem) 6rem}
+.wrap{max-width:1180px;margin:0 auto}
+
+/* rail */
+.brand{display:flex;gap:.7rem;align-items:center}
+.brand-name{font-family:var(--mono);font-weight:700;font-size:.95rem;letter-spacing:.02em;line-height:1.2}
+.brand-sub{font-family:var(--mono);font-size:.6rem;color:var(--dim);letter-spacing:.14em;text-transform:uppercase}
+.rail-group{margin-top:1.5rem}
+.rail-label{font-family:var(--mono);font-size:.58rem;letter-spacing:.18em;text-transform:uppercase;color:var(--dim);padding:0 .55rem .5rem}
+.rail a{
+  display:flex;gap:.6rem;align-items:baseline;text-decoration:none;color:var(--muted);
+  font-size:.82rem;padding:.42rem .55rem;border-radius:7px;border-left:2px solid transparent;
+  transition:color .15s,background .15s,border-color .15s
+}
+.rail a .n{font-family:var(--mono);font-size:.64rem;color:var(--dim);min-width:1.6em}
+.rail a:hover{color:var(--text);background:rgba(148,163,184,.1)}
+.rail a.on{color:var(--text);background:rgba(34,211,238,.1);border-left-color:var(--cyan)}
+.rail a.on .n{color:var(--cyan)}
+.rail-foot{margin-top:1.9rem;padding-top:1rem;border-top:1px solid var(--border-soft)}
+.tbtn{
+  font-family:var(--mono);font-size:.66rem;color:var(--muted);background:transparent;
+  border:1px solid var(--border);border-radius:7px;padding:.4rem .7rem;cursor:pointer;width:100%;
+  text-align:left;transition:border-color .15s,color .15s
+}
+.tbtn:hover{border-color:var(--cyan);color:var(--text)}
+.rail-note{font-family:var(--mono);font-size:.6rem;color:var(--dim);line-height:1.8;margin-top:.8rem}
+
+/* masthead */
+.masthead{padding:4rem 0 2.6rem;border-bottom:1px solid var(--border-soft)}
+.eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);margin-bottom:1rem}
+.masthead h1{font-family:var(--mono);font-size:clamp(1.9rem,4.4vw,3rem);line-height:1.1;margin:0 0 1.1rem;font-weight:700;letter-spacing:-.02em}
+.lede{font-size:clamp(1.02rem,1.5vw,1.2rem);color:var(--muted);max-width:72ch;margin:0}
+.lede b{color:var(--text);font-weight:600}
+
+/* sections */
+section{padding:3.4rem 0;border-bottom:1px solid var(--border-soft);scroll-margin-top:1rem}
+section:last-of-type{border-bottom:0}
+.sec-head{display:flex;gap:.9rem;align-items:baseline;margin-bottom:.55rem}
+.sec-num{font-family:var(--mono);font-size:.7rem;color:var(--cyan);letter-spacing:.14em;padding-top:.35rem}
+h2{font-family:var(--mono);font-size:clamp(1.2rem,2.3vw,1.6rem);margin:0;font-weight:700;letter-spacing:-.01em}
+h3{font-family:var(--mono);font-size:.86rem;margin:2.2rem 0 .9rem;font-weight:600;letter-spacing:.02em}
+.sec-sub{color:var(--muted);max-width:78ch;margin:0 0 1.8rem;font-size:.95rem}
+p{max-width:78ch}
+
+/* three-beat "why" row — fills the column instead of a stack of short lines */
+.why{margin-top:.4rem;align-items:start}
+.why > div{border-top:2px solid var(--border);padding-top:.9rem}
+.why > div.why-answer{border-top-color:var(--emerald)}
+.why-label{font-family:var(--mono);font-size:.63rem;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);margin-bottom:.55rem}
+.why-answer .why-label{color:var(--emerald)}
+.why p{margin:0;font-size:.9rem;color:var(--muted);max-width:none}
+.why p strong{color:var(--text);font-weight:600}
+.why-answer p{color:var(--text)}
+
+/* a full-width closing statement, not a stray short paragraph */
+.band{
+  margin-top:1.8rem;padding:1.1rem 1.3rem;border-radius:12px;max-width:none;
+  background:var(--panel);border:1px solid var(--border);border-left:2px solid var(--cyan);
+  color:var(--muted);font-size:.93rem
+}
+.band strong{color:var(--text);font-weight:600}
+
+/* cards */
+.grid{display:grid;gap:.9rem}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(245px,100%),1fr))}
+.g4{grid-template-columns:repeat(auto-fit,minmax(min(185px,100%),1fr))}
+.card{min-width:0}
+.chip{max-width:100%;overflow-wrap:anywhere}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:1.05rem 1.15rem;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:var(--accent,transparent)}
+.card h4{font-family:var(--mono);font-size:.79rem;margin:0 0 .5rem;font-weight:600;display:flex;gap:.5rem;align-items:center;line-height:1.4}
+.card p{margin:0;font-size:.85rem;color:var(--muted);max-width:none}
+.card ul{margin:.45rem 0 0;padding-left:1.05rem;font-size:.825rem;color:var(--muted)}
+.card ul strong{color:var(--text);font-weight:600}
+.card li{margin:.32rem 0}
+.card li::marker{color:var(--dim)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--accent,var(--dim));flex:0 0 auto}
+.c-cyan{--accent:var(--cyan)} .c-em{--accent:var(--emerald)} .c-am{--accent:var(--amber)}
+.c-vi{--accent:var(--violet)} .c-ro{--accent:var(--rose)}
+
+/* layer table */
+.table-wrap{
+  margin-top:1.2rem;background:var(--panel);border:1px solid var(--border);
+  border-radius:12px;overflow:auto
+}
+table{width:100%;min-width:660px;border-collapse:collapse;font-size:.86rem}
+thead th{
+  text-align:left;font-family:var(--mono);font-size:.63rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--dim);font-weight:600;
+  padding:.85rem .95rem;border-bottom:1px solid var(--border);white-space:nowrap
+}
+tbody td{
+  padding:.8rem .95rem;border-bottom:1px solid var(--border-soft);
+  vertical-align:top;color:var(--muted);line-height:1.55
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:rgba(148,163,184,.06)}
+td.layer{font-family:var(--mono);font-size:.78rem;color:var(--text);font-weight:600;white-space:nowrap;width:1%}
+td.layer .sub{color:var(--dim);font-weight:400;font-size:.7rem}
+th.paid,td.paid{border-left:2px solid rgba(251,191,36,.35)}
+th.paid{color:var(--amber)}
+td.paid b{color:var(--amber)}
+td.tech{color:var(--text);width:31%}
+td.tech b{font-weight:600}
+tbody td b{color:var(--text);font-weight:600}
+
+/* stats, chips, code */
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:.95rem 1rem}
+.stat .k{font-family:var(--mono);font-size:1.35rem;font-weight:700;color:var(--cyan);line-height:1.2}
+.stat .v{font-size:.77rem;color:var(--muted);margin-top:.25rem}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem}
+.chip{font-family:var(--mono);font-size:.67rem;padding:.24rem .55rem;border-radius:999px;border:1px solid var(--border);color:var(--muted);background:var(--panel);white-space:nowrap}
+.chip.on{border-color:rgba(52,211,153,.45);color:var(--emerald)}
+.chip.no{border-color:rgba(251,191,36,.4);color:var(--amber)}
+code{font-family:var(--mono);font-size:.85em;background:rgba(148,163,184,.14);padding:.1em .38em;border-radius:4px;color:var(--cyan)}
+pre{background:var(--panel-solid);border:1px solid var(--border);border-radius:10px;padding:.9rem 1rem;overflow-x:auto;font-family:var(--mono);font-size:.73rem;color:var(--muted);line-height:1.85;margin:0}
+pre b{color:var(--emerald);font-weight:600}
+pre i{color:var(--dim);font-style:normal}
+
+/* ledger */
+.ledger ul{list-style:none;padding:0;margin:.55rem 0 0;font-size:.83rem;color:var(--muted)}
+.ledger li{display:flex;gap:.55rem;padding:.32rem 0;border-bottom:1px dashed var(--border-soft)}
+.ledger li:last-child{border-bottom:0}
+.card.wide{margin-top:1.2rem}
+@media(min-width:820px){
+  .card.wide ul{columns:2;column-gap:2.2rem}
+  .card.wide li{break-inside:avoid;border-bottom:0;padding:.28rem 0}
+}
+.tick{color:var(--emerald);font-family:var(--mono);flex:0 0 auto}
+.todo{color:var(--amber);font-family:var(--mono);flex:0 0 auto}
+
+/* figures */
+figure{margin:1.7rem 0 0}
+figure svg{width:100%;height:auto;display:block}
+figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:.75rem;text-align:center}
+.svg-wrap{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:1.2rem .9rem}
+.s-title{font-family:var(--mono);font-size:12.5px;font-weight:600;fill:var(--text)}
+.s-sub{font-family:var(--mono);font-size:10px;fill:var(--muted)}
+.s-tag{font-family:var(--mono);font-size:9.5px;fill:var(--dim);letter-spacing:.08em}
+.s-edge{font-family:var(--mono);font-size:9.5px;fill:var(--dim)}
+.s-box{fill:var(--node);stroke:var(--border);stroke-width:1}
+.s-line{stroke:var(--dim);stroke-width:1.4;fill:none}
+.s-line-em{stroke:var(--emerald);stroke-width:1.8;fill:none}
+.s-line-no{stroke:var(--rose);stroke-width:1.6;fill:none;stroke-dasharray:5 4}
+
+/* frames */
+.frame{margin:1.5rem 0 0;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg-soft);box-shadow:var(--glow)}
+.frame-bar{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:.6rem .9rem;border-bottom:1px solid var(--border);background:var(--panel);font-family:var(--mono);font-size:.67rem;color:var(--dim)}
+.frame-bar a{color:var(--cyan);text-decoration:none;border-bottom:1px solid transparent}
+.frame-bar a:hover{border-bottom-color:var(--cyan)}
+.frame iframe{display:block;width:100%;border:0;background:var(--bg)}
+.legend{display:flex;flex-wrap:wrap;gap:1rem;margin-top:.85rem;font-family:var(--mono);font-size:.67rem;color:var(--dim)}
+.legend span{display:flex;align-items:center;gap:.45rem}
+.sw{width:18px;height:2px;border-radius:2px;background:var(--dim);flex:0 0 auto}
+.sw.em{background:var(--emerald)} .sw.se{background:var(--rose)}
+.sw.da{background:transparent;border-top:2px dashed var(--muted);height:0}
+
+@media(max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--border)}
+  main{padding:0 1rem 4rem}
+  .masthead{padding-top:2.2rem}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+<div class="shell">
+
+<!-- ══════════════ LEFT INDEX ══════════════ -->
+<aside class="rail">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
+      <rect x="1" y="1" width="24" height="24" rx="7" stroke="var(--cyan)" stroke-width="1.3" opacity=".55"/>
+      <circle cx="9" cy="9" r="2.1" fill="var(--cyan)"/>
+      <circle cx="17.5" cy="7.5" r="1.6" fill="var(--emerald)"/>
+      <circle cx="8" cy="18" r="1.6" fill="var(--emerald)"/>
+      <circle cx="18" cy="16.5" r="2.1" fill="var(--cyan)"/>
+      <path d="M9 9 L17.5 7.5 M9 9 L8 18 M17.5 7.5 L18 16.5 M8 18 L18 16.5" stroke="var(--muted)" stroke-width="1" opacity=".6"/>
+    </svg>
+    <div>
+      <div class="brand-name">Digital Brain</div>
+      <div class="brand-sub">System documentation</div>
+    </div>
+  </div>
+
+  <nav class="rail-group">
+    <div class="rail-label">Contents</div>
+    <a href="#overview"><span class="n">00</span><span>Overview</span></a>
+    <a href="#technology"><span class="n">01</span><span>Technology &amp; features</span></a>
+    <a href="#d01"><span class="n">02</span><span>System overview</span></a>
+    <a href="#d02"><span class="n">03</span><span>Knowledge graph</span></a>
+    <a href="#d03"><span class="n">04</span><span>Bug fix</span></a>
+    <a href="#d04"><span class="n">05</span><span>Incident management</span></a>
+  </nav>
+
+  <nav class="rail-group">
+    <div class="rail-label">Appendix</div>
+    <a href="#production"><span class="n">A</span><span>Production posture</span></a>
+    <a href="#security"><span class="n">B</span><span>Security</span></a>
+  </nav>
+
+  <div class="rail-foot">
+    <button class="tbtn" id="theme-toggle" type="button">◐&nbsp; Switch to light</button>
+    <div class="rail-note">
+      Django 5.2 · Python 3.12+<br>
+      Diagrams generated by archify<br>
+      Each flow opens standalone
+    </div>
+  </div>
+</aside>
+
+<!-- ══════════════ CONTENT ══════════════ -->
+<main>
+<div class="wrap">
+
+  <header class="masthead">
+    <div class="eyebrow">Application-isolated enterprise knowledge platform</div>
+    <h1>Digital Brain</h1>
+    <p class="lede">Digital&nbsp;Brain turns the documents, tickets, incidents and code a team already owns into <b>evidence the business can stand behind</b> — then puts that evidence to work in the two places it pays back fastest: <b>software delivery</b> and <b>service operations</b>.</p>
+  </header>
+
+  <!-- ═══ 00 · OVERVIEW ═══ -->
+  <section id="overview">
+    <div class="sec-head"><span class="sec-num">00</span><h2>Overview</h2></div>
+    <h3 style="margin-top:0">Why we are building it</h3>
+    <div class="grid g3 why">
+      <div>
+        <div class="why-label">The problem</div>
+        <p>The knowledge that keeps delivery and operations moving is real, but it is scattered — a spec here, a Jira thread there, a postmortem nobody re-read, and the code itself. Finding it is slow, and it walks out of the door with the people who hold it.</p>
+      </div>
+      <div>
+        <div class="why-label">Why general AI does not solve it</div>
+        <p>Off-the-shelf assistants answer from training data, so a confident wrong answer looks exactly like a right one. There is no way to check the working — which is why they stay out of anything that carries real risk.</p>
+      </div>
+      <div class="why-answer">
+        <div class="why-label">What we are building instead</div>
+        <p>Digital Brain keeps our own material as immutable, digested sources and answers <strong>only</strong> from them — quotes attached, re-checked against the live source at the moment of answering. If it cannot be evidenced, it is not shown.</p>
+      </div>
+    </div>
+
+    <figure>
+      <div class="svg-wrap">
+      <svg viewBox="0 0 1000 224" role="img" aria-label="Documents, tickets and code converge into one verified evidence base, which serves software delivery and service operations">
+        <defs>
+          <marker id="ah" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 z" fill="var(--dim)"/></marker>
+          <marker id="ahe" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 z" fill="var(--emerald)"/></marker>
+        </defs>
+
+        <rect class="s-box" x="8" y="14"  width="200" height="56" rx="10"/>
+        <rect class="s-box" x="8" y="80"  width="200" height="56" rx="10"/>
+        <rect class="s-box" x="8" y="146" width="200" height="56" rx="10"/>
+        <text class="s-title" x="108" y="40"  text-anchor="middle">Documents</text>
+        <text class="s-sub"   x="108" y="57"  text-anchor="middle">specs · runbooks · write-ups</text>
+        <text class="s-title" x="108" y="106" text-anchor="middle">Tickets &amp; incidents</text>
+        <text class="s-sub"   x="108" y="123" text-anchor="middle">Jira · GitHub · ServiceNow</text>
+        <text class="s-title" x="108" y="172" text-anchor="middle">Code</text>
+        <text class="s-sub"   x="108" y="189" text-anchor="middle">a repository at one commit</text>
+
+        <path class="s-line" d="M208 42  C 280 42, 300 108, 366 108" marker-end="url(#ah)"/>
+        <path class="s-line" d="M208 108 H366" marker-end="url(#ah)"/>
+        <path class="s-line" d="M208 174 C 280 174, 300 108, 366 108" marker-end="url(#ah)"/>
+        <text class="s-edge" x="287" y="98" text-anchor="middle">converted · digested</text>
+
+        <rect x="374" y="44" width="244" height="128" rx="12" fill="var(--node)" stroke="var(--emerald)" stroke-width="1.5"/>
+        <text class="s-tag"   x="496" y="72"  text-anchor="middle" fill="var(--emerald)">PUBLISHED BY A PERSON</text>
+        <text class="s-title" x="496" y="100" text-anchor="middle">One verified evidence base</text>
+        <text class="s-sub"   x="496" y="122" text-anchor="middle">immutable sources, never edited</text>
+        <text class="s-sub"   x="496" y="141" text-anchor="middle">every quote re-checked when it answers</text>
+
+        <path class="s-line-em" d="M618 108 C 690 108, 712 68,  782 68"  marker-end="url(#ahe)"/>
+        <path class="s-line-em" d="M618 108 C 690 108, 712 166, 782 166" marker-end="url(#ahe)"/>
+        <text class="s-edge" x="700" y="102" text-anchor="middle">cited evidence</text>
+
+        <rect class="s-box" x="790" y="36"  width="202" height="64" rx="10"/>
+        <rect class="s-box" x="790" y="134" width="202" height="64" rx="10"/>
+        <text class="s-title" x="891" y="62"  text-anchor="middle">Software delivery</text>
+        <text class="s-sub"   x="891" y="82"  text-anchor="middle">plan and draft the change</text>
+        <text class="s-title" x="891" y="160" text-anchor="middle">Service operations</text>
+        <text class="s-sub"   x="891" y="180" text-anchor="middle">answer fast while the clock runs</text>
+      </svg>
+      </div>
+      <figcaption>One evidence base, two consumers. Everything later in this page is a detail of this picture.</figcaption>
+    </figure>
+
+    <div class="grid g2" style="margin-top:2rem">
+      <div class="card c-vi"><h4><span class="dot"></span>In the software lifecycle</h4>
+        <ul>
+          <li><strong>Onboarding</strong> — a new engineer asks the system instead of interrupting a senior one, and gets the source, not a summary</li>
+          <li><strong>Analysis</strong> — a ticket is checked against what we have actually written down, so gaps surface before work starts</li>
+          <li><strong>Change</strong> — a bug ticket becomes a draft pull request with a stated rationale; engineers review a proposal instead of a blank page</li>
+          <li><strong>Traceability</strong> — knowledge and a pinned code snapshot sit side by side, so "why is it like this" has an answer with a date on it</li>
+        </ul></div>
+      <div class="card c-am"><h4><span class="dot"></span>In service operations</h4>
+        <ul>
+          <li><strong>Triage</strong> — "have we seen this before" is answered from our own incidents and runbooks, with quotes, in seconds</li>
+          <li><strong>Escalation</strong> — the responder gets evidence rather than a guess, and can see exactly which document it came from</li>
+          <li><strong>Safety</strong> — the platform reads; it never executes a runbook, updates a ticket or touches the live service</li>
+          <li><strong>Learning</strong> — the postmortem is imported like any other document, so the next incident starts better informed</li>
+        </ul></div>
+    </div>
+
+    <p class="band">Both sides read the <strong>same approved evidence</strong>, inside one boundary: the application. A team's sources, knowledge, credentials and API keys are scoped to it and nothing crosses — which is what makes one platform safe to share across business units.</p>
+
+    <h3>Organization, applications and roles</h3>
+    <figure style="margin-top:0">
+      <div class="svg-wrap">
+      <svg viewBox="0 0 1000 256" role="img" aria-label="Organization contains portfolios, products and applications; each application carries viewer, contributor and owner grants">
+        <defs>
+          <marker id="ahh" markerWidth="8" markerHeight="8" refX="6.5" refY="3" orient="auto">
+            <path d="M0,0 L7,3 L0,6 z" fill="var(--dim)"/></marker>
+        </defs>
+
+        <rect class="s-box" x="8"   y="18" width="176" height="58" rx="10"/>
+        <rect class="s-box" x="224" y="18" width="176" height="58" rx="10"/>
+        <rect class="s-box" x="440" y="18" width="176" height="58" rx="10"/>
+        <rect x="656" y="18" width="176" height="58" rx="10" fill="var(--node)" stroke="var(--emerald)" stroke-width="1.5"/>
+
+        <text class="s-title" x="96"  y="44" text-anchor="middle">Organization</text>
+        <text class="s-sub"   x="96"  y="62" text-anchor="middle">the tenant</text>
+        <text class="s-title" x="312" y="44" text-anchor="middle">Portfolio</text>
+        <text class="s-sub"   x="312" y="62" text-anchor="middle">grouping</text>
+        <text class="s-title" x="528" y="44" text-anchor="middle">Product</text>
+        <text class="s-sub"   x="528" y="62" text-anchor="middle">grouping</text>
+        <text class="s-title" x="744" y="44" text-anchor="middle">Application</text>
+        <text class="s-sub"   x="744" y="62" text-anchor="middle">the access boundary</text>
+
+        <path class="s-line" d="M184 47 H216" marker-end="url(#ahh)"/>
+        <path class="s-line" d="M400 47 H432" marker-end="url(#ahh)"/>
+        <path class="s-line" d="M616 47 H648" marker-end="url(#ahh)"/>
+        <text class="s-tag" x="916" y="44" text-anchor="middle" fill="var(--emerald)">GRANTS LIVE</text>
+        <text class="s-tag" x="916" y="60" text-anchor="middle" fill="var(--emerald)">HERE</text>
+
+        <path class="s-line" d="M744 76 V134 M168 134 H836 M168 134 V162 M504 134 V162 M836 134 V162"/>
+        <path class="s-line" d="M168 150 V162" marker-end="url(#ahh)"/>
+        <path class="s-line" d="M504 150 V162" marker-end="url(#ahh)"/>
+        <path class="s-line" d="M836 150 V162" marker-end="url(#ahh)"/>
+        <text class="s-edge" x="300" y="126" text-anchor="middle">exactly one grant per user, per application</text>
+
+        <rect class="s-box" x="8"   y="168" width="320" height="64" rx="10"/>
+        <rect class="s-box" x="344" y="168" width="320" height="64" rx="10"/>
+        <rect class="s-box" x="680" y="168" width="312" height="64" rx="10"/>
+
+        <text class="s-title" x="168" y="196" text-anchor="middle">Viewer</text>
+        <text class="s-sub"   x="168" y="216" text-anchor="middle">read only</text>
+        <text class="s-title" x="504" y="196" text-anchor="middle">Contributor</text>
+        <text class="s-sub"   x="504" y="216" text-anchor="middle">read and write</text>
+        <text class="s-title" x="836" y="196" text-anchor="middle">Owner</text>
+        <text class="s-sub"   x="836" y="216" text-anchor="middle">plus credentials, AI settings, features</text>
+      </svg>
+      </div>
+    </figure>
+
+    <p class="band" style="border-left-color:var(--rose)"><strong>Neither admin role carries application access.</strong> A platform administrator and an organization administrator both get <code>404</code> — not <code>403</code> — on an application they hold no grant for, and creating an application does not grant one. <strong>Approval is a separate flag</strong>, not a fourth role: it can sit on any grant, and the approver can never be the person who wrote the plan.</p>
+  </section>
+
+  <!-- ═══ A · TECHNOLOGY ═══ -->
+  <section id="technology">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Technology &amp; features</h2></div>
+    <p class="sec-sub">Server-rendered Django, <strong>no JavaScript build step</strong>. Four layers, and one row per thing we use.</p>
+
+    <figure style="margin-top:0">
+      <div class="svg-wrap">
+      <svg viewBox="0 0 1000 260" role="img" aria-label="Four stacked layers: browser, application, platform core, data and AI">
+        <rect class="s-box" x="8" y="8"   width="984" height="54" rx="10"/>
+        <rect class="s-box" x="8" y="74"  width="984" height="54" rx="10"/>
+        <rect class="s-box" x="8" y="140" width="984" height="54" rx="10"/>
+        <rect class="s-box" x="8" y="206" width="984" height="54" rx="10"/>
+        <rect x="8" y="8"   width="3" height="54" rx="1.5" fill="var(--cyan)"/>
+        <rect x="8" y="74"  width="3" height="54" rx="1.5" fill="var(--emerald)"/>
+        <rect x="8" y="140" width="3" height="54" rx="1.5" fill="var(--violet)"/>
+        <rect x="8" y="206" width="3" height="54" rx="1.5" fill="var(--amber)"/>
+
+        <text class="s-title" x="32" y="41">Browser</text>
+        <text class="s-sub" x="968" y="41" text-anchor="end">server-rendered HTML · chat.js · modal.js · no build step</text>
+
+        <text class="s-title" x="32" y="107">Application</text>
+        <text class="s-sub" x="968" y="107" text-anchor="end">Django 5.2 · Waitress · access policy · audit · worker</text>
+
+        <text class="s-title" x="32" y="173">Platform core</text>
+        <text class="s-sub" x="968" y="173" text-anchor="end">knowledge graph · retrieval · Code Factory · connectors · MCP</text>
+
+        <text class="s-title" x="32" y="239">Data &amp; AI</text>
+        <text class="s-sub" x="968" y="239" text-anchor="end">PostgreSQL · secret files 0600 · Claude Agent SDK · OpenAI Agents SDK</text>
+      </svg>
+      </div>
+    </figure>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Layer</th><th>Technology</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Frontend</td>
+            <td class="tech">Server-rendered Django templates, <code>chat.js</code>, <code>modal.js</code></td>
+            <td>Whole interface; no build step, no bundler. Every control still works with JavaScript off</td></tr>
+        <tr><td class="layer">Backend</td>
+            <td class="tech"><b>Python 3.12</b> + <b>Django 5.2</b> + Waitress</td>
+            <td>Request handling, access policy, audit ledger, background worker</td></tr>
+        <tr><td class="layer">Data</td>
+            <td class="tech">PostgreSQL + psycopg 3 &middot; SQLite locally</td>
+            <td>Sources, graph revisions, usage receipts, audit events</td></tr>
+        <tr><td class="layer">Ingestion</td>
+            <td class="tech"><b>MarkItDown</b> (Microsoft)</td>
+            <td>Any document &rarr; clean Markdown; one library, all formats. Runs offline, no network</td></tr>
+        <tr><td class="layer">Connectors</td>
+            <td class="tech">GitHub &middot; Jira (JQL) &middot; ServiceNow &middot; SharePoint via MS&nbsp;Graph</td>
+            <td>Bounded manual pulls; each record becomes an ordinary immutable source</td></tr>
+        <tr><td class="layer">Knowledge&nbsp;graph<br><span class="sub">structure</span></td>
+            <td class="tech">Deterministic build, pure Python &mdash; <b>no model</b></td>
+            <td>Markdown tables and headings &rarr; graph with a quote on every edge. Free, rebuilt automatically whenever a source changes</td></tr>
+        <tr><td class="layer">Knowledge&nbsp;graph<br><span class="sub">enrichment</span></td>
+            <td class="tech"><b>Claude</b> or <b>OpenAI</b>, on request only</td>
+            <td>Adds relationships the structure cannot express. Every one must carry a quote that is re-verified against the source. <b>The only paid graph step</b></td></tr>
+        <tr><td class="layer">Retrieval</td>
+            <td class="tech">Term ranking + one-hop expansion</td>
+            <td>Returns a subgraph and its source citations; reproducible, no embeddings</td></tr>
+        <tr><td class="layer">Code graph</td>
+            <td class="tech">git clone + Python <code>ast</code></td>
+            <td>A repository at one commit &rarr; files, imports, definitions, roles</td></tr>
+        <tr><td class="layer">AI</td>
+            <td class="tech"><b>Claude</b> via Claude Agent SDK &middot; <b>OpenAI</b> via Agents SDK</td>
+            <td>Answer generation and the Code Factory phases; a separate credential per application, receipted per turn</td></tr>
+        <tr><td class="layer">Machine API</td>
+            <td class="tech">REST <code>/api/v1/</code> &middot; MCP server <code>brain</code></td>
+            <td>Same verified evidence for tools and agents; <b>calls no model</b></td></tr>
+        <tr><td class="layer">Secrets</td>
+            <td class="tech">Files on disk, mode 0600</td>
+            <td>One per provider per application; never a database row, never an environment variable</td></tr>
+        <tr><td class="layer">Security</td>
+            <td class="tech">Argon2 &middot; django-axes &middot; strict CSP &middot; defusedxml &middot; Pillow</td>
+            <td>Password hashing, login lockout, no third-party script, hardened parsing and image handling</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>Where AI is used</h3>
+    <p class="sec-sub" style="margin-bottom:0">Most of the platform runs without a model. Retrieval is always deterministic; a model only ever writes over evidence that was already found.</p>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Surface</th><th>Without a model</th><th class="paid">Model call</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Knowledge&nbsp;graph</td>
+            <td>Structural build from tables and headings — automatic, free, runs on every source change</td>
+            <td class="paid"><b>Enrichment only</b>, and only when someone requests it. Relationships must carry a quote that is re-verified</td></tr>
+        <tr><td class="layer">Chat</td>
+            <td><b>Sources</b> mode returns the matching evidence directly — no model at all. Retrieval is deterministic in every mode</td>
+            <td class="paid"><b>AI</b> and <b>Graph answer</b> modes: one call to write the answer over evidence already retrieved</td></tr>
+        <tr><td class="layer">Code&nbsp;Factory</td>
+            <td><b>Verification</b> — path safety, elisions, and a staleness re-check of every file. <b>Delivery</b> — branch and draft PR</td>
+            <td class="paid"><b>Triage · analysis · design · implementation</b> — four phases, each with its own token budget</td></tr>
+        <tr><td class="layer">REST &amp; MCP</td>
+            <td>Everything. Same verified evidence, served straight from the published graph</td>
+            <td class="paid">Never — a machine caller cannot spend the AI budget</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p class="band" style="margin-top:1.4rem">Features are switched on <strong>per application</strong> — each team gets only what it asked for. Two ship restricted: <span class="chip no">Chat API — opt-in</span> (the only machine surface that spends the AI budget) and <span class="chip no">Document uploads — dev only</span> (until scanning is signed off for production).</p>
+  </section>
+
+  <!-- ═══ 01 ═══ -->
+  <section id="d01">
+    <div class="sec-head"><span class="sec-num">02</span><h2>System overview</h2></div>
+    <p class="sec-sub">The whole platform in seven steps. A team starts with whatever it has — documents, a repository, or both; neither is required. Everything that arrives is kept immutable, the knowledge is refreshed automatically at no cost, and <strong>a person decides when it becomes the version that answers</strong>. Both ways of working then read that same approved version, and what they produce comes back in as new evidence.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>dataflow · 11 nodes · 5 stages</span>
+        <a href="01_overview.html" target="_blank" rel="noopener">Open standalone — guided views, export ↗</a>
+      </div>
+      <iframe data-src="01_overview.html" data-vw="1085" data-vh="510" loading="lazy" title="Digital Brain overview dataflow diagram"></iframe>
+    </div>
+    <div class="legend">
+      <span><i class="sw em"></i>the grounded path</span>
+      <span><i class="sw se"></i>a human gate</span>
+      <span><i class="sw da"></i>manual today, to automate</span>
+      <span><i class="sw"></i>supporting input</span>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.5rem">
+      <div class="card c-cyan"><h4><span class="dot"></span>Steps 1–4 · building the evidence</h4>
+        <ul>
+          <li>Documents or a repository — neither one is required</li>
+          <li>Each becomes an immutable source; code stays separate</li>
+          <li>The worker rebuilds the graph whenever a digest changes</li>
+          <li>A person publishes a revision; nothing answers until then</li>
+        </ul></div>
+      <div class="card c-em"><h4><span class="dot"></span>Steps 5–7 · using it, closing the loop</h4>
+        <ul>
+          <li>Chat and Code Factory read that same published revision</li>
+          <li>A cited answer, or a draft pull request behind two gates</li>
+          <li>What returns: a postmortem, an RFC, a merged pull request</li>
+          <li>Dashed edges are carried by a person today — proposed to be automatic</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ 02 ═══ -->
+  <section id="d02">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Knowledge graph management</h2></div>
+    <p class="sec-sub">How the knowledge stays current without running up a bill. Keeping it in step with the sources is automatic and <strong>costs nothing</strong>; the paid AI step happens only when someone asks for it, so a routine refresh can never repeat a charge. And nothing new answers a question until a person approves it.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>workflow · 3 lanes · automatic vs. human</span>
+        <a href="02_knowledge-graph-management.html" target="_blank" rel="noopener">Open standalone ↗</a>
+      </div>
+      <iframe data-src="02_knowledge-graph-management.html" data-vw="1223" data-vh="528" loading="lazy" title="Knowledge graph management workflow diagram"></iframe>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.5rem">
+      <div class="card c-em"><h4><span class="dot"></span>Currency is automatic; publishing is not</h4>
+        <ul>
+          <li>The worker compares a fingerprint over every active source and rebuilds on any change</li>
+          <li>A structural rebuild is free and always saves a draft revision</li>
+          <li>Only a human promotes a draft, and publish refuses one whose evidence has moved</li>
+          <li>A failed generation is never retried on its own — a person asks again</li>
+        </ul></div>
+      <div class="card c-cyan"><h4><span class="dot"></span>Who reads it, and how</h4>
+        <ul>
+          <li>Chat, <code>/graph/search/</code> and the MCP server all answer from the published revision</li>
+          <li>Neither machine surface calls a model, so no caller can spend the AI budget</li>
+          <li>A request may pin a version; every response states which one answered</li>
+          <li>No published revision is a <code>409</code> — never a quiet fallback to a draft</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ 03 ═══ -->
+  <section id="d03">
+    <div class="sec-head"><span class="sec-num">04</span><h2>SDLC · bug fix</h2></div>
+    <p class="sec-sub">From a ticket to a reviewed draft pull request. The system works out what is being asked, what is missing and which files would change — then <strong>stops and shows its work</strong>. Approving that plan is one decision by a second person; writing to the repository is a separate decision with its own credential. Engineers stay the reviewers, never the bystanders.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>workflow · ground → describe → write and deliver</span>
+        <a href="03_sdlc-bug-fix.html" target="_blank" rel="noopener">Open standalone ↗</a>
+      </div>
+      <iframe data-src="03_sdlc-bug-fix.html" data-vw="1239" data-vh="660" loading="lazy" title="Code Factory bug fix workflow diagram"></iframe>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.5rem">
+      <div class="card c-am"><h4><span class="dot"></span>The ticket is data, never instruction</h4>
+        <ul>
+          <li>Ticket text is evidence about a want, not a command to obey</li>
+          <li>A repository named in a ticket is confirmed by a person first</li>
+          <li>Each cited quote is re-checked against the live source</li>
+          <li>A failed phase halts the run and the record says why</li>
+        </ul></div>
+      <div class="card c-em"><h4><span class="dot"></span>Two gates, both owned by people</h4>
+        <ul>
+          <li>Approval needs a <em>different</em> user holding the approve permission</li>
+          <li>Approving a description does not authorise a repository write</li>
+          <li>Verification runs before anything is written; failure means nothing is written</li>
+          <li>Delivery opens a draft PR on its own <code>digital-brain/*</code> branch</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ 04 ═══ -->
+  <section id="d04">
+    <div class="sec-head"><span class="sec-num">05</span><h2>SDLC · incident management</h2></div>
+    <p class="sec-sub">During an incident the platform gives the responder verified evidence — and <strong>touches nothing</strong>. No runbook is executed, no ticket is updated, no action is taken on the live service. The human stays in command. Afterwards the write-up is imported like any other document, so the next incident starts better informed than the last.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>workflow · ground → answer with evidence → act and learn</span>
+        <a href="04_sdlc-incident-management.html" target="_blank" rel="noopener">Open standalone ↗</a>
+      </div>
+      <iframe data-src="04_sdlc-incident-management.html" data-vw="1236" data-vh="660" loading="lazy" title="Incident management workflow diagram"></iframe>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.5rem">
+      <div class="card c-cyan"><h4><span class="dot"></span>An incident record is just a source</h4>
+        <ul>
+          <li>ServiceNow, Jira and GitHub imports are bounded and manual, not a mirror</li>
+          <li>Each record becomes an immutable source with a SHA-256 digest</li>
+          <li>A changed record archives the old revision instead of overwriting it</li>
+        </ul></div>
+      <div class="card c-am"><h4><span class="dot"></span>The platform never touches the service</h4>
+        <ul>
+          <li>No runbook is executed, no ticket is updated, no action is taken</li>
+          <li>REST and MCP callers get the same verified evidence and call no model</li>
+          <li>A code change goes back through the Code Factory gates, not around them</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ B · PRODUCTION ═══ -->
+  <section id="production">
+    <div class="sec-head"><span class="sec-num">A</span><h2>Production posture</h2></div>
+    <p class="sec-sub">What is built and demonstrable today, and exactly what go-live still needs. Both are stated, deliberately &mdash; nothing below is claimed that cannot be shown.</p>
+
+    <div class="card c-em ledger wide">
+      <h4><span class="dot"></span>In place today</h4>
+      <ul>
+        <li><span class="tick">&#10003;</span><span>Per-application access, re-checked on every request; revocation takes effect immediately</span></li>
+        <li><span class="tick">&#10003;</span><span>CSRF, secure cookies, HSTS, TLS redirect, strict CSP, Argon2, database-backed login lockout</span></li>
+        <li><span class="tick">&#10003;</span><span>Health endpoints and JSON request logs carrying a request ID</span></li>
+        <li><span class="tick">&#10003;</span><span>Every mutation and its audit event share one database transaction</span></li>
+        <li><span class="tick">&#10003;</span><span>Usage receipted per model turn, per provider request ID</span></li>
+        <li><span class="tick">&#10003;</span><span>The full Claude path proven end to end against a live model</span></li>
+      </ul>
+    </div>
+
+    <h3>What go-live needs</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Requirement</th><th>Why it blocks go-live</th><th class="paid">What it takes</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Enterprise SSO &amp; MFA</td>
+            <td>Identity must come from the corporate directory, not local accounts</td>
+            <td class="paid">Identity provider integration; a separate audience for platform admins</td></tr>
+        <tr><td class="layer">Database-level isolation</td>
+            <td>Tenant separation currently rests on tested application policy, not on the database</td>
+            <td class="paid">PostgreSQL row-level security and restrictive runtime roles</td></tr>
+        <tr><td class="layer">Document scanning</td>
+            <td>Uploads stay disabled in production until files are scanned and converted in a sandbox</td>
+            <td class="paid">The hook is built &mdash; it needs a scanner installed, configured and kept current</td></tr>
+        <tr><td class="layer">Storage identity</td>
+            <td>Documents need per-application storage and source-level access control</td>
+            <td class="paid">Per-application storage identities and ACL enforcement</td></tr>
+        <tr><td class="layer">Monitoring &amp; alerting</td>
+            <td>No availability target can be committed to without measurements behind it</td>
+            <td class="paid">External uptime checks, alert destinations, centralised traces and metrics</td></tr>
+        <tr><td class="layer">Spend controls</td>
+            <td>Nothing currently caps what one application can spend with a provider</td>
+            <td class="paid">Per-tenant quotas, token and cost budgets, worker concurrency limits</td></tr>
+        <tr><td class="layer">Audit integrity</td>
+            <td>A database operator can still change audit records</td>
+            <td class="paid">Retention policy, export, and tamper evidence</td></tr>
+        <tr><td class="layer">Recovery</td>
+            <td>Backups are a plan, not a proven capability, until a restore has been run</td>
+            <td class="paid">Managed backups with point-in-time recovery; tested restore and isolation drills</td></tr>
+        <tr><td class="layer">CI coverage</td>
+            <td>AI credential isolation is verified by a live run and code review, not on every commit</td>
+            <td class="paid">A funded provider test account so CI can exercise the real path</td></tr>
+        <tr><td class="layer">Accessibility</td>
+            <td>No conformance can be claimed on a first visual pass alone</td>
+            <td class="paid">Keyboard and screen-reader testing, formal WCAG contrast checks</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>Nothing ships without clearing four gates</h3>
+    <pre>ruff check digitalbrain platform_core scripts manage.py
+manage.py makemigrations --check --dry-run
+manage.py test
+scripts/production_preflight.py</pre>
+  </section>
+
+  <!-- ═══ C · SECURITY ═══ -->
+  <section id="security">
+    <div class="sec-head"><span class="sec-num">B</span><h2>Security</h2></div>
+    <p class="sec-sub">These are <strong>invariants, not settings</strong> — properties a future change cannot quietly erode, because each one is pinned by an automated test that fails the build. Weakening any of them is a recorded decision with a written trade-off, which is exactly what an assessor will ask to see.</p>
+
+
+    <div class="grid g2">
+      <div class="card c-ro"><h4><span class="dot"></span>Deny by default</h4>
+        <p>Application access is re-evaluated per request against current database state. Platform administration does not imply application access, and revoking a grant takes effect on the next request — including for API tokens.</p></div>
+      <div class="card c-ro"><h4><span class="dot"></span>The AI cannot widen its own reach</h4>
+        <p>Agent tools are locked to one application and one user <em>before</em> a run starts. The model can narrow what it looks at; it has no way to ask for more. A prompt-injection attempt in a ticket or document therefore has nothing to escalate to.</p></div>
+      <div class="card c-em"><h4><span class="dot"></span>Citations verified against live sources</h4>
+        <p>Before anything is stored or rendered: source still active, digest unchanged, excerpt still present. What the model claims is not evidence.</p></div>
+      <div class="card c-em"><h4><span class="dot"></span>Credentials never enter the database</h4>
+        <p>One file per provider per application, readable only by the service account. Never an environment variable, never a database row, never written to an audit log, never sent back to a browser. A database backup therefore contains no usable secret — only who set it, when, and a digest.</p></div>
+      <div class="card c-am"><h4><span class="dot"></span>The server cannot be turned into a probe</h4>
+        <p>Exactly one place fetches a user-supplied URL. It refuses private, loopback and reserved addresses, then pins the connection to the address it validated so DNS cannot change the answer underneath it. http/https only, no redirects, 8&nbsp;MB and 20&nbsp;s caps, no credentials attached — the standard server-side request forgery path is closed.</p></div>
+      <div class="card c-am"><h4><span class="dot"></span>Revoking access closes the API too</h4>
+        <p>An API token resolves to a person and then runs the same checks their browser session runs. There is no separate token permission model to keep in sync, so withdrawing someone's access shuts their integrations off with no extra step. Token secrets are stored hashed and compared in constant time.</p></div>
+      <div class="card c-vi"><h4><span class="dot"></span>Document conversion has no network</h4>
+        <p>Files are converted in a subprocess that cannot open a socket at all. A malicious document has nothing to call home to.</p></div>
+      <div class="card c-vi"><h4><span class="dot"></span>No AI spend goes unrecorded</h4>
+        <p>A missing or unreadable token count is treated as an error, not a free request — because the provider will still bill for it. Every model turn produces its own receipt against its own provider request ID.</p></div>
+      <div class="card c-cyan"><h4><span class="dot"></span>No shared AI account</h4>
+        <p>Each application uses its own provider credential, and an AI run is started with a blanked environment so it cannot inherit another application's key or an operator's personal login. This is what makes per-team AI billing and attribution real rather than nominal. Production refuses the development shortcut outright.</p></div>
+      <div class="card c-cyan"><h4><span class="dot"></span>Model output cannot script the page</h4>
+        <p>What a model writes is always treated as text, never as markup, and it is escaped on the server before it reaches a browser — deliberately producing no clickable links. A model talked into emitting a malicious payload has no way to execute it in a user's session.</p></div>
+    </div>
+
+  </section>
+
+</div>
+</main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---- embedded diagrams ----
+     A frame may be served from file://, where its contentDocument is unreadable
+     from here, so height comes from the diagram's own viewBox instead: embed
+     mode scales the SVG to the frame width and adds 0.5rem of padding a side. */
+  var PAD = 16;
+  var frames = [].slice.call(document.querySelectorAll(".frame iframe"));
+  var theme = "dark";
+
+  function load(f){
+    var want = f.getAttribute("data-src") + "?embed=1&theme=" + theme;
+    if (f.getAttribute("src") !== want) f.setAttribute("src", want);
+  }
+  function size(f){
+    var w = f.parentNode.clientWidth;
+    var r = (+f.getAttribute("data-vh")) / (+f.getAttribute("data-vw"));
+    f.style.height = Math.round((w - PAD) * r + PAD) + "px";
+  }
+  function sizeAll(){ frames.forEach(size); }
+  window.addEventListener("resize", sizeAll);
+
+  /* ---- theme: shared with the embedded archify frames ---- */
+  var root = document.documentElement;
+  var btn  = document.getElementById("theme-toggle");
+
+  function apply(t){
+    theme = t;
+    root.setAttribute("data-theme", t);
+    btn.innerHTML = (t === "dark" ? "◐&nbsp; Switch to light" : "◑&nbsp; Switch to dark");
+    try { localStorage.setItem("archify-theme", t); } catch(e){}
+    frames.forEach(function(f){ size(f); load(f); });
+  }
+
+  btn.addEventListener("click", function(){ apply(theme === "dark" ? "light" : "dark"); });
+
+  var stored = "";
+  try { stored = localStorage.getItem("archify-theme") || ""; } catch(e){}
+  if (stored !== "light" && stored !== "dark") {
+    stored = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+  apply(stored);
+
+  /* ---- scroll spy on the left index ---- */
+  var links = {};
+  [].forEach.call(document.querySelectorAll(".rail a[href^='#']"), function(a){
+    links[a.getAttribute("href").slice(1)] = a;
+  });
+  var current = null;
+  function mark(id){
+    if (id === current) return;
+    if (current && links[current]) links[current].classList.remove("on");
+    current = id;
+    if (links[id]) links[id].classList.add("on");
+  }
+  var seen = new Map();
+  var io = new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ seen.set(e.target.id, e); });
+    var best = null;
+    seen.forEach(function(e){
+      if (!e.isIntersecting) return;
+      if (!best || e.boundingClientRect.top < best.boundingClientRect.top) best = e;
+    });
+    if (best) mark(best.target.id);
+  }, { rootMargin: "-15% 0px -70% 0px", threshold: 0 });
+  [].forEach.call(document.querySelectorAll("main section[id]"), function(s){ io.observe(s); });
+  mark("overview");
+})();
+</script>
+</body>
+</html>
