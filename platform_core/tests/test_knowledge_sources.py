@@ -378,10 +378,15 @@ class NoDuplicationTests(TestCase):
         self.assertIn("Everything else", self.page())
         self.assertIn("Search results", self.page(query="imported"))
 
-    def test_the_count_in_the_heading_still_counts_everything(self):
-        """Splitting the page must not make the total shrink."""
-        body = self.page()
-        self.assertIn('<span class="count">2</span>', body)
+    def test_the_total_still_counts_everything_after_the_split(self):
+        """Splitting the page must not make the total shrink.
+
+        Two documents, one under an origin and one not, and the count beside the
+        tab is still two - it counts the application's sources, not whichever
+        list happens to be on screen.
+        """
+        self.assertIn('class="tab-count"', self.page())
+        self.assertIn(">2</span>", self.page())
 
 
 @settings_for_tests
@@ -486,10 +491,21 @@ class KnowledgeHeadingTests(TestCase):
             "versions": self.client.get(reverse("graph", args=[app]), {"tab": "versions"}),
         }
 
-    def test_every_view_uses_the_same_heading(self):
+    def test_every_view_keeps_a_heading_in_the_outline(self):
+        """Off the page, not out of the document.
+
+        The application menu names the section and marks it current, so printing
+        "Knowledge" again above the tabs told nobody anything. Somebody moving
+        through the page by heading still needs to land somewhere.
+        """
         for name, response in self.views().items():
             with self.subTest(view=name):
-                self.assertContains(response, "<h1>Knowledge")
+                self.assertContains(response, '<h1 class="sr-only">Knowledge</h1>')
+
+    def test_the_application_name_is_not_printed_a_third_time(self):
+        """It is already in the menu and in the breadcrumb."""
+        sources = self.views()["sources"]
+        self.assertNotContains(sources, '<p class="eyebrow">')
 
     def test_the_section_description_is_not_repeated_on_every_view(self):
         for name, response in self.views().items():
@@ -507,5 +523,16 @@ class KnowledgeHeadingTests(TestCase):
         versions = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
         self.assertContains(versions, '<h2 class="sr-only">Graph versions</h2>')
 
-    def test_the_source_count_survives_the_shorter_heading(self):
-        self.assertContains(self.views()["sources"], 'class="count"')
+    def test_the_source_count_moves_onto_the_tab_it_belongs_to(self):
+        """Removing the heading must not take the number with it."""
+        Document.objects.create(
+            application=self.app, uploaded_by=self.owner, name="one.md", size=1,
+            sha256="b" * 64, status="ready", origin="upload",
+        )
+        sources = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(sources, 'class="tab-count"')
+        self.assertContains(sources, ">1</span>")
+
+    def test_no_badge_is_shown_when_there_is_nothing_to_count(self):
+        """A zero beside a tab reads as a defect rather than as an empty list."""
+        self.assertNotContains(self.views()["sources"], 'class="tab-count"')

@@ -2372,3 +2372,45 @@
 @media (max-width: 980px) {
   .origin-head { align-items: flex-start; }
 }
+
+/* ---------------------------------------------------------------------------
+   The Knowledge views open straight into their content.
+
+   The heading block above the tabs said "CarePath" a third time - after the
+   application menu and the breadcrumb - and "Knowledge" a second time, after the
+   application menu had already marked it as the current section. Four lines of
+   chrome to repeat two words that were both already on screen.
+
+   The heading itself is kept for the document outline and taken off the page:
+   somebody navigating by heading still lands on "Knowledge", and the menu marks
+   which section they are in for everybody else.
+   --------------------------------------------------------------------------- */
+
+.view-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+/* The strip keeps its own bottom rule; it now runs the width of the row. */
+.view-bar .tabs { flex: 1 1 auto; margin-bottom: 0; }
+.view-bar > .button { margin-bottom: var(--s-3); }
+
+/* The count moves onto the tab it belongs to, rather than sitting beside a
+   heading that is no longer there. */
+.tab-count {
+  margin-left: var(--s-2);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--c-wash, var(--c-subtle));
+  color: var(--c-ink-muted);
+  font-size: var(--t-10);
+  font-weight: 700;
+}
+.tabs a[aria-current] .tab-count { background: var(--c-brand-tint); color: var(--c-brand-strong); }
+
+@media (max-width: 700px) {
+  .view-bar { align-items: stretch; }
+  .view-bar > .button { margin-bottom: 0; }
+}
