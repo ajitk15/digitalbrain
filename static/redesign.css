@@ -2414,3 +2414,13 @@
   .view-bar { align-items: stretch; }
   .view-bar > .button { margin-bottom: 0; }
 }
+
+/* The line under the tabs saying what this view is for. One per view: the
+   sentence it replaces described the whole section, so it read identically on
+   the graph, the quality report and the version list. */
+.view-note {
+  margin: var(--s-3) 0 0;
+  max-width: 78ch;
+  font-size: var(--t-12);
+  color: var(--c-ink-muted);
+}

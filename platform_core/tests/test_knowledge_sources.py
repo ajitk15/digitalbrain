@@ -507,10 +507,45 @@ class KnowledgeHeadingTests(TestCase):
         sources = self.views()["sources"]
         self.assertNotContains(sources, '<p class="eyebrow">')
 
-    def test_the_section_description_is_not_repeated_on_every_view(self):
-        for name, response in self.views().items():
+    def test_each_view_says_what_it_is_for(self):
+        """Restored by request, but one line per view rather than one repeated.
+
+        Sources and Graph carry a note under the tabs; Quality and Versions
+        carry a heading and their own paragraph, which say the same thing in a
+        different place.
+        """
+        views = self.views()
+        for name in ("sources", "graph"):
             with self.subTest(view=name):
-                self.assertNotContains(response, "Explore the generated graph")
+                self.assertContains(views[name], 'class="view-note"')
+        # Quality reports on a graph, so it needs one before it has a heading
+        # to report under.
+        self.build_graph()
+        self.assertContains(self.views()["quality"], "<h2>Graph quality</h2>")
+        self.assertContains(views["versions"], "<h2>Graph versions</h2>")
+
+    def build_graph(self):
+        from platform_core.graphs import rebuild
+        from platform_core.workbench import add_knowledge
+
+        add_knowledge(
+            self.owner, self.app.pk, "Configuration",
+            "| Node | Queue |" + chr(10) + "| --- | --- |" + chr(10) + "| NODE1 | Q1 |",
+        )
+        rebuild(self.app.pk)
+
+    def test_no_two_views_carry_the_same_description(self):
+        """The old sentence described the section, so it read the same on all of them."""
+        import re
+
+        notes = {}
+        for name, response in self.views().items():
+            found = re.findall(
+                r'<p class="view-note">(.*?)</p>', response.content.decode(), re.S
+            )
+            if found:
+                notes[name] = found[0]
+        self.assertEqual(len(notes), len(set(notes.values())))
 
     def test_the_tab_strip_is_what_says_which_view_this_is(self):
         """Dropping the descriptions is only safe because this still marks it."""
@@ -518,10 +553,11 @@ class KnowledgeHeadingTests(TestCase):
             with self.subTest(view=name):
                 self.assertContains(response, 'aria-current="page"')
 
-    def test_a_heading_repeating_its_tab_stays_in_the_outline(self):
-        """Hidden from the page, kept for anyone navigating by heading."""
+    def test_the_view_headings_are_on_the_page(self):
+        """Put back by request after being hidden for space."""
         versions = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
-        self.assertContains(versions, '<h2 class="sr-only">Graph versions</h2>')
+        self.assertContains(versions, "<h2>Graph versions</h2>")
+        self.assertNotContains(versions, 'class="sr-only">Graph versions')
 
     def test_the_source_count_moves_onto_the_tab_it_belongs_to(self):
         """Removing the heading must not take the number with it."""
