@@ -2097,3 +2097,34 @@
   .pagination { flex-wrap: wrap; gap: var(--s-2); }
   .pagination .page-of { margin-right: 0; width: 100%; }
 }
+
+/* The summary and a pager above the table, so the way to the rest of a long
+   list is reachable without scrolling past every row of the page you are on.
+   The page number is left to the summary beside it - repeating "Page 1 of 2"
+   two inches from "page 1 of 2" is noise, not reassurance. */
+.table-toolbar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+.table-toolbar .table-summary { margin-bottom: var(--s-2); }
+.table-toolbar .pagination {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+  margin-bottom: var(--s-2);
+}
+.table-toolbar .pagination .page-of { display: none; }
+.table-toolbar .page-step { padding: 4px 10px; }
+
+/* Retry sits beside Delete in the actions cell. A form, because retrying is a
+   POST - but it must not look like a form dropped into a table row. */
+.inline-action { display: inline; margin: 0; }
+.inline-action .text-button {
+  color: var(--c-brand-strong);
+  font-weight: 500;
+  margin-right: var(--s-3);
+}
+.inline-action .text-button:hover { text-decoration: underline; }

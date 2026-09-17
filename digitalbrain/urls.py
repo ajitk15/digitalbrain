@@ -32,6 +32,11 @@ urlpatterns = [
         documents.document_delete,
         name="document-delete",
     ),
+    path(
+        "applications/<uuid:pk>/documents/<uuid:document_id>/retry/",
+        documents.document_retry,
+        name="document-retry",
+    ),
     path("applications/<uuid:pk>/ai/", ai.ai_settings, name="ai-settings"),
     path("applications/<uuid:pk>/knowledge/", workbench.knowledge, name="knowledge"),
     path(

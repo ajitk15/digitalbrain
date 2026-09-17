@@ -66,12 +66,23 @@ def process_next_document():
     actor = doc.conversion_actor or doc.uploaded_by
     try:
         convert_document(actor, doc.application_id, doc.pk)
-    except Exception:
-        # Validation messages were persisted by convert_document. No content/traceback logging.
+    except Exception as failure:
+        # Validation messages were persisted by convert_document. No content or
+        # traceback is logged - a traceback from a conversion can carry the
+        # document's own text. The exception's *type* carries none of it, and
+        # without it a transient failure and a permanent one look identical to
+        # everyone: the reader, and the operator reading the log afterwards.
         Document.objects.filter(pk=doc.pk, status="converting").update(
             status="failed", conversion_error="Conversion could not finish. Check access and retry."
         )
-        logger.warning("document_conversion_failed")
+        logger.warning(
+            "document_conversion_failed",
+            extra={
+                "event": "document_conversion_failed",
+                "document_id": str(doc.pk),
+                "exception_type": type(failure).__name__,
+            },
+        )
     return True
 
 

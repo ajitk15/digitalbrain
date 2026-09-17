@@ -311,6 +311,58 @@ def document_detail(request, pk, document_id):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+@login_required
+@require_http_methods(["POST"])
+def document_retry(request, pk, document_id):
+    """Put a failed document back in the queue for the step that failed.
+
+    A conversion can fail for reasons that have nothing to do with the file -
+    the worker restarting mid-run, a moment of contention, a host that was
+    briefly unreachable. Until now the only way back was to delete the source
+    and import it again, which for one file out of a directory import meant
+    re-importing the directory.
+
+    Where it goes back to depends on what is missing. A document whose bytes are
+    still stored failed at conversion, so it returns to `queued`. A link-sourced
+    document with nothing stored never got them, so it returns to `pending` and
+    the download is attempted again.
+    """
+    app, grant = application_for(request.user, pk)
+    doc = get_object_or_404(
+        Document.objects.filter(status="failed"), pk=document_id, application=app
+    )
+    if not (
+        grant.role == "owner"
+        or (grant.role == "contributor" and doc.uploaded_by_id == request.user.pk)
+    ):
+        raise PermissionDenied
+    stored = document_path(app, doc.pk).exists()
+    if not stored and not doc.source_url:
+        messages.error(
+            request,
+            "This document has no stored file and no link to fetch it from. Upload it again.",
+        )
+        return redirect(return_route(request), pk=pk)
+    with transaction.atomic():
+        # Guarded on `failed` so two people pressing retry queue one attempt.
+        moved = Document.objects.filter(pk=doc.pk, status="failed").update(
+            status="queued" if stored else "pending",
+            conversion_error="",
+            conversion_started_at=None,
+            conversion_actor=request.user,
+        )
+        if moved:
+            audit(request.user, "document.retried", doc.pk, app.product.portfolio.organization)
+    if moved:
+        messages.success(
+            request,
+            "Queued for another attempt. Progress appears beside it."
+            if stored
+            else "Queued to download again. Progress appears beside it.",
+        )
+    return redirect(return_route(request), pk=pk)
+
+
 def document_delete(request, pk, document_id):
     app, grant = application_for(request.user, pk)
     doc = get_object_or_404(

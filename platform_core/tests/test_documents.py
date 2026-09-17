@@ -5,7 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.documents import DocumentForm
+from platform_core.documents import DocumentForm, document_path
 from platform_core.models import (
     Application,
     ApplicationGrant,
@@ -298,3 +298,163 @@ class SourceListPagingTests(TestCase):
             self.assertIn("q=source-0", body.split('class="pagination"')[1])
         summary = body.split('class="table-summary">')[1].split("</p>")[0]
         self.assertIn("matching", summary)
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class SourceListTopPagerTests(TestCase):
+    """A pager above the table as well as below it.
+
+    With twenty rows between them, reaching page two meant scrolling past every
+    row of page one first.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+
+    def add(self, count):
+        for index in range(count):
+            Document.objects.create(
+                application=self.app,
+                uploaded_by=self.owner,
+                name=f"source-{index:03}.md",
+                size=1,
+                sha256=f"{index:064x}",
+                status="ready",
+                origin="upload",
+            )
+
+    def body(self):
+        return self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+
+    def test_a_pager_appears_above_and_below_the_table(self):
+        self.add(27)
+        body = self.body()
+        self.assertEqual(body.count('class="pagination"'), 2)
+        self.assertIn("Pagination, above the table", body)
+        self.assertIn("Pagination, below the table", body)
+
+    def test_the_two_pagers_are_told_apart_for_a_screen_reader(self):
+        """Two landmarks with one name is a worse list than one landmark."""
+        self.add(27)
+        body = self.body()
+        self.assertNotIn('aria-label="Pagination"', body)
+
+    def test_the_top_pager_sits_with_the_summary(self):
+        self.add(27)
+        toolbar = self.body().split('class="table-toolbar"')[1].split("</div>")[0]
+        self.assertIn("table-summary", toolbar)
+        self.assertIn('href="?page=2"', toolbar)
+
+    def test_a_single_page_shows_neither_pager(self):
+        self.add(5)
+        body = self.body()
+        self.assertNotIn('class="pagination"', body)
+        self.assertIn('class="table-toolbar"', body)
+
+    def test_both_pagers_carry_the_search(self):
+        self.add(27)
+        url = reverse("knowledge", args=[self.app.pk])
+        body = self.client.get(f"{url}?q=source-0").content.decode()
+        for marker in ("Pagination, above the table", "Pagination, below the table"):
+            if marker in body:
+                self.assertIn("q=source-0", body.split(marker)[1][:400])
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class DocumentRetryTests(TestCase):
+    """Putting a failed document back in the queue.
+
+    A conversion can fail for reasons that have nothing to do with the file. The
+    only way back used to be deleting the source and importing it again - which,
+    for one file out of a directory import, meant re-importing the directory.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+
+    def failed(self, *, stored=True, url="", user=None):
+        doc = Document.objects.create(
+            application=self.app,
+            uploaded_by=user or self.owner,
+            name="beaten.pptx",
+            size=10,
+            sha256="f" * 64,
+            status="failed",
+            origin="github" if url else "upload",
+            source_url=url,
+            conversion_error="Conversion could not finish. Check access and retry.",
+        )
+        if stored:
+            path = document_path(self.app, doc.pk)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"stored")
+        return doc
+
+    def retry(self, doc):
+        return self.client.post(reverse("document-retry", args=[self.app.pk, doc.pk]))
+
+    def test_a_stored_document_goes_back_to_conversion(self):
+        doc = self.failed()
+        self.retry(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, "queued")
+        self.assertEqual(doc.conversion_error, "")
+
+    def test_a_link_with_nothing_stored_goes_back_to_download(self):
+        """It never got the bytes, so re-converting them is not the retry it needs."""
+        doc = self.failed(stored=False, url="https://raw.example/x.pptx")
+        self.retry(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, "pending")
+
+    def test_a_document_with_neither_bytes_nor_a_link_is_refused(self):
+        doc = self.failed(stored=False)
+        self.retry(doc)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, "failed")
+
+    def test_only_a_failed_document_can_be_retried(self):
+        doc = self.failed()
+        Document.objects.filter(pk=doc.pk).update(status="ready")
+        self.assertEqual(self.retry(doc).status_code, 404)
+
+    def test_a_viewer_cannot_retry(self):
+        doc = self.failed()
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.retry(doc).status_code, 403)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, "failed")
+
+    def test_retrying_is_recorded(self):
+        doc = self.failed()
+        self.retry(doc)
+        self.assertTrue(AuditEvent.objects.filter(action="document.retried").exists())
+
+    def test_a_second_press_does_not_queue_a_second_attempt(self):
+        """The guard is on `failed`, so the second press finds nothing to move."""
+        doc = self.failed()
+        self.retry(doc)
+        self.assertEqual(self.retry(doc).status_code, 404)
+
+    def test_the_control_appears_only_on_a_failed_row(self):
+        doc = self.failed()
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        self.assertIn(reverse("document-retry", args=[self.app.pk, doc.pk]), body)
+        Document.objects.filter(pk=doc.pk).update(status="ready")
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        self.assertNotIn(reverse("document-retry", args=[self.app.pk, doc.pk]), body)
+
+    def test_retry_is_a_post_not_a_link(self):
+        """A GET that changes state is one a crawler or a prefetch can fire."""
+        doc = self.failed()
+        self.assertEqual(
+            self.client.get(reverse("document-retry", args=[self.app.pk, doc.pk])).status_code, 405
+        )
