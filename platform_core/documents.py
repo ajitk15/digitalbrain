@@ -164,8 +164,9 @@ def documents(request, pk):
 
         form = DocumentForm()
         if link_form.is_valid():
+            notes = []
             try:
-                created = submit(request.user, pk, link_form.cleaned_data["url"])
+                created = submit(request.user, pk, link_form.cleaned_data["url"], notes)
             except (FetchError, ValidationError) as failure:
                 link_form.add_error("url", " ".join(getattr(failure, "messages", [str(failure)])))
             else:
@@ -174,6 +175,11 @@ def documents(request, pk):
                     f"Queued {len(created)} source(s) for download. "
                     "Progress appears beside each one.",
                 )
+                # A warning rather than part of the success line: not everything
+                # the link held was queued, and that needs to read as a caveat
+                # instead of arriving as good news.
+                for note in notes:
+                    messages.warning(request, note)
                 return redirect(return_route(request), pk=pk)
     elif request.method == "POST":
         if not can_upload:

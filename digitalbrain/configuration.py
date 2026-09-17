@@ -28,6 +28,7 @@ def load_config():
         "scan_documents",
         "claude_use_host_login",
         "fetch_allow_hosts",
+        "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
     }
@@ -39,6 +40,12 @@ def load_config():
         raise ImproperlyConfigured("scan_documents must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    limit = config.get("import_max_files", 100)
+    # Bounded on both sides. A walk that cannot terminate is the thing the limit
+    # exists to prevent, and an operator who sets it to something enormous has
+    # removed the bound without removing the setting that claims to impose one.
+    if type(limit) is not int or not 1 <= limit <= 1000:
+        raise ImproperlyConfigured("import_max_files must be a whole number between 1 and 1000.")
     for field in ("sharepoint_tenant", "sharepoint_client_id"):
         value = config.get(field, "")
         if not isinstance(value, str):

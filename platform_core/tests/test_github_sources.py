@@ -10,8 +10,9 @@ import json
 from unittest.mock import patch
 from urllib.parse import urlparse
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
+from platform_core import github_sources
 from platform_core.fetching import FetchError
 from platform_core.github_sources import DOC_SUFFIXES, parse, plan
 
@@ -91,3 +92,80 @@ class RepositoryWithoutReadmeTests(SimpleTestCase):
             with self.assertRaises(FetchError) as raised:
                 plan(urlparse("https://github.com/o/r"))
         self.assertIn("500", str(raised.exception))
+
+
+@override_settings(IMPORT_MAX_FILES=100)
+class DocumentSuffixTests(SimpleTestCase):
+    """What a directory import will take, and what it still leaves alone.
+
+    The GitHub importer used to accept text only, on the reasoning that anything
+    else in a repository is code or binary. That holds for a repository at large
+    and not for a documentation folder: a .docx there is documentation, the
+    upload box on the same screen already accepted one, and SharePoint had been
+    importing Office files all along. The same file was importable from one
+    source and refused by the other.
+    """
+
+    def test_every_format_the_converter_handles_can_be_imported(self):
+        from platform_core.fetching import CONTENT_SUFFIXES
+
+        for suffix in set(CONTENT_SUFFIXES.values()):
+            with self.subTest(suffix=suffix):
+                self.assertIn(suffix, github_sources.DOC_SUFFIXES)
+
+    def test_the_office_formats_a_documentation_set_is_written_in(self):
+        for suffix in (".docx", ".xlsx", ".pptx", ".pdf", ".html"):
+            self.assertIn(suffix, github_sources.DOC_SUFFIXES)
+
+    def test_source_files_are_still_left_to_code_graph(self):
+        for suffix in (".py", ".js", ".ts", ".go", ".java", ".sql", ".sh"):
+            with self.subTest(suffix=suffix):
+                self.assertNotIn(suffix, github_sources.DOC_SUFFIXES)
+
+    def test_github_and_sharepoint_cannot_drift_apart(self):
+        from platform_core import sharepoint
+
+        self.assertEqual(github_sources.DOC_SUFFIXES, sharepoint.DOC_SUFFIXES)
+
+
+@override_settings(IMPORT_MAX_FILES=3)
+class TreeBoundTests(SimpleTestCase):
+    """The walk is bounded, and says so when the bound bites."""
+
+    def listing(self, count):
+        return [
+            {
+                "type": "file",
+                "name": f"doc{n}.md",
+                "path": f"docs/doc{n}.md",
+                "download_url": f"https://raw.example/{n}.md",
+            }
+            for n in range(count)
+        ]
+
+    def test_the_walk_stops_at_the_configured_ceiling(self):
+        with patch.object(github_sources, "_api", return_value=self.listing(10)):
+            found = github_sources.tree("o", "r", "main", "docs", "")
+        self.assertEqual(len(found), 3)
+
+    def test_reaching_the_ceiling_is_reported_with_the_numbers(self):
+        notes = []
+        with patch.object(github_sources, "_api", return_value=self.listing(10)):
+            github_sources.tree("o", "r", "main", "docs", "", notes)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("10 importable files", notes[0])
+        self.assertIn("the limit is 3", notes[0])
+        self.assertIn("7 were not", notes[0])
+
+    def test_a_set_inside_the_ceiling_reports_nothing(self):
+        notes = []
+        with patch.object(github_sources, "_api", return_value=self.listing(2)):
+            found = github_sources.tree("o", "r", "main", "docs", "", notes)
+        self.assertEqual(len(found), 2)
+        self.assertEqual(notes, [])
+
+    @override_settings(IMPORT_MAX_FILES=50)
+    def test_the_ceiling_follows_the_setting(self):
+        with patch.object(github_sources, "_api", return_value=self.listing(40)):
+            found = github_sources.tree("o", "r", "main", "docs", "")
+        self.assertEqual(len(found), 40)

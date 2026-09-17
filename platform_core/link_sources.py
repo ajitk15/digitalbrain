@@ -34,9 +34,6 @@ from .sharepoint import configured as sharepoint_configured
 from .sharepoint import download_url, is_sharepoint
 from .sharepoint import plan as sharepoint_plan
 
-#: One paste must not be able to queue an unbounded amount of downloading.
-MAX_PER_SUBMISSION = 25
-
 
 def mounted(app, provider):
     """A per-application credential, when one is mounted. Absent is not an error."""
@@ -76,8 +73,12 @@ def sharepoint_secret(app):
     return secret
 
 
-def preview(user, app_id, raw):
-    """Resolve a link to the files it would import, without downloading them."""
+def preview(user, app_id, raw, notes=None):
+    """Resolve a link to the files it would import, without downloading them.
+
+    `notes` collects anything worth telling the person about the resolution -
+    today, that the importer stopped at the configured ceiling.
+    """
     app, grant = application_for(user, app_id)
     if grant.role not in {"owner", "contributor"}:
         raise PermissionDenied
@@ -90,22 +91,35 @@ def preview(user, app_id, raw):
     # fetch(), which re-resolves and pins the connection; this one is for feedback.
     resolve(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
     if is_sharepoint(parsed):
-        return "sharepoint", sharepoint_plan(parsed, sharepoint_secret(app))
+        return "sharepoint", sharepoint_plan(parsed, sharepoint_secret(app), notes)
     if is_github(parsed):
-        return "github", github_plan(parsed, github_token(app))
+        return "github", github_plan(parsed, github_token(app), notes)
     # A plain page is one file; its real name is only known once headers arrive,
     # so the path is used now and corrected after the download.
     return "link", [(suggested_name(parsed, ""), parsed.geturl())]
 
 
-def submit(user, app_id, raw):
-    """Queue everything a link resolves to. Returns the created documents."""
+def submit(user, app_id, raw, notes=None):
+    """Queue everything a link resolves to. Returns the created documents.
+
+    `notes` is appended to rather than returned, so a caller that does not care
+    passes nothing and a view that wants to show the person what happened passes
+    a list. The importers already stop at `IMPORT_MAX_FILES` and say so there;
+    this used to re-truncate to a second, lower number of its own, silently.
+    """
     app, _ = application_for(user, app_id)
-    origin, files = preview(user, app_id, raw)
+    origin, files = preview(user, app_id, raw, notes)
     if not files:
         raise ValidationError("That link contained nothing to import.")
-    if len(files) > MAX_PER_SUBMISSION:
-        files = files[:MAX_PER_SUBMISSION]
+    # The importers bound themselves, and this is the backstop for one that
+    # forgets: a single paste must not be able to queue an unbounded amount of
+    # downloading. Trimming here is reported rather than silent, because a
+    # backstop that fires quietly is a bug nobody finds.
+    ceiling = settings.IMPORT_MAX_FILES
+    if len(files) > ceiling:
+        if notes is not None:
+            notes.append(f"Only the first {ceiling} of {len(files)} files were queued.")
+        files = files[:ceiling]
 
     created = []
     with transaction.atomic():

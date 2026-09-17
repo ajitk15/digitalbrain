@@ -55,6 +55,23 @@ CONTENT_SUFFIXES = {
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
 }
 
+#: What an import may take from a directory listing - a GitHub `/tree/` link or a
+#: SharePoint folder.
+#:
+#: Derived from the table above rather than written out again, because the two
+#: had drifted: GitHub imported text only, on the reasoning that anything else in
+#: a repository is code or binary. That holds for a repository at large and not
+#: for a documentation folder, where a .docx is documentation - and the upload
+#: box on the same screen already accepted one. SharePoint meanwhile took Office
+#: files all along, so the same file could be imported from one source and not
+#: the other.
+#:
+#: The extras are text formats that carry no content type of their own but are
+#: readable as plain text.
+DOCUMENT_SUFFIXES = tuple(
+    sorted({*CONTENT_SUFFIXES.values(), ".markdown", ".rst", ".adoc", ".yaml", ".yml", ".htm"})
+)
+
 
 class FetchError(Exception):
     """A URL could not be retrieved. The message is safe to show a user."""

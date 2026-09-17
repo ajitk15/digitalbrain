@@ -84,3 +84,40 @@ class HostLoginConfigurationTests(SimpleTestCase):
     def test_it_must_be_a_boolean(self):
         with self.assertRaises(ImproperlyConfigured):
             self.load(f'mode = "development"\n{self.BASE}claude_use_host_login = "yes"\n')
+
+
+class ImportMaxFilesTests(SimpleTestCase):
+    """The ceiling on one directory import, and the bounds on the bound itself."""
+
+    BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
+
+    def load(self, body):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.toml"
+            path.write_text(body, encoding="utf-8")
+            with patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(path)}):
+                return load_config()
+
+    def test_it_is_optional(self):
+        config = self.load(f'mode = "development"\n{self.BASE}')
+        self.assertNotIn("import_max_files", config)
+
+    def test_an_operator_may_raise_it(self):
+        config = self.load(f'mode = "development"\n{self.BASE}import_max_files = 250\n')
+        self.assertEqual(config["import_max_files"], 250)
+
+    def test_zero_is_refused(self):
+        """A ceiling of nothing makes every import fail for a reason nobody would guess."""
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "development"\n{self.BASE}import_max_files = 0\n')
+
+    def test_an_enormous_value_is_refused(self):
+        """Removing the bound is not configuring it."""
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "development"\n{self.BASE}import_max_files = 100000\n')
+
+    def test_it_must_be_a_whole_number(self):
+        for value in ('"100"', "12.5", "true"):
+            with self.subTest(value=value):
+                with self.assertRaises(ImproperlyConfigured):
+                    self.load(f'mode = "development"\n{self.BASE}import_max_files = {value}\n')

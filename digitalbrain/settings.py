@@ -15,6 +15,12 @@ CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not
 # Internal hosts an operator permits link import to reach. Everything else is
 # held to the public-internet rule in platform_core/fetching.py.
 FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", [])]
+# How many files one import may take from a directory - a GitHub /tree/ link or
+# a SharePoint folder. A knowledge base is not a mirror of a repository, so the
+# walk stays bounded; the bound is configurable because what counts as a
+# reasonable documentation set differs per deployment. Reaching it is reported,
+# never silent.
+IMPORT_MAX_FILES = CONFIG.get("import_max_files", 100)
 # Non-secret identifiers for the SharePoint app registration. The client secret
 # itself is mounted per application as sharepoint_APPLICATION_UUID.
 SHAREPOINT_TENANT = CONFIG.get("sharepoint_tenant", "")

@@ -5,6 +5,11 @@ csrf_origins = ["https://brain.example.com"]
 secret_directory = "/run/secrets"
 # Enable ONLY behind a trusted proxy that strips client-supplied X-Forwarded-Proto.
 trust_proxy = false
+# How many files one import may take from a GitHub /tree/ link or a SharePoint
+# folder. Default 100, permitted range 1-1000. A knowledge base is not a mirror
+# of a repository, so the walk stays bounded - reaching the bound is reported to
+# the person importing rather than silently truncating their documentation set.
+import_max_files = 100
 
 [database]
 name = "digital_brain"

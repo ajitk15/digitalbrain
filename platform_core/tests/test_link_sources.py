@@ -65,11 +65,28 @@ class LinkSubmissionTests(TestCase):
         self.assertEqual(len(created), 5)
         self.assertEqual(Document.objects.filter(status="pending").count(), 5)
 
-    def test_a_submission_is_capped(self):
+    @override_settings(IMPORT_MAX_FILES=30)
+    def test_a_submission_is_capped_at_the_configured_number(self):
         files = [(f"f{n}.md", f"https://raw.example/{n}.md") for n in range(80)]
         with patch("platform_core.link_sources.github_plan", return_value=files):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs/tree/main/docs")
-        self.assertEqual(len(created), 25)
+        self.assertEqual(len(created), 30)
+
+    @override_settings(IMPORT_MAX_FILES=30)
+    def test_a_capped_submission_says_what_it_left_behind(self):
+        """A backstop that fires quietly is a bug nobody finds."""
+        files = [(f"f{n}.md", f"https://raw.example/{n}.md") for n in range(80)]
+        notes = []
+        with patch("platform_core.link_sources.github_plan", return_value=files):
+            submit(self.owner, self.app.pk, "https://github.com/a/docs/tree/main/docs", notes)
+        self.assertEqual(notes, ["Only the first 30 of 80 files were queued."])
+
+    def test_an_uncapped_submission_reports_nothing(self):
+        files = [(f"f{n}.md", f"https://raw.example/{n}.md") for n in range(5)]
+        notes = []
+        with patch("platform_core.link_sources.github_plan", return_value=files):
+            submit(self.owner, self.app.pk, "https://github.com/a/docs/tree/main/docs", notes)
+        self.assertEqual(notes, [])
 
 
 @override_settings(

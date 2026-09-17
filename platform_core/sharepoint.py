@@ -30,19 +30,15 @@ import urllib.parse
 
 from django.conf import settings
 
-from .fetching import FetchError, fetch
+from .fetching import DOCUMENT_SUFFIXES, FetchError, fetch
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 LOGIN = "https://login.microsoftonline.com"
 
-#: Extensions worth importing from a document library. Everything else is binary
-#: or an application file that conversion would not produce useful text from.
-DOC_SUFFIXES = (
-    ".docx", ".doc", ".pdf", ".pptx", ".ppt", ".xlsx", ".xls",
-    ".md", ".txt", ".csv", ".json", ".xml", ".html", ".htm",
-)
-
-MAX_FILES = 25
+#: Extensions worth importing from a document library. Shared with the GitHub
+#: importer, so the same file cannot be importable from one source and refused
+#: by the other.
+DOC_SUFFIXES = DOCUMENT_SUFFIXES
 
 #: Tokens last an hour; refreshing a minute early avoids racing the expiry.
 _token_cache = {}
@@ -147,7 +143,7 @@ def _item_reference(item):
     return f"{GRAPH}/drives/{drive}/items/{item_id}"
 
 
-def plan(parsed, secret):
+def plan(parsed, secret, notes=None):
     """The files a SharePoint link resolves to, as (name, graph item url) pairs."""
     token = access_token(secret)
     item = _graph(f"{GRAPH}/shares/{share_id(parsed.geturl())}/driveItem", token)
@@ -163,13 +159,24 @@ def plan(parsed, secret):
         entries = children.get("value") if isinstance(children, dict) else None
         if not isinstance(entries, list):
             raise FetchError("Microsoft Graph returned an unexpected folder listing.")
+        ceiling = settings.IMPORT_MAX_FILES
         found = []
+        skipped = 0
         for child in entries:
             if not isinstance(child, dict) or "file" not in child:
                 continue
             child_name = child.get("name") or ""
-            if child_name.lower().endswith(DOC_SUFFIXES) and len(found) < MAX_FILES:
-                found.append((f"{name}-{child_name}"[:200], _item_reference(child)))
+            if not child_name.lower().endswith(DOC_SUFFIXES):
+                continue
+            if len(found) >= ceiling:
+                skipped += 1
+                continue
+            found.append((f"{name}-{child_name}"[:200], _item_reference(child)))
+        if skipped and notes is not None:
+            notes.append(
+                f"That folder holds {len(found) + skipped} importable files and the limit "
+                f"is {ceiling}. The first {ceiling} were queued; {skipped} were not."
+            )
         if not found:
             raise FetchError(
                 "No importable documents were found in that folder. This imports "

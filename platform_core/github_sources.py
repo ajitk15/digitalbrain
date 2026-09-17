@@ -20,17 +20,26 @@ the shared unauthenticated rate limit applies.
 import json
 import re
 
-from .fetching import FetchError, fetch
+from .fetching import DOCUMENT_SUFFIXES, FetchError, fetch
 
 API = "https://api.github.com"
 
-#: Extensions worth importing from a documentation tree. Everything else in a repo
-#: is code or binary, which belongs in Code Factory rather than in knowledge.
-DOC_SUFFIXES = (".md", ".markdown", ".rst", ".txt", ".adoc", ".csv", ".json", ".yaml", ".yml")
+#: Extensions worth importing from a documentation tree - everything the offline
+#: converter handles, shared with SharePoint so the two cannot drift apart again.
+#: Source files are still left alone: they belong in Code Graph, not in knowledge.
+DOC_SUFFIXES = DOCUMENT_SUFFIXES
 
 #: A tree walk must terminate, and a knowledge base is not a mirror of a repo.
-MAX_FILES = 25
+#: The width is configurable, the depth is not: depth is what makes the walk
+#: terminate at all, and no documentation set is nested four folders deep.
 MAX_DEPTH = 4
+
+
+def max_files():
+    """The configured ceiling, read per call so a test can override the setting."""
+    from django.conf import settings
+
+    return settings.IMPORT_MAX_FILES
 
 REPO = r"[A-Za-z0-9_.-]+"
 OWNER = r"[A-Za-z0-9-]+"
@@ -137,11 +146,19 @@ def single_file(owner, repo, ref, path, token):
     return [(f"{repo}-{data.get('name') or path.rsplit('/', 1)[-1]}", _download_url(data))]
 
 
-def tree(owner, repo, ref, path, token):
-    """Every documentation file under a directory, breadth-first and bounded."""
+def tree(owner, repo, ref, path, token, notes=None):
+    """Every documentation file under a directory, breadth-first and bounded.
+
+    `notes` collects anything the person should be told about the result. The
+    only note today is that the ceiling was reached: a walk that quietly returns
+    the first N of M files leaves someone believing their documentation set is
+    complete when part of it was never queued.
+    """
+    ceiling = max_files()
     found = []
+    skipped = 0
     queue = [(path, 0)]
-    while queue and len(found) < MAX_FILES:
+    while queue:
         current, depth = queue.pop(0)
         suffix = f"?ref={ref}" if ref else ""
         entries = _api(f"{API}/repos/{owner}/{repo}/contents/{current}{suffix}", token)
@@ -156,9 +173,21 @@ def tree(owner, repo, ref, path, token):
                 queue.append((entry.get("path", ""), depth + 1))
             elif entry.get("type") == "file":
                 name = entry.get("name") or ""
-                if name.lower().endswith(DOC_SUFFIXES) and len(found) < MAX_FILES:
-                    label = (entry.get("path") or name).replace("/", "-")
-                    found.append((f"{repo}-{label}", _download_url(entry)))
+                if not name.lower().endswith(DOC_SUFFIXES):
+                    continue
+                if len(found) >= ceiling:
+                    # Counted rather than abandoned, so the message can say how
+                    # many were left behind instead of only that some were.
+                    skipped += 1
+                    continue
+                label = (entry.get("path") or name).replace("/", "-")
+                found.append((f"{repo}-{label}", _download_url(entry)))
+    if skipped and notes is not None:
+        notes.append(
+            f"This link holds {len(found) + skipped} importable files and the limit is "
+            f"{ceiling}. The first {ceiling} were queued; {skipped} were not. Import a "
+            "subfolder to bring in the rest, or raise import_max_files."
+        )
     if not found:
         raise FetchError(
             "No documentation files were found there. This imports "
@@ -168,7 +197,7 @@ def tree(owner, repo, ref, path, token):
     return found
 
 
-def plan(parsed, token=""):
+def plan(parsed, token="", notes=None):
     """The files a GitHub link resolves to, as a list of (name, download url)."""
     kind, owner, repo, ref, path = parse(parsed)
     if kind == "repo":
@@ -179,7 +208,7 @@ def plan(parsed, token=""):
         # is what the person pasting the link wanted; failing here would leave a
         # public repository unimportable for want of one file.
         try:
-            return tree(owner, repo, "", "", token)
+            return tree(owner, repo, "", "", token, notes)
         except FetchError:
             # GitHub answers 404 for private and for absent alike, so ask whether
             # the repository is visible at all before blaming its contents.
@@ -195,7 +224,7 @@ def plan(parsed, token=""):
             ) from None
     if kind == "blob":
         return single_file(owner, repo, ref, path, token)
-    return tree(owner, repo, ref, path, token)
+    return tree(owner, repo, ref, path, token, notes)
 
 
 def repository_exists(owner, repo, token):
