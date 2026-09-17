@@ -2170,20 +2170,20 @@
    with JavaScript off - the same contract every other disclosure on the site
    keeps. Closed by default: the question "what have I got" is asked far more
    often than "what is in this one". */
-.origin > summary {
+.origin details > summary {
   cursor: pointer;
   list-style: none;
   padding: 0;
 }
-.origin > summary::-webkit-details-marker { display: none; }
-.origin > summary::before {
+.origin details > summary::-webkit-details-marker { display: none; }
+.origin details > summary::before {
   content: "\25B8";
   flex: none;
   color: var(--c-ink-faint);
   transition: transform .12s;
 }
 .origin[open] > summary::before { transform: rotate(90deg); }
-.origin > summary:hover .origin-identity strong { color: var(--c-brand-strong); }
+.origin details > summary:hover .origin-identity strong { color: var(--c-brand-strong); }
 
 .origin-body {
   margin-top: var(--s-3);
@@ -2212,7 +2212,7 @@
 /* The summary stays on one line. The identity is allowed to shrink and clip
    rather than to grow: an address is long, and letting it set the row's width
    pushed the status, the count and the control onto lines of their own. */
-.origin > summary.origin-row { flex-wrap: nowrap; }
+.origin details > summary.origin-row { flex-wrap: nowrap; }
 .origin-identity { flex: 1 1 200px; min-width: 0; }
 .origin-identity strong,
 .origin-identity small {
@@ -2224,7 +2224,7 @@
 .origin-body .origin-actions { flex-wrap: wrap; }
 
 @media (max-width: 700px) {
-  .origin > summary.origin-row { flex-wrap: wrap; }
+  .origin details > summary.origin-row { flex-wrap: wrap; }
   .origin-identity { flex: 1 1 100%; }
 }
 
@@ -2291,4 +2291,52 @@
 @media (max-width: 700px) {
   .origin > details > summary.origin-row { padding-right: 0; }
   .origin-tools { position: static; justify-content: flex-end; margin-bottom: var(--s-2); }
+}
+
+/* ---------------------------------------------------------------------------
+   Origin controls: room reserved, and colour that carries meaning.
+
+   The reserved space and the strip's own width were two numbers that had to
+   agree and did not, so the icons sat on top of "checked N minutes ago". One
+   token now sets both, which is the only way they stay in step.
+   --------------------------------------------------------------------------- */
+
+.origin {
+  /* Three 28px controls, two 4px gaps, and the 16px inset: 108px, plus a
+     gutter so text stops short of the strip rather than touching it. */
+  --origin-tools-width: 132px;
+}
+.origin > details > summary.origin-row { padding-right: var(--origin-tools-width); }
+.origin-tools { right: var(--s-4); gap: var(--s-1); }
+
+/* At rest each control says what it is: the destructive one reads as
+   destructive before it is hovered, not after. */
+.origin-tool { color: var(--c-ink-muted); }
+.origin-tool.is-open { color: var(--c-ink-muted); }
+.origin-tool.is-sync { color: var(--c-brand-strong); }
+.origin-tool.is-danger { color: var(--c-bad); }
+
+.origin-tool:hover { background: var(--c-surface); border-color: var(--c-line-strong); }
+.origin-tool.is-open:hover { color: var(--c-ink); }
+.origin-tool.is-sync:hover { background: var(--c-brand-tint); border-color: var(--c-brand-border); }
+.origin-tool.is-danger:hover { background: var(--c-bad-bg); border-color: var(--c-bad-line); }
+
+/* A stale origin is already amber; a white control on amber looks disabled. */
+.origin-stale .origin-tool:hover { background: var(--c-surface); }
+
+@media (max-width: 700px) {
+  .origin { --origin-tools-width: 0; }
+}
+
+/* The name is the thing you are looking for, so it is the last thing to give
+   up room. Below roughly a laptop width there is not enough for the name, the
+   state, the counts and a reserved strip on one line - so the row wraps and the
+   name keeps its width, rather than staying on one line and collapsing to
+   "aj...", which identifies nothing. */
+.origin-identity { flex: 1 1 260px; min-width: 160px; }
+
+@media (max-width: 980px) {
+  .origin details > summary.origin-row { flex-wrap: wrap; }
+  .origin-identity { flex: 1 1 100%; }
+  .origin-when { margin-left: 0; }
 }
