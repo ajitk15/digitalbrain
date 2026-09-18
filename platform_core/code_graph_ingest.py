@@ -98,34 +98,6 @@ def register(user, app_id, repository, ref=""):
     return repo
 
 
-def showcase_repository(user, app, repository, ref="main"):
-    """Make a GitHub source/issue repository visible without silently indexing it.
-
-    Returns None for a name this cannot index. Showcasing is a convenience on
-    the side of saving a connector or importing a document, so a name it cannot
-    use is a row it does not create - never a failure handed back to someone who
-    was doing something else. The connector form accepts an underscore in the
-    owner, which GitHub itself does not.
-    """
-    value = repository.strip().removesuffix(".git")
-    try:
-        valid_name(value)
-    except ValidationError:
-        return None
-    return CodeRepository.objects.get_or_create(
-        application=app,
-        provider="github",
-        external_id=value.lower(),
-        defaults={
-            "added_by": user,
-            "name": value,
-            "source_url": f"https://github.com/{value}",
-            "default_ref": (ref or "main")[:200],
-            "status": "documentation",
-        },
-    )[0]
-
-
 def index_repository(repository):
     job_id = repository.job_id
     claimed = CodeRepository.objects.filter(
@@ -144,10 +116,15 @@ def index_repository(repository):
             raise PermissionDenied
         valid_name(repository.name)
         token = github_token(app)
-        commit, sources, warnings, complete = clone_sources(
+        commit, branch, sources, warnings, complete = clone_sources(
             repository.name, repository.default_ref, token
         )
-        default_ref = repository.default_ref or "HEAD"
+        # What was asked for, else what the clone landed on, else the
+        # convention. "HEAD" used to be the fallback here and it was wrong in
+        # the one place it mattered: it reads fine on a snapshot line and is not
+        # a branch GitHub can be asked about, so every drift check failed
+        # silently and the repository read as "never checked" forever.
+        default_ref = repository.default_ref or branch or "main"
         analyzed = [facts(path, content) for path, content in sources]
         if not analyzed:
             warnings.append(
@@ -277,6 +254,60 @@ def index_repository(repository):
             extra={"event": "code_repository_index_failed"},
         )
         return True
+
+
+#: How often a repository's default branch is asked about. A branch moves when
+#: somebody pushes, not on a schedule, so this only has to be often enough that
+#: "out of sync" appears before anybody wonders.
+HEAD_INTERVAL = timedelta(minutes=30)
+
+
+def refresh_head(repository):
+    """Record where the default branch points, without acting on it.
+
+    Detection only, which is the rule knowledge sources already follow: this
+    platform notices that an origin has moved and says so. Bringing the change
+    in is somebody pressing Refresh index, because re-indexing costs a clone and
+    supersedes the snapshot every past run reasoned about.
+    """
+    from django.utils import timezone
+
+    from .github_write import branch_head
+    from .link_sources import github_token
+
+    branch = repository.default_ref or "main"
+    token = github_token(repository.application)
+    fields = {"head_checked_at": timezone.now()}
+    try:
+        fields["head_sha"] = branch_head(repository.name, branch, token)
+    except ValidationError:
+        # A branch that cannot be read is not drift. Leaving head_sha alone
+        # keeps the last thing known true rather than claiming the snapshot is
+        # current, and the timestamp still moves so this is not retried in a
+        # loop.
+        pass
+    CodeRepository.objects.filter(pk=repository.pk).update(**fields)
+    return True
+
+
+def process_next_head():
+    """One repository whose branch is worth asking about again."""
+    from django.db.models import Q
+    from django.utils import timezone
+
+    due = timezone.now() - HEAD_INTERVAL
+    repository = (
+        CodeRepository.objects.filter(
+            status__in=["ready", "partial"], retired_at__isnull=True
+        )
+        .filter(Q(head_checked_at__isnull=True) | Q(head_checked_at__lt=due))
+        .select_related("application")
+        .order_by("head_checked_at")
+        .first()
+    )
+    if repository is None:
+        return False
+    return refresh_head(repository)
 
 
 def process_next_repository():

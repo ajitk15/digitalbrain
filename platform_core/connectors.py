@@ -293,10 +293,6 @@ def connector_form(request, pk, connector_id=None):
             except ValidationError as failure:
                 messages.error(request, " ".join(failure.messages))
                 return redirect("connectors", pk=pk)
-            if key == "github" and feature_enabled("code_graph", app):
-                from .code_graph_ingest import showcase_repository
-
-                showcase_repository(request.user, app, config["repository"])
             audit(
                 request.user,
                 "connector.saved",

@@ -139,7 +139,7 @@ def steps(app):
         Step(
             "model",
             ANALYSIS,
-            "Model configured for plan drafting",
+            "Model for plan drafting",
             configured is not None,
             f"{configured.get_provider_display()} {configured.model}."
             if configured
@@ -166,7 +166,7 @@ def steps(app):
         Step(
             "credential",
             ANALYSIS,
-            "Provider credential mounted",
+            "Provider credential",
             credential or host_login,
             f"A {provider} credential is set for this application."
             if credential
@@ -261,7 +261,7 @@ def steps(app):
             Step(
                 "one_repository",
                 DELIVERY,
-                "One repository to reason about",
+                "One repository to read",
                 unambiguous,
                 f"{names[0]} is the only indexed repository, so runs pin it "
                 "automatically."
@@ -284,7 +284,7 @@ def steps(app):
         Step(
             "github_write",
             DELIVERY,
-            "Write credential mounted",
+            "GitHub write credential",
             write,
             "A write-scoped GitHub credential is set."
             if write
@@ -305,7 +305,7 @@ def steps(app):
         Step(
             "approver",
             DELIVERY,
-            "Someone to approve, other than the author",
+            "A second approver",
             approvers > 1,
             f"{approvers} member(s) can approve."
             if approvers

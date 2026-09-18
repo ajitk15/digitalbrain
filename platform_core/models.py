@@ -373,6 +373,14 @@ class CodeRepository(models.Model):
         ],
     )
     error = models.CharField(max_length=500, blank=True)
+    #: What the repository's default branch was pointing at when this was last
+    #: checked, and when. A snapshot is a commit; the branch moves on without
+    #: it, and a code graph answering from a commit somebody force-pushed past
+    #: three weeks ago should say so rather than look current. Nothing is
+    #: fetched automatically from it - drift is detected, never acted on, which
+    #: is the rule knowledge sources already follow.
+    head_sha = models.CharField(max_length=64, blank=True)
+    head_checked_at = models.DateTimeField(null=True, blank=True)
     #: Retired rather than deleted. `CodeSnapshot.repository` is PROTECT and
     #: `FactoryRun.code_snapshot` is SET_NULL, so deleting a repository would
     #: either be refused or silently blank the code pin on every past run that
@@ -382,6 +390,19 @@ class CodeRepository(models.Model):
     retired_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def drifted(self):
+        """Whether the default branch has moved past the indexed snapshot.
+
+        Unknown until both are known: a repository nobody has checked and one
+        that is exactly current must not read the same, so this is None rather
+        than False when there is nothing to compare.
+        """
+        snapshot = self.snapshots.first()
+        if not self.head_sha or snapshot is None or not snapshot.commit_sha:
+            return None
+        return self.head_sha != snapshot.commit_sha
 
     class Meta:
         ordering = ["name", "id"]
@@ -773,6 +794,29 @@ class FactoryRun(models.Model):
         ],
     )
     error = models.TextField(blank=True)
+    #: What was decided about bringing this application's own knowledge up to
+    #: date once the change existed. Recorded rather than inferred: "nobody has
+    #: been asked yet" and "somebody looked at it and said no" are different
+    #: states, and a screen that showed them the same way would keep asking a
+    #: question that has already been answered.
+    refresh_choice = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        choices=[("queued", "Refresh queued"), ("declined", "Left as they are")],
+    )
+    #: Which of REFRESH_TARGETS were chosen. A subset is a real answer - the
+    #: code moved and the documents did not, say - so it is kept rather than
+    #: flattened to a yes.
+    refresh_scope = models.JSONField(default=list, blank=True)
+    refresh_at = models.DateTimeField(null=True, blank=True)
+    refresh_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="factory_refreshes",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -786,7 +830,7 @@ class FactoryRun(models.Model):
     def __str__(self):
         return f"Run {self.number}"
 
-    #: The five stages of the pipeline, in order, as the screens name them.
+    #: The stages of the pipeline, in order, as the screens name them.
     STAGES = (
         (1, "Pre-checks"),
         (2, "Analysis"),
@@ -794,6 +838,11 @@ class FactoryRun(models.Model):
         (4, "Agents"),
         (5, "Pull request"),
         (6, "Tests"),
+        # The change is written and tested, and this application's own knowledge
+        # is now describing the code as it was. Asked rather than done: every one
+        # of these supersedes something a past run reasoned about, and two of
+        # them can cost money.
+        (7, "Refresh"),
     )
 
     @property
@@ -831,6 +880,17 @@ class FactoryRun(models.Model):
             ),
             # The repository's own CI, which this platform reads and never runs.
             6: self.checks_state,
+            # Worth asking once there is a change to have gone stale against,
+            # and not while its tests are still deciding whether it survives.
+            # A repository with no CI has nothing to wait for, so "pending"
+            # checks are not a reason to hold the question back.
+            7: "ok"
+            if self.refresh_choice
+            else (
+                "current"
+                if self.pull_request_url and self.checks_state != "running"
+                else "pending"
+            ),
         }
         # A failed run stops where it stopped: everything after the failure is
         # not "pending", it is never going to happen unless somebody acts.

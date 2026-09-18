@@ -1,9 +1,11 @@
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from platform_core.code_factory import (
     code_context_for,
@@ -12,7 +14,7 @@ from platform_core.code_factory import (
     run_triage,
 )
 from platform_core.code_graph_analysis import facts, relationships
-from platform_core.code_graph_ingest import index_repository, register, showcase_repository
+from platform_core.code_graph_ingest import index_repository, register
 from platform_core.models import (
     ApplicationFeature,
     ApplicationGrant,
@@ -126,11 +128,23 @@ class CodeGraphTests(TestCase):
         self.assertNotIn(("app/service.py", "other/helpers.py"), edges)
         self.assertIn(("web/main.ts", "web/api.ts"), edges)
 
-    def test_imported_repository_is_showcased_without_automatic_indexing(self):
-        repository = showcase_repository(self.owner, self.app, "acme/widgets", "develop")
-        self.assertEqual(repository.status, "documentation")
-        self.assertEqual(repository.default_ref, "develop")
-        self.assertFalse(repository.snapshots.exists())
+    def test_only_a_deliberate_registration_puts_a_repository_here(self):
+        """Nothing else creates one.
+
+        Importing documents from a GitHub link used to register the repository
+        they came from, and saving a GitHub connector did the same. Both were
+        offered as a convenience and both were a category error: a
+        documentation repository is not this application's code, and an extra
+        row is one more thing a run has to choose between - which is how a
+        ticket comes to reason about no code at all.
+        """
+        from platform_core import code_graph_ingest, connectors, link_sources
+
+        self.assertFalse(hasattr(code_graph_ingest, "showcase_repository"))
+        # Neither caller can reach it, because it is not there to reach.
+        for module in (connectors, link_sources):
+            with self.subTest(module=module.__name__):
+                self.assertFalse(hasattr(module, "showcase_repository"))
 
 
     def test_file_detail_cannot_cross_application_boundary(self):
@@ -412,14 +426,18 @@ class CodeGraphTests(TestCase):
         self.assertEqual(repository_of("https://example.com/acme/widgets"), "")
 
 
-    def test_a_connector_owner_github_would_reject_does_not_break_saving_it(self):
-        self.assertIsNone(showcase_repository(self.owner, self.app, "my_org/widgets"))
 
     # ---------------------------------------------------------------- cloning
 
-    def _clone(self, files, commit="c" * 40, warnings=None, complete=True):
+    def _clone(self, files, commit="c" * 40, warnings=None, complete=True, branch="main"):
         """Stand in for a clone, returning what clone_sources returns."""
-        return lambda name, ref, token: (commit, list(files), list(warnings or []), complete)
+        return lambda name, ref, token: (
+            commit,
+            branch,
+            list(files),
+            list(warnings or []),
+            complete,
+        )
 
     @patch("platform_core.code_graph_ingest.github_token", return_value="")
     @patch("platform_core.code_graph_ingest.clone_sources")
@@ -467,7 +485,7 @@ class CodeGraphTests(TestCase):
             CodeRepository.objects.filter(pk=repository.pk).update(
                 status="queued", job_id=uuid.uuid4()
             )
-            return "c" * 40, [("app.py", "x = 1\n")], [], True
+            return "c" * 40, "main", [("app.py", "x = 1\n")], [], True
 
         clone.side_effect = racing
         self.assertFalse(index_repository(repository))
@@ -965,3 +983,147 @@ class CodeGraphTests(TestCase):
             [(edge["source"], edge["target"]) for edge in edges],
             [("web/lazy.js", "web/heavy.js")],
         )
+
+
+@override_settings(
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class BranchDriftTests(TestCase):
+    """Whether the indexed snapshot is still what the branch points at.
+
+    Detected, never acted on - the rule knowledge sources already follow.
+    Re-indexing costs a clone and supersedes the snapshot every past run
+    reasoned about, so it stays something somebody presses.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+        self.repository = register(self.owner, self.app.pk, "acme/widgets")
+        CodeRepository.objects.filter(pk=self.repository.pk).update(status="ready")
+        self.repository.refresh_from_db()
+
+    def indexed(self, commit="a" * 40):
+        self.repository.snapshots.create(number=1, commit_sha=commit)
+        return self.repository
+
+    def test_unknown_until_there_is_something_to_compare(self):
+        """A repository nobody checked must not read as current."""
+        self.assertIsNone(self.repository.drifted)
+        self.indexed()
+        self.assertIsNone(self.repository.drifted)
+
+    def test_a_matching_head_is_in_sync(self):
+        self.indexed("a" * 40)
+        self.repository.head_sha = "a" * 40
+        self.assertIs(self.repository.drifted, False)
+
+    def test_a_moved_branch_is_drift(self):
+        self.indexed("a" * 40)
+        self.repository.head_sha = "b" * 40
+        self.assertIs(self.repository.drifted, True)
+
+    def test_the_worker_records_the_head_and_nothing_else(self):
+        from platform_core.code_graph_ingest import process_next_head
+
+        self.indexed("a" * 40)
+        with patch("platform_core.link_sources.github_token", return_value=""):
+            with patch(
+                "platform_core.github_write.branch_head", return_value="b" * 40
+            ) as asked:
+                self.assertTrue(process_next_head())
+        # Asked about the default branch, and nothing was re-indexed.
+        self.assertEqual(asked.call_args.args[1], "main")
+        self.repository.refresh_from_db()
+        self.assertIs(self.repository.drifted, True)
+        self.assertEqual(self.repository.snapshots.count(), 1)
+
+    def test_a_branch_that_cannot_be_read_is_not_drift(self):
+        """Keeping the last thing known true beats claiming to be current."""
+        from platform_core.code_graph_ingest import process_next_head
+
+        self.indexed("a" * 40)
+        CodeRepository.objects.filter(pk=self.repository.pk).update(head_sha="a" * 40)
+        with patch("platform_core.link_sources.github_token", return_value=""):
+            with patch(
+                "platform_core.github_write.branch_head",
+                side_effect=ValidationError("gone"),
+            ):
+                process_next_head()
+        self.repository.refresh_from_db()
+        self.assertIs(self.repository.drifted, False)
+        # The timestamp still moved, so it is not retried in a loop.
+        self.assertIsNotNone(self.repository.head_checked_at)
+
+    def test_a_retired_repository_is_not_asked_about(self):
+        from django.utils import timezone
+
+        from platform_core.code_graph_ingest import process_next_head
+
+        self.indexed()
+        CodeRepository.objects.filter(pk=self.repository.pk).update(
+            retired_at=timezone.now()
+        )
+        with patch("platform_core.github_write.branch_head") as asked:
+            self.assertFalse(process_next_head())
+        asked.assert_not_called()
+
+    def test_the_lane_indexes_before_it_checks(self):
+        from platform_core.document_worker import LANES
+
+        lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
+        self.assertEqual(
+            lanes["code-graph"], ["process_next_repository", "process_next_head"]
+        )
+
+    def test_the_screen_says_which_it_is(self):
+        """Drift is a notice that says what to do, not a word on a status line.
+
+        Somebody reading this has to decide whether to re-index, and that
+        decision needs both commits and the fact that runs keep reading the
+        snapshot until they do.
+        """
+        self.indexed("a" * 40)
+        CodeRepository.objects.filter(pk=self.repository.pk).update(head_sha="b" * 40)
+        page = self.client.get(
+            reverse("code-graph", args=[self.app.pk]), {"repository": self.repository.pk}
+        )
+        self.assertContains(page, "has moved on since this snapshot")
+        self.assertContains(page, "bbbbbbbb")
+        self.assertContains(page, "aaaaaaaa")
+        self.assertContains(page, "notice-warning")
+
+    def test_when_it_was_last_looked_at_is_on_the_screen(self):
+        """"In sync" is worth reading only beside when that was established."""
+        self.indexed("a" * 40)
+        url = reverse("code-graph", args=[self.app.pk])
+        page = self.client.get(url, {"repository": self.repository.pk})
+        self.assertContains(page, "branch not checked yet")
+        CodeRepository.objects.filter(pk=self.repository.pk).update(
+            head_sha="a" * 40, head_checked_at=timezone.now() - timedelta(minutes=9)
+        )
+        page = self.client.get(url, {"repository": self.repository.pk})
+        self.assertContains(page, "minutes ago")
+        self.assertContains(page, "in sync with")
+
+    def test_checking_the_branch_leaves_the_snapshot_alone(self):
+        """Noticing and acting are two decisions. This one is the safe half."""
+        self.indexed("a" * 40)
+        with patch(
+            "platform_core.code_graph.refresh_head",
+            side_effect=lambda repo: CodeRepository.objects.filter(pk=repo.pk).update(
+                head_sha="b" * 40, head_checked_at=timezone.now()
+            ),
+        ) as checked:
+            response = self.client.post(
+                reverse("code-graph", args=[self.app.pk]),
+                {"action": "check", "repository": str(self.repository.pk)},
+            )
+        self.assertTrue(checked.called)
+        self.assertEqual(response.status_code, 302)
+        self.repository.refresh_from_db()
+        # Untouched: still ready, still one snapshot, still pinning the commit
+        # every past run reasoned about.
+        self.assertEqual(self.repository.status, "ready")
+        self.assertEqual(self.repository.snapshots.count(), 1)
+        self.assertEqual(self.repository.snapshots.first().commit_sha, "a" * 40)

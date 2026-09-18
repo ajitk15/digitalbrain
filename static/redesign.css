@@ -1476,6 +1476,11 @@
      facts, and reading one as the other is what made a failed import look
      healthy. */
   .origin-failed { color: var(--c-bad); font-weight: 600; }
+  /* Every line of secondary prose is capped in one place, so a sentence that
+     wraps badly on one screen does not get fixed on that screen alone. The
+     number and the reasoning live on --measure in tokens.css; app.css still
+     carries the old 750px literal for .muted and this overrides it. */
+  .muted { max-width: var(--measure); }
   /* Application onboarding ---------------------------------------------- */
   /* The welcome only ever shows on an application where nothing has been done,
      so it is allowed to take the room a page heading would: it IS the heading
@@ -1488,35 +1493,97 @@
     margin-bottom: var(--s-4);
   }
   .onboard-welcome h1 { margin-bottom: var(--s-3); }
-  .onboard-welcome > p { max-width: 62ch; color: var(--c-ink-2); }
-  .onboard-welcome .button { margin-top: var(--s-3); }
-  .onboard-start {
-    display: flex;
-    gap: var(--s-2);
-    align-items: baseline;
-    color: var(--c-ink-1);
-    max-width: 62ch;
-  }
-  .onboard-start svg { flex: none; color: var(--c-brand); }
-  .onboard-progress { color: var(--c-ink-2); margin-bottom: var(--s-4); }
-  .onboard-next { background: var(--c-subtle); border-radius: var(--r-md); }
-  .onboard-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
-  .onboard-step {
+  .onboard-welcome > p { max-width: var(--measure); color: var(--c-ink-2); }
+  .onboard-lede { margin: var(--s-3) 0 0; max-width: var(--measure); }
+
+  /* The one-line bars above the list: what to do next, and - once analysis is
+     satisfied - that it is. Each is a sentence and its button on one row, with
+     the button pushed right, rather than a card three elements tall. */
+  .onboard-start,
+  .onboard-done {
     display: flex;
     gap: var(--s-3);
-    padding: var(--s-4) 0;
+    align-items: center;
+    margin-bottom: var(--s-4);
+    padding: var(--s-3) var(--s-4);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-md);
+    background: var(--c-subtle);
+    color: var(--c-ink-1);
+  }
+  .onboard-start > svg,
+  .onboard-done > svg { flex: none; }
+  .onboard-start > svg { color: var(--c-brand); }
+  .onboard-done { border-color: var(--c-ok); color: var(--c-ok); }
+  .onboard-done > span { color: var(--c-ink-1); }
+  .onboard-start > span,
+  .onboard-done > span { min-width: 0; }
+  .onboard-start .button,
+  .onboard-done .button { flex: none; margin-left: auto; }
+  .onboard-progress { color: var(--c-ink-2); margin: 0; white-space: nowrap; }
+  .onboard-gate .card-heading { margin-bottom: var(--s-2); }
+  .onboard-gate .muted { font-size: var(--t-12); }
+
+  /* One requirement is one row. Every step used to be a stack - label, then
+     state, then what to do, then a button - four lines each, nine of them, and
+     the five that were already done took as much height as the four that still
+     needed doing. Fixed first two columns so the ticks and the names line up
+     down the list; the reason only renders for a step still outstanding, which
+     is the only time anybody needs to read it. */
+  .onboard-list { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
+  .onboard-step {
+    display: grid;
+    grid-template-columns: 22px 230px minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--s-3);
+    padding: var(--s-2) 0;
     border-top: 1px solid var(--c-line);
   }
-  .onboard-step:first-child { border-top: 0; padding-top: 0; }
-  .onboard-mark { flex: none; display: inline-flex; margin-top: 1px; }
-  .onboard-ok .onboard-mark { color: var(--c-ok); }
-  .onboard-blocked .onboard-mark { color: var(--c-bad); }
-  .onboard-warn .onboard-mark { color: var(--c-warn, var(--c-ink-3)); }
-  .onboard-body { min-width: 0; }
-  .onboard-body p { margin: var(--s-2) 0 0; font-size: var(--t-13); color: var(--c-ink-2); }
-  .onboard-action { color: var(--c-ink-1); }
-  .onboard-body .button { margin-top: var(--s-3); }
-  .onboard-ok .onboard-body p { color: var(--c-ink-3); }
+  .onboard-step:first-child { border-top: 0; }
+  .onboard-next { background: var(--c-subtle); border-radius: var(--r-md); }
+  .onboard-name strong { font-weight: 600; }
+  .onboard-detail { font-size: var(--t-13); color: var(--c-ink-2); min-width: 0; }
+  .onboard-ok .onboard-detail { color: var(--c-ink-3); }
+  .onboard-go { display: flex; justify-content: flex-end; }
+  .onboard-go .button { padding: 6px 12px; }
+  .onboard-why {
+    grid-column: 2 / -1;
+    margin: 0 0 var(--s-2);
+    font-size: var(--t-12);
+    color: var(--c-ink-2);
+    max-width: var(--measure);
+  }
+
+  /* Solid, not outlined. A stroked circle with a stroked tick inside it reads
+     as grey at 13px whatever colour it is drawn in; the state has to be legible
+     in one glance from across a desk, so the colour is the fill and the glyph
+     is white on top of it. Stroke width is raised here because the registry
+     draws every icon at 1.7, which is right beside a label and too fine inside
+     a badge. */
+  .onboard-badge {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: var(--c-ink-3);
+  }
+  .onboard-badge svg { stroke-width: 3; }
+  .onboard-ok .onboard-badge { background: var(--c-ok); }
+  .onboard-blocked .onboard-badge { background: var(--c-bad); }
+  .onboard-warn .onboard-badge { background: var(--c-warn, var(--c-ink-3)); }
+
+  /* Narrow enough that a fixed name column would squeeze the detail to nothing:
+     the row becomes badge + name, with detail, reason and button beneath it. */
+  @media (max-width: 860px) {
+    .onboard-step { grid-template-columns: 22px minmax(0, 1fr); row-gap: var(--s-1); }
+    .onboard-detail, .onboard-go, .onboard-why { grid-column: 2 / -1; }
+    .onboard-go { justify-content: flex-start; }
+    .onboard-start, .onboard-done { flex-wrap: wrap; }
+    .onboard-start .button, .onboard-done .button { margin-left: 0; }
+  }
   .run-log { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
   .run-line {
     display: flex;
@@ -1881,7 +1948,51 @@
   .kb-graph .actions { flex-wrap: wrap; }
   #graph-search { flex: 1 1 180px; width: auto; min-width: 0; }
   #graph-node { flex: 1 1 180px; width: auto; min-width: 0; max-width: 300px; }
-  .code-repository-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; }
+  /* The picker and its actions, not four things spread across a wide page.
+     space-between put a third of the screen between "View" and "Refresh
+     index", which reads as three unrelated controls rather than one bar. */
+  .code-repository-bar { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+  .code-repository-actions { display: flex; align-items: center; gap: var(--s-2); margin-left: auto; }
+  .drifted { color: var(--c-warn); font-weight: 600; }
+  /* "In sync" is worth seeing at a glance and worth nothing at all if it is the
+     loudest thing on the row: the same green the ticks use, at the weight of
+     the line it sits in. Drift gets a notice instead of a colour, because it
+     needs to say what to do about it. */
+  .origin-synced { color: var(--c-ok); font-weight: 600; }
+  /* The refresh question. Three choices, each with a line saying what it costs
+     - free, free but a draft, or a new snapshot - because the difference
+     between them is the whole reason this is asked rather than done. */
+  .refresh-list { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
+  .refresh-list li { border-top: 1px solid var(--c-line); }
+  .refresh-list li:first-child { border-top: 0; }
+  .refresh-choice {
+    display: flex;
+    gap: var(--s-3);
+    align-items: flex-start;
+    padding: var(--s-3) 0;
+    margin: 0;
+    font-weight: 400;
+    font-size: var(--t-13);
+    cursor: pointer;
+  }
+  .refresh-choice input { flex: none; margin-top: 2px; }
+  .refresh-choice small { display: block; margin-top: 2px; color: var(--c-ink-2); }
+  .refresh-form .actions { margin-top: var(--s-3); }
+  .refresh-decline { margin-top: var(--s-2); }
+  /* Two lines of text in a card sized for a section. In the healthy case - and
+     healthy is the case it is in nearly always - nothing follows the heading,
+     so the card's own padding and the heading's bottom margin and the
+     paragraph's stacked into a band of empty white as tall as the text. The
+     margins come back the moment something does follow, which is when they are
+     doing their job. */
+  .code-repository-head { padding: var(--s-3) var(--s-4); }
+  .code-repository-head .card-heading { margin-bottom: 0; align-items: flex-start; }
+  .code-repository-head .card-heading:not(:last-child) { margin-bottom: var(--s-3); }
+  .code-repository-head h2 { margin-bottom: 2px; }
+  .code-repository-head .card-heading p { margin-bottom: 0; }
+  /* A collapsed disclosure is a line, not a card with a line in it. */
+  .code-graph-add:not([open]) { padding: var(--s-3) var(--s-4); }
+  .code-graph-add > summary { font-weight: 600; }
   .code-graph-workspace { padding: var(--s-4); }
   .code-graph-layout { display: grid; grid-template-columns: minmax(210px, 260px) minmax(0, 1fr); gap: var(--s-4); align-items: start; }
   .code-graph-layout:has(.code-inspector:not([hidden])) { grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(280px, 360px); }
@@ -2647,7 +2758,7 @@
 
 .view-note {
   margin: var(--s-3) 0 0;
-  max-width: 78ch;
+  max-width: var(--measure);
   font-size: var(--t-12);
   color: var(--c-ink-muted);
 }

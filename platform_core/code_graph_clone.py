@@ -126,10 +126,14 @@ def _redact(message, token):
 
 
 def clone_sources(name, ref, token):
-    """Clone one repository and return (commit, files, warnings, complete).
+    """Clone one repository and return (commit, branch, files, warnings, complete).
 
     `files` is a list of (path, text) with repository-relative POSIX paths, and
     the same inclusion, count and byte limits the analyser applies elsewhere.
+
+    `branch` is the name the clone landed on. Asking git rather than GitHub
+    costs nothing - the checkout is already here - and it is the answer for this
+    repository rather than a guess at the convention it follows.
     """
     warnings = []
     complete = True
@@ -174,6 +178,22 @@ def clone_sources(name, ref, token):
         if head.returncode != 0 or len(commit) != 40:
             raise ValidationError("The clone did not report a commit to pin the snapshot to.")
 
+        # Which branch this is, so nothing has to guess later. A clone with no
+        # --branch lands on the remote's default; one with --branch lands on
+        # what was asked for. A tag is detached and reports the literal "HEAD",
+        # which is not a branch name and must never be stored as one - that is
+        # exactly what made the branch check ask GitHub for refs/heads/HEAD and
+        # get nothing back.
+        named = _run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            environment,
+            cwd=str(checkout),
+            timeout=60,
+        )
+        branch = (named.stdout or "").strip()
+        if named.returncode != 0 or branch in ("", "HEAD"):
+            branch = ref or ""
+
         files, total = [], 0
         for absolute in sorted(checkout.rglob("*")):
             if absolute.is_dir() or absolute.is_symlink():
@@ -209,4 +229,4 @@ def clone_sources(name, ref, token):
         # Read everything out before the directory goes away; Windows keeps a
         # handle on a checkout until the last reader closes.
         _remove(checkout)
-    return commit, files, warnings, complete
+    return commit, branch, files, warnings, complete

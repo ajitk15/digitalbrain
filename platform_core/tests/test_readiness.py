@@ -216,6 +216,26 @@ class OnboardingScreenTests(TestCase):
         response = self.client.get(reverse("onboarding", args=[self.app.pk]))
         self.assertContains(response, "of 8</strong> done")
 
+    def test_steps_are_numbered_in_one_sequence_across_both_gates(self):
+        """The number is what somebody says out loud, so there is only one 6."""
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertContains(response, "1. Code Factory switched on")
+        self.assertContains(response, "5. Tickets imported")
+        # First step of the second gate, and it is 6 rather than 1 again.
+        self.assertContains(response, "6. Code indexed")
+        self.assertNotContains(response, "1. Code indexed")
+
+    def test_a_satisfied_step_carries_no_instructions(self):
+        """Half the rows are done, and a done row is one line: what it says and
+        nothing to do about it. Keeping the advice on them is what made this
+        screen four lines per step whether or not anything was outstanding."""
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        body = response.content.decode()
+        done = body.split('<li class="onboard-step onboard-ok')[1].split("</li>")[0]
+        self.assertIn("Code Factory switched on", done)
+        self.assertNotIn("onboard-why", done)
+        self.assertNotIn("<a class=\"button", done)
+
 @override_settings(**SETTINGS)
 class SetupStripTests(TestCase):
     """The checklist follows you to the screens that satisfy it."""

@@ -23,7 +23,6 @@ from django.utils import timezone
 from .documents import document_folder, document_path, intake_enabled
 from .fetching import FetchError, fetch, normalise, resolve, suggested_name
 from .github_sources import is_github
-from .github_sources import parse as parse_github
 from .github_sources import plan as github_plan
 from .models import Document
 from .policy import application_for
@@ -166,11 +165,6 @@ def submit(user, app_id, raw, notes=None, source=None):
         under = Document.objects.filter(source=source).exclude(status="deleted")
         under.exclude(source_url__in=resolved).update(orphaned=True)
         under.filter(source_url__in=resolved, orphaned=True).update(orphaned=False)
-        if origin == "github" and feature_enabled("code_graph", app):
-            from .code_graph_ingest import showcase_repository
-
-            _, owner, repo, ref, _ = parse_github(normalise(raw))
-            showcase_repository(user, app, f"{owner}/{repo}", ref or "main")
         audit(
             user,
             "document.linked",

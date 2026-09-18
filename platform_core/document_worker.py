@@ -146,9 +146,14 @@ def factory_steps():
 
 
 def code_graph_steps():
-    from .code_graph_ingest import process_next_repository
+    """Index what was asked for, then notice what has moved since.
 
-    return (process_next_repository,)
+    Indexing first: a repository waiting to be read matters more than one whose
+    branch may have advanced.
+    """
+    from .code_graph_ingest import process_next_head, process_next_repository
+
+    return (process_next_repository, process_next_head)
 
 
 def connector_steps():

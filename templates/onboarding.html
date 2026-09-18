@@ -3,49 +3,40 @@
 <section class="onboard-welcome">
 <p class="eyebrow">Welcome</p>
 <h1>{{ application.name }} is ready to set up</h1>
-<p>Nothing is configured yet. Below is everything this application needs, in the order to do it — what each one is for, and where to go and set it up. It takes four or five screens, and you can stop and come back; this page always shows where you got to.</p>
-{% if next_step %}<p class="onboard-start"><strong>Start with {{ next_step.label|lower }}.</strong> {{ next_step.action }}</p>
-<a class="button" href="{% url next_step.route application.pk %}"{% if next_step.modal %} data-modal{% endif %}>{% icon next_step.icon 13 %}{{ next_step.label }}</a>{% endif %}
+<p>Nothing is configured yet. Below is everything this application needs, in the order to do it — <strong>{{ done }} of {{ total }}</strong> done. Four or five screens, and you can stop and come back; this page always shows where you got to.</p>
 </section>
 {% else %}
 <p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
-<h1>Application onboarding</h1>
-<p class="muted">What {{ application.name }} needs before Code Factory can work on it. Each row links to the screen that fixes it; nothing is changed from here.</p>
-{% if next_step %}<p class="onboard-start">{% icon "arrow-right" 14 %}<span><strong>Next: {{ next_step.label|lower }}.</strong> {{ next_step.action }}</span></p>{% endif %}
+<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Application onboarding</h1></div>
+<p class="onboard-progress"><strong>{{ done }} of {{ total }}</strong> done</p></div>
 {% endif %}
 
-<p class="onboard-progress"><strong>{{ done }} of {{ total }}</strong> done</p>
+{% if next_step %}
+<p class="onboard-start">{% icon "arrow-right" 15 %}<span><strong>{% if fresh %}Start with{% else %}Next —{% endif %} step {{ next_number }}: {{ next_step.label|lower }}.</strong> {{ next_step.action }}</span>
+<a class="button" href="{% url next_step.route application.pk %}"{% if next_step.modal %} data-modal{% endif %}>{% icon next_step.icon 13 %}{% if next_step.modal %}Set it up here{% else %}Go and set it up{% endif %}</a></p>
+{% endif %}
 
 {% if setup.analysis_ready %}
-<section class="card section onboard-done">
-<h2>{% icon "success" %}{% if setup.complete %}Onboarding complete{% else %}Ready to analyse tickets{% endif %}</h2>
-{% if setup.complete %}
-<p>Everything is in place. {{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.</p>
-{% else %}
-<p>{{ application.name }} has what it needs to analyse a ticket and propose fixes with evidence. Opening pull requests needs the rest of the second gate below — that is a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.</p>
-{% endif %}
-<p class="actions"><a class="button" href="{% url 'graph' application.pk %}">{% icon "graph" 13 %}Open the knowledge graph</a> <a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a></p>
-</section>
+<p class="onboard-done">{% icon "check" 15 %}<span><strong>{% if setup.complete %}Onboarding complete.{% else %}Ready to analyse tickets.{% endif %}</strong> {% if setup.complete %}{{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.{% else %}Opening pull requests needs the second gate below — a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.{% endif %}</span>
+<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a></p>
 {% endif %}
 
 {% for gate in gates %}
-<section class="card section">
-<h2>{% if gate.ready %}{% icon "success" %}{% else %}{% icon "empty" %}{% endif %}{{ gate.label }} <span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.outstanding|length }} outstanding{% endif %}</span></h2>
+<section class="card section onboard-gate">
+<div class="card-heading"><h2>{{ gate.label }}</h2>
+<span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.done }} of {{ gate.count }}{% endif %}</span></div>
 <p class="muted">{{ gate.blurb }}</p>
-<ol class="onboard-list">{% for step in gate.steps %}
+<ol class="onboard-list">{% for number, step in gate.steps %}
 <li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}blocked{% else %}warn{% endif %}{% if step.key == next_step.key %} onboard-next{% endif %}">
-<span class="onboard-mark" aria-hidden="true">{% if step.ok %}{% icon "success" 16 %}{% elif step.blocking %}{% icon "error" 16 %}{% else %}{% icon "warning" 16 %}{% endif %}</span>
-<div class="onboard-body">
-<strong>{{ step.label }}</strong>
-<span class="sr-only">{% if step.ok %}Done.{% elif step.blocking %}Required.{% else %}Recommended.{% endif %}</span>
-<p>{{ step.detail }}</p>
-{% if step.action %}<p class="onboard-action">{{ step.action }}</p>
-<a class="button{% if step.key != next_step.key %} secondary{% endif %}" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{% if step.modal %}Set it up here{% else %}Go and set it up{% endif %}</a>{% endif %}
-</div>
+<span class="onboard-badge">{% if step.ok %}{% icon "check" 13 %}{% elif step.blocking %}{% icon "cross" 13 %}{% else %}{% icon "warning" 12 %}{% endif %}</span>
+<span class="onboard-name"><strong>{{ number }}. {{ step.label }}</strong><span class="sr-only"> — {% if step.ok %}done{% elif step.blocking %}required{% else %}recommended{% endif %}</span></span>
+<span class="onboard-detail">{{ step.detail }}</span>
+<span class="onboard-go">{% if step.action %}<a class="button{% if step.key != next_step.key %} secondary{% endif %}" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{% if step.modal %}Set up{% else %}Open{% endif %}</a>{% endif %}</span>
+{% if step.action %}<p class="onboard-why">{{ step.action }}</p>{% endif %}
 </li>
 {% endfor %}</ol>
 </section>
 {% endfor %}
 
-<p class="muted section">A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</p>
+<p class="muted section"><small>A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</small></p>
 {% endblock %}

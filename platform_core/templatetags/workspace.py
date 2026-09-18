@@ -105,7 +105,11 @@ def application_menu(context):
             },
         ),
         ("Code Graph", "code-graph", "code_graph", "graph", {"code-graph", "code-file"}),
-        ("Chat", "chat", "chat", "chat", {"chat"}),
+        # Knowledge, Code Graph, Code Factory: what an application knows, what
+        # its code is, and the pipeline that reads both. Chat sits after them
+        # because it asks questions of that knowledge rather than building it,
+        # and putting it between the two graphs and the thing that consumes
+        # them broke the order somebody sets an application up in.
         (
             "Code Factory",
             "plans",
@@ -113,6 +117,7 @@ def application_menu(context):
             "code",
             {"plans", "plan-detail", "runs", "run-detail", "onboarding"},
         ),
+        ("Chat", "chat", "chat", "chat", {"chat"}),
     ]
     items = [
         {

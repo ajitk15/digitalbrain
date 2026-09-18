@@ -1005,7 +1005,15 @@ class StageVocabularyTests(TestCase):
 
         self.assertEqual(
             [label for _, label in FactoryRun.STAGES],
-            ["Pre-checks", "Analysis", "Gaps", "Agents", "Pull request", "Tests"],
+            [
+                "Pre-checks",
+                "Analysis",
+                "Gaps",
+                "Agents",
+                "Pull request",
+                "Tests",
+                "Refresh",
+            ],
         )
 
 
@@ -1042,6 +1050,203 @@ class ExternalLinkTests(TestCase):
                 anchor = body[body.index(f'href="{url}"') :][:120]
                 self.assertIn('target="_blank"', anchor)
                 self.assertIn('rel="noreferrer noopener"', anchor)
+
+
+@override_settings(**SETTINGS)
+class RefreshAfterTests(TestCase):
+    """The question nobody remembers to ask.
+
+    A change lands and every description this application holds of that code
+    goes on describing it as it was. This stage asks; it never decides, because
+    each answer supersedes something a past run reasoned about and one of them
+    can cost money.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def delivered(self, checks=None):
+        run = self.run_pipeline()
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="delivered",
+            pull_request_url="https://github.com/acme/widgets/pull/7",
+            branch="digital-brain/x",
+            checks=checks if checks is not None else [
+                {"name": "build", "conclusion": "success"}
+            ],
+        )
+        run.refresh_from_db()
+        return run
+
+    def state(self, run):
+        return {stage["number"]: stage["state"] for stage in run.stages}[7]
+
+    # ---- when it is worth asking ----
+
+    def test_it_is_not_asked_before_there_is_a_change(self):
+        """Nothing has gone stale against a run that wrote nothing."""
+        self.assertEqual(self.state(self.run_pipeline()), "pending")
+
+    def test_it_waits_while_the_tests_are_still_deciding(self):
+        run = self.delivered(checks=[{"name": "build", "conclusion": None}])
+        self.assertEqual(self.state(run), "pending")
+
+    def test_a_repository_with_no_checks_has_nothing_to_wait_for(self):
+        self.assertEqual(self.state(self.delivered(checks=[])), "current")
+
+    def test_it_is_asked_once_the_tests_have_finished(self):
+        self.assertEqual(self.state(self.delivered()), "current")
+
+    # ---- answering it ----
+
+    def test_declining_is_a_real_answer_and_stops_the_asking(self):
+        """"Nobody has decided" and "somebody decided not to" are different."""
+        from platform_core.code_factory import decline_refresh
+
+        run = self.delivered()
+        decline_refresh(self.owner, self.app.pk, run.pk)
+        run.refresh_from_db()
+        self.assertEqual(run.refresh_choice, "declined")
+        self.assertEqual(run.refresh_by, self.owner)
+        self.assertEqual(self.state(run), "ok")
+
+    def test_the_same_question_is_not_answered_twice(self):
+        from platform_core.code_factory import decline_refresh
+
+        run = self.delivered()
+        decline_refresh(self.owner, self.app.pk, run.pk)
+        with self.assertRaises(ValidationError):
+            decline_refresh(self.owner, self.app.pk, run.pk)
+
+    def test_nothing_to_refresh_before_a_pull_request_exists(self):
+        from platform_core.code_factory import refresh_after
+
+        run = self.run_pipeline()
+        with self.assertRaises(ValidationError):
+            refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
+
+    def test_an_empty_choice_is_refused_rather_than_recorded_as_a_yes(self):
+        from platform_core.code_factory import refresh_after
+
+        run = self.delivered()
+        with self.assertRaises(ValidationError):
+            refresh_after(self.owner, self.app.pk, run.pk, [])
+        run.refresh_from_db()
+        self.assertEqual(run.refresh_choice, "")
+
+    def test_a_subset_is_kept_as_a_subset(self):
+        """The code moved and the documents did not is a real answer."""
+        from platform_core.code_factory import refresh_after
+
+        run = self.delivered()
+        refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
+        run.refresh_from_db()
+        self.assertEqual(run.refresh_scope, ["knowledge"])
+        self.assertEqual(run.refresh_choice, "queued")
+
+    def test_choosing_the_knowledge_graph_queues_a_structural_run(self):
+        """Structural, so a run that was never asked for cannot bill anything."""
+        from platform_core.code_factory import refresh_after
+        from platform_core.models import KnowledgeGraph
+
+        run = self.delivered()
+        refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertEqual(graph.status, "queued")
+        self.assertEqual(graph.requested_model, "")
+        self.assertEqual(graph.requested_provider, "")
+        self.assertEqual(graph.requested_by, self.owner)
+
+    def test_the_published_revision_is_left_alone(self):
+        """A rebuild produces a draft. What runs and chat answer from does not
+        change until somebody publishes, which is a separate decision."""
+        from platform_core.code_factory import refresh_after
+        from platform_core.graphs import published_revision
+
+        run = self.delivered()
+        before = published_revision(self.app.pk)
+        refresh_after(self.owner, self.app.pk, run.pk, ["knowledge", "code"])
+        after = published_revision(self.app.pk)
+        self.assertEqual(before.pk, after.pk)
+
+    def test_choosing_the_code_graph_queues_the_repository(self):
+        from platform_core.code_factory import refresh_after
+        from platform_core.models import CodeRepository
+
+        repository = CodeRepository.objects.create(
+            application=self.app,
+            added_by=self.owner,
+            provider="github",
+            external_id="acme/widgets",
+            name="acme/widgets",
+            source_url="https://github.com/acme/widgets",
+            status="ready",
+        )
+        run = self.delivered()
+        refresh_after(self.owner, self.app.pk, run.pk, ["code"])
+        repository.refresh_from_db()
+        self.assertEqual(repository.status, "queued")
+
+    def test_a_documentation_row_is_never_what_gets_re_indexed(self):
+        """Those rows are knowledge origins, not this application's code."""
+        from platform_core.code_factory import refresh_after
+        from platform_core.models import CodeRepository
+
+        docs = CodeRepository.objects.create(
+            application=self.app,
+            added_by=self.owner,
+            provider="github",
+            external_id="acme/docs",
+            name="acme/docs",
+            source_url="https://github.com/acme/docs",
+            status="documentation",
+        )
+        run = self.delivered()
+        notes = refresh_after(self.owner, self.app.pk, run.pk, ["code"])
+        docs.refresh_from_db()
+        self.assertEqual(docs.status, "documentation")
+        self.assertIn("No repository is registered", " ".join(notes))
+
+    def test_what_was_asked_for_is_narrated_onto_the_run(self):
+        from platform_core.code_factory import refresh_after
+
+        run = self.delivered()
+        refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
+        said = " ".join(event.message for event in run.events.all())
+        self.assertIn("knowledge graph", said)
+        self.assertIn(self.owner.get_username(), said)
+
+    def test_a_viewer_cannot_answer_it(self):
+        from platform_core.code_factory import refresh_after
+        from platform_core.models import ApplicationGrant
+
+        run = self.delivered()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            role="viewer"
+        )
+        with self.assertRaises(PermissionDenied):
+            refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
+
+    def test_the_screen_asks_in_words_and_offers_both_answers(self):
+        run = self.delivered()
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "Shall I bring them up to date?")
+        self.assertContains(page, "Yes, refresh these")
+        self.assertContains(page, "No, leave them as they are")
+        # And it says the change is on a branch, so this is worth doing after
+        # the pull request merges rather than now.
+        self.assertContains(page, "once the pull request has merged")
+
+    def test_the_screen_stops_asking_once_it_is_answered(self):
+        from platform_core.code_factory import decline_refresh
+
+        run = self.delivered()
+        decline_refresh(self.owner, self.app.pk, run.pk)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(page, "Yes, refresh these")
+        self.assertContains(page, "left as they are")
 
 
 @override_settings(**SETTINGS)

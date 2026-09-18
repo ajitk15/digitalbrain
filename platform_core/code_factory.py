@@ -37,6 +37,7 @@ import hashlib
 import json
 import re
 import time
+import uuid
 from collections import Counter
 from datetime import timedelta
 
@@ -2302,6 +2303,201 @@ def process_next_checks():
         FactoryRun.objects.filter(pk=run.pk).update(checks_read_at=timezone.now())
         return False
     return refresh_checks(run)
+
+
+#: What a finished run can offer to bring back in line with the code, and what
+#: each one actually costs. Ordered cheapest and least disruptive first.
+#:
+#: Every one of these already has a screen of its own with its own permission
+#: check and its own audit event. Nothing here is a second way to do any of
+#: them - each entry calls the same function that screen calls, so a person
+#: who may not re-index from Code Graph cannot re-index from here either.
+REFRESH_TARGETS = (
+    (
+        "documents",
+        "Documents",
+        "Re-read every linked source and bring down anything that changed at "
+        "the origin. No model runs and nothing is charged.",
+    ),
+    (
+        "knowledge",
+        "Knowledge graph",
+        "Queue a structural rebuild. Free, and it produces a draft - what runs "
+        "and chat answer from is the published revision, which stays as it is "
+        "until somebody publishes the new one.",
+    ),
+    (
+        "code",
+        "Code Graph",
+        "Re-index the repository from its default branch, which supersedes the "
+        "snapshot for future runs. Past runs keep the snapshot they reasoned "
+        "about.",
+    ),
+)
+
+REFRESH_KEYS = tuple(key for key, _, _ in REFRESH_TARGETS)
+
+
+def refresh_gate(user, app_id, run_id):
+    """A finished run, and somebody who may change this application's knowledge.
+
+    Not `gate`: refreshing is maintenance rather than a decision about a change,
+    so it wants write access rather than approval rights. The delicate part is
+    delegated anyway - each target calls the screen's own entry point, which
+    re-checks the feature and the role for itself.
+    """
+    from django.shortcuts import get_object_or_404
+
+    from .workbench import access
+
+    app, grant = access(user, app_id, "code_factory", write=True)
+    run = get_object_or_404(FactoryRun, pk=run_id, application=app)
+    if not run.pull_request_url:
+        raise ValidationError(
+            "There is nothing to refresh against yet: this run has not opened a "
+            "pull request."
+        )
+    if run.refresh_choice:
+        raise ValidationError("That question has already been answered for this run.")
+    return app, run
+
+
+def decline_refresh(user, app_id, run_id):
+    """Record that somebody looked at the question and said no.
+
+    A real answer, stored like any other. Without it the stage would go on
+    asking, and "nobody has decided" would be indistinguishable from "somebody
+    decided not to" - which is the difference between an outstanding task and a
+    finished one.
+    """
+    app, run = refresh_gate(user, app_id, run_id)
+    FactoryRun.objects.filter(pk=run.pk, refresh_choice="").update(
+        refresh_choice="declined", refresh_scope=[], refresh_at=timezone.now(),
+        refresh_by=user,
+    )
+    audit(user, "factory.refresh_declined", run.pk, app.product.portfolio.organization)
+    note(
+        run,
+        f"{user.get_username()} chose to leave this application's documents and "
+        "graphs as they are. Nothing was rebuilt.",
+        level="result",
+    )
+    return run
+
+
+def refresh_after(user, app_id, run_id, scope):
+    """Bring the chosen parts of this application's knowledge up to date.
+
+    The question this answers is the one nobody remembers to ask: the change is
+    written and tested, and every description this application holds of that
+    code is now describing it as it was. The graph a later run cites, the
+    documents chat answers from, the snapshot the design reads - all of them
+    still say what was true before the run that just finished.
+
+    Offered rather than done. Each of these supersedes something a past run
+    reasoned about, and the knowledge graph can cost money, so the decision
+    belongs to a person the same way publishing a revision does.
+
+    Returns the notes to put in front of them, in order.
+    """
+    from .code_graph_ingest import valid_name
+    from .graphs import claim_generation
+    from .knowledge_sources import resync
+    from .models import CodeRepository, KnowledgeSource
+    from .services import feature_enabled
+
+    app, run = refresh_gate(user, app_id, run_id)
+    chosen = [key for key in REFRESH_KEYS if key in set(scope or ())]
+    if not chosen:
+        raise ValidationError("Choose at least one thing to refresh, or say no.")
+
+    notes = []
+    if "documents" in chosen:
+        sources = list(KnowledgeSource.objects.filter(application=app))
+        if not sources:
+            notes.append("No linked sources to re-read; documents were left alone.")
+        else:
+            queued = orphaned = 0
+            for source in sources:
+                added, missing = resync(user, app.pk, source.pk)
+                queued += added
+                orphaned += missing
+            notes.append(
+                f"Re-read {len(sources)} source(s): {queued} document(s) queued for "
+                f"download"
+                + (f", {orphaned} no longer at the origin." if orphaned else ".")
+            )
+
+    if "knowledge" in chosen:
+        claimed, refusal = claim_generation(user, app)
+        notes.append(
+            "Structural graph generation queued. It produces a draft; publish it "
+            "when you are happy with it, and until you do, runs and chat keep "
+            "answering from the revision they answer from now."
+            if claimed
+            else refusal
+        )
+
+    if "code" in chosen:
+        repository = (
+            CodeRepository.objects.filter(
+                application=app, provider="github", retired_at__isnull=True
+            )
+            .exclude(status="documentation")
+            .order_by("created_at")
+            .first()
+        )
+        if not feature_enabled("code_graph", app):
+            notes.append("Code Graph is switched off for this application.")
+        elif repository is None:
+            notes.append("No repository is registered in Code Graph.")
+        else:
+            valid_name(repository.name)
+            CodeRepository.objects.filter(pk=repository.pk).update(
+                status="queued",
+                error="",
+                added_by=user,
+                job_id=uuid.uuid4(),
+                updated_at=timezone.now(),
+            )
+            audit(
+                user,
+                "code_repository.queued",
+                repository.pk,
+                app.product.portfolio.organization,
+                {"repository": repository.name, "run": run.number},
+            )
+            notes.append(
+                f"{repository.name} queued for re-indexing from "
+                f"{repository.default_ref}. The current snapshot stays readable "
+                "until the new one is ready."
+            )
+
+    FactoryRun.objects.filter(pk=run.pk, refresh_choice="").update(
+        refresh_choice="queued",
+        refresh_scope=chosen,
+        refresh_at=timezone.now(),
+        refresh_by=user,
+    )
+    audit(
+        user,
+        "factory.refresh_queued",
+        run.pk,
+        app.product.portfolio.organization,
+        {"scope": chosen},
+    )
+    labels = ", ".join(
+        label.lower() for key, label, _ in REFRESH_TARGETS if key in chosen
+    )
+    note(
+        run,
+        f"{user.get_username()} asked for {labels} to be brought up to date "
+        "after this change.",
+        level="result",
+    )
+    for line in notes:
+        note(run, line)
+    return notes
 
 
 def discard(user, app_id, run_id):

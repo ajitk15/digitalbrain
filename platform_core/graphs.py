@@ -448,6 +448,47 @@ def run_in_flight(graph):
     return graph.updated_at > timezone.now() - timedelta(minutes=STALL_MINUTES)
 
 
+def claim_generation(user, app, provider="", model=""):
+    """Arm the graph row for one run, or say why not. Returns (claimed, reason).
+
+    Split out of `queue_generation` because there are now two ways to ask for
+    the same thing - the Generate form, and a finished Code Factory run offering
+    to bring this application's knowledge back in line with the code it just
+    changed. Two copies of "is a run already in flight" is exactly the drift
+    that would let both finish and bill the application twice.
+
+    It takes a user rather than a request: the second caller has no form.
+    """
+    graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
+    if run_in_flight(graph):
+        # Re-arming the row under a live run would let both finish and bill twice.
+        return False, (
+            "A graph generation is already running for this application. "
+            "Watch its progress below; start another once it finishes."
+        )
+    claimed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
+        status="queued",
+        fingerprint="",
+        stage="Queued",
+        started_at=timezone.now(),
+        failure_reason="",
+        requested_provider=provider,
+        requested_model=model,
+        requested_by=user,
+    )
+    if not claimed:
+        # Something else claimed the row between the check and here.
+        return False, "A graph generation was just started by someone else."
+    audit(
+        user,
+        "graph.generation_requested",
+        app.pk,
+        app.product.portfolio.organization,
+        details={"provider": provider, "model": model or "structural only"},
+    )
+    return True, ""
+
+
 def queue_generation(request, app, pk):
     """Queue a graph run, optionally enriched with a chosen model.
 
@@ -472,36 +513,10 @@ def queue_generation(request, app, pk):
                 "Enable Graph generation in AI settings before generating an enriched graph.",
             )
             return redirect("graph", pk=pk)
-    graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
-    if run_in_flight(graph):
-        # Re-arming the row under a live run would let both finish and bill twice.
-        messages.info(
-            request,
-            "A graph generation is already running for this application. "
-            "Watch its progress below; start another once it finishes.",
-        )
-        return redirect("graph", pk=pk)
-    claimed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
-        status="queued",
-        fingerprint="",
-        stage="Queued",
-        started_at=timezone.now(),
-        failure_reason="",
-        requested_provider=provider,
-        requested_model=model,
-        requested_by=request.user,
-    )
+    claimed, refusal = claim_generation(request.user, app, provider, model)
     if not claimed:
-        # Something else claimed the row between the check and here.
-        messages.info(request, "A graph generation was just started by someone else.")
+        messages.info(request, refusal)
         return redirect("graph", pk=pk)
-    audit(
-        request.user,
-        "graph.generation_requested",
-        app.pk,
-        app.product.portfolio.organization,
-        details={"provider": provider, "model": model or "structural only"},
-    )
     messages.success(
         request,
         f"Graph generation queued using {model}. Provider charges may apply. "

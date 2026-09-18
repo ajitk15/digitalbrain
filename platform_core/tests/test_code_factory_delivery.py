@@ -16,6 +16,7 @@ from platform_core.github_write import (
     absent_path,
     commit_file,
     create_branch,
+    headers,
     safe_path,
 )
 from platform_core.models import ApplicationGrant, ChangePlan, FactoryRun, PlanItem
@@ -27,6 +28,27 @@ SETTINGS = dict(
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
+
+
+class RequestHeaderTests(SimpleTestCase):
+    """An absent credential means anonymous, not a malformed one."""
+
+    def test_a_token_is_sent_as_a_bearer_credential(self):
+        self.assertEqual(headers("abc123")["Authorization"], "Bearer abc123")
+
+    def test_no_token_sends_no_authorization_at_all(self):
+        """"Bearer " with nothing after it is a 401 even on a public repository.
+
+        Writing needs a credential and fails without one either way, so this
+        changes nothing there. What it fixes is the read: the branch check on a
+        public repository, which Code Graph's own copy promises works without a
+        credential, and which silently failed on every call while this header
+        went out empty.
+        """
+        sent = headers("")
+        self.assertNotIn("Authorization", sent)
+        self.assertEqual(sent["Accept"], "application/vnd.github+json")
+        self.assertEqual(sent["X-GitHub-Api-Version"], "2022-11-28")
 
 
 class PathSafetyTests(SimpleTestCase):

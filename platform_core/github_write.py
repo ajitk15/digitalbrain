@@ -49,12 +49,26 @@ BRANCH_PREFIX = "digital-brain/"
 
 
 def headers(token):
-    return {
+    """Request headers, with authorization only when there is something to send.
+
+    An empty token used to go out as ``Bearer `` and GitHub answered 401 - to a
+    public repository, for a plain read. That was invisible while this module
+    only ever wrote, because writing needs a credential anyway. The branch check
+    reads, and Code Graph's own promise is that public repositories work without
+    one, so an absent token has to mean anonymous rather than malformed.
+
+    Nothing is granted by this: an empty string never authenticated anything.
+    Writing still fails without the write credential, and readiness still
+    requires it before an application can deliver.
+    """
+    sent = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
+    if token:
+        sent["Authorization"] = f"Bearer {token}"
+    return sent
 
 
 def call(url, token, *, method="GET", payload=None, label="GitHub"):

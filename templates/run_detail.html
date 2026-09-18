@@ -23,7 +23,7 @@ step is a fact you may want to check, and the current step is work.
 
 {% if items %}
 <details class="stage" {% if reviewable %}open{% endif %}><summary><span class="stage-no">3</span><span class="stage-name">Gaps</span><span class="stage-note">{% if run.plan.status == 'approved' %}{{ accepted_count }} of {{ items|length }} approved{% elif run.plan.status == 'rejected' %}All rejected{% else %}{{ items|length }} awaiting your decision{% endif %}</span></summary>
-<p class="muted">{% if reviewable %}Every gap is ticked. Untick what you do not want, then approve. Click a gap to read its evidence.{% else %}Click a gap to read the evidence behind it.{% endif %}</p>
+<p class="muted">{% if reviewable %}All ticked. Untick what you do not want, then approve.{% endif %} Click a gap to read its evidence.</p>
 <form method="post" id="run-review">{% csrf_token %}<input type="hidden" name="action" value="review"><input type="hidden" name="items_declared" value="1"></form>
 {% if reviewable %}<p class="pick-all" hidden data-pick-all="gap-pick"><button type="button" class="text-button" data-pick="all">Select all</button> · <button type="button" class="text-button" data-pick="none">Clear all</button></p>{% endif %}
 <ul class="gap-list">{% for item in items %}
@@ -57,7 +57,7 @@ step is a fact you may want to check, and the current step is work.
 {% else %}
 {% if not write_credential %}<p class="notice">{% icon "info" %}<span><strong>Working offline.</strong> No write credential is mounted, so the agents read <code>{{ run.code_snapshot.repository.name }}</code> snapshot v{{ run.code_snapshot.number }} at <code>{{ run.code_snapshot.commit_sha|slice:':8' }}</code> and produce the files here. <strong>Nothing reaches GitHub</strong>, and no pull request can be opened — take the change away from the summary below.</span></p>
 {% elif not run.repository_confirmed %}
-<p class="muted">The repository came out of the ticket or the registry, so it is not acted on until somebody confirms it — whoever can raise a ticket must not choose where this platform writes. Confirming changes nothing on its own; it decides where a pull request would go.</p>
+<p class="muted">The repository was guessed from the ticket, so somebody confirms it before anything is written. This only decides where a pull request would go.</p>
 <details class="card"><summary>Confirm the repository</summary>
 <form method="post" class="form-card">{% csrf_token %}<input type="hidden" name="action" value="confirm-repository">
 <p><label for="repo">Repository</label><input type="text" id="repo" name="repository" value="{{ run.proposed_repository }}" maxlength="200" required></p>
@@ -72,7 +72,7 @@ step is a fact you may want to check, and the current step is work.
 {% if run.status == 'prepare_queued' or run.status == 'preparing' %}
 <p class="notice" role="status">{% icon "info" %}<span>The agents are working. This page refreshes itself; nothing is written to {{ run.proposed_repository }} by this stage.</span></p>
 {% elif not changes %}
-<p class="muted">Each agent reads the files the approved gaps named and produces their new contents. Nothing is written to the repository.</p>
+<p class="muted">The agents read the named files and write their new contents here, not to the repository.</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="prepare"><button class="button" type="submit">{% icon "code" 13 %}Run the implementation agents</button></form>
 {% endif %}
 {% endif %}
@@ -113,6 +113,24 @@ step is a fact you may want to check, and the current step is work.
 {% if run.checks_state == 'running' %}<p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Checks are still running. This page refreshes itself.</span></p>{% endif %}
 {% else %}
 <p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Asking GitHub about this branch. If the repository has no workflow, nothing will appear here.</span></p>
+{% endif %}
+</details>
+{% endif %}
+
+{% if refresh_stage.state != 'pending' %}
+<details class="stage" {% if refresh_stage.state == 'current' %}open{% endif %}><summary><span class="stage-no">7</span><span class="stage-name">Refresh</span><span class="stage-note">{% if run.refresh_choice == 'queued' %}queued: {{ run.refresh_scope|join:", " }}{% elif run.refresh_choice == 'declined' %}left as they are{% else %}waiting on your answer{% endif %}</span></summary>
+{% if run.refresh_choice %}
+<p class="muted">{% if run.refresh_choice == 'queued' %}{{ run.refresh_by.username }} asked for this on {{ run.refresh_at|date:"d M Y H:i" }}. Watch each one on its own screen.{% else %}{{ run.refresh_by.username }} left them as they are on {{ run.refresh_at|date:"d M Y H:i" }}.{% endif %}</p>
+{% else %}
+<p class="muted">This change is written and its tests have run. Everything this application knows about that code still describes it as it was &mdash; the graph a later run cites, the documents chat answers from, the snapshot the design reads. Shall I bring them up to date?</p>
+<p class="notice" role="status">{% icon "info" %}<span>Your change is on <code>{{ run.branch }}</code>. These read the default branch, so they are worth running once the pull request has merged.</span></p>
+<form method="post" class="refresh-form">{% csrf_token %}<input type="hidden" name="action" value="refresh">
+<ul class="refresh-list">{% for key, label, detail in refresh_targets %}
+<li><label class="refresh-choice"><input type="checkbox" name="target" value="{{ key }}" checked><span><strong>{{ label }}</strong><small>{{ detail }}</small></span></label></li>
+{% endfor %}</ul>
+<div class="actions"><button class="button" type="submit">{% icon "refresh" 13 %}Yes, refresh these</button></div>
+</form>
+<form method="post" class="refresh-decline">{% csrf_token %}<input type="hidden" name="action" value="refresh-decline"><button class="button secondary" type="submit">No, leave them as they are</button></form>
 {% endif %}
 </details>
 {% endif %}

@@ -54,9 +54,12 @@ class LinkSubmissionTests(TestCase):
             created = submit(self.owner, self.app.pk, "https://github.com/a/docs")
         self.assertEqual(created[0].origin, "github")
         self.assertEqual(created[0].name, "docs-README.md")
-        repository = CodeRepository.objects.get(application=self.app)
-        self.assertEqual(repository.external_id, "a/docs")
-        self.assertEqual(repository.status, "documentation")
+        # Importing documents from a repository does not put that repository
+        # into Code Graph. A documentation repository is not this application's
+        # code, and a row nobody asked for is one more thing a run has to
+        # choose between - which is how a ticket ends up reasoning about no
+        # code at all. Code Graph rows come from the Code Graph screen.
+        self.assertFalse(CodeRepository.objects.filter(application=self.app).exists())
 
     def test_a_docs_tree_queues_every_file_it_resolved(self):
         files = [(f"docs-guide{n}.md", f"https://raw.example/{n}.md") for n in range(5)]

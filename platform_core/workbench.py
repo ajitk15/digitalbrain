@@ -1086,6 +1086,11 @@ def onboarding(request, pk):
     # rather than from a query parameter, so it still greets somebody who
     # created this last week and is only now coming back to it.
     fresh = not [step for step in found if step.ok and step.key != "code_factory"]
+    # One sequence across both gates rather than 1-5 and then 1-4 again. The
+    # number is what somebody says out loud - "I am stuck on step 6" - and two
+    # sixes on one screen would make that ambiguous. Positional, so a step that
+    # only appears once something is indexed does not renumber the ones above it.
+    order = {step.key: index for index, step in enumerate(found, 1)}
     return render(
         request,
         "onboarding.html",
@@ -1097,14 +1102,21 @@ def onboarding(request, pk):
             "done": state.done,
             "total": state.total,
             "next_step": state.next_step,
+            "next_number": order.get(getattr(state.next_step, "key", None)),
             "gates": [
                 {
                     "key": key,
                     "label": label,
                     "blurb": blurb,
-                    "steps": [step for step in found if step.gate == key],
+                    "steps": [
+                        (order[step.key], step)
+                        for step in found
+                        if step.gate == key
+                    ],
                     "ready": gate_ready(found, key),
                     "outstanding": outstanding(found, key),
+                    "done": sum(1 for step in found if step.gate == key and step.ok),
+                    "count": sum(1 for step in found if step.gate == key),
                 }
                 for key, label, blurb in GATES
             ],
@@ -1236,9 +1248,12 @@ def run_detail(request, pk, run_id):
     """
     from . import code_factory
     from .code_factory import (
+        REFRESH_TARGETS,
         confirm_repository,
+        decline_refresh,
         discard,
         publish,
+        refresh_after,
         request_preparation,
         write_credential,
     )
@@ -1285,6 +1300,18 @@ def run_detail(request, pk, run_id):
             elif action == "discard":
                 discard(request.user, pk, run.pk)
                 messages.success(request, "The prepared change was discarded. Nothing was written.")
+            elif action == "refresh":
+                for line in refresh_after(
+                    request.user, pk, run.pk, request.POST.getlist("target")
+                ):
+                    messages.success(request, line)
+            elif action == "refresh-decline":
+                decline_refresh(request.user, pk, run.pk)
+                messages.success(
+                    request,
+                    "Recorded. This application's documents and graphs are left as "
+                    "they are, and this run stops asking.",
+                )
             else:
                 raise ValidationError("Unknown action.")
         except ValidationError as error:
@@ -1346,6 +1373,13 @@ def run_detail(request, pk, run_id):
                 and not run.pull_request_url
             ),
             "write_credential": bool(write_credential(app)),
+            # Offered once the change exists and its tests have stopped moving.
+            # The stage itself decides when to show; this is only the vocabulary
+            # it renders, so the list and the wording live in one place.
+            "refresh_targets": REFRESH_TARGETS,
+            "refresh_stage": next(
+                (stage for stage in run.stages if stage["number"] == 7), None
+            ),
         },
     )
 

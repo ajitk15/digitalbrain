@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Analyse an imported ticket against the published knowledge graph, then review each proposed fix and request independent approval.</p>
+{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Analyse a ticket against the published graph, then review each proposed fix.</p>
 <p><a href="{% url 'onboarding' application.pk %}">{% icon "success" 13 %}Onboarding: what this application still needs {% icon "arrow-right" 13 %}</a></p>{% if grant.role != 'viewer' and not published_graph %}
 <p class="notice notice-warning">{% icon "warning" %}<span>No knowledge graph is published for this application, so a ticket cannot be analysed. Every item a run produces has to cite evidence a reviewer can open, and there is none without one. <a href="{% url 'graph' application.pk %}">Generate and publish a graph</a> first.</span></p>
 {% endif %}
@@ -14,7 +14,7 @@
 
 {% if runs %}
 <section class="section"><h2>Pipeline runs</h2>
-<p class="muted">Each run reports every step as it reaches it. Open one to watch it work, or to read back afterwards what it was given and what it concluded.</p>
+<p class="muted">Every step, as it happens. Open one to watch it, or to read it back later.</p>
 <div class="list-card"{% if active %} data-document-pending{% endif %}>{% for run in runs %}{% include "_run_row.html" %}{% empty %}<p class="padded muted">No run yet. Analyse a ticket above.</p>{% endfor %}</div>
 <p class="section"><a href="{% url 'runs' application.pk %}">{% icon "history" 13 %}{% if more_runs %}All runs, including older ones{% else %}Full run history{% endif %} {% icon "arrow-right" 13 %}</a></p>
 </section>

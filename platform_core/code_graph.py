@@ -13,7 +13,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .code_graph_analysis import ROLES
-from .code_graph_ingest import register
+from .code_graph_ingest import refresh_head, register
 from .connectors import credential_location
 from .models import ApplicationGrant, CodeFile, CodeRepository
 from .services import audit
@@ -215,6 +215,37 @@ def code_graph(request, pk):
             messages.success(
                 request, "Repository queued for refresh. The last snapshot remains available."
             )
+            return redirect(f"{request.path}?repository={repository.pk}")
+        elif action == "check":
+            # Ask where the branch points, and nothing else. Separate from
+            # Refresh index on purpose: this costs one API call and changes
+            # nothing, while re-indexing costs a clone and supersedes the
+            # snapshot every past run reasoned about. Noticing and acting are
+            # two decisions, and only one of them is safe to make for somebody.
+            repository = get_object_or_404(
+                CodeRepository,
+                pk=request.POST.get("repository"),
+                application=app,
+                retired_at__isnull=True,
+            )
+            refresh_head(repository)
+            repository.refresh_from_db()
+            if repository.drifted:
+                messages.warning(
+                    request,
+                    f"{repository.default_ref} has moved on since this snapshot was "
+                    f"indexed. Refresh the index to reason about the current code.",
+                )
+            elif repository.drifted is False:
+                messages.success(
+                    request, f"Still in sync with {repository.default_ref}."
+                )
+            else:
+                messages.warning(
+                    request,
+                    f"{repository.name} did not report a head commit for "
+                    f"{repository.default_ref}. The last known commit is unchanged.",
+                )
             return redirect(f"{request.path}?repository={repository.pk}")
         elif action == "retire":
             repository = get_object_or_404(

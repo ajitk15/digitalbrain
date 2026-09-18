@@ -103,6 +103,18 @@
 
   /* Type */
   --f-sans: "Inter var", system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* The cap on a line of secondary prose. Wide enough that the one sentence
+     most descriptions are fits on one line at 1680px - measured: the longest
+     of them needs 1180px - and narrow enough that nothing sprawls the full
+     1556px of an ultrawide shell.
+
+     It used to be 750px, and that was wrong for this application. A 750px cap
+     inside a 1409px column leaves half the row empty and spends the space it
+     saved on height instead, which is the opposite of the trade a measure is
+     supposed to make. Book typography assumes a page sized to the text; a
+     settings screen is a page sized to a monitor, and a one-line hint under a
+     heading is not a paragraph anybody reads at length. */
+  --measure: 1200px;
   --f-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   --t-10: 10px;
   --t-11: 11px;
