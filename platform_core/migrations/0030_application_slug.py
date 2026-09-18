@@ -2,6 +2,15 @@
 
 Three steps rather than one: the column has to exist and be filled before it can
 be unique, or every existing row collides on the empty string.
+
+The intermediate column carries db_index=False, which is not cosmetic. A
+SlugField is indexed by default, and on PostgreSQL an indexed varchar also gets
+a companion "..._like" index for pattern matching. Altering that column to
+unique then asks for the same "..._like" index a second time and the migration
+dies with "relation ... already exists". SQLite has no such index, so the whole
+test suite passes over this and only a real PostgreSQL deployment ever meets it.
+The intermediate index bought nothing anyway: nothing queries the column until
+it is unique.
 """
 
 from django.db import migrations, models
@@ -34,7 +43,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name="application",
             name="slug",
-            field=models.SlugField(blank=True, default="", max_length=140),
+            field=models.SlugField(blank=True, db_index=False, default="", max_length=140),
             preserve_default=False,
         ),
         migrations.RunPython(fill_slugs, clear_slugs),

@@ -177,7 +177,10 @@ services:
       # them and leave documents failing closed until it finishes.
       - clamav-db:/var/lib/clamav
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/accounts/login/', timeout=5).status < 500 else 1)\""]
+      # See deploy/healthcheck.py: the request has to carry a hostname the
+      # application allows, or Django answers 400 and the container never
+      # reports healthy while serving perfectly.
+      test: ["CMD", "python", "/app/deploy/healthcheck.py"]
       interval: 30s
       timeout: 10s
       retries: 5
