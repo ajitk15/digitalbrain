@@ -215,6 +215,25 @@ An unticked checkbox is simply absent from a POST, so without the marker "every 
 and "this caller never mentioned features" are the same bytes — and the second must not
 silently disable everything. With the marker the checkboxes are taken literally.
 
+**Two people review a change — unless a deployment says there is only one.**
+`review_plan` refuses a plan approved by its own author, so whoever starts a run
+cannot wave it through. **That was absolute and is now a setting**, traded
+deliberately for the same reason the secrets rule was: an instance with one
+operator deadlocked at the review gate, and there is no way out of it through the
+UI — `change_grant` will not hand out `can_approve` to someone who lacks it, so a
+single owner without the flag cannot even create a reviewer. `allow_self_approval`
+is off unless written down, which keeps two-person review the default, but
+`load_config` now **accepts** it under `mode = "production"` where it used to
+refuse it. It is the one flag of the three that does; `claude_use_host_login` and
+`allow_demo_reset` are still refused there, and the difference is intentional —
+those spend somebody else's money and delete somebody else's work, while this one
+only records a weaker fact about a change. Nothing became silent: `ChangePlan`
+stores the approver, so a self-approved plan says so in the audit record, and both
+review screens carry a warning while the setting is in force. `deploy/entrypoint.sh`
+renders it **on** for the container image, because that image is deployed
+single-operator; `DIGITAL_BRAIN_SELF_APPROVAL=0` turns it off where two people
+really do review every change.
+
 **Creating an application never widens access.** `views.create_application` writes the
 portfolio, product, application, owner grant and feature rows in one transaction, but
 the org admin who creates it still gets no access to it: `policy.applications_for`

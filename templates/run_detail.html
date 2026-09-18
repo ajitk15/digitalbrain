@@ -38,7 +38,7 @@ step is a fact you may want to check, and the current step is work.
 {% endfor %}</ul>
 
 {% if reviewable %}
-{% if self_approving %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> Allowed here because there is nobody else to ask; refused in production, and the audit record says so.</span></p>{% endif %}
+{% if self_approving %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> This instance allows it because there is nobody else to ask. The audit record will say this change was approved by its author.</span></p>{% endif %}
 <div class="gap-decide">
 <label for="review-note">Review note</label>
 <textarea id="review-note" name="note" rows="2" maxlength="2000" required form="run-review"></textarea>

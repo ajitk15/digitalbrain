@@ -27,6 +27,16 @@ scanner = "/usr/bin/clamscan"
 # How many files one GitHub /tree/ or SharePoint folder import may take.
 import_max_files = 100
 
+# Lets whoever starts a Code Factory run approve the plan it produced. Off
+# unless written down. Separation of duties is still the default: normally a
+# second member holding "May approve Code Factory plans" reviews the plan, and
+# that is what a deployment with more than one person should do. A
+# single-operator instance has nobody to ask and would otherwise deadlock at the
+# review gate, so this is permitted here rather than refused. Every plan it lets
+# through records that its author approved it, and both review screens say so
+# while it is in force.
+allow_self_approval = true
+
 # Optional. Lets an application owner set their own provider credentials on the
 # Credentials screen instead of asking you for each one. Must be writable by the
 # service account and MUST differ from secret_directory, which is read-only: a

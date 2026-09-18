@@ -144,11 +144,13 @@ class ImportMaxFilesTests(SimpleTestCase):
 
 
 class SelfApprovalConfigurationTests(SimpleTestCase):
-    """allow_self_approval is a development convenience and must stay one.
+    """allow_self_approval is a deployment's decision, in every mode.
 
-    Built like claude_use_host_login and for the same reason: a deployment that
-    believes two people review every change must not find out from its audit
-    log that one did.
+    Deliberately NOT built like claude_use_host_login, which these tests used to
+    assert it matched. A single-operator deployment has nobody to ask, and
+    refusing this under production left the review gate with no way through -
+    so production accepts it. It stays off unless written down, which is what
+    keeps two-person review the default.
     """
 
     BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
@@ -163,10 +165,19 @@ class SelfApprovalConfigurationTests(SimpleTestCase):
         config = self.load(f'mode = "development"\n{self.BASE}')
         self.assertNotIn("allow_self_approval", config)
 
-    def test_production_refuses_it_rather_than_ignoring_it(self):
-        with self.assertRaises(ImproperlyConfigured) as refusal:
-            self.load(f'mode = "production"\n{self.BASE}allow_self_approval = true\n')
-        self.assertIn("cannot be set in production", str(refusal.exception))
+    def test_production_accepts_it(self):
+        """The one place this differs from claude_use_host_login and allow_demo_reset.
+
+        Those are refused under production. This is not: a deployment with one
+        operator has to be able to turn it on, or the pipeline stops at a gate
+        only a second person can open.
+        """
+        config = self.load(f'mode = "production"\n{self.BASE}allow_self_approval = true\n')
+        self.assertTrue(config["allow_self_approval"])
+
+    def test_it_stays_off_in_production_unless_written_down(self):
+        config = self.load(f'mode = "production"\n{self.BASE}')
+        self.assertFalse(config.get("allow_self_approval", False))
 
     def test_it_must_be_a_boolean(self):
         with self.assertRaises(ImproperlyConfigured):

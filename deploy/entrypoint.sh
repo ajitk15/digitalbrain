@@ -62,6 +62,15 @@ else
         # separate directory, because an operator's mounted credential
         # deliberately takes precedence over one entered in a browser.
         echo 'managed_secret_directory = "/var/lib/digitalbrain/credentials"'
+        # Let whoever starts a run approve its plan. On by default because this
+        # image is deployed single-operator: with it off, a plan can only be
+        # approved by a second member holding can_approve, and an instance with
+        # one person deadlocks at the review gate with no way out through the
+        # UI. Set DIGITAL_BRAIN_SELF_APPROVAL=0 where two people really do
+        # review every change - the audit record names the approver either way.
+        if [ "${DIGITAL_BRAIN_SELF_APPROVAL:-1}" = "1" ]; then
+            echo 'allow_self_approval = true'
+        fi
         # Coolify terminates TLS and sets X-Forwarded-Proto. Safe only because
         # no port is published, and waitress clears any forwarded header the
         # proxy did not set itself.

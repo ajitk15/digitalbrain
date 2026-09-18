@@ -47,8 +47,6 @@ def load_config():
         raise ImproperlyConfigured("allow_self_approval must be a boolean.")
     if type(config.get("allow_demo_reset", False)) is not bool:
         raise ImproperlyConfigured("allow_demo_reset must be a boolean.")
-    if type(config.get("allow_self_approval", False)) is not bool:
-        raise ImproperlyConfigured("allow_self_approval must be a boolean.")
     limit = config.get("import_max_files", 100)
     # Bounded on both sides. A walk that cannot terminate is the thing the limit
     # exists to prevent, and an operator who sets it to something enormous has
@@ -94,24 +92,14 @@ def load_config():
             "allow_demo_reset is for demonstration instances and cannot be set in "
             "production. Disable an application instead; nothing here deletes one."
         )
-    if config.get("allow_self_approval") and config.get("mode") == "production":
-        # Refused rather than ignored, for the reason claude_use_host_login is:
-        # a deployment that believes two people review every change must not
-        # discover otherwise from its audit log. The separation of duties is the
-        # product here, not a policy bolted onto it.
-        raise ImproperlyConfigured(
-            "allow_self_approval is a development convenience and cannot be set in "
-            "production. Grant approval to a second member instead."
-        )
-    if config.get("allow_self_approval") and config.get("mode") == "production":
-        # Refused rather than ignored, for the reason claude_use_host_login is:
-        # a deployment that believes two people review every change must not
-        # discover otherwise from its audit log. The separation of duties is the
-        # product here, not a policy bolted onto it.
-        raise ImproperlyConfigured(
-            "allow_self_approval is a development convenience and cannot be set in "
-            "production. Grant approval to a second member instead."
-        )
+    # `allow_self_approval` is deliberately NOT refused under production, unlike
+    # its neighbours above. A single-operator deployment has nobody to ask, and
+    # refusing it there left the pipeline unrunnable on exactly the instances
+    # this product is first used on. It stays opt-in and off by default, every
+    # plan it lets through still records that its author approved it, and the
+    # run page still says so on screen - so what was traded is the guarantee,
+    # not the visibility. Grant approval to a second member where two people
+    # really do review every change.
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")

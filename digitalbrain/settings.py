@@ -13,21 +13,16 @@ DOCUMENT_SCAN_REQUIRED = PRODUCTION or CONFIG.get("scan_documents", False)
 # instead of a mounted per-application credential. Never true in production.
 CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not PRODUCTION
 #: Let one person both write and approve a change plan. A single-operator
-#: development instance cannot otherwise run the pipeline end to end, because
-#: whoever starts a run authors its plan and may not review their own work.
-#: Forced off in production regardless of the file, which `load_config` has
-#: already refused to parse.
-ALLOW_SELF_APPROVAL = bool(CONFIG.get("allow_self_approval", False)) and not PRODUCTION
+#: instance cannot otherwise run the pipeline end to end, because whoever starts
+#: a run authors its plan and may not review their own work. Honoured in every
+#: mode, production included - unlike its neighbours here, it is a deployment's
+#: decision rather than a development-only concession. Off unless written down,
+#: and every plan approved this way records that its author approved it.
+ALLOW_SELF_APPROVAL = bool(CONFIG.get("allow_self_approval", False))
 #: Let a platform administrator empty an organization between demonstrations.
 #: Off unless written down, and `load_config` has already refused it under
 #: production; forced off here as well.
 ALLOW_DEMO_RESET = bool(CONFIG.get("allow_demo_reset", False)) and not PRODUCTION
-#: Let one person both write and approve a change plan. A single-operator
-#: development instance cannot otherwise run the pipeline end to end, because
-#: whoever starts a run authors its plan and may not review their own work.
-#: Forced off in production regardless of the file, which `load_config` has
-#: already refused to parse.
-ALLOW_SELF_APPROVAL = bool(CONFIG.get("allow_self_approval", False)) and not PRODUCTION
 # Internal hosts an operator permits link import to reach. Everything else is
 # held to the public-internet rule in platform_core/fetching.py.
 FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", [])]

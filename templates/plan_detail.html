@@ -48,7 +48,7 @@
 {% endif %}
 
 {% if not can_review and no_review_because %}<p class="notice section">{% icon "lock" %}<span>{{ no_review_because }}{% if plan.status == 'pending' %} Until then the items below are as proposed, and nothing has been written anywhere.{% endif %}</span></p>{% endif %}
-{% if self_approving %}<p class="notice notice-warning section">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> This instance allows it because there is nobody else to ask; it is a development setting, refused outright in production. The audit record will say this change was approved by its author.</span></p>{% endif %}
+{% if self_approving %}<p class="notice notice-warning section">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> This instance allows it because there is nobody else to ask; it is off unless a deployment turns it on. The audit record will say this change was approved by its author.</span></p>{% endif %}
 {% if can_review %}<section class="card section"><h2>Review decision</h2>
 <p class="muted">Untick what you do not want; an unticked item is rejected and nothing is written for it. Decided once, and not changeable after approval.</p>
 <form method="post" id="plan-review">{% csrf_token %}<input type="hidden" name="items_declared" value="1">

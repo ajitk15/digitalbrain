@@ -16,7 +16,9 @@ So this exists, and it is fenced accordingly:
 
 * `allow_demo_reset` in `config/local.toml`, off unless somebody writes it down,
   and **refused outright** by `load_config` under `mode = "production"` - the
-  same treatment `claude_use_host_login` and `allow_self_approval` get.
+  same treatment `claude_use_host_login` gets. (`allow_self_approval` used to be
+  named here too; it is now permitted in production, because an instance with
+  one operator has to be able to approve a plan at all.)
 * Platform administrators only.
 * The organization's name has to be typed. A button that empties a workspace
   should cost more than a click that could be a misclick.
