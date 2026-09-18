@@ -1,0 +1,10 @@
+# Files that run inside the Linux container keep LF whatever the checkout does.
+#
+# A shell script checked out with CRLF has "#!/bin/sh\r" as its shebang, and the
+# kernel looks for an interpreter called "/bin/sh\r". The error is "no such file
+# or directory" naming a file that plainly exists, which is a bad hour for
+# whoever hits it. This repository is developed on Windows, so it would happen.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.toml          text eol=lf
+docker-compose.yaml text eol=lf
