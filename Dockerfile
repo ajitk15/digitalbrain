@@ -79,8 +79,9 @@ COPY --chown=root:root . /app
 # Written to at runtime: uploaded originals, the event log, and ClamAV's
 # signature database. Everything else stays read-only to the service account.
 RUN set -eu; \
-    mkdir -p /app/.runtime /var/lib/clamav; \
-    chown -R brain:brain /app/.runtime /var/lib/clamav; \
+    mkdir -p /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials; \
+    chown -R brain:brain /app/.runtime /var/lib/clamav /var/lib/digitalbrain; \
+    chmod 700 /var/lib/digitalbrain/credentials; \
     chmod +x /app/deploy/entrypoint.sh
 
 USER brain

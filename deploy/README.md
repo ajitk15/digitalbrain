@@ -3,12 +3,19 @@
 For `srv1874861.hstgr.cloud` (200.141.11.23), serving `ajitconnect.in`.
 
 `docs/deployment.md` is the general procedure and the authority on why each rule
-exists. This is the specific one, and it differs in three ways worth knowing
-before you start.
+exists. This is the specific one, and it differs in ways worth knowing.
+
+**Nothing has to be prepared on the server.** No directories to create, no
+disks to mount, no repository to clone, no Persistent Storage entries in
+Coolify. The compose file uses named volumes that Docker creates on first
+start, and the signing key and database password are generated into one of them
+by an init service. An earlier version of this file asked you to hand-create
+host directories and bind-mount them; that is a Kubernetes-shaped assumption
+and it is gone.
 
 **Coolify's proxy already owns 80 and 443.** So there is no web server in
 `docker-compose.yaml` and nothing publishes a port. Coolify terminates TLS,
-gets the certificate, and routes the domain to the app container over the
+obtains the certificate, and routes the domain to the app container over the
 compose network.
 
 **Exactly one app container. Never scale it.** This is correctness, not
@@ -27,98 +34,87 @@ install would not be used.
 
 ## 1. Point the domain at the VPS
 
-`ajitconnect.in` must be an A record to `200.141.11.23` before Coolify can get a
-certificate. Let's Encrypt validates over HTTP against whatever the name
-currently resolves to.
+An A record to `200.141.11.23`, for every name you will serve. Let's Encrypt
+validates over HTTP against whatever the name resolves to.
 
-```
-A    @      200.141.11.23
-A    www    200.141.11.23
-```
+## 2. Create the Coolify resource
 
-Check it took, and that you are seeing the VPS rather than Hostinger's parking
-page, before going further:
+**New Resource → Docker Compose**, pointing at this repository, branch `main`,
+compose file `docker-compose.yaml`.
 
-```bash
-dig +short ajitconnect.in
-```
+Before the first deploy:
 
-## 2. Prepare the host
-
-Over SSH as root:
-
-```bash
-git clone https://github.com/ajitk15/digitalbrain.git /opt/digitalbrain/src
-sh /opt/digitalbrain/src/deploy/prepare-host.sh
-cp /opt/digitalbrain/src/deploy/production.example.toml /opt/digitalbrain/config/production.toml
-```
-
-`prepare-host.sh` generates `django_secret_key` and `database_password` into
-`/opt/digitalbrain/secrets`, owned by uid 10001 and mode 0600. Both are
-required: `read_secret` refuses any file carrying group or other permission
-bits, so a wrong mode stops the process rather than being ignored.
-
-Edit `production.toml` only if you are using a different hostname. It contains
-no credentials and never should.
-
-## 3. Create the Coolify resource
-
-In Coolify: **New Resource → Docker Compose**, pointing at this repository,
-branch `main`, compose file `docker-compose.yaml`.
-
-Then, before the first deploy:
-
-- Set the **domain** on the `app` service to `https://ajitconnect.in`. Let
-  Coolify write the proxy labels; hand-written ones drift when Coolify updates.
-- Set `SITE_ADMIN_USER_ID` as an environment variable to the username you want
-  for the first administrator. Remove it once you have signed in.
-- Leave the other environment variables at their defaults.
+- Set the **domain** on the `app` service, with the container port **8000** —
+  that is the port inside the container, not one opened on the host. Let Coolify
+  write the proxy labels; hand-written ones drift when Coolify updates.
+- Set `SITE_ADMIN_USER_ID` to the username you want for the first
+  administrator. Remove it once you have signed in.
+- If you serve names other than `ajitconnect.in` and `www.ajitconnect.in`, set
+  `DIGITAL_BRAIN_HOSTS` to a comma-separated list of them. A request whose Host
+  header is not listed is refused with `400` — the check working, but it looks
+  like a broken deployment.
 
 Deploy. The **first boot takes several minutes** because it downloads ClamAV's
 signature database (~1 GB) before it starts listening; the healthcheck's start
-period allows for it. Later deploys reuse the volume.
+period allows for it, and Coolify will not route until it passes. Later deploys
+reuse the volume.
 
-## 4. Check it came up honestly
+## 3. Check it came up honestly
 
 ```bash
 docker compose logs app | tail -40
 ```
 
-You are looking for `applying migrations`, then `checking deployment settings`,
-then the listener. `manage.py check --deploy --fail-level WARNING` runs on every
-start, so a misconfigured cookie or proxy setting stops the deploy rather than
-being discovered by a user.
+In order: the rendered configuration, ClamAV signatures on a first boot,
+`applying migrations`, `checking deployment settings`, then the listener.
+`manage.py check --deploy --fail-level WARNING` runs on every start, so a
+misconfigured cookie or proxy setting stops the deploy rather than being
+discovered by a user.
 
-Then sign in at `https://ajitconnect.in`, and verify:
-
-- the certificate is real and the page is not redirect-looping (if it loops,
-  `trust_proxy` or `--trusted-proxy` is wrong — see `scripts/serve.py`)
-- an application can be created, and a second account gets `404` on it rather
-  than `403`
-
-## 5. Mount the provider credentials
-
-One file per provider per application, named with the application's UUID, in
-`/opt/digitalbrain/secrets`:
+Then create the first administrator, which prompts for a password and reads it
+hidden — it never reaches a file, an argument, or a shell history:
 
 ```bash
-install -o 10001 -g 10001 -m 600 /dev/null /opt/digitalbrain/secrets/claude_<APP_UUID>
-# then write the key into it with an editor; do not echo it into shell history
+docker compose exec app python manage.py bootstrap_admin
 ```
+
+## 4. Configuration and secrets
+
+The **non-secret** configuration is rendered by the entrypoint from environment
+variables. To take it over completely, mount your own file at
+`/etc/digitalbrain/production.toml` — if one is there it wins, and nothing is
+rendered. `production.example.toml` in this directory is a starting point.
+
+**Secrets are always files, never environment variables.** The signing key and
+database password are generated once into the `platform-secrets` volume. The
+password is written twice, deliberately: `read_secret` requires mode 0600 owned
+by the application (uid 10001), and Postgres runs as uid 70 and will not read a
+file it does not own. No single file satisfies both without opening permissions
+`read_secret` would then reject.
+
+**Provider credentials go through the Credentials screen**, not through a
+shell. Settings → Credentials, as the application's owner: Claude, GitHub
+(write), Jira. Each is written to its own file at mode 0600 in the
+`managed-credentials` volume; the database keeps only who set it, when, and a
+digest — never the value, and it is never shown again.
 
 `claude_<uuid>` takes either an API key or a `claude setup-token` OAuth token —
 `agent_runtime/credentials.py` decides which variable the CLI is given and
-blanks the other. `github_write_<uuid>` is deliberately a different file from
-`github_<uuid>`: importing issues must not imply the ability to push.
+blanks the other. GitHub (write) is deliberately a separate credential from the
+read-only one a connector uses: importing issues must not imply the ability to
+push.
 
-The directory is mounted, not individual files, so a credential added for a new
-application is picked up without a restart. Nothing caches a secret in memory.
+An operator can still project credentials into `/run/secrets` from a secret
+manager, and one mounted there **always wins** over one typed into the browser
+— which is what makes migrating a credential into a secret manager need no
+change in the product. That is also why the two directories must differ.
 
 ## What is not covered here
 
 - **Backups.** `postgres-data` and `app-runtime` both matter: the second holds
-  every uploaded document's original bytes. Neither is backed up by anything in
-  this file.
+  every uploaded document's original bytes. `platform-secrets` holds the signing
+  key — lose it and every session is invalidated. Nothing here backs any of
+  them up.
 - **The single-process limit.** Scaling out needs a shared cancellation channel
   first. Scale with threads inside the one process until then.
 - **ClamAV timing.** `processing.py` gives the scanner 30 seconds, and

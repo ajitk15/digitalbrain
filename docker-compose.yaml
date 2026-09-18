@@ -1,9 +1,15 @@
 # Digital Brain on Coolify.
 #
-# Coolify's own proxy already owns 80 and 443 and terminates TLS for the
-# domain, so nothing here publishes a port and there is no web server in this
-# file. Set the domain on the "app" service in Coolify's UI and it writes the
-# proxy labels itself; hand-written ones drift the moment Coolify updates.
+# Self-contained: no host directory has to exist before the first deploy, and
+# nothing is bind-mounted. Coolify deploys from git onto a server whose
+# filesystem nobody has prepared, so a compose file that assumes prepared
+# directories fails with a message about a mount rather than about the thing
+# that is actually missing. Everything lives in named volumes Docker creates.
+#
+# Coolify's own proxy owns 80 and 443 and terminates TLS, so nothing here
+# publishes a port and there is no web server in this file. Set the domain on
+# the "app" service in Coolify's UI - it writes the proxy labels itself, and
+# hand-written ones drift the moment Coolify updates.
 #
 # THE APP SERVICE MUST NEVER BE SCALED. One replica is a correctness
 # constraint, not a capacity choice: the stream registry in
@@ -13,10 +19,49 @@
 # process-local for the same reason and would multiply by the replica count.
 
 services:
+  # Generates, once, the two things a deployment cannot start without: the
+  # signing key and the database password. Both stay files - never environment
+  # variables, never database rows - because read_secret in
+  # digitalbrain/configuration.py refuses anything carrying group or other
+  # permission bits.
+  #
+  # The password is written TWICE, deliberately. read_secret requires 0600 owned
+  # by the application (uid 10001); Postgres runs as uid 70 and refuses to read
+  # a file it does not own. No single file satisfies both without opening
+  # permissions that read_secret would then reject, so each side gets its own
+  # copy of one generated value.
+  secrets-init:
+    image: alpine:3.20
+    restart: "no"
+    volumes:
+      - platform-secrets:/secrets
+      - database-secret:/dbsecret
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        # Rotating the signing key invalidates every session, so an existing
+        # one is never replaced - only a missing one is created.
+        if [ ! -f /secrets/django_secret_key ]; then
+          head -c 64 /dev/urandom | base64 | tr -d '\n=' > /secrets/django_secret_key
+          echo "secrets: generated signing key"
+        fi
+        if [ ! -f /secrets/database_password ]; then
+          head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/database_password
+          echo "secrets: generated database password"
+        fi
+        cp /secrets/database_password /dbsecret/database_password
+        chown -R 10001:10001 /secrets
+        chmod 700 /secrets
+        chmod 600 /secrets/django_secret_key /secrets/database_password
+        chown -R 70:70 /dbsecret
+        chmod 600 /dbsecret/database_password
+        echo "secrets: ready"
+
   # Postgres is configured with sslmode=verify-full in digitalbrain/settings.py,
   # which means the client checks the server's certificate against a CA *and*
   # that the name matches. Nothing issues a certificate for a container, so one
-  # is generated here on first boot and reused. Runs once and exits.
+  # is generated here on first boot and reused.
   postgres-certs:
     image: alpine:3.20
     restart: "no"
@@ -41,10 +86,10 @@ services:
         openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
           -CAcreateserial -out server.crt -days 3650 -sha256 -extfile san.cnf
         rm -f server.csr san.cnf ca.srl
-        # Refuse plaintext at the server too. The client already distrusts
-        # it via sslmode=verify-full; saying it twice means neither
-        # statement is load bearing on its own. "local" stays trusted so
-        # initdb and the pg_isready healthcheck can use the unix socket.
+        # Refuse plaintext at the server too. The client already distrusts it
+        # via sslmode=verify-full; saying it twice means neither statement is
+        # load bearing on its own. "local" stays trusted so initdb and the
+        # pg_isready healthcheck can use the unix socket.
         {
           echo "local   all  all               trust"
           echo "hostssl all  all  0.0.0.0/0    scram-sha-256"
@@ -62,17 +107,17 @@ services:
     depends_on:
       postgres-certs:
         condition: service_completed_successfully
+      secrets-init:
+        condition: service_completed_successfully
     environment:
       POSTGRES_DB: digital_brain
       POSTGRES_USER: digital_brain_app
-      # Read from the same file the application reads, so there is one value
-      # rather than two that can disagree.
-      POSTGRES_PASSWORD_FILE: /run/secrets/database_password
+      POSTGRES_PASSWORD_FILE: /run/dbsecret/database_password
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - postgres-certs:/certs:ro
-      - ${DIGITAL_BRAIN_SECRETS:-/opt/digitalbrain/secrets}:/run/secrets:ro
+      - database-secret:/run/dbsecret:ro
     command:
       - postgres
       - -c
@@ -81,9 +126,6 @@ services:
       - ssl_cert_file=/certs/server.crt
       - -c
       - ssl_key_file=/certs/server.key
-      # Plaintext is refused at the server as well as distrusted at the client:
-      # two independent statements of the same rule, so neither alone is load
-      # bearing.
       - -c
       - hba_file=/certs/pg_hba.conf
     healthcheck:
@@ -101,8 +143,13 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
     environment:
-      DIGITAL_BRAIN_CONFIG: /etc/digitalbrain/production.toml
+      # Non-secret settings, which the entrypoint renders into the TOML the
+      # platform reads. No secret is ever here - those are files, by design.
+      # Mounting your own /etc/digitalbrain/production.toml overrides all of it.
+      DIGITAL_BRAIN_HOSTS: ${DIGITAL_BRAIN_HOSTS:-ajitconnect.in,www.ajitconnect.in}
       DIGITAL_BRAIN_INSTANCE: ${DIGITAL_BRAIN_INSTANCE:-coolify-1}
       DIGITAL_BRAIN_PORT: "8000"
       # Coolify assigns its proxy's address at start, and waitress compares the
@@ -113,22 +160,23 @@ services:
       # first sign-in, then remove it.
       SITE_ADMIN_USER_ID: ${SITE_ADMIN_USER_ID:-}
     volumes:
-      # Read-only, owner-only, and never baked into the image: one file per
-      # secret, as digitalbrain/configuration.py:read_secret requires.
-      - ${DIGITAL_BRAIN_SECRETS:-/opt/digitalbrain/secrets}:/run/secrets:ro
-      - ${DIGITAL_BRAIN_CONFIG_DIR:-/opt/digitalbrain/config}:/etc/digitalbrain:ro
-      # Its own path, not a subdirectory of the read-only config mount:
-      # a nested mountpoint under a :ro bind has nowhere to be created.
+      - platform-secrets:/run/secrets:ro
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
-      # Uploaded originals and the event log. Losing this volume loses every
-      # document's source bytes, so it belongs in the backup set beside the
-      # database.
+      # Writable, and deliberately a DIFFERENT directory from /run/secrets.
+      # An application owner sets their own provider credentials on the
+      # Credentials screen and they are written here - which is why a
+      # credential an operator mounts into /run/secrets always wins over one
+      # typed into a browser. Without this the screen says so rather than
+      # offering a control that cannot work.
+      - managed-credentials:/var/lib/digitalbrain/credentials
+      # Uploaded originals, the rendered configuration and the event log.
+      # Losing this loses every document's source bytes, so it belongs in the
+      # backup set beside the database.
       - app-runtime:/app/.runtime
       # ClamAV signatures, ~1 GB. On a volume so a redeploy does not re-download
       # them and leave documents failing closed until it finishes.
       - clamav-db:/var/lib/clamav
     healthcheck:
-      # Any routable path proves the WSGI stack answers; / redirects to sign-in.
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/accounts/login/', timeout=5).status < 500 else 1)\""]
       interval: 30s
       timeout: 10s
@@ -137,6 +185,9 @@ services:
       start_period: 600s
 
 volumes:
+  platform-secrets:
+  managed-credentials:
+  database-secret:
   postgres-data:
   postgres-certs:
   app-runtime:
