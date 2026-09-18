@@ -1,0 +1,16 @@
+{% load icons %}{% comment %}
+What a run is doing, in order, in the words of whoever pressed Analyse.
+
+data-run-active puts an unfinished run on the existing document poll, so the page
+refreshes itself while there is something to see. A finished run carries no
+marker and simply sits there as the record.
+
+Every line is server-rendered and escaped by the template, as model text always
+is here - none of this is drawn by script.
+{% endcomment %}<ol class="run-log"{% if active %} data-document-pending role="status" aria-live="polite"{% endif %}>{% for event in events %}
+<li class="run-line run-line-{{ event.level }}"><span class="run-time">{{ event.at|date:"H:i:s" }}</span><span class="run-message">{{ event.message }}</span></li>
+{% empty %}
+<li class="run-line run-line-check"><span class="run-message muted">Nothing recorded yet. The run reports each step as it reaches it.</span></li>
+{% endfor %}{% if active %}
+<li class="run-line run-line-step"><span class="run-time"><span class="spinner" aria-hidden="true"></span></span><span class="run-message muted">Working. This page refreshes itself; leaving it does not stop the run.</span></li>
+{% endif %}</ol>

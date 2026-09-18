@@ -1,6 +1,10 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Analyse an imported ticket against the published knowledge graph, then review each proposed fix and request independent approval.</p>{% if grant.role != 'viewer' and tickets %}
+{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<h1>Code Factory</h1><p class="muted">Analyse an imported ticket against the published knowledge graph, then review each proposed fix and request independent approval.</p>
+<p><a href="{% url 'onboarding' application.pk %}">{% icon "success" 13 %}Onboarding: what this application still needs {% icon "arrow-right" 13 %}</a></p>{% if grant.role != 'viewer' and not published_graph %}
+<p class="notice notice-warning">{% icon "warning" %}<span>No knowledge graph is published for this application, so a ticket cannot be analysed. Every item a run produces has to cite evidence a reviewer can open, and there is none without one. <a href="{% url 'graph' application.pk %}">Generate and publish a graph</a> first.</span></p>
+{% endif %}
+{% if grant.role != 'viewer' and tickets and published_graph %}
 <details class="card section" id="analyse"><summary>{% icon "search" 13 %}Analyse a ticket</summary>
-<p class="muted">Pick an imported Jira or ServiceNow ticket. The pipeline triages it, compares it against the published knowledge graph and the non-functional rubric, then proposes each fix with the evidence behind it. Nothing is changed until you review it.</p>
+<p class="muted">Pick an imported Jira or ServiceNow ticket. The pipeline triages it, compares it against <strong>published graph version {{ published_graph }}</strong> and the non-functional rubric, then proposes each fix with the evidence behind it. Nothing is changed until you review it.</p>
 <form method="post" class="token-form">{% csrf_token %}<input type="hidden" name="action" value="analyse">
 {% if connectors %}<label for="run-connector">Queue</label><select id="run-connector" name="connector">{% if connectors|length > 1 %}<option value="">Any connector</option>{% endif %}{% for connector in connectors %}<option value="{{ connector.pk }}"{% if connector.pk == default_connector.pk %} selected{% endif %}>{{ connector.name }} · {{ connector.get_kind_display }}</option>{% endfor %}</select>{% endif %}
 <label for="run-ticket">Ticket</label><select id="run-ticket" name="ticket" required>{% for ticket in tickets %}<option value="{{ ticket.pk }}">{{ ticket.title }}</option>{% endfor %}</select>
@@ -10,18 +14,21 @@
 
 {% if runs %}
 <section class="section"><h2>Pipeline runs</h2>
-<p class="muted">Every phase records which agent ran, what it cost and what it produced. A run stops at the phase that failed.</p>
-<div class="list-card">{% for run in runs %}
+<p class="muted">Each run reports every step as it reaches it. Open one to watch it work, or to read back afterwards what it was given and what it concluded.</p>
+<div class="list-card"{% if active %} data-document-pending{% endif %}>{% for run in runs %}
 <div class="list-row run-row" id="run-{{ run.pk }}"><div>
 <strong>{{ run.ticket_title|default:"(untitled ticket)" }}</strong>
 <small>{{ run.ticket_external_id }} · requested {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · knowledge graph v{{ run.graph_version }}{% else %} · no published knowledge graph{% endif %}{% if run.code_snapshot %} · code graph v{{ run.code_snapshot.number }} at {{ run.code_snapshot.commit_sha|slice:':8' }}{% endif %}</small>
-<div class="run-phases">{% for phase in run.phases.all %}<details class="phase-detail"><summary class="phase phase-{{ phase.status }}">{{ phase.get_name_display }}</summary><div><strong>{{ phase.agent }}</strong><p>{{ phase.get_status_display }}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}</p>{% if phase.prompt_tokens %}<p>{{ phase.prompt_tokens }} input / {{ phase.completion_tokens }} output tokens</p>{% endif %}{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div></details>{% endfor %}</div>
+<div class="run-phases">{% for phase in run.phases.all %}<span class="phase phase-{{ phase.status }}">{{ phase.get_name_display }}</span>{% endfor %}</div>
+{% with latest=run.latest_step %}{% if latest %}<small class="run-latest">{% if run.in_flight %}<span class="spinner" aria-hidden="true"></span>{% endif %}{{ latest.message }}</small>{% endif %}{% endwith %}
 {% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
 {% if run.proposed_repository %}<small class="muted">Repository named in the ticket: <code>{{ run.proposed_repository }}</code>{% if not run.repository_confirmed %} — not yet confirmed, and nothing is written to it.{% endif %}</small>{% endif %}
 </div>
-<span>{% if run.plan %}<a href="{% url 'plan-detail' application.pk run.plan.pk %}">Review {{ run.plan.items.count }} item(s) {% icon "arrow-right" 13 %}</a>{% else %}<span class="pill">{{ run.get_status_display }}</span>{% endif %}</span>
+<span class="run-actions"><span class="pill">{{ run.get_status_display }}</span><a href="{% url 'run-detail' application.pk run.pk %}">{% if run.status == 'awaiting_review' %}Approve or reject{% else %}Watch it work{% endif %} {% icon "arrow-right" 13 %}</a></span>
 </div>
-{% endfor %}</div></section>
+{% endfor %}</div>
+<p class="section"><a href="{% url 'runs' application.pk %}">{% icon "history" 13 %}{% if more_runs %}All runs, including older ones{% else %}Full run history{% endif %} {% icon "arrow-right" 13 %}</a></p>
+</section>
 {% endif %}
 
 <div class="list-card section">{% for plan in page %}<a class="list-row" href="{% url 'plan-detail' application.pk plan.pk %}"><div><strong>{{ plan.title }}</strong><small>{{ plan.author.username }} · {{ plan.created_at|date:"M d, Y" }}</small></div><span class="pill">{{ plan.get_status_display }}</span></a>{% empty %}<p class="padded muted">No change plans submitted.</p>{% endfor %}</div>{% include 'pagination.html' %}{% endblock %}

@@ -363,6 +363,13 @@ class CodeRepository(models.Model):
         ],
     )
     error = models.CharField(max_length=500, blank=True)
+    #: Retired rather than deleted. `CodeSnapshot.repository` is PROTECT and
+    #: `FactoryRun.code_snapshot` is SET_NULL, so deleting a repository would
+    #: either be refused or silently blank the code pin on every past run that
+    #: reasoned about it - rewriting the record of what those runs were given.
+    #: Retiring takes it out of every live query and leaves the history intact,
+    #: the same trade `connectors.prune` makes for knowledge it supersedes.
+    retired_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -731,6 +738,25 @@ class FactoryRun(models.Model):
         ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["application", "-created_at"])]
 
+    @property
+    def latest_step(self):
+        """The last thing this run said, for a list with no room for the rest.
+
+        Reads the prefetched events rather than asking the database again, so a
+        list of runs stays one query for all of their narration.
+        """
+        events = list(self.events.all())
+        return events[-1] if events else None
+
+    @property
+    def in_flight(self):
+        """Still moving, so a page showing it should keep refreshing itself.
+
+        Not called `active`: on a KnowledgeEntry that word means "not superseded",
+        and a finished run is not a retired one.
+        """
+        return self.status in {"pending", "running", "delivering"}
+
 
 class RunPhase(models.Model):
     """One SDLC phase of one run, with everything needed to audit it."""
@@ -774,6 +800,44 @@ class RunPhase(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["run", "name"], name="unique_run_phase")
         ]
+
+
+class RunEvent(models.Model):
+    """One line of what a run is doing, in the words someone watching would use.
+
+    A phase records what an agent produced; this records the steps between --
+    which graph was consulted, which snapshot was pinned, what was checked before
+    a model was called at all. The two are not the same thing: a phase row says
+    "analysis, ok, 4,100 tokens", which is the receipt, not the story.
+
+    Written by whichever thread owns the run at the time -- the worker for Build
+    A, the request for delivery -- and never by both at once, because a run is in
+    exactly one of those states. `sequence` is therefore allocated as one more
+    than the highest so far without locking; `at` breaks any tie it loses.
+
+    Kept after the run finishes, so a run read next month reads the way it read
+    live. That is the whole reason this is a table and not a log line.
+    """
+
+    LEVELS = [
+        ("step", "Step"),
+        ("check", "Check"),
+        ("result", "Result"),
+        ("problem", "Problem"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(FactoryRun, on_delete=models.CASCADE, related_name="events")
+    sequence = models.PositiveIntegerField()
+    #: The phase this belongs to, or "" for the run itself.
+    phase = models.CharField(max_length=20, blank=True)
+    level = models.CharField(max_length=8, choices=LEVELS, default="step")
+    message = models.CharField(max_length=300)
+    at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["run", "sequence", "at"]
+        indexes = [models.Index(fields=["run", "sequence"])]
 
 
 class PlanItem(models.Model):

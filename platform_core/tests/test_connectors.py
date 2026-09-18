@@ -631,6 +631,21 @@ class ConnectorManagementTests(TestCase):
         )
         self.assertEqual(Connector.objects.get(name="Odd board").sync_interval_minutes, 0)
 
+    def publish_a_graph(self):
+        """The analyse form is only offered with a published graph behind it."""
+        from django.utils import timezone
+
+        from platform_core.models import GraphRevision
+
+        GraphRevision.objects.create(
+            application=self.app,
+            number=1,
+            fingerprint="f",
+            published_at=timezone.now(),
+            data={"nodes": [], "edges": [], "sources": []},
+            quality={},
+        )
+
     def test_the_analysis_queue_defaults_to_a_configured_connector(self):
         """"Any connector" is not a choice when one is configured - it is the
         same choice, written twice, with the wrong one preselected."""
@@ -641,6 +656,7 @@ class ConnectorManagementTests(TestCase):
             self.owner, self.app.pk, "OPS-1", "A ticket",
             source="https://team.atlassian.net/browse/OPS-1",
         )
+        self.publish_a_graph()
         page = self.client.get(reverse("plans", args=[self.app.pk]))
         self.assertContains(page, f'value="{connector.pk}" selected')
         self.assertNotContains(page, "Any connector")
@@ -655,6 +671,7 @@ class ConnectorManagementTests(TestCase):
             self.owner, self.app.pk, "OPS-1", "A ticket",
             source="https://team.atlassian.net/browse/OPS-1",
         )
+        self.publish_a_graph()
         page = self.client.get(reverse("plans", args=[self.app.pk]))
         self.assertContains(page, "Any connector")
 

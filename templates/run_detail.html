@@ -1,0 +1,45 @@
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}Run · {{ run.ticket_external_id|default:"Code Factory" }}{% endblock %}{% block content %}{% application_nav %}
+<p><a href="{% url 'runs' application.pk %}">← Back to all runs</a></p>
+<h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1>
+<p><span class="pill">{{ run.get_status_display }}</span> <span class="muted">{{ run.ticket_external_id }} · requested by {{ run.requested_by.username }} · {{ run.created_at|date:"M d, Y H:i" }} UTC{% if run.finished_at %} · finished {{ run.finished_at|date:"H:i" }} UTC{% endif %}</span></p>
+{% if run.ticket_url %}<p class="muted"><small>Raised at <a href="{{ run.ticket_url }}">{{ run.ticket_url }}</a></small></p>{% endif %}
+
+<section class="card"><h2>{% icon "history" %}What this run is doing</h2>
+<p class="muted">Each step as the run reaches it. Checks come before anything is asked of a model, so what the run knew when it started is on the record beside what it concluded.</p>
+{% include "_run_progress.html" %}
+</section>
+
+{% if run.error %}<p class="notice notice-error section" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
+
+{% if run.status == 'awaiting_review' and run.plan %}
+<section class="card section"><h2>{% icon "lock" %}Waiting for approval</h2>
+<p>The gap analysis is finished and its {{ items|length }} item(s) are written down with the evidence behind each one. <strong>Nothing has been written to any repository.</strong> Somebody other than {{ run.requested_by.username }} has to read the items and approve or reject the plan before this run can go further.</p>
+<p><a class="button" href="{% url 'plan-detail' application.pk run.plan.pk %}">{% icon "arrow-right" %}Review the {{ items|length }} proposed fix(es)</a></p>
+</section>
+{% elif run.plan %}
+<p class="section"><a class="button" href="{% url 'plan-detail' application.pk run.plan.pk %}">{% icon "arrow-right" %}Open the change plan</a></p>
+{% endif %}
+
+{% if run.pull_request_url %}<p class="notice notice-success section">{% icon "success" %}<span>A draft pull request is open: <a href="{{ run.pull_request_url }}">{{ run.pull_request_url }}</a></span></p>{% endif %}
+
+{% if items %}
+<section class="card section"><h2>{% icon "search" %}Gap analysis <span class="count">{{ items|length }}</span></h2>
+<p class="muted">The gaps this run found. Open the plan to read the evidence for each and to approve or reject it.</p>
+<div class="list-card">{% for item in items %}
+<div class="list-row"><div><strong>{{ item.title }}</strong><small><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span>{% if item.citations %} · {{ item.citations|length }} verified quotation(s){% else %} · no verifiable evidence{% endif %}</small>{% if item.targets %}<small class="muted">Touches: {% for target in item.targets %}<code>{{ target }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small>{% endif %}</div><span class="pill">{{ item.get_status_display }}</span></div>
+{% endfor %}</div></section>
+{% endif %}
+
+<section class="card section"><h2>{% icon "cost" %}What each phase cost</h2>
+<p class="muted">The receipt beside the story: which agent ran, on which model, and what it spent.</p>
+<div class="list-card">{% for phase in phases %}
+<div class="list-row"><div><strong>{{ phase.get_name_display }}</strong><small>{{ phase.agent }}{% if phase.model %} · {{ phase.model }}{% endif %}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} input / {{ phase.completion_tokens }} output tokens{% endif %}{% if phase.citations_verified or phase.citations_rejected %} · {{ phase.citations_verified }} quotation(s) verified, {{ phase.citations_rejected }} rejected{% endif %}</small>{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div><span class="pill phase-{{ phase.status }}">{{ phase.get_status_display }}</span></div>
+{% empty %}<p class="padded muted">No phase has started yet.</p>{% endfor %}</div></section>
+
+<section class="card section"><h2>{% icon "info" %}What this run was given</h2>
+<dl class="graph-progress-facts">
+<dt>Knowledge graph</dt><dd>{% if run.graph_version %}Published version {{ run.graph_version }}{% else %}None published{% endif %}</dd>
+<dt>Code snapshot</dt><dd>{% if run.code_snapshot %}{{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }} at {{ run.code_snapshot.commit_sha|slice:':8' }}{% else %}None pinned{% endif %}</dd>
+<dt>Repository</dt><dd>{% if run.proposed_repository %}<code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>{% if run.repository_confirmed %} — confirmed{% else %} — not confirmed, and nothing is written to it{% endif %}{% else %}None{% endif %}</dd>
+</dl></section>
+{% endblock %}

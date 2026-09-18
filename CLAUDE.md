@@ -232,6 +232,20 @@ never repeat a paid call. Every run saves a `GraphRevision` as a draft.
 the working graph. Chat and Code Factory both go through it. No published revision is an
 error, not a silent fallback to a draft. A conversation may still pin a specific version.
 
+**A Code Factory run requires a published graph.** `evidence_for` used to swallow that
+error and return no evidence, so a run without a graph quietly produced a plan whose items
+cited nothing — a list of confident findings a reviewer cannot check, which is the one
+output this pipeline must not make. It is refused in three places because they are three
+different moments: `start_run` refuses at the button, `execute` re-resolves it before
+spending anything because a revision can be withdrawn while a run waits in the queue, and
+the plans screen replaces the form with the reason rather than offering a button that can
+only fail. All three say it in the same words, `NO_GRAPH`.
+
+A published graph that matches *nothing* is a different thing and still runs:
+`graph_citations` returns an empty list for it and raises only when there is no graph, so
+letting it raise fails exactly the case that should fail. The run says so, and the thin
+evidence shows on every item it produces.
+
 Neither path checks the live fingerprint — answering from a published snapshot is the point.
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
 

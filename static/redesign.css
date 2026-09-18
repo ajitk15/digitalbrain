@@ -1317,6 +1317,51 @@
   .phase-ok { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
   .phase-failed { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
   .phase-running { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .run-actions { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-2); }
+  .run-latest { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2); color: var(--c-ink-2); }
+  /* The run log. A monospaced time column so the steps line up as a list of
+     events rather than a paragraph, and a left rule that carries the level's
+     colour - the only thing distinguishing a check from a problem at a glance. */
+  /* Application onboarding ---------------------------------------------- */
+  .onboard-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
+  .onboard-step {
+    display: flex;
+    gap: var(--s-3);
+    padding: var(--s-4) 0;
+    border-top: 1px solid var(--c-line);
+  }
+  .onboard-step:first-child { border-top: 0; padding-top: 0; }
+  .onboard-mark { flex: none; display: inline-flex; margin-top: 1px; }
+  .onboard-ok .onboard-mark { color: var(--c-ok); }
+  .onboard-blocked .onboard-mark { color: var(--c-bad); }
+  .onboard-warn .onboard-mark { color: var(--c-warn, var(--c-ink-3)); }
+  .onboard-body { min-width: 0; }
+  .onboard-body p { margin: var(--s-2) 0 0; font-size: var(--t-13); color: var(--c-ink-2); }
+  .onboard-action { color: var(--c-ink-1); }
+  .onboard-body .button { margin-top: var(--s-3); }
+  .onboard-ok .onboard-body p { color: var(--c-ink-3); }
+  .run-log { list-style: none; margin: var(--s-3) 0 0; padding: 0; }
+  .run-line {
+    display: flex;
+    gap: var(--s-3);
+    align-items: baseline;
+    padding: var(--s-2) 0 var(--s-2) var(--s-3);
+    border-left: 2px solid var(--c-line);
+    font-size: var(--t-14);
+  }
+  .run-time {
+    flex: none;
+    width: 62px;
+    font-family: var(--f-mono);
+    font-size: var(--t-12);
+    color: var(--c-ink-3);
+  }
+  .run-message { min-width: 0; overflow-wrap: anywhere; }
+  .run-line-check { border-left-color: var(--c-info-line); }
+  .run-line-result { border-left-color: var(--c-ok-line); }
+  .run-line-result .run-message { font-weight: 600; }
+  .run-line-problem { border-left-color: var(--c-bad-line); }
+  .run-line-problem .run-message { color: var(--c-bad); }
   .plan-item { border-top: 1px solid var(--c-line); padding-top: var(--s-4); margin-top: var(--s-4); }
   .plan-item:first-of-type { border-top: 0; margin-top: 0; }
   .plan-item h3 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }

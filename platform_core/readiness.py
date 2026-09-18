@@ -1,0 +1,324 @@
+"""What an application needs before Code Factory can do anything with it.
+
+One list, three readers. The pipeline already asked these questions in three
+places that could not see each other: `prevalidate` narrated some of them into a
+run, `deliver` raised on others, and nothing at all told somebody setting an
+application up what was still missing until they pressed a button and it failed.
+Three copies of "what is required" drift, and the moment they do, a screen says
+green while a run says no.
+
+So the questions live here and the answers are computed once. The onboarding
+screen renders them, `prevalidate` narrates the analysis ones into the run
+record, and anything else that needs to know asks the same function.
+
+**Two gates, deliberately not one bar.** Analysis and delivery need different
+things, and an application that can analyse but not deliver is in a legitimate
+state rather than a half-finished one - that is the whole shape of this product,
+where describing work and doing it are separate decisions. Collapsing them into a
+single percentage would say an application is 60% ready when it is in fact
+completely ready to do the only thing anyone has asked it to do.
+
+**Configuration, not run state.** Everything here is a property of the
+application: a credential is mounted or it is not. Whether *this* plan was
+approved, or *this* repository confirmed, belongs to the run and stays in
+`code_factory.deliver` - those are decisions a person makes per change, and a
+setup screen that claimed to track them would be claiming the work was finished
+when it had not started.
+"""
+
+from dataclasses import dataclass
+
+ANALYSIS = "analysis"
+DELIVERY = "delivery"
+
+GATES = (
+    (
+        ANALYSIS,
+        "Analyse a ticket",
+        "What a run needs to read a ticket, compare it against the graph and "
+        "propose fixes with evidence. Nothing here writes anywhere.",
+    ),
+    (
+        DELIVERY,
+        "Open a pull request",
+        "What the second half additionally needs to turn an approved plan into "
+        "a draft pull request. Each change still passes its own review gate.",
+    ),
+)
+
+
+@dataclass(frozen=True)
+class Step:
+    """One requirement, and what is true about it right now."""
+
+    key: str
+    gate: str
+    label: str
+    ok: bool
+    #: What is the case, whether or not it is what we want. Always populated:
+    #: "Claude claude-sonnet-5" is as useful to read as the reason it is missing.
+    detail: str
+    #: What to do about it, in one line. Empty when there is nothing to do.
+    action: str
+    #: Where to go and do it, as a url name taking the application id.
+    route: str
+    icon: str
+    #: A run is refused without it, rather than merely going worse.
+    blocking: bool = True
+
+
+def steps(app):
+    """Every requirement, answered for this application.
+
+    Ordered the way somebody setting an application up would meet them, not
+    grouped by which part of the code cares, because the reader is a person
+    doing the work rather than a maintainer of the pipeline.
+    """
+    from django.conf import settings
+
+    from .graphs import published_revision
+    from .models import AIConfiguration, ApplicationGrant, CodeRepository, KnowledgeEntry
+    from .secrets import application_secret
+    from .services import feature_enabled
+
+    found = []
+
+    # ---- analysis ----
+    enabled = feature_enabled("code_factory", app)
+    found.append(
+        Step(
+            "code_factory",
+            ANALYSIS,
+            "Code Factory switched on",
+            enabled,
+            "Enabled for this application." if enabled else "Not enabled.",
+            "" if enabled else "Tick Code Factory on the Features screen.",
+            "application-features",
+            "toggle",
+        )
+    )
+
+    published = published_revision(app.pk)
+    found.append(
+        Step(
+            "graph",
+            ANALYSIS,
+            "Knowledge graph published",
+            published is not None,
+            f"Version {published.number}, published "
+            f"{published.published_at:%d %b %Y}."
+            if published
+            else "No revision has been published.",
+            ""
+            if published
+            else "Add sources in Knowledge, generate a graph and publish it. "
+            "A run is refused without one: every item it produces has to cite "
+            "evidence a reviewer can open.",
+            "graph",
+            "graph",
+        )
+    )
+
+    configured = AIConfiguration.objects.filter(
+        application=app, purpose="plan_drafting", enabled=True
+    ).first()
+    found.append(
+        Step(
+            "model",
+            ANALYSIS,
+            "Model configured for plan drafting",
+            configured is not None,
+            f"{configured.get_provider_display()} {configured.model}."
+            if configured
+            else "No model is configured for plan drafting.",
+            ""
+            if configured
+            else "Choose a provider and model for plan drafting in Settings.",
+            "ai-settings",
+            "sliders",
+        )
+    )
+
+    provider = configured.provider if configured else ""
+    credential = bool(application_secret(app, provider)) if provider else False
+    # The development concession, reported as one rather than hidden: a run does
+    # work without a mounted credential here, and it works by spending whoever
+    # started the server. Somebody setting up an application should be told that
+    # before other people use the instance.
+    host_login = (
+        provider == "claude" and not credential and settings.CLAUDE_USE_HOST_LOGIN
+    )
+    found.append(
+        Step(
+            "credential",
+            ANALYSIS,
+            "Provider credential mounted",
+            credential or host_login,
+            f"A {provider} credential is set for this application."
+            if credential
+            else "Falling back to the host Claude login. Runs spend whoever "
+            "started this server, not this application."
+            if host_login
+            else f"No {provider or 'provider'} credential is set.",
+            ""
+            if credential
+            else "Set a Claude credential on the Credentials screen before "
+            "other people use this instance. The fallback is refused in "
+            "production."
+            if host_login
+            else "Set the provider credential on the Credentials screen.",
+            "credentials",
+            "key",
+            blocking=not host_login,
+        )
+    )
+
+    tickets = (
+        KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="").count()
+    )
+    found.append(
+        Step(
+            "tickets",
+            ANALYSIS,
+            "Tickets imported",
+            bool(tickets),
+            f"{tickets} imported record(s) available to analyse."
+            if tickets
+            else "Nothing has been imported from a connector.",
+            ""
+            if tickets
+            else "Configure a Jira or ServiceNow connector and import. A typed "
+            "note is knowledge, but it is not something anyone raised.",
+            "connectors",
+            "plug",
+        )
+    )
+
+    # ---- delivery ----
+    code_graph = feature_enabled("code_graph", app)
+    indexed = (
+        CodeRepository.objects.filter(
+            application=app,
+            provider="github",
+            status__in=["ready", "partial"],
+            retired_at__isnull=True,
+        )
+        if code_graph
+        else CodeRepository.objects.none()
+    )
+    names = list(indexed.values_list("external_id", flat=True)[:5])
+    with_snapshot = [repo for repo in indexed if repo.snapshots.exists()]
+    found.append(
+        Step(
+            "code_graph",
+            DELIVERY,
+            "Code indexed",
+            bool(with_snapshot),
+            f"{len(with_snapshot)} repository(ies) indexed: {', '.join(names)}."
+            if with_snapshot
+            else "No repository has been indexed."
+            if code_graph
+            else "Code Graph is switched off for this application.",
+            ""
+            if with_snapshot
+            else "Register the repository on the Code Graph screen. Without a "
+            "snapshot the design names components rather than files, and "
+            "implementation has nothing to open."
+            if code_graph
+            else "Tick Code Graph on the Features screen, then register the "
+            "repository.",
+            "code-graph" if code_graph else "application-features",
+            "code",
+        )
+    )
+
+    # Which repository a run reads is not something a ticket gets to decide, and
+    # with several indexed there is nothing to fall back on: pin_repository
+    # deliberately leaves the question to a person rather than guessing. Said
+    # here because the consequence - a run that silently has no code context -
+    # is invisible until the design comes back naming concepts.
+    # Omitted entirely until something is indexed: with nothing there it is not
+    # a question yet, and the step above already owns that. A checklist earns
+    # trust by only showing rows that can be acted on.
+    if with_snapshot:
+        unambiguous = len(with_snapshot) == 1
+        found.append(
+            Step(
+                "one_repository",
+                DELIVERY,
+                "One repository to reason about",
+                unambiguous,
+                f"{names[0]} is the only indexed repository, so runs pin it "
+                "automatically."
+                if unambiguous
+                else f"{len(with_snapshot)} indexed repositories and no way to "
+                "choose between them.",
+                ""
+                if unambiguous
+                else "Remove the repositories that are not this application's "
+                "code, or expect every ticket to name the one it means. A run "
+                "that cannot choose reads no code at all, and its design names "
+                "components instead of files.",
+                "code-graph",
+                "github",
+            )
+        )
+
+    write = bool(application_secret(app, "github_write"))
+    found.append(
+        Step(
+            "github_write",
+            DELIVERY,
+            "Write credential mounted",
+            write,
+            "A write-scoped GitHub credential is set."
+            if write
+            else "No write-scoped credential is set.",
+            ""
+            if write
+            else "Add GitHub (write) on the Credentials screen: a token with "
+            "contents and pull request write. Deliberately not the read token "
+            "the connector uses.",
+            "credentials",
+            "key",
+        )
+    )
+
+    approvers = ApplicationGrant.objects.filter(application=app, can_approve=True).count()
+    found.append(
+        Step(
+            "approver",
+            DELIVERY,
+            "Someone to approve, other than the author",
+            approvers > 1,
+            f"{approvers} member(s) can approve."
+            if approvers
+            else "Nobody can approve a plan.",
+            ""
+            if approvers > 1
+            else "Grant approval to a second member. Whoever starts a run "
+            "authors its plan and cannot approve their own: with one approver, "
+            "a plan they start can never be approved."
+            if approvers
+            else "Grant approval to at least two members on the People & access "
+            "screen.",
+            "application-access",
+            "people",
+        )
+    )
+
+    return found
+
+
+def gate_ready(app_steps, gate):
+    """Whether nothing blocking is outstanding in one gate."""
+    return all(step.ok or not step.blocking for step in app_steps if step.gate == gate)
+
+
+def outstanding(app_steps, gate=None):
+    """The steps still to do, for a count on a card or a nav badge."""
+    return [
+        step
+        for step in app_steps
+        if not step.ok and (gate is None or step.gate == gate)
+    ]

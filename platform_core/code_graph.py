@@ -9,12 +9,14 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .code_graph_analysis import ROLES
 from .code_graph_ingest import register
 from .connectors import credential_location
 from .models import ApplicationGrant, CodeFile, CodeRepository
+from .services import audit
 from .workbench import access
 
 
@@ -168,7 +170,7 @@ def selected_repository(app, raw):
     to nothing: returning None renders the "no repositories yet" empty state
     over an application that plainly has some, which reads as data loss.
     """
-    repositories = CodeRepository.objects.filter(application=app)
+    repositories = CodeRepository.objects.filter(application=app, retired_at__isnull=True)
     if raw:
         try:
             chosen = repositories.filter(pk=uuid.UUID(raw)).first()
@@ -214,8 +216,33 @@ def code_graph(request, pk):
                 request, "Repository queued for refresh. The last snapshot remains available."
             )
             return redirect(f"{request.path}?repository={repository.pk}")
+        elif action == "retire":
+            repository = get_object_or_404(
+                CodeRepository,
+                pk=request.POST.get("repository"),
+                application=app,
+                retired_at__isnull=True,
+            )
+            repository.retired_at = timezone.now()
+            repository.save(update_fields=["retired_at", "updated_at"])
+            audit(
+                request.user,
+                "code_repository.retired",
+                repository.pk,
+                app.product.portfolio.organization,
+                {"repository": repository.name},
+            )
+            messages.success(
+                request,
+                f"{repository.name} was removed from this application. Runs no longer "
+                "read it, and every past run keeps the snapshot it reasoned about. "
+                "Registering the same repository again brings it back.",
+            )
+            return redirect(request.path)
 
-    repositories = CodeRepository.objects.filter(application=app).prefetch_related("snapshots")
+    repositories = CodeRepository.objects.filter(
+        application=app, retired_at__isnull=True
+    ).prefetch_related("snapshots")
     repository = selected_repository(app, request.GET.get("repository", ""))
     snapshot = repository.snapshots.first() if repository else None
     search = request.GET.get("q", "").strip()[:200]

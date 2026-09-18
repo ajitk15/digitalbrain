@@ -69,11 +69,25 @@ def register(user, app_id, repository, ref=""):
         },
     )
     if not created:
+        # Registering a name that is retired brings it back rather than
+        # refusing: the unique constraint still holds that slot, and "you
+        # already removed this once" is not a useful answer to someone asking
+        # for it again.
         repo.default_ref = (ref or repo.default_ref)[:200]
         repo.status = "queued"
         repo.error = ""
+        repo.retired_at = None
         repo.job_id = uuid.uuid4()
-        repo.save(update_fields=["default_ref", "status", "error", "job_id", "updated_at"])
+        repo.save(
+            update_fields=[
+                "default_ref",
+                "status",
+                "error",
+                "retired_at",
+                "job_id",
+                "updated_at",
+            ]
+        )
     audit(
         user,
         "code_repository.queued",

@@ -69,7 +69,13 @@ def application_menu(context):
         ),
         ("Code Graph", "code-graph", "code_graph", "graph", {"code-graph", "code-file"}),
         ("Chat", "chat", "chat", "chat", {"chat"}),
-        ("Code Factory", "plans", "code_factory", "code", {"plans", "plan-detail"}),
+        (
+            "Code Factory",
+            "plans",
+            "code_factory",
+            "code",
+            {"plans", "plan-detail", "runs", "run-detail", "onboarding"},
+        ),
     ]
     items = [
         {

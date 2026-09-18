@@ -37,13 +37,22 @@ import hashlib
 import json
 import re
 import time
+from collections import Counter
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Max
 from django.http import Http404
 from django.utils import timezone
 
-from .models import RUBRIC, ChangePlan, FactoryRun, PlanItem, RunPhase
+from .models import (
+    RUBRIC,
+    ChangePlan,
+    FactoryRun,
+    PlanItem,
+    RunEvent,
+    RunPhase,
+)
 from .services import audit
 
 #: Per-phase output budgets. Each is sized for what that phase actually returns,
@@ -58,6 +67,20 @@ PHASE_TOKENS = {
     # not: this way the content either arrives complete or is refused.
     "implementation": 16384,
 }
+
+#: Refused in the same words wherever it is refused: at the button, on the
+#: worker, and in the run's own narration.
+#:
+#: The graph is not an enhancement to this pipeline, it is what makes its output
+#: checkable. Without one the model still answers, fluently, and every finding it
+#: makes is unfalsifiable -- which is worse than no finding at all, because it
+#: reads exactly like a real one.
+NO_GRAPH = (
+    "No knowledge graph is published for this application. Generate a graph in "
+    "Knowledge and publish it before analysing a ticket: every item a run "
+    "produces has to cite evidence a reviewer can open, and there is none "
+    "without a published graph."
+)
 
 #: A background job with nobody holding a request open, but still a ceiling.
 PHASE_TIMEOUT = 300
@@ -85,6 +108,13 @@ BUILD_B = ("implementation", "verification", "delivery")
 #: the six numbers that used to be written at the call sites cannot drift from
 #: the order the phases actually run in.
 PHASES = BUILD_A + BUILD_B
+
+#: The item categories as they read when counted in a sentence.
+COUNTED_CATEGORIES = {
+    "stated": "asked for in the ticket",
+    "functional": "functional",
+    "non_functional": "non-functional",
+}
 
 AGENTS = {
     "triage": "Ticket triage",
@@ -215,6 +245,66 @@ def repository_from(value):
     return f"{owner}/{name}"
 
 
+def note(run, message, *, phase="", level="step"):
+    """Say, in one line, what this run is doing right now.
+
+    The audience is whoever pressed Analyse, so the wording is theirs: "Connected
+    to the knowledge graph", not "graph_citations returned 6". The phase rows
+    remain the receipt -- agent, model, tokens, digests -- and this is the
+    commentary beside them, which is why it was worth a second table.
+
+    Narration is never allowed to change what the run does. Nothing here decides
+    anything, and no caller reads a return value.
+    """
+    highest = RunEvent.objects.filter(run=run).aggregate(top=Max("sequence"))["top"] or 0
+    RunEvent.objects.create(
+        run=run,
+        sequence=highest + 1,
+        phase=phase,
+        level=level,
+        message=str(message)[:300],
+    )
+
+
+def prevalidate(run, entry):
+    """Everything worth knowing before a paid call is made, written down.
+
+    This reports; it does not decide. One requirement is genuinely enforced --
+    `execute` refuses a run with no published graph, on the line after this
+    returns -- and the rest already have a real check where they bite: a missing
+    model configuration fails the first ask, an unregistered repository leaves
+    the run unpinned. Enforcing them here as well would create a second place a
+    run can stop, which is what the phase rows exist to avoid.
+
+    What someone watching cannot otherwise see is what the run *knows* at the
+    point it starts, so that is what this says.
+    """
+    from .readiness import ANALYSIS, steps
+
+    note(run, "Starting the run.", level="step")
+
+    # Read from the same list the onboarding screen renders, so the two can
+    # never disagree about what is required. What this adds is the run's own
+    # subject: the readiness of an application says nothing about *this* ticket.
+    for step in steps(run.application):
+        note(
+            run,
+            f"{step.label}: {step.detail}",
+            level="check" if step.ok or step.gate != ANALYSIS else "problem",
+        )
+
+    note(
+        run,
+        f"Ticket: {run.ticket_external_id or 'no id'}, imported text found "
+        f"({len(entry.content)} characters)."
+        if entry
+        else f"Ticket: {run.ticket_external_id or 'no id'}, no imported body found. "
+        "Only its title is available.",
+        level="check",
+    )
+    note(run, "Pre-run checks complete.", level="result")
+
+
 def start_phase(run, name):
     phase, _ = RunPhase.objects.get_or_create(
         run=run,
@@ -249,6 +339,17 @@ def finish_phase(
         citations_verified=verified,
         citations_rejected=rejected,
     )
+    if status == "failed":
+        # Narrated here rather than at each raise: a phase has several ways to
+        # fail and only one way to finish, so this is the place that cannot be
+        # forgotten when a new one is added.
+        note(
+            phase.run,
+            f"{AGENTS.get(phase.name, phase.name)} failed. "
+            + (error or "No reason was recorded."),
+            phase=phase.name,
+            level="problem",
+        )
 
 
 def evidence_for(app_id, question, version):
@@ -257,15 +358,18 @@ def evidence_for(app_id, question, version):
     Code Factory used to draft from lexical keyword matches while chat answered
     from the published graph. Grounding both in the same place is the point of
     this rewrite: an item cites the graph a reviewer can open, not a search hit.
+
+    This used to swallow the "nothing is published" error and return no evidence,
+    so a run without a graph quietly produced a plan with no citations behind it.
+    That is the one shape of output this pipeline must not make: a list of
+    confident findings a reviewer cannot check. `graph_citations` raises only
+    when the graph is absent or unpublished -- a published graph that matches
+    nothing returns an empty list -- so letting it raise fails exactly the case
+    that should fail, and no other.
     """
     from .graph_ai import graph_citations
 
-    try:
-        return graph_citations(app_id, question, version=version)
-    except ValidationError:
-        # No published graph, or none that still verifies. The run continues on
-        # the ticket alone and says so, rather than failing outright.
-        return []
+    return graph_citations(app_id, question, version=version)
 
 
 def ask(user, app_id, phase_name, instructions, question, citations, receipt):
@@ -296,6 +400,8 @@ def run_triage(run, body):
     started = time.monotonic()
     phase = start_phase(run, "triage")
     RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of(body))
+    note(run, "Triage: reading the ticket.", phase="triage")
+    note(run, "Triage: asking the model what this ticket is asking for.", phase="triage")
     receipt = {}
     try:
         answer = ask(
@@ -317,6 +423,7 @@ def run_triage(run, body):
             "repository": repository_from(payload.get("repository")),
         }
     except ValidationError as failure:
+        note(run, f"Triage failed. {' '.join(failure.messages)}", phase="triage", level="problem")
         finish_phase(
             phase,
             "failed",
@@ -327,6 +434,13 @@ def run_triage(run, body):
         )
         raise
     finish_phase(phase, "ok", started, output=output, usage=receipt)
+    note(
+        run,
+        f"Triage: read as a {output['kind']} asking for "
+        f"{len(output['requirements'])} thing(s). {output['summary']}",
+        phase="triage",
+        level="result",
+    )
     pin_repository(run, output["repository"])
     return output
 
@@ -355,16 +469,33 @@ def pin_repository(run, named):
         if named:
             FactoryRun.objects.filter(pk=run.pk).update(proposed_repository=named)
             run.proposed_repository = named
+            note(run, f"The ticket names the repository {named}. Nothing is read from it.")
         return
     registered = CodeRepository.objects.filter(
-        application_id=run.application_id, provider="github", status__in=["ready", "partial"]
+        application_id=run.application_id,
+        provider="github",
+        status__in=["ready", "partial"],
+        retired_at__isnull=True,
     )
     if named:
         repository = registered.filter(external_id=named.lower()).first()
+        if repository is None:
+            note(
+                run,
+                f"The ticket names {named}, which is not registered here. The run "
+                "continues without code structure.",
+            )
     else:
         candidates = list(registered[:2])
         repository = candidates[0] if len(candidates) == 1 else None
         if repository is None:
+            note(
+                run,
+                "No repository named in the ticket and more than one registered, "
+                "so which one to read is left for the reviewer to say."
+                if candidates
+                else "No repository named in the ticket and none registered.",
+            )
             return
     snapshot = repository.snapshots.first() if repository else None
     proposed = repository.external_id if repository else named
@@ -373,6 +504,18 @@ def pin_repository(run, named):
     )
     run.proposed_repository = proposed
     run.code_snapshot = snapshot
+    if snapshot:
+        note(
+            run,
+            f"Pinned code snapshot v{snapshot.number} of {proposed} at commit "
+            f"{snapshot.commit_sha[:8]}.",
+            level="result",
+        )
+    elif repository:
+        # Only when one was actually found. A name the ticket gave that matches
+        # nothing here has already been reported as unregistered, and saying it
+        # "has no snapshot yet" as well would contradict that in the next line.
+        note(run, f"Repository {proposed} is registered but has no snapshot to read yet.")
 
 
 #: A git ref the API path can carry. Checked because `branch_head` interpolates
@@ -408,6 +551,11 @@ def confirm_repository(run, repository, base_branch):
     run.proposed_repository = normalized
     run.base_branch = branch
     run.repository_confirmed = True
+    note(
+        run,
+        f"Repository confirmed by a reviewer: {normalized}, branch {branch}.",
+        level="result",
+    )
     return normalized
 
 
@@ -529,10 +677,35 @@ def run_analysis(run, triage, body):
     phase = start_phase(run, "analysis")
     asked = "\n".join(triage["requirements"])
     question = ticket_question(run, f"{triage['summary']}\n\nAsked for:\n{asked}\n\n{body}")
+    if run.code_snapshot_id:
+        note(run, "Gap analysis: reading the pinned code snapshot.", phase="analysis")
     code_context = code_context_for(run, question)
     if code_context:
         question = f"{question}\n\nPinned code structure:\n{code_context}"
+    note(
+        run,
+        f"Gap analysis: connecting to the {run.application.name} knowledge graph "
+        f"v{run.graph_version}.",
+        phase="analysis",
+    )
     citations = evidence_for(run.application_id, question, run.graph_version)
+    note(
+        run,
+        f"Connected. {len(citations)} passage(s) came back verified against their sources."
+        if citations
+        # A published graph that matches nothing is a real answer, not a missing
+        # one: the run continues, and the thin evidence shows on every item.
+        else "Connected, but nothing in the graph matched this ticket. The items "
+        "this produces will carry little or no evidence.",
+        phase="analysis",
+        level="result" if citations else "check",
+    )
+    note(
+        run,
+        "Gap analysis: asking the model to compare what the ticket asks for "
+        "against what the evidence says exists.",
+        phase="analysis",
+    )
     # Numbered for the prompt; the stored citation is always the original.
     numbered = [{**citation, "id": str(index)} for index, citation in enumerate(citations, start=1)]
     RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of([question, citations]))
@@ -584,6 +757,20 @@ def run_analysis(run, triage, body):
         citations=(verified_total, rejected_total),
         usage=receipt,
     )
+    counts = Counter(item["category"] for item in items)
+    # The stored labels read as headings ("Non-functional gap"), which does not
+    # pluralise in a sentence. Counted, they want the shorter word.
+    breakdown = ", ".join(
+        f"{counts[key]} {word}" for key, word in COUNTED_CATEGORIES.items() if counts[key]
+    )
+    note(
+        run,
+        f"Gap analysis found {len(items)} item(s): {breakdown}. "
+        f"{verified_total} quotation(s) verified"
+        + (f", {rejected_total} rejected as unverifiable." if rejected_total else "."),
+        phase="analysis",
+        level="result",
+    )
     return items
 
 
@@ -595,6 +782,12 @@ def run_design(run, triage, items):
         for index, item in enumerate(items)
     ]
     question = ticket_question(run, json.dumps({"items": numbered}))
+    note(
+        run,
+        f"Change design: asking the model what should change for each of the "
+        f"{len(items)} item(s), and which files it touches.",
+        phase="design",
+    )
     # Design is the phase that names the files implementation will read, so it
     # is the phase that most needs to know which files exist.
     code_context = code_context_for(run, question)
@@ -640,6 +833,14 @@ def run_design(run, triage, items):
         item["change_summary"] = design.get("change_summary", "")
         item["targets"] = design.get("targets", [])
     finish_phase(phase, "ok", started, output={"items": items}, usage=receipt)
+    named = sorted({target for item in items for target in item["targets"]})
+    note(
+        run,
+        f"Change design: {len(items)} item(s) designed, naming {len(named)} target(s)"
+        + (f": {', '.join(named[:8])}." if named else ", none of them a file."),
+        phase="design",
+        level="result",
+    )
     return items
 
 
@@ -648,6 +849,10 @@ def start_run(user, app_id, entry, connector=None):
 
     The ticket is copied onto the run rather than referenced, so the record stays
     readable after a later import supersedes the entry it came from.
+
+    Refused outright without a published graph, rather than queued and failed on
+    the worker: the person is standing in front of the button, and telling them
+    now costs them nothing while a queued run costs them the wait.
     """
     from .graphs import published_revision
     from .workbench import access
@@ -655,6 +860,8 @@ def start_run(user, app_id, entry, connector=None):
     app, _ = access(user, app_id, "code_factory", write=True)
     access(user, app_id, "knowledge")
     published = published_revision(app_id)
+    if published is None:
+        raise ValidationError(NO_GRAPH)
     run = FactoryRun.objects.create(
         application=app,
         requested_by=user,
@@ -685,6 +892,7 @@ def execute(run):
     Runs on the worker. Each phase records itself; a failure stops the run there
     and leaves the record showing exactly which phase failed and why.
     """
+    from .graphs import published_revision
     from .models import KnowledgeEntry
 
     claimed = FactoryRun.objects.filter(pk=run.pk, status="pending").update(status="running")
@@ -694,17 +902,30 @@ def execute(run):
         application_id=run.application_id, source=run.ticket_url, active=True
     ).first()
     body = (entry.content if entry else run.ticket_title)[:20000]
+    prevalidate(run, entry)
+    # Re-resolved rather than trusted from start_run, for the same reason
+    # code_context_for re-checks access: a run sits in a queue, and a revision
+    # can be withdrawn while it waits. Unlike the code context, this is not
+    # something the run can continue without.
+    if published_revision(run.application_id) is None:
+        note(run, NO_GRAPH, level="problem")
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="failed", error=NO_GRAPH, finished_at=timezone.now()
+        )
+        return True
     try:
         triage = run_triage(run, body)
         items = run_analysis(run, triage, body)
         items = run_design(run, triage, items)
         plan = build_plan(run, triage, items)
     except ValidationError as failure:
+        note(run, "The run stopped here. Nothing was changed anywhere.", level="problem")
         FactoryRun.objects.filter(pk=run.pk).update(
             status="failed", error=" ".join(failure.messages)[:2000], finished_at=timezone.now()
         )
         return True
     except Exception:
+        note(run, "The run stopped unexpectedly. Nothing was changed anywhere.", level="problem")
         FactoryRun.objects.filter(pk=run.pk).update(
             status="failed",
             error="The run stopped unexpectedly. See the phase record.",
@@ -713,6 +934,13 @@ def execute(run):
         raise
     FactoryRun.objects.filter(pk=run.pk).update(
         status="awaiting_review", plan=plan, finished_at=timezone.now()
+    )
+    note(
+        run,
+        f"Waiting for approval. Open the plan to read each of the "
+        f"{len(items)} item(s) with its evidence, then approve or reject it. "
+        "Nothing is written anywhere until somebody does.",
+        level="result",
     )
     return True
 
@@ -771,6 +999,7 @@ def build_plan(run, triage, items):
                 "graph_version": run.graph_version,
             },
         )
+    note(run, f'Wrote the change plan "{plan.title}" with {len(items)} item(s).', level="result")
     return plan
 
 
@@ -881,15 +1110,35 @@ def run_implementation(run, token):
 
     started = time.monotonic()
     phase = start_phase(run, "implementation")
+    wanted = target_paths(run.plan)[:MAX_FILES]
+    note(
+        run,
+        f"Implementation: reading {len(wanted)} file(s) the approved plan named "
+        f"from {run.proposed_repository} at {run.base_branch}.",
+        phase="implementation",
+    )
     files = []
-    for path in target_paths(run.plan)[:MAX_FILES]:
+    for path in wanted:
         found = read_file(run.proposed_repository, path, run.base_branch, token)
         if found:
             files.append(found)
+            note(run, f"Read {found['path']}.", phase="implementation")
             continue
         missing = absent_path(run.proposed_repository, path, run.base_branch, token)
         if missing:
             files.append({"path": missing, "text": "", "sha": None})
+            note(
+                run,
+                f"{missing} is not in the repository. It will be created.",
+                phase="implementation",
+            )
+        else:
+            note(
+                run,
+                f"{path} could not be read and is not simply absent. It is left alone.",
+                phase="implementation",
+                level="check",
+            )
     if not files:
         message = (
             "None of the files the design named could be read from "
@@ -911,6 +1160,12 @@ def run_implementation(run, token):
         f"{item.title}\n{item.change_summary}"
         for item in run.plan.items.exclude(status="rejected").order_by("sequence")
     )[:8000]
+    note(
+        run,
+        f"Implementation: asking the model for the new contents of "
+        f"{len(numbered)} file(s).",
+        phase="implementation",
+    )
     receipt = {}
     try:
         answer = ask(
@@ -950,6 +1205,14 @@ def run_implementation(run, token):
             ],
         },
         usage=receipt,
+    )
+    created = [change["path"] for change in changes if change["sha"] is None]
+    note(
+        run,
+        f"Implementation returned {len(changes)} changed file(s)"
+        + (f", {len(created)} of them new: {', '.join(created)}." if created else "."),
+        phase="implementation",
+        level="result",
     )
     return changes
 
@@ -998,6 +1261,11 @@ def run_verification(run, changes, token):
 
     started = time.monotonic()
     phase = start_phase(run, "verification")
+    note(
+        run,
+        f"Pre-write checks: checking {len(changes)} file(s) before anything is written.",
+        phase="verification",
+    )
     findings = []
     for change in changes:
         try:
@@ -1036,6 +1304,14 @@ def run_verification(run, changes, token):
             ),
         },
     )
+    note(
+        run,
+        "Pre-write checks passed: every path is safe, nothing was elided, no file "
+        "moved since it was read, and each new path is still absent. No build or "
+        "test suite was run.",
+        phase="verification",
+        level="result",
+    )
     return True
 
 
@@ -1052,11 +1328,17 @@ def run_delivery(run, changes, token):
     started = time.monotonic()
     phase = start_phase(run, "delivery")
     branch = f"{BRANCH_PREFIX}{run.ticket_external_id or 'change'}-{str(run.pk)[:8]}".lower()
+    note(run, f"Delivery: creating branch {branch} from {run.base_branch}.", phase="delivery")
     try:
         head = branch_head(run.proposed_repository, run.base_branch, token)
         create_branch(run.proposed_repository, branch, head, token)
         for change in changes:
             creating = change["sha"] is None
+            note(
+                run,
+                f"Committing {'new file ' if creating else ''}{change['path']}.",
+                phase="delivery",
+            )
             commit_file(
                 run.proposed_repository,
                 branch,
@@ -1068,6 +1350,7 @@ def run_delivery(run, changes, token):
                 token,
                 create=creating,
             )
+        note(run, "Opening a draft pull request.", phase="delivery")
         url = open_pull_request(
             run.proposed_repository,
             branch,
@@ -1080,6 +1363,7 @@ def run_delivery(run, changes, token):
         finish_phase(phase, "failed", started, error=" ".join(failure.messages))
         raise
     finish_phase(phase, "ok", started, output={"branch": branch, "pull_request": url})
+    note(run, f"Draft pull request opened: {url}", phase="delivery", level="result")
     FactoryRun.objects.filter(pk=run.pk).update(pull_request_url=url)
     return url
 
@@ -1159,11 +1443,18 @@ def deliver(user, app_id, run_id):
         )
     FactoryRun.objects.filter(pk=run.pk).update(status="delivering", error="")
     run.refresh_from_db()
+    note(
+        run,
+        f"Delivery requested by {user.get_username()}. The plan is approved, "
+        f"{run.proposed_repository} is confirmed and a write credential is mounted.",
+        level="check",
+    )
     try:
         changes = run_implementation(run, token)
         run_verification(run, changes, token)
         url = run_delivery(run, changes, token)
     except ValidationError as failure:
+        note(run, "Delivery stopped.", level="problem")
         FactoryRun.objects.filter(pk=run.pk).update(
             status="failed", error=" ".join(failure.messages)[:2000]
         )

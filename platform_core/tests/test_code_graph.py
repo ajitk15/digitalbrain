@@ -46,6 +46,73 @@ class CodeGraphTests(TestCase):
         response = self.client.get(reverse("code-graph", args=[self.app.pk]))
         self.assertEqual(response.status_code, 404)
 
+    def test_a_repository_is_retired_rather_than_deleted(self):
+        """Removing one must not rewrite what past runs were given.
+
+        CodeSnapshot.repository is PROTECT and FactoryRun.code_snapshot is
+        SET_NULL, so a hard delete is either refused or quietly blanks the code
+        pin on every run that reasoned about it. Retiring takes it out of every
+        live query and leaves the history where it is.
+        """
+        from platform_core.models import CodeRepository, FactoryRun
+
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        snapshot = repository.snapshots.create(number=1, commit_sha="a" * 40)
+        run = FactoryRun.objects.create(
+            application=self.app,
+            requested_by=self.owner,
+            ticket_title="A ticket",
+            code_snapshot=snapshot,
+        )
+
+        response = self.client.post(
+            reverse("code-graph", args=[self.app.pk]),
+            {"action": "retire", "repository": str(repository.pk)},
+            follow=True,
+        )
+        self.assertContains(response, "was removed from this application")
+
+        repository.refresh_from_db()
+        run.refresh_from_db()
+        self.assertIsNotNone(repository.retired_at)
+        # The row, its snapshot, and the run's pin all survive.
+        self.assertTrue(CodeRepository.objects.filter(pk=repository.pk).exists())
+        self.assertEqual(run.code_snapshot_id, snapshot.pk)
+
+    def test_a_retired_repository_is_not_offered_or_pinned(self):
+        from platform_core.code_factory import pin_repository
+        from platform_core.models import FactoryRun
+
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        repository.status = "ready"
+        repository.save(update_fields=["status"])
+        repository.snapshots.create(number=1, commit_sha="a" * 40)
+        self.client.post(
+            reverse("code-graph", args=[self.app.pk]),
+            {"action": "retire", "repository": str(repository.pk)},
+        )
+
+        page = self.client.get(reverse("code-graph", args=[self.app.pk]))
+        self.assertContains(page, "No repositories yet")
+
+        run = FactoryRun.objects.create(
+            application=self.app, requested_by=self.owner, ticket_title="A ticket"
+        )
+        pin_repository(run, "")
+        self.assertIsNone(run.code_snapshot)
+
+    def test_registering_a_retired_name_again_brings_it_back(self):
+        """The unique slot is still held, and refusing would be unhelpful."""
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.client.post(
+            reverse("code-graph", args=[self.app.pk]),
+            {"action": "retire", "repository": str(repository.pk)},
+        )
+        again = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertEqual(again.pk, repository.pk)
+        self.assertIsNone(again.retired_at)
+        self.assertEqual(again.status, "queued")
+
     def test_analysis_resolves_project_imports_without_basename_guessing(self):
         analyzed = [
             facts("app/service.py", "from app import helpers\n\ndef run():\n    pass\n"),

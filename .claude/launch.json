@@ -5,10 +5,11 @@
       "name": "digitalbrain",
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": [
-        "manage.py",
-        "runserver",
-        "127.0.0.1:8055",
-        "--noreload"
+        "scripts/serve.py",
+        "--port",
+        "8055",
+        "--instance",
+        "preview"
       ],
       "port": 8055
     },

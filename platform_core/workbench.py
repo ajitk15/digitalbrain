@@ -1028,7 +1028,13 @@ def plans(request, pk):
         connector = Connector.objects.filter(
             pk=request.POST.get("connector"), application=app
         ).first()
-        run = start_run(request.user, pk, entry, connector=connector)
+        try:
+            run = start_run(request.user, pk, entry, connector=connector)
+        except ValidationError as error:
+            # A run with nothing to cite is refused rather than queued, so this
+            # is an answer to give the person now, not a 500.
+            messages.error(request, " ".join(error.messages))
+            return redirect("plans", pk=pk)
         messages.success(
             request,
             f"Queued analysis of {entry.title}. Its phases appear below as they run.",
@@ -1091,6 +1097,10 @@ def plans(request, pk):
                 )
                 audit(request.user, "plan.submitted", plan.pk, app.product.portfolio.organization)
             return redirect("plan-detail", pk=pk, plan_id=plan.pk)
+    runs_shown = list(
+        FactoryRun.objects.filter(application=app).prefetch_related("phases", "events")[:5]
+    )
+    published_graph = published_graph_version(app.pk)
     return render(
         request,
         "plans.html",
@@ -1101,10 +1111,15 @@ def plans(request, pk):
             "draft_form": draft_form,
             "draft_notice": draft_notice,
             "plan_ai_enabled": plan_ai_enabled,
+            # Analysis is refused without one, so the form is not offered either:
+            # a button that can only fail is worse than a sentence saying why.
+            "published_graph": published_graph,
             "page": Paginator(ChangePlan.objects.filter(application=app), 20).get_page(
                 request.GET.get("page")
             ),
-            "runs": FactoryRun.objects.filter(application=app).prefetch_related("phases")[:10],
+            "runs": runs_shown,
+            "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
+            "active": any(run.in_flight for run in runs_shown),
             "tickets": ticket_choices(app),
             "connectors": connectors,
             # The queue an analysis runs against defaults to the connector that
@@ -1114,6 +1129,99 @@ def plans(request, pk):
             "default_connector": connectors.order_by(
                 models.F("last_synced_at").desc(nulls_last=True), "name"
             ).first(),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def onboarding(request, pk):
+    """What this application still needs before Code Factory can work.
+
+    Read-only, and every row links to the screen that fixes it rather than
+    fixing it here: each of those screens has its own permission check and its
+    own audit event, and a setup page that wrote to all of them would be a
+    second way to do everything with none of that.
+    """
+    from .readiness import GATES, gate_ready, outstanding, steps
+
+    app, grant = access(request.user, pk, "code_factory")
+    found = steps(app)
+    return render(
+        request,
+        "onboarding.html",
+        {
+            "application": app,
+            "grant": grant,
+            "gates": [
+                {
+                    "key": key,
+                    "label": label,
+                    "blurb": blurb,
+                    "steps": [step for step in found if step.gate == key],
+                    "ready": gate_ready(found, key),
+                    "outstanding": outstanding(found, key),
+                }
+                for key, label, blurb in GATES
+            ],
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def runs(request, pk):
+    """Every run this application has ever made, newest first.
+
+    Separate from the Code Factory screen because that screen is for starting
+    work and this one is for looking back at it: a run is kept for as long as
+    the application is, and ten rows on a busy application is not a history.
+    """
+    from .models import FactoryRun
+
+    app, grant = access(request.user, pk, "code_factory")
+    page = Paginator(
+        FactoryRun.objects.filter(application=app).prefetch_related("phases"), 20
+    ).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "runs.html",
+        {
+            "application": app,
+            "grant": grant,
+            "page": page,
+            "active": any(run.in_flight for run in page),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def run_detail(request, pk, run_id):
+    """One run, step by step, while it happens and afterwards.
+
+    The events are the narration and the phases are the receipt; both are shown
+    because they answer different questions. Read-only on purpose: approving the
+    plan and confirming the repository are decisions with their own gates, and
+    this page links to them rather than growing a second copy of either.
+    """
+    from .models import FactoryRun
+
+    app, grant = access(request.user, pk, "code_factory")
+    run = get_object_or_404(
+        FactoryRun.objects.select_related("plan", "code_snapshot"), pk=run_id, application=app
+    )
+    return render(
+        request,
+        "run_detail.html",
+        {
+            "application": app,
+            "grant": grant,
+            "run": run,
+            "events": run.events.all(),
+            "phases": run.phases.all(),
+            "items": run.plan.items.order_by("sequence") if run.plan else (),
+            "active": run.in_flight,
         },
     )
 

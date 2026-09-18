@@ -1,0 +1,26 @@
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}Onboarding · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+<p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
+<h1>Application onboarding</h1>
+<p class="muted">What {{ application.name }} needs before Code Factory can work on it. Each row links to the screen that fixes it; nothing is changed from here.</p>
+
+{% for gate in gates %}
+<section class="card section">
+<h2>{% if gate.ready %}{% icon "success" %}{% else %}{% icon "empty" %}{% endif %}{{ gate.label }} <span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.outstanding|length }} outstanding{% endif %}</span></h2>
+<p class="muted">{{ gate.blurb }}</p>
+<ol class="onboard-list">{% for step in gate.steps %}
+<li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}blocked{% else %}warn{% endif %}">
+<span class="onboard-mark" aria-hidden="true">{% if step.ok %}{% icon "success" 16 %}{% elif step.blocking %}{% icon "error" 16 %}{% else %}{% icon "warning" 16 %}{% endif %}</span>
+<div class="onboard-body">
+<strong>{{ step.label }}</strong>
+<span class="sr-only">{% if step.ok %}Done.{% elif step.blocking %}Required.{% else %}Recommended.{% endif %}</span>
+<p>{{ step.detail }}</p>
+{% if step.action %}<p class="onboard-action">{{ step.action }}</p>
+<a class="button secondary" href="{% url step.route application.pk %}">{% icon step.icon 13 %}Go and set it up</a>{% endif %}
+</div>
+</li>
+{% endfor %}</ol>
+</section>
+{% endfor %}
+
+<p class="muted section">A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</p>
+{% endblock %}

@@ -15,7 +15,9 @@ What this pins, beyond the happy path:
 import json
 from unittest.mock import patch
 
+from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 
 from platform_core.code_factory import (
@@ -28,6 +30,7 @@ from platform_core.code_factory import (
 )
 from platform_core.models import (
     AIConfiguration,
+    ApplicationGrant,
     ChangePlan,
     FactoryRun,
     GraphRevision,
@@ -345,6 +348,230 @@ class PipelineTests(TestCase):
 
 
 @override_settings(**SETTINGS)
+@override_settings(**SETTINGS)
+class PublishedGraphRequiredTests(TestCase):
+    """A run without a published graph is refused, not run.
+
+    It used to proceed and simply produce items with no citations - which is the
+    one output this pipeline must not make, because an unfalsifiable finding
+    reads exactly like a checked one. The refusal is in three places for three
+    different moments: the button, the worker, and the phase that would spend
+    the money.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+
+    def unpublish(self):
+        GraphRevision.objects.filter(application=self.app).update(published_at=None)
+
+    def test_the_button_refuses_before_anything_is_queued(self):
+        self.unpublish()
+        with self.assertRaises(ValidationError) as refusal:
+            start_run(self.owner, self.app.pk, self.ticket)
+        self.assertIn("No knowledge graph is published", " ".join(refusal.exception.messages))
+        self.assertEqual(FactoryRun.objects.count(), 0)
+
+    def test_the_screen_says_why_rather_than_offering_a_button_that_fails(self):
+        self.unpublish()
+        response = self.client.get(reverse("plans", args=[self.app.pk]))
+        self.assertContains(response, "No knowledge graph is published")
+        self.assertNotContains(response, 'value="analyse"')
+
+    def test_a_post_that_gets_past_the_screen_is_still_refused(self):
+        """The template hiding the form is a convenience, not the check."""
+        self.unpublish()
+        response = self.client.post(
+            reverse("plans", args=[self.app.pk]),
+            {"action": "analyse", "ticket": str(self.ticket.pk)},
+            follow=True,
+        )
+        self.assertContains(response, "No knowledge graph is published")
+        self.assertEqual(FactoryRun.objects.count(), 0)
+
+    def test_a_revision_withdrawn_while_the_run_waits_fails_it(self):
+        """A run sits in a queue, so the gate at the button is not enough."""
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        self.unpublish()
+        with patch("platform_core.ai.invoke_ai", side_effect=self.answers()) as model:
+            execute(run)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("No knowledge graph is published", run.error)
+        # Refused before a single paid call, which is the point of checking here.
+        model.assert_not_called()
+        problems = run.events.filter(level="problem")
+        self.assertTrue(any("No knowledge graph" in event.message for event in problems))
+
+    def test_a_graph_that_matches_nothing_is_an_answer_not_a_failure(self):
+        """Published but silent is a real result; absent is not."""
+        run = self.run_pipeline_on("Reword the printed invoice footer")
+        self.assertEqual(run.status, "awaiting_review")
+        joined = " ".join(event.message for event in run.events.all())
+        self.assertIn("nothing in the graph matched this ticket", joined)
+
+    def run_pipeline_on(self, title):
+        """A ticket, and a triage of it, sharing no word with the graph.
+
+        The question the graph is asked is built from the ticket *and* triage's
+        restatement of it, so both have to avoid the graph's vocabulary - a
+        canned summary mentioning Queue Beta matches however unrelated the
+        ticket is.
+        """
+        unrelated = add_knowledge(
+            self.owner,
+            self.app.pk,
+            title,
+            title,
+            source="https://team.atlassian.net/browse/OPS-99",
+        )
+        run = start_run(self.owner, self.app.pk, unrelated)
+        answers = [
+            json.dumps(
+                {
+                    "kind": "enhancement",
+                    "summary": title,
+                    "requirements": [title],
+                    "repository": "",
+                }
+            ),
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "category": "functional",
+                            "rubric": "",
+                            "title": "Unevidenced",
+                            "explanation": "Nothing in the graph speaks to this.",
+                            "severity": "low",
+                            "evidence": [],
+                        }
+                    ]
+                }
+            ),
+            json.dumps({"items": [{"id": 0, "change_summary": "Change it", "targets": []}]}),
+        ]
+        with patch("platform_core.ai.invoke_ai", side_effect=answers):
+            execute(run)
+        run.refresh_from_db()
+        return run
+
+
+@override_settings(**SETTINGS)
+class NarrationTests(TestCase):
+    """A run says what it is doing, in words the person who started it can read.
+
+    The phase rows are the receipt - agent, model, tokens - and say nothing about
+    which graph was consulted or what was known before a model was called at all.
+    These pin the commentary that answers that, including that it survives the
+    run: the point of a table rather than a log line is that a run read next
+    month reads the way it read live.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+
+    def messages(self, run):
+        return [event.message for event in run.events.all()]
+
+    def test_the_checks_are_written_down_before_a_model_is_called(self):
+        run = self.run_pipeline()
+        checks = [event.message for event in run.events.filter(level="check")]
+        joined = " ".join(checks)
+        self.assertIn("Version 1, published", joined)
+        self.assertIn("claude-sonnet-5", joined)
+        self.assertIn("OPS-12", joined)
+        # Before, not after: nothing may be spent before what is known is stated.
+        first_check = run.events.filter(level="check").first()
+        first_phase_step = run.events.filter(phase="triage").first()
+        self.assertLess(first_check.sequence, first_phase_step.sequence)
+
+    def test_a_run_narrates_each_step_in_order(self):
+        run = self.run_pipeline()
+        joined = " ".join(self.messages(run))
+        self.assertIn("Starting the run", joined)
+        self.assertIn("knowledge graph", joined)
+        self.assertIn("Gap analysis found 2 item(s)", joined)
+        self.assertIn("Change design", joined)
+        sequences = [event.sequence for event in run.events.all()]
+        self.assertEqual(sequences, sorted(sequences))
+        self.assertEqual(len(sequences), len(set(sequences)))
+
+    def test_the_run_ends_by_asking_for_approval(self):
+        run = self.run_pipeline()
+        last = run.events.all().last()
+        self.assertIn("Waiting for approval", last.message)
+        self.assertIn("Nothing is written anywhere", last.message)
+        self.assertEqual(last.level, "result")
+
+    def test_a_failed_phase_says_so_without_the_phase_having_to_remember(self):
+        """Narrated in finish_phase, the one place every phase ends."""
+        run = self.run_pipeline(answers=["not json"])
+        problems = [event.message for event in run.events.filter(level="problem")]
+        self.assertTrue(any("Ticket triage failed" in message for message in problems), problems)
+        self.assertTrue(
+            any("Nothing was changed anywhere" in message for message in problems), problems
+        )
+
+    def test_the_narration_outlives_the_phases_it_describes(self):
+        """It is a record, not a progress bar: nothing clears it."""
+        run = self.run_pipeline()
+        before = self.messages(run)
+        run.refresh_from_db()
+        self.assertEqual(self.messages(run), before)
+        self.assertFalse(run.in_flight)
+
+
+@override_settings(**SETTINGS)
+class RunPageTests(TestCase):
+    """The pages that show a run, live and afterwards."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+
+    def test_the_run_page_shows_the_steps_and_asks_for_approval(self):
+        run = self.run_pipeline()
+        response = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(response, "Waiting for approval")
+        self.assertContains(response, "Gap analysis found 2 item(s)")
+        self.assertContains(response, "Bound the retry loop")
+
+    def test_a_finished_run_does_not_ask_the_page_to_keep_refreshing(self):
+        run = self.run_pipeline()
+        finished = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(finished, "data-document-pending")
+        FactoryRun.objects.filter(pk=run.pk).update(status="running")
+        running = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(running, "data-document-pending")
+
+    def test_the_code_factory_screen_shows_each_run_latest_step(self):
+        """One line per run, so the list says what is happening without opening it."""
+        run = self.run_pipeline()
+        response = self.client.get(reverse("plans", args=[self.app.pk]))
+        self.assertContains(response, "Waiting for approval")
+        self.assertEqual(run.latest_step, run.events.all().last())
+
+    def test_the_history_lists_past_runs_with_their_status(self):
+        self.run_pipeline()
+        self.run_pipeline(answers=["not json"])
+        response = self.client.get(reverse("runs", args=[self.app.pk]))
+        self.assertContains(response, "Awaiting review")
+        self.assertContains(response, "Failed")
+
+    def test_a_run_of_another_application_is_not_found(self):
+        """Deny by default, re-checked here like everywhere else."""
+        run = self.run_pipeline()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
+        for name, args in [
+            ("run-detail", [self.app.pk, run.pk]),
+            ("runs", [self.app.pk]),
+        ]:
+            with self.subTest(name=name):
+                self.assertEqual(self.client.get(reverse(name, args=args)).status_code, 404)
+
+
 class PhaseBudgetTests(SimpleTestCase):
     def test_the_analysis_ask_fits_its_output_budget(self):
         """A live run returned 4,773 tokens against a 4,096 cap and truncated."""
