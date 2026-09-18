@@ -150,6 +150,25 @@ class ReadinessTests(TestCase):
                 self.assertTrue(step.action, step.key)
                 self.assertTrue(reverse(step.route, args=[self.app.pk]))
 
+    def test_a_modal_step_targets_a_page_that_stands_on_its_own(self):
+        """modal.js lifts <main> out of the response, so the target has to be a
+        real page that renders and submits by itself - there is no fragment
+        mode, and with JavaScript off the link simply navigates."""
+        for step in steps(self.app):
+            if not step.modal:
+                continue
+            with self.subTest(step=step.key):
+                response = self.client.get(reverse(step.route, args=[self.app.pk]))
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "<main")
+
+    def test_the_places_you_go_and_work_are_not_dialogs(self):
+        """Knowledge, Connectors and Code Graph are screens, not fields."""
+        by_key = self.by_key()
+        for key in ("graph", "tickets", "code_graph"):
+            with self.subTest(key=key):
+                self.assertFalse(by_key[key].modal)
+
     def test_every_step_says_what_is_the_case_even_when_it_is_fine(self):
         for step in steps(self.app):
             with self.subTest(step=step.key):
@@ -178,6 +197,86 @@ class OnboardingScreenTests(TestCase):
         self.assertEqual(
             self.client.get(reverse("onboarding", args=[self.app.pk])).status_code, 404
         )
+
+    def test_a_brand_new_application_is_welcomed_rather_than_reported_on(self):
+        """Nothing done yet is a start, not a list of failures."""
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertContains(response, "is ready to set up")
+        self.assertContains(response, "Start with")
+        # And it points at one thing rather than leaving eight to choose from.
+        self.assertContains(response, "Knowledge graph published")
+
+    def test_the_welcome_gives_way_once_anything_is_configured(self):
+        self.index("acme/widgets")
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertNotContains(response, "is ready to set up")
+        self.assertContains(response, "Application onboarding")
+
+    def test_progress_is_counted(self):
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertContains(response, "of 8</strong> done")
+
+@override_settings(**SETTINGS)
+class SetupStripTests(TestCase):
+    """The checklist follows you to the screens that satisfy it."""
+
+    setUp = ReadinessTests.setUp
+    publish = ReadinessTests.publish
+
+    def ready_to_analyse(self):
+        from platform_core.models import AIConfiguration
+
+        self.publish()
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="plan_drafting",
+            provider="claude",
+            model="claude-sonnet-5",
+            enabled=True,
+            input_rate=1,
+            output_rate=5,
+            configured_by=self.owner,
+        )
+        add_knowledge(
+            self.owner, self.app.pk, "OPS-1", "A ticket",
+            source="https://team.atlassian.net/browse/OPS-1",
+        )
+
+    def test_it_appears_on_a_screen_that_is_not_the_checklist(self):
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "Setting up")
+        self.assertContains(response, "Back to the checklist")
+
+    def test_it_names_the_next_thing_to_do(self):
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "next: knowledge graph published")
+
+    @override_settings(CLAUDE_USE_HOST_LOGIN=True)
+    def test_it_goes_once_the_application_can_analyse_a_ticket(self):
+        """Not at complete: delivery is a choice, and a banner that can never
+        be satisfied stops being read."""
+        self.ready_to_analyse()
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertNotContains(response, "Setting up")
+        # Even though delivery is still entirely unconfigured.
+        checklist = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertContains(checklist, "Ready to analyse tickets")
+        self.assertNotContains(checklist, "Onboarding complete")
+
+    def test_somebody_without_a_grant_is_not_shown_it(self):
+        """They cannot act on it, and they should not learn from a banner what
+        deny-by-default keeps off the rest of the screen."""
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            role="viewer"
+        )
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "Setting up")  # a viewer still holds a grant
+
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
+        self.assertEqual(
+            self.client.get(reverse("documents", args=[self.app.pk])).status_code, 404
+        )
+
 
     def test_the_run_narration_and_the_screen_come_from_the_same_list(self):
         """The drift this module exists to prevent, pinned."""

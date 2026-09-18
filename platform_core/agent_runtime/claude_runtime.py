@@ -227,6 +227,21 @@ async def run(model, question, citations, token, history, scope, recorder, emit,
             raise ValueError("No successful result")
         return [TurnUsage(f"claude-{uuid.uuid4()}", 0, 0)], text
     inputs, outputs = claude_usage(result.usage)
-    answer = text if stopped and text else checked_answer(result.result or text)
+    # The streamed text wins when there is more of it than the CLI's summary.
+    #
+    # `result.result` is the CLI's account of the final assistant message, and a
+    # live run showed it arriving as a 206-character fragment of a reply the
+    # model had spent 4,187 completion tokens on - the tail of a JSON document,
+    # cut mid-word. Every phase that asks for JSON then failed with "did not
+    # return usable JSON" while the answer had in fact arrived intact, delta by
+    # delta, in `pieces`.
+    #
+    # Longer rather than "always prefer the stream" because the stream is not
+    # always the whole story: with `include_partial_messages` off, or on a turn
+    # whose text the SDK does not emit as deltas, `pieces` is empty and the
+    # summary is all there is. Taking whichever carries more is right in both
+    # directions and needs no flag to say which case we are in.
+    summary = result.result if isinstance(result.result, str) else ""
+    answer = text if stopped and text else checked_answer(max(text, summary, key=len))
     # Anthropic exposes no transport request ID here, so receipts carry a local run ID.
     return [TurnUsage(f"claude-{uuid.uuid4()}", inputs, outputs)], answer

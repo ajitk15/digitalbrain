@@ -1,6 +1,5 @@
 """Optional OpenAI synthesis with explicit application credentials and estimated costs."""
 
-import json
 import os
 from decimal import Decimal
 from pathlib import Path
@@ -305,55 +304,6 @@ def plan_evidence(app_id, requirement, citations):
     except ValidationError:
         pass
     return combined[:12]
-
-
-def draft_plan(user, app_id, requirement, citations):
-    """An AI draft of a change plan, for a human to edit and submit.
-
-    Returns a dict of form fields. This never creates a ChangePlan: drafting is
-    not proposing, and approval semantics are untouched. Quotes are verified the
-    same way graph relationships are, so a fabricated citation is dropped rather
-    than presented as evidence.
-    """
-    from .agent_runtime.tools import verify_citations
-
-    citations = plan_evidence(app_id, requirement, citations)
-    raw = invoke_ai(
-        user,
-        app_id,
-        "plan_drafting",
-        requirement,
-        citations,
-        instructions=PLAN_INSTRUCTIONS,
-        max_tokens=4096,
-    )
-    body = str(raw).strip()
-    if body.startswith("```"):
-        body = body.split("```")[1] if "```" in body[3:] else body.strip("`")
-        body = body[4:] if body.lower().startswith("json") else body
-    try:
-        payload = json.loads(body)
-    except (ValueError, TypeError):
-        raise ValidationError("The model did not return a usable plan. Try again.") from None
-    if not isinstance(payload, dict):
-        raise ValidationError("The model did not return a usable plan. Try again.")
-    supplied = {c["id"]: c for c in citations}
-    candidates = []
-    for item in payload.get("sources") or []:
-        if not isinstance(item, dict):
-            continue
-        source = supplied.get(str(item.get("id")))
-        quote = item.get("quote")
-        if source and isinstance(quote, str) and quote:
-            candidates.append({**source, "excerpt": quote})
-    verified = verify_citations(app_id, candidates)
-    return {
-        "title": str(payload.get("title") or "")[:200],
-        "proposal": str(payload.get("proposal") or "")[:20000],
-        "validation": str(payload.get("validation") or "")[:10000],
-        "citations": verified,
-        "rejected": len(candidates) - len(verified),
-    }
 
 
 #: Which saved configuration answers each conversation mode.

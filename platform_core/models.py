@@ -75,6 +75,16 @@ class Application(NamedResource):
     #: since every endpoint is bearer-only and a token is bound to one
     #: application.
     slug = models.SlugField(max_length=140, unique=True, blank=True)
+    #: When this application first had everything it needs to analyse a ticket.
+    #:
+    #: Derived state, recorded rather than recomputed. The setup strip appears on
+    #: every application screen while onboarding is unfinished, and answering
+    #: "is it unfinished?" costs half a dozen queries - which is fine while
+    #: somebody is setting up and pure waste for every page view afterwards.
+    #: Once earned it is never cleared: unpublishing a graph is a problem for the
+    #: run that needs it, and the run says so. It is not a reason to start
+    #: greeting somebody who onboarded months ago.
+    setup_completed_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -674,7 +684,13 @@ PHASES = [
     ("triage", "Triage"),
     ("analysis", "Analysis"),
     ("design", "Design"),
+    # The implementation half is a chain of agents rather than one call. Each is
+    # its own model call with its own instructions, budget and receipt, so a run
+    # can say which of them produced what and which of them refused.
+    ("work_order", "Work order"),
     ("implementation", "Implementation"),
+    ("tests", "Test author"),
+    ("review", "Change review"),
     ("verification", "Verification"),
     ("delivery", "Delivery"),
 ]
@@ -690,6 +706,10 @@ class FactoryRun(models.Model):
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: A short number people can say out loud. The id is a UUID because it
+    #: addresses one run across a platform; "run 7" is how somebody refers to it
+    #: in a sentence, and it only has to be unique within its application.
+    number = models.PositiveIntegerField(default=0)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     connector = models.ForeignKey(
@@ -714,6 +734,25 @@ class FactoryRun(models.Model):
     #: The branch a delivery targets. Confirmed alongside the repository.
     base_branch = models.CharField(max_length=200, default="main")
     pull_request_url = models.URLField(max_length=1000, blank=True)
+    #: The branch delivery created, kept so the checks stage knows what to ask
+    #: GitHub about without re-reading a phase's output.
+    branch = models.CharField(max_length=200, blank=True)
+    #: What the repository's own CI made of the change, as GitHub last reported
+    #: it. This platform never runs the code it writes; the repository's checks
+    #: do, in GitHub's sandbox, exactly as for any other contributor. Stored
+    #: rather than fetched per render so the page costs nothing to look at.
+    checks = models.JSONField(default=list, blank=True)
+    checks_read_at = models.DateTimeField(null=True, blank=True)
+    #: Who asked for the background step this run is in. The worker runs as
+    #: them and re-checks their grant, so revoking it stops the work with no
+    #: code that knows about revocation - the property connectors already have.
+    acting_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="factory_actions",
+    )
     plan = models.ForeignKey(
         "ChangePlan", null=True, blank=True, on_delete=models.SET_NULL, related_name="runs"
     )
@@ -724,7 +763,10 @@ class FactoryRun(models.Model):
             ("pending", "Queued"),
             ("running", "Running"),
             ("awaiting_review", "Awaiting review"),
-            ("delivering", "Delivering"),
+            ("prepare_queued", "Queued to write the change"),
+            ("preparing", "Writing the change"),
+            ("prepared", "Ready to open a pull request"),
+            ("delivering", "Opening the pull request"),
             ("delivered", "Pull request opened"),
             ("complete", "Complete"),
             ("failed", "Failed"),
@@ -737,6 +779,96 @@ class FactoryRun(models.Model):
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["application", "-created_at"])]
+        constraints = [
+            models.UniqueConstraint(fields=["application", "number"], name="unique_run_number")
+        ]
+
+    def __str__(self):
+        return f"Run {self.number}"
+
+    #: The five stages of the pipeline, in order, as the screens name them.
+    STAGES = (
+        (1, "Pre-checks"),
+        (2, "Analysis"),
+        (3, "Gaps"),
+        (4, "Agents"),
+        (5, "Pull request"),
+        (6, "Tests"),
+    )
+
+    @property
+    def stages(self):
+        """Where this run has got to, for any screen that shows a run.
+
+        Computed here rather than in a template because three screens show it -
+        the Code Factory home page, the run history and the run itself - and a
+        run that reads as "awaiting review" in one place and "running" in
+        another is the drift this exists to prevent.
+        """
+        plan = self.plan
+        failed = self.status == "failed"
+        analysed = plan is not None
+        decided = bool(plan and plan.status in {"approved", "rejected"})
+        approved = bool(plan and plan.status == "approved")
+        written = bool(self.pull_request_url) or self.status == "prepared"
+        state = {
+            1: "ok" if self.status != "pending" else "pending",
+            2: "ok" if analysed else ("failed" if failed else "running"),
+            3: "ok" if decided else ("current" if analysed else "pending"),
+            4: "ok"
+            if written
+            else (
+                "running"
+                if self.status in {"prepare_queued", "preparing"}
+                else ("current" if approved else "pending")
+            ),
+            5: "ok"
+            if self.pull_request_url
+            else (
+                "running"
+                if self.status == "delivering"
+                else ("current" if written else "pending")
+            ),
+            # The repository's own CI, which this platform reads and never runs.
+            6: self.checks_state,
+        }
+        # A failed run stops where it stopped: everything after the failure is
+        # not "pending", it is never going to happen unless somebody acts.
+        if failed:
+            for number in sorted(state):
+                if state[number] not in {"ok"}:
+                    state[number] = "failed"
+                    break
+        return [
+            {"number": number, "label": label, "state": state[number]}
+            for number, label in self.STAGES
+        ]
+
+    def get_checks_label(self):
+        """The checks as one line, for a collapsed stage."""
+        if not self.checks:
+            return "no checks reported"
+        done = [entry for entry in self.checks if entry.get("conclusion")]
+        passed = [entry for entry in done if entry["conclusion"] == "success"]
+        if len(done) < len(self.checks):
+            return f"{len(done)} of {len(self.checks)} finished"
+        return f"{len(passed)} of {len(self.checks)} passed"
+
+    @property
+    def checks_state(self):
+        """What the repository's checks make of this branch, in one word.
+
+        "pending" covers both "no pull request yet" and "a pull request with no
+        checks": a repository without CI is not failing, it simply has nothing
+        to say, and the screen says that rather than showing an empty stage.
+        """
+        if not self.pull_request_url or not self.checks:
+            return "pending"
+        if any(entry.get("conclusion") in {"failure", "timed_out"} for entry in self.checks):
+            return "failed"
+        if any(not entry.get("conclusion") for entry in self.checks):
+            return "running"
+        return "ok"
 
     @property
     def latest_step(self):
@@ -755,7 +887,13 @@ class FactoryRun(models.Model):
         Not called `active`: on a KnowledgeEntry that word means "not superseded",
         and a finished run is not a retired one.
         """
-        return self.status in {"pending", "running", "delivering"}
+        return self.status in {
+            "pending",
+            "running",
+            "prepare_queued",
+            "preparing",
+            "delivering",
+        }
 
 
 class RunPhase(models.Model):
@@ -800,6 +938,43 @@ class RunPhase(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["run", "name"], name="unique_run_phase")
         ]
+
+
+class ProposedChange(models.Model):
+    """One file as it will be written, held between two decisions.
+
+    Implementation and the pull request used to be one act, so the contents
+    existed only inside that call and nobody saw what was about to be written
+    until it had been. Splitting them puts a person between the two, and the
+    contents have to survive the wait - which is what this is.
+
+    `base_sha` is the blob the file was read at, or empty for a path that is not
+    in the repository. It is what verification re-checks and what the commit is
+    guarded on, so a file that moved underneath us is refused rather than
+    overwritten.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(FactoryRun, on_delete=models.CASCADE, related_name="changes")
+    path = models.CharField(max_length=400)
+    content = models.TextField()
+    #: Empty means the path was absent when it was read, so this creates it.
+    base_sha = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["run", "path"]
+        constraints = [
+            models.UniqueConstraint(fields=["run", "path"], name="unique_run_change")
+        ]
+
+    @property
+    def creates(self):
+        return not self.base_sha
+
+    @property
+    def size(self):
+        return len(self.content.encode("utf-8"))
 
 
 class RunEvent(models.Model):

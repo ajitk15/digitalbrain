@@ -1,0 +1,23 @@
+{% load icons %}{% comment %}
+One run, as every screen that lists runs shows it. Included from the Code
+Factory home page and from the run history, because both carry the same columns
+and writing them twice is how the two come to disagree - the same reason
+_source_row.html exists.
+
+The stage strip uses the numbers and names the run screen uses, so "stage 4" is
+one thing wherever you read it.
+{% endcomment %}<div class="list-row run-row" id="run-{{ run.pk }}">
+<div class="run-lead">
+<strong><span class="run-number">Run {{ run.number }}</span><a href="{% url 'run-detail' application.pk run.pk %}">{{ run.ticket_title|default:"(untitled ticket)" }}</a></strong>
+<small>{{ run.ticket_external_id }} · {{ run.requested_by.username }} · {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · graph v{{ run.graph_version }}{% else %} · no published graph{% endif %}{% if run.code_snapshot %} · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}{% endif %}</small>
+<ol class="stage-strip">{% for stage in run.stages %}<li class="step step-{{ stage.state }}" title="{{ stage.number }} · {{ stage.label }}"><span>{{ stage.number }}</span>{{ stage.label }}</li>{% endfor %}</ol>
+{% with latest=run.latest_step %}{% if latest %}<small class="run-latest">{% if run.in_flight %}<span class="spinner" aria-hidden="true"></span>{% endif %}{{ latest.message }}</small>{% endif %}{% endwith %}
+{% if run.error %}<small class="run-failed">{% icon "error" 13 %}{{ run.error }}</small>{% endif %}
+</div>
+<span class="run-actions"><span class="pill">{{ run.get_status_display }}</span>
+{% if run.status == 'awaiting_review' and run.plan and run.plan.status == 'pending' %}<a href="{% url 'run-detail' application.pk run.pk %}">Review {{ run.plan.items.count }} gap(s) {% icon "arrow-right" 13 %}</a>
+{% elif run.status == 'prepared' %}<a href="{% url 'run-detail' application.pk run.pk %}">Read the summary {% icon "arrow-right" 13 %}</a>
+{% elif run.pull_request_url %}<a href="{{ run.pull_request_url }}" target="_blank" rel="noreferrer noopener">Open the pull request {% icon "external" 13 %}</a>
+{% else %}<a href="{% url 'run-detail' application.pk run.pk %}">{% if run.in_flight %}Watch it work{% else %}Open the run{% endif %} {% icon "arrow-right" 13 %}</a>{% endif %}
+</span>
+</div>

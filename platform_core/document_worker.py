@@ -122,9 +122,27 @@ def graph_steps():
 
 
 def factory_steps():
-    from .code_factory import process_next_run
+    """Analysis first, then the implementation agents.
 
-    return (process_next_run,)
+    One lane rather than two: they are the same work on the same run, and a
+    run cannot be in both states at once, so nothing is gained by letting them
+    contend.
+    """
+    from .code_factory import (
+        process_next_checks,
+        process_next_preparation,
+        process_next_run,
+        reclaim_stalled_runs,
+    )
+
+    # Reclaiming first: a run this process abandoned by restarting is holding a
+    # ticket nobody else may start, so clearing it is what lets work continue.
+    return (
+        reclaim_stalled_runs,
+        process_next_run,
+        process_next_preparation,
+        process_next_checks,
+    )
 
 
 def code_graph_steps():

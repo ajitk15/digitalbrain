@@ -1303,6 +1303,73 @@
   .link-button { display: inline-flex; align-items: center; gap: var(--s-2); }
   summary svg { vertical-align: -2px; margin-right: var(--s-2); }
   /* Code Factory runs --------------------------------------------------- */
+  /* The pipeline screen: numbered stages appearing as the run reaches them. */
+  /* Each stage collapses to a line that says how it went. A finished step is a
+     fact you may want to check; the current one is work, so that is the one
+     left open. */
+  .stage {
+    margin-top: var(--s-3);
+    background: var(--c-surface, #fff);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    padding: var(--s-3) var(--s-4);
+  }
+  .stage > summary {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--t-15);
+  }
+  .stage > summary::-webkit-details-marker { display: none; }
+  .stage[open] > summary { margin-bottom: var(--s-4); }
+  .stage-name { font-weight: 600; }
+  .stage-note { margin-left: auto; color: var(--c-ink-3); font-size: var(--t-13); text-align: right; }
+  .pick-all { margin: 0 0 var(--s-2); font-size: var(--t-13); }
+  .agent-row { list-style: none; display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; }
+  .agent { display: flex; align-items: flex-start; gap: var(--s-3); }
+  .agent small { color: var(--c-ink-3); }
+  .agent-ok > svg { color: var(--c-ok); }
+  .agent-failed > svg { color: var(--c-bad); }
+  .agent-pending { opacity: 0.6; }
+  .agent-absent, .agent-skipped { opacity: 0.7; }
+  .agent-absent > svg, .agent-skipped > svg { color: var(--c-ink-3); }
+  .stage-no {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--c-brand);
+    color: #fff;
+    font-size: var(--t-12);
+    font-weight: 700;
+  }
+  .check-row { display: flex; flex-wrap: wrap; gap: var(--s-2); list-style: none; margin: 0; padding: 0; }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: var(--s-2) var(--s-3);
+    border-radius: var(--r-md);
+    border: 1px solid var(--c-line);
+    font-size: var(--t-13);
+  }
+  .check-ok { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .check-no { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .gap-list { list-style: none; margin: var(--s-3) 0 0; padding: 0; border: 1px solid var(--c-line); border-radius: var(--r-lg); background: var(--c-surface, #fff); }
+  .gap { display: flex; gap: var(--s-3); padding: var(--s-3) var(--s-4); border-top: 1px solid var(--c-line); }
+  .gap:first-child { border-top: 0; }
+  .gap-pick { width: 17px; height: 17px; flex: none; margin-top: 2px; }
+  .gap-body { min-width: 0; }
+  .gap-body small { margin-top: var(--s-2); }
+  .gap-body code { font-size: var(--t-11); }
+  .gap-rejected { opacity: 0.5; }
+  .gap-rejected .gap-body strong { text-decoration: line-through; }
+  .gap-decide { margin-top: var(--s-4); }
+  .gap-decide .actions { margin-top: var(--s-3); }
   .run-row { align-items: flex-start; }
   .run-phases { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-top: var(--s-2); }
   .phase {
@@ -1318,11 +1385,121 @@
   .phase-failed { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
   .phase-running { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
   .run-actions { display: flex; flex-direction: column; align-items: flex-end; gap: var(--s-2); }
+  .run-lead { min-width: 0; }
+  /* The number people say out loud, in front of the title they read. */
+  .run-meta { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+  /* Pushed to the far end: it acts on the whole page rather than on anything
+     beside it, and the line it shares reads as a sentence about the run. */
+  .run-refresh {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    margin-left: auto;
+    font-size: var(--t-13);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .run-number {
+    display: inline-block;
+    margin-right: var(--s-2);
+    padding: 1px var(--s-2);
+    border-radius: var(--r-sm);
+    background: var(--c-brand);
+    color: #fff;
+    font-size: var(--t-11);
+    font-weight: 700;
+    vertical-align: 1px;
+  }
+  .run-lead > strong a { color: inherit; }
+  .run-failed { display: flex; align-items: center; gap: var(--s-2); color: var(--c-bad); margin-top: var(--s-2); }
+  /* The five stages, in the numbers and names the run screen uses, so "stage 4"
+     means one thing wherever it is read. */
+  .stage-strip { display: flex; flex-wrap: wrap; gap: var(--s-2); list-style: none; margin: var(--s-2) 0 0; padding: 0; }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-2);
+    padding: 2px var(--s-2);
+    border-radius: var(--r-sm);
+    border: 1px solid var(--c-line);
+    background: var(--c-subtle);
+    color: var(--c-ink-3);
+    font-size: var(--t-11);
+    font-weight: 600;
+  }
+  .step > span {
+    display: grid;
+    place-items: center;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--c-line-strong);
+    color: #fff;
+    font-size: 9px;
+  }
+  .step-ok { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .step-ok > span { background: var(--c-ok); }
+  .step-running { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .step-running > span { background: var(--c-info); }
+  .step-current { background: var(--c-warn-bg); border-color: var(--c-warn-line); color: var(--c-warn); }
+  .step-current > span { background: var(--c-warn); }
+  .step-failed { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .step-failed > span { background: var(--c-bad); }
+  .run-review-cta { padding: 0 var(--s-4) var(--s-3); font-weight: 600; }
   .run-latest { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2); color: var(--c-ink-2); }
   /* The run log. A monospaced time column so the steps line up as a list of
      events rather than a paragraph, and a left rule that carries the level's
      colour - the only thing distinguishing a check from a problem at a glance. */
+  /* The setup strip: present on every application screen until the checklist
+     is satisfied, so the work and the list of work are never more than a click
+     apart. Sits above the breadcrumbs because it outranks them while it lasts. */
+  .setup-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--s-3);
+    flex-wrap: wrap;
+    padding: var(--s-3) var(--s-4);
+    margin-bottom: var(--s-4);
+    background: var(--c-info-bg);
+    border: 1px solid var(--c-info-line);
+    border-radius: var(--r-md);
+    font-size: var(--t-13);
+    color: var(--c-ink-1);
+  }
+  .setup-mark { display: inline-flex; flex: none; color: var(--c-info); }
+  .setup-text { min-width: 0; }
+  .setup-link { margin-left: auto; white-space: nowrap; font-weight: 600; }
+  .onboard-done h2 { display: flex; align-items: center; gap: var(--s-2); color: var(--c-ok); }
+  .onboard-done .actions { margin-top: var(--s-4); flex-wrap: wrap; }
+  /* An origin whose files did not convert says so on the row. "In sync" beside
+     it is still true and still means "the origin has not moved" - these are two
+     facts, and reading one as the other is what made a failed import look
+     healthy. */
+  .origin-failed { color: var(--c-bad); font-weight: 600; }
   /* Application onboarding ---------------------------------------------- */
+  /* The welcome only ever shows on an application where nothing has been done,
+     so it is allowed to take the room a page heading would: it IS the heading
+     in that state, and what follows it is a list of work rather than a report. */
+  .onboard-welcome {
+    background: var(--c-subtle);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    padding: var(--s-5) var(--s-5) var(--s-4);
+    margin-bottom: var(--s-4);
+  }
+  .onboard-welcome h1 { margin-bottom: var(--s-3); }
+  .onboard-welcome > p { max-width: 62ch; color: var(--c-ink-2); }
+  .onboard-welcome .button { margin-top: var(--s-3); }
+  .onboard-start {
+    display: flex;
+    gap: var(--s-2);
+    align-items: baseline;
+    color: var(--c-ink-1);
+    max-width: 62ch;
+  }
+  .onboard-start svg { flex: none; color: var(--c-brand); }
+  .onboard-progress { color: var(--c-ink-2); margin-bottom: var(--s-4); }
+  .onboard-next { background: var(--c-subtle); border-radius: var(--r-md); }
   .onboard-list { list-style: none; margin: var(--s-4) 0 0; padding: 0; }
   .onboard-step {
     display: flex;
@@ -1363,6 +1540,15 @@
   .run-line-problem { border-left-color: var(--c-bad-line); }
   .run-line-problem .run-message { color: var(--c-bad); }
   .plan-item { border-top: 1px solid var(--c-line); padding-top: var(--s-4); margin-top: var(--s-4); }
+  /* The checkbox lives beside the title but belongs to the review form below,
+     through the HTML `form` attribute. That keeps one decision in one
+     submission without a wrapper element around half the page, and it works
+     with JavaScript off, which the form contract requires. */
+  .item-pick { width: 17px; height: 17px; flex: none; margin-right: var(--s-1); }
+  .plan-item:has(.item-pick:not(:checked)) { opacity: 0.55; }
+  .plan-item:has(.item-pick:not(:checked)) h3 a { text-decoration: line-through; }
+  .item-targets { margin: var(--s-2) 0 0; padding-left: var(--s-4); }
+  .item-targets li { font-size: var(--t-13); margin-bottom: var(--s-1); }
   .plan-item:first-of-type { border-top: 0; margin-top: 0; }
   .plan-item h3 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-2); }
   .item-evidence { margin: var(--s-3) 0 0; padding-left: var(--s-4); border-left: 2px solid var(--c-line); }

@@ -153,6 +153,17 @@ def library_context(app, request):
                 filter=Q(documents__orphaned=True) & ~Q(documents__status="deleted"),
                 distinct=True,
             ),
+            # Counted here because the origin row reads as a summary of the
+            # import, and a file count alone lets "1 file" stand for a file that
+            # arrived with nothing in it. The status beside it answers a
+            # different question - whether the origin has moved - and must keep
+            # meaning only that, so the outcome of the conversion is said
+            # separately rather than folded into it.
+            failed_count=Count(
+                "documents",
+                filter=Q(documents__status="failed"),
+                distinct=True,
+            ),
         )
         .order_by("name")
     )

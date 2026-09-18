@@ -1,5 +1,18 @@
-{% extends 'base.html' %}{% block content %}
+{% extends 'base.html' %}{% load icons %}{% block content %}
 <div class="page-heading"><div><p class="eyebrow">PLATFORM</p><h1>Administration</h1><p class="muted">Manage organizations, service settings and platform operations.</p></div><a class="button" href="{% url 'organization-new' %}">+ New organization</a></div>
 <div class="metrics"><div class="metric"><small>Organizations</small><strong>{{ organizations|length }}</strong></div><div class="metric"><small>Active users</small><strong>{{ user_count }}</strong></div><div class="metric"><small>Applications</small><strong>{{ application_count }}</strong></div></div>
 <section class="section"><h2>Organizations</h2><div class="list-card">{% for org in organizations %}<div class="list-row"><strong>{{ org.name }}</strong><div class="actions"><span class="pill">{% if org.active %}Active{% else %}Disabled{% endif %}</span><form method="post" action="{% url 'organization-status' org.pk %}">{% csrf_token %}<button class="button secondary" name="state" value="{% if org.active %}disable{% else %}enable{% endif %}">{% if org.active %}Disable{% else %}Enable{% endif %}</button></form></div></div>{% empty %}<div class="empty"><h3>Build your first workspace</h3><p>Create an organization and choose an existing user as its administrator.</p></div>{% endfor %}</div></section>
+{% if reset_allowed %}
+<section class="section"><h2>{% icon "refresh" %}Reset for a demonstration</h2>
+<p class="muted">Empties an organization back to its opening state. The organization, its members and every user account survive; the portfolios, products and applications beneath it do not, nor does anything they own — sources, graphs, runs, spend records. <strong>There is no undo.</strong> This panel exists only because <code>allow_demo_reset</code> is set; it is refused outright in production, where an application is disabled rather than deleted.</p>
+<div class="list-card">{% for row in resettable %}
+<div class="list-row"><div><strong>{{ row.organization.name }}</strong><small>{% for label, count in row.counts.items %}{{ count }} {{ label }}{% if not forloop.last %} · {% endif %}{% endfor %}</small></div>
+<form method="post" action="{% url 'organization-reset' row.organization.pk %}" class="inline-form" data-confirm="Empty {{ row.organization.name }}? Everything under it is removed and there is no undo.">{% csrf_token %}
+<label class="sr-only" for="confirm-{{ row.organization.pk }}">Type {{ row.organization.name }} to confirm</label>
+<input type="text" id="confirm-{{ row.organization.pk }}" name="confirm" placeholder="Type {{ row.organization.name }}" autocomplete="off" required>
+<button class="button danger" type="submit">Reset</button></form></div>
+{% empty %}<p class="padded muted">No organizations to reset.</p>{% endfor %}</div>
+</section>
+{% endif %}
+
 <section class="section"><h2>AI spend by currency</h2><div class="list-card">{% for total in totals %}<div class="list-row"><strong>{{ total.currency }} {{ total.amount|floatformat:4 }}</strong><span>{{ total.calls }} calls · {% if total.estimated %}Estimated{% else %}Provider reported{% endif %}</span></div>{% empty %}<p class="muted padded">No AI usage recorded. Totals appear when a connected provider reports usage.</p>{% endfor %}</div></section>{% endblock %}

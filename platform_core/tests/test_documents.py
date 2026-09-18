@@ -369,6 +369,65 @@ class SourceListTopPagerTests(TestCase):
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
+class OriginOutcomeTests(TestCase):
+    """An origin row says what arrived, not only that it was checked.
+
+    A link whose only file failed to convert used to read "In sync - 1 file",
+    which is two true statements arranged to mean something false. The status
+    answers "has the origin moved?" and still does; what was missing is the
+    other fact, so it is said beside it rather than folded into it.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+
+    def origin_with(self, *statuses):
+        from platform_core.knowledge_sources import register
+
+        source = register(self.owner, self.app, "link", "https://example.com/docs")
+        for index, status in enumerate(statuses):
+            Document.objects.create(
+                application=self.app,
+                uploaded_by=self.owner,
+                source=source,
+                name=f"file-{index}.html",
+                size=0 if status == "failed" else 10,
+                sha256=f"{index:064d}",
+                status=status,
+                origin="link",
+                source_url="https://example.com/docs",
+            )
+        return source
+
+    def test_an_origin_whose_only_file_failed_says_nothing_imported(self):
+        self.origin_with("failed")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "nothing imported")
+
+    def test_a_partial_failure_is_counted_rather_than_generalised(self):
+        self.origin_with("ready", "failed", "failed")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "2 failed to convert")
+        self.assertNotContains(response, "nothing imported")
+
+    def test_an_origin_that_converted_cleanly_says_nothing_extra(self):
+        self.origin_with("ready", "ready")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertNotContains(response, "failed to convert")
+        self.assertNotContains(response, "nothing imported")
+
+    def test_the_status_still_means_only_what_it_meant(self):
+        """Drift and conversion are separate facts and stay separate."""
+        from platform_core.models import KnowledgeSource
+
+        source = self.origin_with("failed")
+        source.refresh_from_db()
+        # Untouched by the conversion: a newly registered source has not been
+        # checked for drift yet, and a file failing to convert is not a drift
+        # check. Whatever the status says, it says it about the origin.
+        self.assertEqual(source.status, KnowledgeSource.Status.UNKNOWN)
+
+
 class DocumentRetryTests(TestCase):
     """Putting a failed document back in the queue.
 

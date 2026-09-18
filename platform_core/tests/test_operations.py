@@ -135,6 +135,62 @@ class OperationsTests(TestCase):
         self.assertNotIn("attacker-value", output)
         self.assertEqual(json.loads(output)["status"], 200)
 
+    def test_an_exception_type_reaches_the_log_and_nothing_else_does(self):
+        """A class name is the one thing about a failure that is safe to keep.
+
+        Callers passed it and the formatter dropped it, which left a transient
+        failure and a permanent one looking identical - the distinction the
+        worker records it for. The message and the traceback stay out, because
+        either can carry the document's own text.
+        """
+        import json
+        import logging
+
+        formatter = SafeJsonFormatter()
+        record = logging.LogRecord(
+            "platform_core.document_worker",
+            logging.WARNING,
+            __file__,
+            1,
+            "conversion failed for SHOULD_NOT_APPEAR",
+            (),
+            None,
+        )
+        record.event = "document_conversion_failed"
+        record.exception_type = "OperationalError"
+        record.document_id = "SHOULD_NOT_APPEAR"
+
+        entry = json.loads(formatter.format(record))
+        self.assertEqual(entry["exception_type"], "OperationalError")
+        self.assertEqual(entry["event"], "document_conversion_failed")
+        self.assertNotIn("SHOULD_NOT_APPEAR", json.dumps(entry))
+
+    def test_the_local_database_lets_readers_and_writers_coexist(self):
+        """Six worker lanes and a web server share one file.
+
+        Under the default rollback journal a writer locks the whole database,
+        which turned a burst of conversions into "database is locked" for one or
+        two of them every time.
+        """
+        from unittest.mock import MagicMock
+
+        from platform_core.apps import tune_sqlite
+
+        # Asserted on the receiver rather than the live connection: the test
+        # database is in-memory, where the journal mode is always "memory" and
+        # the setting this exists for cannot be observed at all.
+        sqlite = MagicMock(vendor="sqlite")
+        tune_sqlite(sqlite)
+        cursor = sqlite.cursor.return_value.__enter__.return_value
+        issued = " ".join(str(call) for call in cursor.execute.mock_calls)
+        self.assertIn("journal_mode=WAL", issued)
+        self.assertIn("busy_timeout=20000", issued)
+
+        # PostgreSQL has neither problem and must not be touched.
+        postgres = MagicMock(vendor="postgresql")
+        tune_sqlite(postgres)
+        postgres.cursor.assert_not_called()
+
     def test_the_error_page_answers_the_method_that_failed(self):
         """A failure on a POST has to render the page carrying the request id.
         Decorated with require_GET it answered an empty 405 instead, and the

@@ -121,3 +121,63 @@ class ImportMaxFilesTests(SimpleTestCase):
             with self.subTest(value=value):
                 with self.assertRaises(ImproperlyConfigured):
                     self.load(f'mode = "development"\n{self.BASE}import_max_files = {value}\n')
+
+
+class SelfApprovalConfigurationTests(SimpleTestCase):
+    """allow_self_approval is a development convenience and must stay one.
+
+    Built like claude_use_host_login and for the same reason: a deployment that
+    believes two people review every change must not find out from its audit
+    log that one did.
+    """
+
+    BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
+
+    load = HostLoginConfigurationTests.load
+
+    def test_it_is_accepted_in_development(self):
+        config = self.load(f'mode = "development"\n{self.BASE}allow_self_approval = true\n')
+        self.assertTrue(config["allow_self_approval"])
+
+    def test_it_defaults_to_absent(self):
+        config = self.load(f'mode = "development"\n{self.BASE}')
+        self.assertNotIn("allow_self_approval", config)
+
+    def test_production_refuses_it_rather_than_ignoring_it(self):
+        with self.assertRaises(ImproperlyConfigured) as refusal:
+            self.load(f'mode = "production"\n{self.BASE}allow_self_approval = true\n')
+        self.assertIn("cannot be set in production", str(refusal.exception))
+
+    def test_it_must_be_a_boolean(self):
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "development"\n{self.BASE}allow_self_approval = "yes"\n')
+
+
+class DemoResetConfigurationTests(SimpleTestCase):
+    """allow_demo_reset is for demonstration instances and must stay one.
+
+    Nothing else in this platform deletes an application, and a button that
+    empties a workspace has no business on a deployment holding work somebody
+    depends on.
+    """
+
+    BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
+
+    load = HostLoginConfigurationTests.load
+
+    def test_it_is_accepted_in_development(self):
+        config = self.load(f'mode = "development"\n{self.BASE}allow_demo_reset = true\n')
+        self.assertTrue(config["allow_demo_reset"])
+
+    def test_it_defaults_to_absent(self):
+        config = self.load(f'mode = "development"\n{self.BASE}')
+        self.assertNotIn("allow_demo_reset", config)
+
+    def test_production_refuses_it_rather_than_ignoring_it(self):
+        with self.assertRaises(ImproperlyConfigured) as refusal:
+            self.load(f'mode = "production"\n{self.BASE}allow_demo_reset = true\n')
+        self.assertIn("cannot be set in production", str(refusal.exception))
+
+    def test_it_must_be_a_boolean(self):
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "development"\n{self.BASE}allow_demo_reset = "yes"\n')

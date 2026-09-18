@@ -28,6 +28,8 @@ def load_config():
         "scanner",
         "scan_documents",
         "claude_use_host_login",
+        "allow_self_approval",
+        "allow_demo_reset",
         "fetch_allow_hosts",
         "import_max_files",
         "sharepoint_tenant",
@@ -41,6 +43,12 @@ def load_config():
         raise ImproperlyConfigured("scan_documents must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
+    if type(config.get("allow_self_approval", False)) is not bool:
+        raise ImproperlyConfigured("allow_self_approval must be a boolean.")
+    if type(config.get("allow_demo_reset", False)) is not bool:
+        raise ImproperlyConfigured("allow_demo_reset must be a boolean.")
+    if type(config.get("allow_self_approval", False)) is not bool:
+        raise ImproperlyConfigured("allow_self_approval must be a boolean.")
     limit = config.get("import_max_files", 100)
     # Bounded on both sides. A walk that cannot terminate is the thing the limit
     # exists to prevent, and an operator who sets it to something enormous has
@@ -77,6 +85,32 @@ def load_config():
         raise ImproperlyConfigured(
             "claude_use_host_login is a development convenience and cannot be set in "
             "production. Mount a per-application API key or OAuth token instead."
+        )
+    if config.get("allow_demo_reset") and config.get("mode") == "production":
+        # Nothing else in this platform deletes an application, and a button
+        # that empties a workspace has no business on a deployment holding work
+        # somebody depends on.
+        raise ImproperlyConfigured(
+            "allow_demo_reset is for demonstration instances and cannot be set in "
+            "production. Disable an application instead; nothing here deletes one."
+        )
+    if config.get("allow_self_approval") and config.get("mode") == "production":
+        # Refused rather than ignored, for the reason claude_use_host_login is:
+        # a deployment that believes two people review every change must not
+        # discover otherwise from its audit log. The separation of duties is the
+        # product here, not a policy bolted onto it.
+        raise ImproperlyConfigured(
+            "allow_self_approval is a development convenience and cannot be set in "
+            "production. Grant approval to a second member instead."
+        )
+    if config.get("allow_self_approval") and config.get("mode") == "production":
+        # Refused rather than ignored, for the reason claude_use_host_login is:
+        # a deployment that believes two people review every change must not
+        # discover otherwise from its audit log. The separation of duties is the
+        # product here, not a policy bolted onto it.
+        raise ImproperlyConfigured(
+            "allow_self_approval is a development convenience and cannot be set in "
+            "production. Grant approval to a second member instead."
         )
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:

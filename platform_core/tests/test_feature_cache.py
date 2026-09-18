@@ -11,7 +11,7 @@ from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from platform_core.models import ApplicationFeature, FeatureSwitch
+from platform_core.models import Application, ApplicationFeature, FeatureSwitch
 from platform_core.services import (
     begin_feature_cache,
     end_feature_cache,
@@ -77,6 +77,18 @@ class FeatureCacheTests(TestCase):
                         end_feature_cache(token)
 
     def test_a_page_render_stays_well_under_its_old_query_count(self):
+        """Measured on an application that has finished onboarding.
+
+        While onboarding is unfinished the setup strip answers "what is still
+        missing?" on every application screen, which costs seven queries. That
+        is a bounded period and it is the whole point of the strip, so it is
+        allowed to cost something - but it must not become a permanent tax,
+        which is what `setup_completed_at` prevents and what the test below
+        pins.
+        """
+        from django.utils import timezone
+
+        Application.objects.filter(pk=self.app.pk).update(setup_completed_at=timezone.now())
         url = reverse("documents", args=[self.app.pk])
         self.client.get(url)
         with CaptureQueriesContext(connection) as captured:
@@ -85,6 +97,27 @@ class FeatureCacheTests(TestCase):
         # documents came from costs one more, and the test below is what keeps
         # that one from becoming one per source.
         self.assertLess(len(captured), 21, "documents used to take 28 queries")
+
+    def test_a_finished_application_pays_nothing_for_the_setup_strip(self):
+        """The milestone is what makes the strip free once it is earned."""
+        from django.utils import timezone
+
+        from platform_core.templatetags.workspace import application_nav
+
+        request = self.client.request().wsgi_request
+        request.user = self.owner
+        context = {"application": self.app, "request": request}
+
+        with CaptureQueriesContext(connection) as unfinished:
+            self.assertIsNotNone(application_nav(context)["setup"])
+
+        Application.objects.filter(pk=self.app.pk).update(setup_completed_at=timezone.now())
+        self.app.refresh_from_db()
+        with CaptureQueriesContext(connection) as finished:
+            self.assertIsNone(application_nav(context)["setup"])
+
+        self.assertEqual(len(finished), 0)
+        self.assertGreater(len(unfinished), 5)
 
     def test_the_source_panel_costs_one_query_however_many_sources_there_are(self):
         """The counts are annotated, not counted per row.

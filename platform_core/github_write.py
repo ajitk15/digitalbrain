@@ -193,6 +193,38 @@ def commit_file(repository, branch, path, text, sha, message, token, *, create=F
     )
 
 
+def check_runs(repository, ref, token):
+    """What the repository's own CI made of a branch.
+
+    Read-only, through the same hardened fetcher as every other call here. This
+    platform never runs the code it writes; it asks GitHub what happened when
+    GitHub ran it.
+    """
+    data = call(
+        f"{API}/repos/{repository}/commits/{ref}/check-runs",
+        token,
+        label="GitHub checks",
+    )
+    runs = data.get("check_runs") if isinstance(data, dict) else None
+    if not isinstance(runs, list):
+        return []
+    found = []
+    for run in runs[:20]:
+        if not isinstance(run, dict):
+            continue
+        found.append(
+            {
+                "name": str(run.get("name") or "check")[:120],
+                # queued | in_progress | completed
+                "status": str(run.get("status") or "")[:20],
+                # success | failure | neutral | cancelled | timed_out | skipped
+                "conclusion": str(run.get("conclusion") or "")[:20],
+                "url": str(run.get("html_url") or "")[:500],
+            }
+        )
+    return found
+
+
 def open_pull_request(repository, branch, base, title, body, token):
     data = call(
         f"{API}/repos/{repository}/pulls",

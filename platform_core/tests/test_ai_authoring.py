@@ -4,10 +4,9 @@ from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase, override_settings
-from django.urls import reverse
 
-from platform_core.ai import draft_plan, generate_title
-from platform_core.models import AIConfiguration, ChangePlan, ChatConversation
+from platform_core.ai import generate_title
+from platform_core.models import AIConfiguration, ChatConversation
 from platform_core.workbench import add_knowledge, answer_question
 
 from . import test_documents
@@ -103,71 +102,3 @@ class AIAuthoringTests(TestCase):
             **overrides,
         }
         return json.dumps(payload)
-
-    def test_a_draft_returns_form_fields_with_verified_evidence(self):
-        with patch("platform_core.ai.invoke_ai", return_value=self.model_plan()):
-            draft = draft_plan(self.owner, self.app.pk, "Shorten refunds", self.citations())
-        self.assertEqual(draft["title"], "Shorten the refund window")
-        self.assertEqual(len(draft["citations"]), 1)
-        self.assertEqual(draft["rejected"], 0)
-
-    def test_a_fabricated_quote_is_dropped_from_the_draft(self):
-        fabricated = self.model_plan(
-            sources=[{"id": str(self.source.pk), "quote": "Refunds are never permitted."}]
-        )
-        with patch("platform_core.ai.invoke_ai", return_value=fabricated):
-            draft = draft_plan(self.owner, self.app.pk, "Shorten refunds", self.citations())
-        self.assertEqual(draft["citations"], [])
-        self.assertEqual(draft["rejected"], 1)
-
-    def test_a_fenced_json_reply_is_still_understood(self):
-        fenced = f"```json\n{self.model_plan()}\n```"
-        with patch("platform_core.ai.invoke_ai", return_value=fenced):
-            draft = draft_plan(self.owner, self.app.pk, "Shorten refunds", self.citations())
-        self.assertEqual(draft["title"], "Shorten the refund window")
-
-    def test_an_unusable_reply_is_reported_rather_than_guessed_at(self):
-        for reply in ["not json at all", "[1, 2, 3]", ""]:
-            with self.subTest(reply=reply):
-                with patch("platform_core.ai.invoke_ai", return_value=reply):
-                    with self.assertRaises(ValidationError):
-                        draft_plan(self.owner, self.app.pk, "Shorten refunds", self.citations())
-
-    def test_drafting_saves_nothing(self):
-        """The "Propose a change" panel this fed has been removed from the Code
-        Factory screen, so the two assertions about its markup went with it. The
-        endpoint is still served and still refuses to write, which is the part
-        that mattered: drafting is not proposing, and approval is untouched."""
-        self.configure("plan_drafting")
-        url = reverse("plans", args=[self.app.pk])
-        with (
-            patch("platform_core.secrets.application_secret", return_value="scoped-key"),
-            patch(
-                "platform_core.claude_agents.completion",
-                return_value=(
-                    {"id": "r1", "usage": {"prompt_tokens": 100, "completion_tokens": 10}},
-                    self.model_plan(),
-                ),
-            ),
-        ):
-            response = self.client.post(url, {"action": "draft", "requirement": "Shorten refunds"})
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(ChangePlan.objects.exists())
-
-    def test_a_viewer_cannot_draft(self):
-        self.configure("plan_drafting")
-        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
-        response = self.client.post(
-            reverse("plans", args=[self.app.pk]),
-            {"action": "draft", "requirement": "Shorten refunds"},
-        )
-        self.assertEqual(response.status_code, 403)
-
-    def test_no_drafting_control_is_offered_on_the_screen(self):
-        """It used to appear once an owner configured plan_drafting. The panel
-        that held it is gone, and configuring the purpose must not bring it back
-        by some other route."""
-        self.configure("plan_drafting")
-        response = self.client.get(reverse("plans", args=[self.app.pk]))
-        self.assertNotContains(response, "Draft with AI")
-        self.assertNotContains(response, "Propose a change")

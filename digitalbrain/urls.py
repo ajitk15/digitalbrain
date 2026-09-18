@@ -108,6 +108,11 @@ urlpatterns = [
     path("applications/<uuid:pk>/runs/", workbench.runs, name="runs"),
     path("applications/<uuid:pk>/runs/<uuid:run_id>/", workbench.run_detail, name="run-detail"),
     path("applications/<uuid:pk>/plans/<uuid:plan_id>/", workbench.plan_detail, name="plan-detail"),
+    path(
+        "applications/<uuid:pk>/plans/<uuid:plan_id>/items/<uuid:item_id>/",
+        workbench.plan_item,
+        name="plan-item",
+    ),
     path("applications/<uuid:pk>/connectors/", connectors.connectors, name="connectors"),
     path("platform/users/", administration.users, name="users"),
     path("platform/users/<uuid:pk>/status/", administration.user_status, name="user-status"),
@@ -133,6 +138,11 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("branding/logo.png", views.logo, name="logo"),
     path("platform/", views.platform_console, name="platform-console"),
+    path(
+        "platform/organizations/<uuid:pk>/reset/",
+        administration.reset_organization,
+        name="organization-reset",
+    ),
     path("platform/branding/", views.branding, name="branding"),
     path("platform/features/", views.features, name="features"),
     path("audit/", views.audit_log, name="audit"),

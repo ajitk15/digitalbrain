@@ -35,6 +35,9 @@ from . import test_documents
     DOCUMENT_AUTO_CONVERT=False,
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+    # The four-eyes rule is asserted below. A developer's local.toml may enable
+    # the self-approval concession, and this test must hold regardless of it.
+    ALLOW_SELF_APPROVAL=False,
 )
 class WorkbenchTests(TestCase):
     upload = test_documents.DocumentTests.upload
@@ -56,16 +59,25 @@ class WorkbenchTests(TestCase):
         )
 
     def submit_plan(self):
-        response = self.client.post(
-            reverse("plans", args=[self.app.pk]),
-            {
-                "title": "Change refund deadline",
-                "proposal": "Update the deadline to forty days.",
-                "validation": "Test days 39 and 41; roll back on failure.",
-            },
+        """A plan of the shape a run produces.
+
+        Built directly rather than posted: the form that used to make one by
+        hand is gone, because a plan is what a run produces. What these tests
+        are about is what happens at the review gate, which is unchanged.
+        """
+        sources = [
+            {"id": str(entry.pk), "digest": entry.digest}
+            for entry in KnowledgeEntry.objects.filter(application=self.app, active=True)
+        ]
+        return ChangePlan.objects.create(
+            application=self.app,
+            author=self.owner,
+            title="Change refund deadline",
+            proposal="Update the deadline to forty days.",
+            validation="Test days 39 and 41; roll back on failure.",
+            sources=sources,
+            digest="d" * 64,
         )
-        self.assertEqual(response.status_code, 302)
-        return ChangePlan.objects.get()
 
     def test_knowledge_create_search_archive_and_escape(self):
         entry = self.source()

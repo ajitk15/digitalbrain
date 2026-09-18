@@ -200,14 +200,26 @@ def platform_console(request):
     totals = AIUsage.objects.values("currency", "estimated").annotate(
         amount=Sum("amount"), calls=Count("id")
     )
+    from . import demo_reset
+
+    organizations = list(Organization.objects.all())
     return render(
         request,
         "platform.html",
         {
-            "organizations": Organization.objects.all(),
+            "organizations": organizations,
             "user_count": User.objects.filter(is_active=True).count(),
             "application_count": Application.objects.count(),
             "totals": totals,
+            # Off unless a demonstration instance has asked for it, and already
+            # refused by load_config under production.
+            "reset_allowed": demo_reset.allowed(),
+            "resettable": [
+                {"organization": org, "counts": demo_reset.summary(org)}
+                for org in organizations
+            ]
+            if demo_reset.allowed()
+            else [],
         },
     )
 
@@ -414,6 +426,19 @@ def create_application(request, pk=None, organization_id=None):
                 "check the model and prices in AI settings."
             )
         messages.success(request, note)
+        # Straight to the checklist, because "it exists" is the least useful
+        # thing to tell somebody who now has eight things to do. Only when the
+        # creator can actually open it: administering an organization does not
+        # grant access to its applications, and the screen is behind the
+        # code_factory feature - so somebody who granted ownership to a
+        # colleague, or who left that feature unticked, would land on a 404
+        # immediately after a success message.
+        reachable = (
+            feature_enabled("code_factory", app)
+            and ApplicationGrant.objects.filter(application=app, user=request.user).exists()
+        )
+        if reachable:
+            return redirect("onboarding", pk=app.pk)
         return redirect("organization", pk=org.pk)
     return render(
         request,

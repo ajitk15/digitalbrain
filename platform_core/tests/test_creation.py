@@ -68,6 +68,35 @@ class ApplicationCreationTests(TestCase):
         self.assertEqual(grant.user, self.owner)
         self.assertEqual(grant.role, "owner")
 
+    def test_creation_lands_on_the_onboarding_checklist(self):
+        """"It exists" is the least useful thing to say to somebody who now has
+        eight things to do."""
+        response = self.client.post(
+            self.url(), self.payload(owner=str(self.admin.pk))
+        )
+        app = Application.objects.get(name="Reporting")
+        self.assertRedirects(response, reverse("onboarding", args=[app.pk]))
+
+    def test_a_creator_with_no_grant_is_not_sent_to_a_404(self):
+        """Administering an organization does not grant access to its
+        applications, so the creator cannot always open what they just made."""
+        response = self.client.post(self.url(), self.payload())
+        app = Application.objects.get(name="Reporting")
+        self.assertFalse(
+            ApplicationGrant.objects.filter(application=app, user=self.admin).exists()
+        )
+        self.assertRedirects(response, reverse("organization", args=[self.org.pk]))
+
+    def test_creation_without_code_factory_does_not_send_you_to_its_screen(self):
+        """The checklist is behind the feature, and an unticked box means off."""
+        # The marker is what makes an absent checkbox mean "off" rather than
+        # "this caller never mentioned features".
+        payload = self.payload(owner=str(self.admin.pk), features_declared="1")
+        payload.pop("feature_code_factory")
+        response = self.client.post(self.url(), payload)
+        self.assertTrue(Application.objects.filter(name="Reporting").exists())
+        self.assertRedirects(response, reverse("organization", args=[self.org.pk]))
+
     def test_each_created_level_is_audited(self):
         self.client.post(self.url(), self.payload())
         actions = set(AuditEvent.objects.values_list("action", flat=True))

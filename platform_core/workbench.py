@@ -59,20 +59,6 @@ class QuestionForm(forms.Form):
     )
 
 
-class PlanForm(forms.Form):
-    title = forms.CharField(max_length=200)
-    proposal = forms.CharField(
-        max_length=20000,
-        widget=forms.Textarea(attrs={"rows": 5}),
-        help_text="Describe the requirement, proposed changes, affected files and risks.",
-    )
-    validation = forms.CharField(
-        max_length=10000,
-        widget=forms.Textarea(attrs={"rows": 3}),
-        help_text="Acceptance criteria, tests and rollback steps.",
-    )
-
-
 @transaction.atomic
 def add_knowledge(user, app_id, title, content, source="", document=None):
     app, _ = access(user, app_id, "knowledge", write=True)
@@ -992,32 +978,23 @@ def chat_edit(request, pk, message_id):
     return resend(request, pk, app, conversation, question, trim_from=original.sequence)
 
 
-class DraftForm(forms.Form):
-    requirement = forms.CharField(
-        max_length=2000,
-        widget=forms.Textarea(attrs={"rows": 3}),
-        label="What change do you need?",
-        help_text=(
-            "An AI draft is filled into the form below for you to edit. "
-            "Nothing is submitted for you."
-        ),
-    )
-
-
-@login_required
-@require_http_methods(["GET", "POST"])
 def plans(request, pk):
+    """Start a run, and see the ones this application has made.
+
+    This used to carry a second way to make a change plan - a form somebody
+    filled in, with an AI-drafted first attempt - and a list of every plan an
+    application held. Neither survived contact with the pipeline: a plan is
+    what a run produces, it is read on the run that produced it, and the list
+    was a worse route to the same thing with no ticket and no stage on it.
+
+    The drafting POST paths went with the list. They had no page posting to
+    them, which is code claiming a capability the product does not offer.
+    """
     from .code_factory import ticket_choices
     from .models import Connector, FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
     connectors = Connector.objects.filter(application=app, enabled=True)
-    form = PlanForm(request.POST or None)
-    draft_form = DraftForm()
-    draft_notice = ""
-    plan_ai_enabled = AIConfiguration.objects.filter(
-        application=app, purpose="plan_drafting", enabled=True
-    ).exists()
     if request.method == "POST" and request.POST.get("action") == "analyse":
         from .code_factory import start_run
 
@@ -1037,86 +1014,23 @@ def plans(request, pk):
             return redirect("plans", pk=pk)
         messages.success(
             request,
-            f"Queued analysis of {entry.title}. Its phases appear below as they run.",
+            f"Queued analysis of {entry.title}. Its stages appear below as it runs.",
         )
-        return redirect(f"{reverse('plans', args=[pk])}#run-{run.pk}")
-    if request.method == "POST" and request.POST.get("action") == "draft":
-        access(request.user, pk, "code_factory", write=True)
-        access(request.user, pk, "knowledge")
-        draft_form = DraftForm(request.POST)
-        form = PlanForm()
-        if draft_form.is_valid():
-            requirement = draft_form.cleaned_data["requirement"]
-            try:
-                from .ai import draft_plan
-
-                citations = lexical_citations(app, requirement)
-                draft = draft_plan(request.user, pk, requirement, citations)
-                form = PlanForm(
-                    initial={
-                        "title": draft["title"] or requirement[:200],
-                        "proposal": draft["proposal"],
-                        "validation": draft["validation"],
-                    }
-                )
-                sources = ", ".join(c["title"] for c in draft["citations"])
-                draft_notice = (
-                    "Draft ready. Review and edit it before submitting. "
-                    + (f"Evidence: {sources}. " if sources else "No source evidence was cited. ")
-                    + (
-                        f"{draft['rejected']} unverifiable quote(s) were dropped."
-                        if draft["rejected"]
-                        else ""
-                    )
-                )
-                audit(
-                    request.user,
-                    "plan.drafted",
-                    app.pk,
-                    app.product.portfolio.organization,
-                    details={"cited": len(draft["citations"])},
-                )
-            except (ValidationError, ImproperlyConfigured) as error:
-                draft_form.add_error(None, failure_text(error))
-    elif request.method == "POST":
-        access(request.user, pk, "code_factory", write=True)
-        if form.is_valid():
-            with transaction.atomic():
-                values = form.cleaned_data
-                sources = list(
-                    KnowledgeEntry.objects.filter(application=app, active=True).values(
-                        "id", "digest"
-                    )
-                )
-                sources = [{"id": str(s["id"]), "digest": s["digest"]} for s in sources]
-                digest = hashlib.sha256(
-                    json.dumps({**values, "sources": sources}, sort_keys=True).encode()
-                ).hexdigest()
-                plan = ChangePlan.objects.create(
-                    application=app, author=request.user, sources=sources, digest=digest, **values
-                )
-                audit(request.user, "plan.submitted", plan.pk, app.product.portfolio.organization)
-            return redirect("plan-detail", pk=pk, plan_id=plan.pk)
+        return redirect("run-detail", pk=pk, run_id=run.pk)
+    if request.method == "POST":
+        return HttpResponseNotAllowed(["GET"])
     runs_shown = list(
         FactoryRun.objects.filter(application=app).prefetch_related("phases", "events")[:5]
     )
-    published_graph = published_graph_version(app.pk)
     return render(
         request,
         "plans.html",
         {
             "application": app,
             "grant": grant,
-            "form": form,
-            "draft_form": draft_form,
-            "draft_notice": draft_notice,
-            "plan_ai_enabled": plan_ai_enabled,
             # Analysis is refused without one, so the form is not offered either:
             # a button that can only fail is worse than a sentence saying why.
-            "published_graph": published_graph,
-            "page": Paginator(ChangePlan.objects.filter(application=app), 20).get_page(
-                request.GET.get("page")
-            ),
+            "published_graph": published_graph_version(app.pk),
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
@@ -1131,6 +1045,25 @@ def plans(request, pk):
             ).first(),
         },
     )
+@login_required
+@require_http_methods(["GET"])
+def plan_item(request, pk, plan_id, item_id):
+    """One gap, with the evidence behind it.
+
+    A page rather than a panel because `modal.js` opens it by fetching this URL
+    and lifting its `<main>`: there is no fragment mode, and with JavaScript off
+    the link simply navigates here. Read-only - choosing whether to implement it
+    is a decision about the whole plan and stays on the review form, where it is
+    made once.
+    """
+    app, grant = access(request.user, pk, "code_factory")
+    plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
+    item = get_object_or_404(plan.items, pk=item_id)
+    return render(
+        request,
+        "plan_item.html",
+        {"application": app, "grant": grant, "plan": plan, "item": item},
+    )
 
 
 @login_required
@@ -1143,16 +1076,27 @@ def onboarding(request, pk):
     own audit event, and a setup page that wrote to all of them would be a
     second way to do everything with none of that.
     """
-    from .readiness import GATES, gate_ready, outstanding, steps
+    from .readiness import GATES, gate_ready, outstanding, record_completion, setup
 
     app, grant = access(request.user, pk, "code_factory")
-    found = steps(app)
+    state = setup(app)
+    record_completion(app, state)
+    found = state.steps
+    # "Nothing but the switch that got you here" - derived from the application
+    # rather than from a query parameter, so it still greets somebody who
+    # created this last week and is only now coming back to it.
+    fresh = not [step for step in found if step.ok and step.key != "code_factory"]
     return render(
         request,
         "onboarding.html",
         {
             "application": app,
             "grant": grant,
+            "fresh": fresh,
+            "setup": state,
+            "done": state.done,
+            "total": state.total,
+            "next_step": state.next_step,
             "gates": [
                 {
                     "key": key,
@@ -1195,8 +1139,93 @@ def runs(request, pk):
     )
 
 
+#: The agents of stage four, in order, with what each one is for. Named here
+#: rather than read from the phase rows so a row exists before its phase does:
+#: "not started yet" is the state somebody is looking at before they press the
+#: button, and a missing row cannot say it.
+AGENT_ROW = (
+    ("work_order", "Work order", "Decides what each file must end up doing"),
+    ("implementation", "Implementation", "Writes the new contents of each file"),
+    ("tests", "Test author", "Writes the tests that prove the change"),
+    ("review", "Change review", "Reads the finished files against the approved items"),
+    ("verification", "Pre-write checks", "Re-reads every file before anything is written"),
+    ("delivery", "Pull request", "Branches, commits and opens a draft"),
+)
+
+
+def agent_report(name, label, waiting, phase, run):
+    """One agent's row: what it is for, or what it actually did.
+
+    A finished agent should say what happened in *this* run rather than repeat
+    its job description - "Passed" is true of every successful check and tells
+    a reader nothing. Each one reports from its own recorded output, which is
+    the same output the phase receipt is built from.
+    """
+    if phase is None:
+        # A run that has already been through this stage and has no row for an
+        # agent never had that agent: it predates it. Saying "waiting" about
+        # something that was never going to happen is worse than saying so.
+        past = run.status in {"prepared", "delivered", "complete"}
+        return {
+            "label": label,
+            "detail": "Did not run: this run predates this agent." if past else waiting,
+            "status": "absent" if past else "pending",
+        }
+    output = phase.output or {}
+    detail = waiting
+    if phase.status == "failed":
+        detail = phase.error[:200] or "Failed, with no reason recorded."
+    elif phase.status == "skipped":
+        detail = output.get("reason", "Nothing for it to do.")
+    elif phase.status == "running":
+        detail = "Working."
+    elif phase.status == "ok":
+        if name == "work_order":
+            order, leftover = output.get("order", {}), output.get("leftover", [])
+            detail = f"Set an intent for {len(order)} file(s)"
+            detail += (
+                f"; {len(leftover)} approved item(s) no file could satisfy."
+                if leftover
+                else "."
+            )
+        elif name == "implementation":
+            files = output.get("files", [])
+            created = [item for item in files if item.get("new")]
+            named = ", ".join(item.get("path", "") for item in files[:3])
+            detail = f"Wrote {len(files)} file(s)"
+            detail += f", {len(created)} of them new" if created else ""
+            detail += f": {named}" + ("…" if len(files) > 3 else "") + "."
+        elif name == "tests":
+            files = output.get("files", [])
+            detail = f"Wrote {len(files)} test file(s): {', '.join(files[:3])}."
+        elif name == "review":
+            kept, rejected = output.get("kept", []), output.get("rejected", [])
+            detail = f"Passed {len(kept)} file(s)"
+            if rejected:
+                first = rejected[0]
+                detail += (
+                    f"; rejected {len(rejected)}, including {first.get('path', '')}"
+                    f" — {first.get('reason', 'no reason given')}"
+                )
+            detail += "."
+        elif name == "verification":
+            checked, created = output.get("checked", []), output.get("created", [])
+            detail = f"Re-read {len(checked)} file(s); none had moved"
+            detail += (
+                f", and {len(created)} new path(s) were still absent." if created else "."
+            )
+        elif name == "delivery":
+            detail = (
+                f"Committed to {output.get('branch', 'a branch')} and opened a draft "
+                "pull request."
+            )
+    if phase.prompt_tokens:
+        detail += f" ({phase.prompt_tokens:,} in / {phase.completion_tokens:,} out tokens)"
+    return {"label": label, "detail": detail, "status": phase.status}
+
+
 @login_required
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def run_detail(request, pk, run_id):
     """One run, step by step, while it happens and afterwards.
 
@@ -1205,11 +1234,87 @@ def run_detail(request, pk, run_id):
     plan and confirming the repository are decisions with their own gates, and
     this page links to them rather than growing a second copy of either.
     """
+    from . import code_factory
+    from .code_factory import (
+        confirm_repository,
+        discard,
+        publish,
+        request_preparation,
+        write_credential,
+    )
     from .models import FactoryRun
+    from .readiness import setup
 
     app, grant = access(request.user, pk, "code_factory")
     run = get_object_or_404(
         FactoryRun.objects.select_related("plan", "code_snapshot"), pk=run_id, application=app
+    )
+    if request.method == "POST":
+        access(request.user, pk, "code_factory", write=True)
+        action = request.POST.get("action")
+        try:
+            if action == "review" and run.plan:
+                review_plan(
+                    request.user,
+                    pk,
+                    run.plan.pk,
+                    request.POST.get("decision"),
+                    request.POST.get("note", ""),
+                    chosen=request.POST.getlist("item"),
+                    declared=bool(request.POST.get("items_declared")),
+                )
+                messages.success(request, "Decision recorded.")
+            elif action == "confirm-repository":
+                if not grant.can_approve:
+                    raise PermissionDenied
+                confirm_repository(
+                    run, request.POST.get("repository"), request.POST.get("base_branch")
+                )
+                messages.success(request, "Repository confirmed.")
+            elif action == "prepare":
+                # Queued for the worker rather than run here: it is several
+                # model calls and a series of reads, and holding the request
+                # open for it would mean a blank page with nothing to report.
+                request_preparation(request.user, pk, run.pk)
+                messages.success(
+                    request, "The implementation agents are running. Watch them below."
+                )
+            elif action == "publish":
+                url = publish(request.user, pk, run.pk)
+                messages.success(request, f"Draft pull request opened: {url}")
+            elif action == "discard":
+                discard(request.user, pk, run.pk)
+                messages.success(request, "The prepared change was discarded. Nothing was written.")
+            else:
+                raise ValidationError("Unknown action.")
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        return redirect("run-detail", pk=pk, run_id=run.pk)
+
+    checks = [
+        step
+        for step in setup(app).steps
+        if step.gate == "analysis" or step.key == "github_write"
+    ]
+    phases_by_name = {phase.name: phase for phase in run.phases.all()}
+    agents = [
+        agent_report(name, label, waiting, phases_by_name.get(name), run)
+        for name, label, waiting in AGENT_ROW
+    ]
+    # How long since the run last said anything. A working run that has gone
+    # quiet is worth showing before the reclaimer decides it is dead: a spinner
+    # that means nothing is worse than a number that means something.
+    quiet_for = None
+    if run.status in code_factory.WORKING:
+        quiet_for = int(
+            (timezone.now() - code_factory.last_sign_of_life(run)).total_seconds() // 60
+        )
+    plan = run.plan
+    reviewable = bool(
+        plan
+        and plan.status == "pending"
+        and grant.can_approve
+        and (plan.author_id != request.user.pk or self_approval_allowed())
     )
     return render(
         request,
@@ -1220,27 +1325,100 @@ def run_detail(request, pk, run_id):
             "run": run,
             "events": run.events.all(),
             "phases": run.phases.all(),
-            "items": run.plan.items.order_by("sequence") if run.plan else (),
+            "items": plan.items.order_by("sequence") if plan else (),
             "active": run.in_flight,
+            # Section one: the gate, as green ticks rather than a page.
+            "checks": checks,
+            "checks_passed": sum(1 for step in checks if step.ok),
+            "accepted_count": plan.items.exclude(status="rejected").count() if plan else 0,
+            "agents": agents,
+            "quiet_for": quiet_for,
+            "stall_after": int(code_factory.STALL_AFTER.total_seconds() // 60),
+            "reviewable": reviewable,
+            "self_approving": bool(
+                plan and plan.author_id == request.user.pk and self_approval_allowed()
+            ),
+            "changes": run.changes.all() if run.status in {"prepared", "delivered"} else (),
+            "can_deliver": bool(
+                plan
+                and plan.status == "approved"
+                and grant.can_approve
+                and not run.pull_request_url
+            ),
+            "write_credential": bool(write_credential(app)),
         },
     )
 
 
+def self_approval_allowed():
+    """Whether one person may approve a plan they wrote.
+
+    False everywhere that matters. A single-operator development instance has
+    nobody else to ask, so the pipeline cannot be run end to end without this -
+    but the separation of duties is the product rather than a policy on top of
+    it, so the concession is named, refused outright in production by
+    `load_config`, forced off by settings even if that were bypassed, and
+    recorded on every plan it lets through.
+    """
+    from django.conf import settings
+
+    return bool(getattr(settings, "ALLOW_SELF_APPROVAL", False))
+
+
 @transaction.atomic
-def review_plan(user, app_id, plan_id, decision, note):
+def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=False):
+    """Approve or reject a plan, and say which of its items are in.
+
+    Choosing items is part of reviewing rather than a step beside it: the
+    reviewer is deciding what will be built, and deciding it once - at the same
+    moment, in the same submission - is what keeps "what was approved" and "what
+    was delivered" the same set. Nothing can change it afterwards, because a
+    plan is only reviewable while it is pending.
+
+    `declared` distinguishes "none of them" from "this caller said nothing about
+    items", for the reason the features form has the same marker: an unticked
+    checkbox is simply absent from a POST, and without the marker a reviewer who
+    ticked nothing and a caller that has never heard of items look identical.
+    Without it every item stands, which is what happened before this existed.
+    """
     app, grant = access(user, app_id, "code_factory")
     plan = get_object_or_404(ChangePlan.objects.select_for_update(), pk=plan_id, application=app)
-    if not grant.can_approve or plan.author_id == user.pk:
+    if not grant.can_approve or (plan.author_id == user.pk and not self_approval_allowed()):
         raise PermissionDenied("A different user with approval permission must review this plan.")
     if decision not in {"approved", "rejected"} or plan.status != "pending":
         raise ValidationError("This plan has already been reviewed or the decision is invalid.")
     if not note.strip() or len(note) > 2000:
         raise ValidationError("Enter a review note of up to 2,000 characters.")
+    selected = set(chosen or ())
+    if decision == "approved" and declared and not selected:
+        # Approving nothing is not an approval. Saying so beats writing a plan
+        # whose every item is rejected and then failing at implementation with
+        # "none of the files the design named could be read".
+        raise ValidationError(
+            "Choose at least one item to implement, or reject the plan instead."
+        )
     current = {
         str(e.pk): e.digest for e in KnowledgeEntry.objects.filter(application=app, active=True)
     }
-    if decision == "approved" and any(current.get(s["id"]) != s["digest"] for s in plan.sources):
-        raise ValidationError("A pinned source was archived or changed. Submit a fresh plan.")
+    if decision == "approved":
+        # A source entry with no digest cannot be re-checked, so it cannot be
+        # approved: refused in the same words rather than raising KeyError,
+        # which is what a plan written before the digest was recorded did.
+        if any("digest" not in source for source in plan.sources):
+            raise ValidationError(
+                "This plan did not record the digest of its evidence, so it "
+                "cannot be verified. Submit a fresh plan."
+            )
+        if any(current.get(s["id"]) != s["digest"] for s in plan.sources):
+            raise ValidationError("A pinned source was archived or changed. Submit a fresh plan.")
+    accepted = plan.items.count()
+    if declared:
+        # Recorded per item rather than as a list on the plan, because every
+        # consumer already asks the item: target_paths, the implementation
+        # prompt and the pull request body all exclude a rejected one.
+        plan.items.filter(pk__in=selected).update(status="accepted")
+        plan.items.exclude(pk__in=selected).update(status="rejected")
+        accepted = len(selected)
     plan.status = decision
     plan.reviewed_by = user
     plan.reviewed_at = timezone.now()
@@ -1251,7 +1429,14 @@ def review_plan(user, app_id, plan_id, decision, note):
         f"plan.{decision}",
         plan.pk,
         app.product.portfolio.organization,
-        details={"digest": plan.digest},
+        details={
+            "digest": plan.digest,
+            "items_accepted": accepted,
+            "items_total": plan.items.count(),
+            # Whoever reads this later must be able to tell a reviewed change
+            # from one its own author waved through.
+            "self_approved": plan.author_id == user.pk,
+        },
     )
     return plan
 
@@ -1259,7 +1444,7 @@ def review_plan(user, app_id, plan_id, decision, note):
 @login_required
 @require_http_methods(["GET", "POST"])
 def plan_detail(request, pk, plan_id):
-    from .code_factory import confirm_repository, deliver, write_credential
+    from .code_factory import confirm_repository, prepare, publish, write_credential
 
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
@@ -1290,7 +1475,10 @@ def plan_detail(request, pk, plan_id):
         return redirect("plan-detail", pk=pk, plan_id=plan_id)
     if request.method == "POST" and request.POST.get("action") == "deliver":
         try:
-            url = deliver(request.user, pk, run.pk if run else None)
+            # Kept working for anything pointing here, but it now stops at the
+            # summary: the pull request is its own decision on the run page.
+            prepare(request.user, pk, run.pk if run else None)
+            url = publish(request.user, pk, run.pk if run else None)
         except ValidationError as error:
             messages.error(request, " ".join(error.messages))
         else:
@@ -1304,6 +1492,8 @@ def plan_detail(request, pk, plan_id):
                 plan_id,
                 request.POST.get("decision"),
                 request.POST.get("note", ""),
+                chosen=request.POST.getlist("item"),
+                declared=bool(request.POST.get("items_declared")),
             )
         except ValidationError as error:
             messages.error(request, " ".join(error.messages))
@@ -1331,8 +1521,23 @@ def plan_detail(request, pk, plan_id):
             "application": app,
             "plan": plan,
             "can_review": grant.can_approve
-            and plan.author_id != request.user.pk
+            and (plan.author_id != request.user.pk or self_approval_allowed())
             and plan.status == "pending",
+            "self_approving": plan.author_id == request.user.pk and self_approval_allowed(),
+            # Why not, in the words of the rule that says not. A review form
+            # that is simply absent reads as a missing feature.
+            "no_review_because": (
+                ""
+                if grant.can_approve
+                and (plan.author_id != request.user.pk or self_approval_allowed())
+                and plan.status == "pending"
+                else f"This plan was already {plan.get_status_display().lower()}."
+                if plan.status != "pending"
+                else "You wrote this plan, so somebody else has to review it. "
+                "Approving your own work would make the gate a formality."
+                if plan.author_id == request.user.pk
+                else "You do not hold approval rights on this application."
+            ),
             "run": run,
             "can_deliver": bool(
                 run

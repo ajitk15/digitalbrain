@@ -1,0 +1,31 @@
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}{{ item.title }}{% endblock %}{% block content %}{% application_nav %}
+<p><a href="{% url 'plan-detail' application.pk plan.pk %}">← Back to {{ plan.title|truncatechars:60 }}</a></p>
+<h1>{{ item.title }}</h1>
+<p><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span> <span class="pill">{{ item.get_status_display }}</span></p>
+
+<section class="card">
+<h2>{% icon "search" %}The gap</h2>
+<p>{{ item.explanation }}</p>
+</section>
+
+{% if item.change_summary %}
+<section class="card section">
+<h2>{% icon "code" %}What changes</h2>
+<p>{{ item.change_summary }}</p>
+{% if item.targets %}<h3 class="panel-label">Files this touches</h3><ul class="item-targets">{% for target in item.targets %}<li><code>{{ target }}</code></li>{% endfor %}</ul>
+<p class="muted"><small>Named by the design phase from the pinned code snapshot. Implementation reads these files and nothing else.</small></p>{% endif %}
+</section>
+{% endif %}
+
+<section class="card section">
+<h2>{% icon "document" %}Evidence</h2>
+{% if item.citations %}
+<p class="muted">Each quotation was verified against its source before this item was written: the source was active, its digest unchanged, and the excerpt still present in it. Check one against its source before deciding.</p>
+<ul class="item-evidence">{% for citation in item.citations %}<li><strong>{{ citation.title }}</strong><br>{{ citation.excerpt }}</li>{% endfor %}</ul>
+{% else %}
+<p class="notice notice-warning">{% icon "warning" %}<span>No verifiable evidence supports this item. Treat it as a suggestion rather than a finding, and weigh it accordingly before choosing to implement it.</span></p>
+{% endif %}
+</section>
+
+<p class="muted section">Whether this is implemented is decided on the plan, with the others, in one review. {% if plan.status == 'pending' %}Go back to choose it or leave it out.{% else %}This plan was {{ plan.get_status_display|lower }} by {{ plan.reviewed_by.username }}.{% endif %}</p>
+{% endblock %}

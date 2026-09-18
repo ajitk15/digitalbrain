@@ -80,3 +80,57 @@ class ClaudeSDKTests(SimpleTestCase):
             ):
                 with self.assertRaises(ValidationError):
                     self.call()
+
+
+class TruncatedResultTests(SimpleTestCase):
+    """The CLI's summary is not always the whole reply.
+
+    A live run reported 4,187 completion tokens and a `result` field holding a
+    206-character fragment - the tail of a JSON document, cut mid-word. Every
+    phase that asks for JSON failed on it while the reply had arrived intact in
+    the assistant message. Whichever carries more of it is the answer.
+    """
+
+    def call(self, blocks, summary):
+        from claude_agent_sdk import AssistantMessage, TextBlock
+
+        async def fake_query(*, prompt, options):
+            yield AssistantMessage(
+                content=[TextBlock(text=text) for text in blocks], model="claude-sonnet-5"
+            )
+            yield ResultMessage(
+                subtype="success",
+                duration_ms=5,
+                duration_api_ms=4,
+                is_error=False,
+                num_turns=1,
+                session_id="test-session",
+                result=summary,
+                usage={"input_tokens": 10, "output_tokens": 4},
+            )
+
+        with patch("platform_core.claude_agents.query", side_effect=fake_query):
+            _, answer = completion(
+                SimpleNamespace(model="claude-sonnet-5"), "Design it", [], "key", history=[]
+            )
+        return answer
+
+    def test_a_truncated_summary_loses_to_the_assistant_message(self):
+        whole = '{"items": [{"id": 0, "change_summary": "Bound the loop", "targets": []}]}'
+        answer = self.call([whole], summary='"targets": []}]}')
+        self.assertEqual(answer, whole)
+        # And it is what a phase would parse, which is the point.
+        self.assertEqual(json.loads(answer)["items"][0]["id"], 0)
+
+    def test_the_summary_still_wins_when_no_blocks_are_surfaced(self):
+        """Some turns emit no text block; the summary is then all there is."""
+        answer = self.call([], summary="A clear answer [1].")
+        self.assertEqual(answer, "A clear answer [1].")
+
+    def test_several_blocks_are_joined_in_order(self):
+        answer = self.call(['{"items": ', '[{"id": 0}]}'], summary="}]}")
+        self.assertEqual(answer, '{"items": [{"id": 0}]}')
+
+    def test_an_empty_reply_is_still_refused(self):
+        with self.assertRaises(ValidationError):
+            self.call([], summary="")

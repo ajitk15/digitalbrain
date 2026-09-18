@@ -1,45 +1,127 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block title %}Run · {{ run.ticket_external_id|default:"Code Factory" }}{% endblock %}{% block content %}{% application_nav %}
-<p><a href="{% url 'runs' application.pk %}">← Back to all runs</a></p>
-<h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1>
-<p><span class="pill">{{ run.get_status_display }}</span> <span class="muted">{{ run.ticket_external_id }} · requested by {{ run.requested_by.username }} · {{ run.created_at|date:"M d, Y H:i" }} UTC{% if run.finished_at %} · finished {{ run.finished_at|date:"H:i" }} UTC{% endif %}</span></p>
-{% if run.ticket_url %}<p class="muted"><small>Raised at <a href="{{ run.ticket_url }}">{{ run.ticket_url }}</a></small></p>{% endif %}
+{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Run {{ run.number }} · {{ run.ticket_external_id|default:"Code Factory" }}{% endblock %}{% block content %}{% application_nav %}
+{% comment %}
+The pipeline on one screen, one stage per step, each collapsed to a line that
+says how it went. The stage you can act on is the one left open: a finished
+step is a fact you may want to check, and the current step is work.
+{% endcomment %}
+<p><a href="{% url 'runs' application.pk %}">← All runs</a></p>
+<p class="eyebrow">Run {{ run.number }}</p><h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1>
+<p class="run-meta"{% if active %} data-run-active{% endif %}><span class="pill">{{ run.get_status_display }}</span> <span class="muted">as of {% now "H:i:s" %} UTC{% if active %} · refreshing itself{% endif %} · {{ run.ticket_external_id }}{% if run.ticket_url %} · <a href="{{ run.ticket_url }}" target="_blank" rel="noreferrer noopener">open the ticket</a>{% endif %} · started by {{ run.requested_by.username }} · {{ run.created_at|date:"M d, H:i" }} UTC</span><a class="run-refresh" href="{% url 'run-detail' application.pk run.pk %}" title="Reload this page">{% icon "refresh" 13 %}Refresh</a></p>
 
-<section class="card"><h2>{% icon "history" %}What this run is doing</h2>
-<p class="muted">Each step as the run reaches it. Checks come before anything is asked of a model, so what the run knew when it started is on the record beside what it concluded.</p>
+{% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
+{% if quiet_for >= 3 %}<p class="notice notice-warning">{% icon "warning" %}<span>This run has said nothing for <strong>{{ quiet_for }} minutes</strong>. A phase may simply be waiting on the model. If it stays silent past {{ stall_after }} minutes it is presumed abandoned — most often because the server restarted while it was working — and marked failed, with nothing written anywhere.</span></p>{% endif %}
+
+<details class="stage"><summary><span class="stage-no">1</span><span class="stage-name">Pre-checks</span><span class="stage-note">{% if checks_passed == checks|length %}All {{ checks|length }} passed{% else %}{{ checks_passed }} of {{ checks|length }} passed{% endif %}</span></summary>
+<ul class="check-row">{% for step in checks %}
+<li class="check check-{% if step.ok %}ok{% else %}no{% endif %}">{% if step.ok %}{% icon "success" 14 %}{% else %}{% icon "error" 14 %}{% endif %}{{ step.label }}</li>
+{% endfor %}</ul>
+</details>
+
+<details class="stage"{% if active and not items %} open{% endif %}><summary><span class="stage-no">2</span><span class="stage-name">Analysis</span><span class="stage-note">{% if items %}{{ items|length }} gap(s) found{% else %}{{ run.get_status_display|lower }}{% endif %}{% if run.graph_version %} · graph v{{ run.graph_version }}{% endif %}{% if run.code_snapshot %} · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}{% endif %}</span></summary>
 {% include "_run_progress.html" %}
-</section>
-
-{% if run.error %}<p class="notice notice-error section" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
-
-{% if run.status == 'awaiting_review' and run.plan %}
-<section class="card section"><h2>{% icon "lock" %}Waiting for approval</h2>
-<p>The gap analysis is finished and its {{ items|length }} item(s) are written down with the evidence behind each one. <strong>Nothing has been written to any repository.</strong> Somebody other than {{ run.requested_by.username }} has to read the items and approve or reject the plan before this run can go further.</p>
-<p><a class="button" href="{% url 'plan-detail' application.pk run.plan.pk %}">{% icon "arrow-right" %}Review the {{ items|length }} proposed fix(es)</a></p>
-</section>
-{% elif run.plan %}
-<p class="section"><a class="button" href="{% url 'plan-detail' application.pk run.plan.pk %}">{% icon "arrow-right" %}Open the change plan</a></p>
-{% endif %}
-
-{% if run.pull_request_url %}<p class="notice notice-success section">{% icon "success" %}<span>A draft pull request is open: <a href="{{ run.pull_request_url }}">{{ run.pull_request_url }}</a></span></p>{% endif %}
+</details>
 
 {% if items %}
-<section class="card section"><h2>{% icon "search" %}Gap analysis <span class="count">{{ items|length }}</span></h2>
-<p class="muted">The gaps this run found. Open the plan to read the evidence for each and to approve or reject it.</p>
-<div class="list-card">{% for item in items %}
-<div class="list-row"><div><strong>{{ item.title }}</strong><small><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span>{% if item.citations %} · {{ item.citations|length }} verified quotation(s){% else %} · no verifiable evidence{% endif %}</small>{% if item.targets %}<small class="muted">Touches: {% for target in item.targets %}<code>{{ target }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small>{% endif %}</div><span class="pill">{{ item.get_status_display }}</span></div>
-{% endfor %}</div></section>
+<details class="stage" {% if reviewable %}open{% endif %}><summary><span class="stage-no">3</span><span class="stage-name">Gaps</span><span class="stage-note">{% if run.plan.status == 'approved' %}{{ accepted_count }} of {{ items|length }} approved{% elif run.plan.status == 'rejected' %}All rejected{% else %}{{ items|length }} awaiting your decision{% endif %}</span></summary>
+<p class="muted">{% if reviewable %}Every gap is ticked. Untick what you do not want, then approve. Click a gap to read its evidence.{% else %}Click a gap to read the evidence behind it.{% endif %}</p>
+<form method="post" id="run-review">{% csrf_token %}<input type="hidden" name="action" value="review"><input type="hidden" name="items_declared" value="1"></form>
+{% if reviewable %}<p class="pick-all" hidden data-pick-all="gap-pick"><button type="button" class="text-button" data-pick="all">Select all</button> · <button type="button" class="text-button" data-pick="none">Clear all</button></p>{% endif %}
+<ul class="gap-list">{% for item in items %}
+<li class="gap gap-{{ item.status }}">
+{% if reviewable %}<input class="gap-pick" type="checkbox" name="item" value="{{ item.pk }}" id="pick-{{ item.pk }}" form="run-review" {% if item.status != 'rejected' %}checked{% endif %}><label class="sr-only" for="pick-{{ item.pk }}">Implement {{ item.title }}</label>{% endif %}
+<div class="gap-body">
+<a href="{% url 'plan-item' application.pk run.plan.pk item.pk %}" data-modal><strong>{{ item.title }}</strong></a>
+<small><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span> · {% if item.citations %}{{ item.citations|length }} verified quotation(s){% else %}no verifiable evidence{% endif %}{% if item.status != 'proposed' %} · {{ item.get_status_display }}{% endif %}</small>
+{% if item.targets %}<small class="muted">{% for target in item.targets %}<code>{{ target }}</code>{% if not forloop.last %} {% endif %}{% endfor %}</small>{% endif %}
+</div>
+</li>
+{% endfor %}</ul>
+
+{% if reviewable %}
+{% if self_approving %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> Allowed here because there is nobody else to ask; refused in production, and the audit record says so.</span></p>{% endif %}
+<div class="gap-decide">
+<label for="review-note">Review note</label>
+<textarea id="review-note" name="note" rows="2" maxlength="2000" required form="run-review"></textarea>
+<div class="actions"><button class="button" name="decision" value="approved" form="run-review">{% icon "success" 13 %}Approve the ticked gaps</button><button class="button danger" name="decision" value="rejected" form="run-review">Reject them all</button></div>
+</div>
+{% elif run.plan.status == 'approved' %}<p class="notice notice-success">{% icon "success" %}<span>Approved by {{ run.plan.reviewed_by.username }}. Unticked gaps are marked rejected and nothing is written for them.</span></p>
+{% elif run.plan.status == 'rejected' %}<p class="notice notice-error">{% icon "error" %}<span>Rejected by {{ run.plan.reviewed_by.username }}. Nothing will be implemented.</span></p>
+{% endif %}
+</details>
 {% endif %}
 
-<section class="card section"><h2>{% icon "cost" %}What each phase cost</h2>
-<p class="muted">The receipt beside the story: which agent ran, on which model, and what it spent.</p>
-<div class="list-card">{% for phase in phases %}
-<div class="list-row"><div><strong>{{ phase.get_name_display }}</strong><small>{{ phase.agent }}{% if phase.model %} · {{ phase.model }}{% endif %}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} input / {{ phase.completion_tokens }} output tokens{% endif %}{% if phase.citations_verified or phase.citations_rejected %} · {{ phase.citations_verified }} quotation(s) verified, {{ phase.citations_rejected }} rejected{% endif %}</small>{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div><span class="pill phase-{{ phase.status }}">{{ phase.get_status_display }}</span></div>
-{% empty %}<p class="padded muted">No phase has started yet.</p>{% endfor %}</div></section>
+{% if run.plan.status == 'approved' %}
+<details class="stage" {% if not changes %}open{% endif %}><summary><span class="stage-no">4</span><span class="stage-name">Implementation agents</span><span class="stage-note">{% if changes %}{{ changes|length }} file(s) written, nothing published{% elif run.in_flight %}running{% elif not run.repository_confirmed %}repository not confirmed{% elif not write_credential %}no write credential{% else %}not started{% endif %}</span></summary>
 
-<section class="card section"><h2>{% icon "info" %}What this run was given</h2>
-<dl class="graph-progress-facts">
-<dt>Knowledge graph</dt><dd>{% if run.graph_version %}Published version {{ run.graph_version }}{% else %}None published{% endif %}</dd>
-<dt>Code snapshot</dt><dd>{% if run.code_snapshot %}{{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }} at {{ run.code_snapshot.commit_sha|slice:':8' }}{% else %}None pinned{% endif %}</dd>
-<dt>Repository</dt><dd>{% if run.proposed_repository %}<code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>{% if run.repository_confirmed %} — confirmed{% else %} — not confirmed, and nothing is written to it{% endif %}{% else %}None{% endif %}</dd>
-</dl></section>
+{% if not write_credential and not run.code_snapshot %}<p class="notice notice-warning">{% icon "warning" %}<span>No write credential and no code snapshot, so there is nothing to read the named files from. Index the repository in <a href="{% url 'code-graph' application.pk %}">Code Graph</a>, or add <strong>GitHub (write)</strong> on the <a href="{% url 'credentials' application.pk %}">Credentials screen</a>.</span></p>
+{% else %}
+{% if not write_credential %}<p class="notice">{% icon "info" %}<span><strong>Working offline.</strong> No write credential is mounted, so the agents read <code>{{ run.code_snapshot.repository.name }}</code> snapshot v{{ run.code_snapshot.number }} at <code>{{ run.code_snapshot.commit_sha|slice:':8' }}</code> and produce the files here. <strong>Nothing reaches GitHub</strong>, and no pull request can be opened — take the change away from the summary below.</span></p>
+{% elif not run.repository_confirmed %}
+<p class="muted">The repository came out of the ticket or the registry, so it is not acted on until somebody confirms it — whoever can raise a ticket must not choose where this platform writes. Confirming changes nothing on its own; it decides where a pull request would go.</p>
+<details class="card"><summary>Confirm the repository</summary>
+<form method="post" class="form-card">{% csrf_token %}<input type="hidden" name="action" value="confirm-repository">
+<p><label for="repo">Repository</label><input type="text" id="repo" name="repository" value="{{ run.proposed_repository }}" maxlength="200" required></p>
+<p><label for="base">Base branch</label><input type="text" id="base" name="base_branch" value="{{ run.base_branch }}" maxlength="200" required></p>
+<button class="button" type="submit">{% icon "success" 13 %}Confirm {{ run.proposed_repository }}</button></form></details>
+{% endif %}
+
+<ul class="agent-row">{% for agent in agents %}
+<li class="agent agent-{{ agent.status }}">{% if agent.status == 'ok' %}{% icon "success" 14 %}{% elif agent.status == 'failed' %}{% icon "error" 14 %}{% elif agent.status == 'running' %}<span class="spinner" aria-hidden="true"></span>{% elif agent.status == 'skipped' or agent.status == 'absent' %}{% icon "info" 14 %}{% else %}{% icon "empty" 14 %}{% endif %}<span><strong>{{ agent.label }}</strong><small>{{ agent.detail }}</small></span></li>
+{% endfor %}</ul>
+
+{% if run.status == 'prepare_queued' or run.status == 'preparing' %}
+<p class="notice" role="status">{% icon "info" %}<span>The agents are working. This page refreshes itself; nothing is written to {{ run.proposed_repository }} by this stage.</span></p>
+{% elif not changes %}
+<p class="muted">Each agent reads the files the approved gaps named and produces their new contents. Nothing is written to the repository.</p>
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="prepare"><button class="button" type="submit">{% icon "code" 13 %}Run the implementation agents</button></form>
+{% endif %}
+{% endif %}
+</details>
+{% endif %}
+
+{% if changes %}
+<details class="stage" open><summary><span class="stage-no">5</span><span class="stage-name">Summary</span><span class="stage-note">{{ changes|length }} file(s) · {{ created_count }} new · nothing written yet</span></summary>
+<p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) ready</strong> for <code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>. <strong>Nothing has been written yet.</strong></span></p>
+<div class="list-card">{% for change in changes %}
+<div class="list-row"><div><strong><code>{{ change.path }}</code></strong><small>{{ change.size|filesizeformat }}{% if change.creates %} · this file does not exist yet{% else %} · replaces the file read at {{ change.base_sha|slice:':8' }}{% endif %}</small></div><span class="pill{% if change.creates %} status-high{% endif %}">{% if change.creates %}New file{% else %}Modified{% endif %}</span></div>
+{% endfor %}</div>
+<p class="muted section"><small>Paths, elisions and staleness were checked, and each new path was confirmed still absent. No build or test suite was run: this platform holds knowledge about the application, not a checkout of it.</small></p>
+
+{% if run.pull_request_url %}
+<p class="notice notice-success section">{% icon "success" %}<span>Draft pull request open: <a href="{{ run.pull_request_url }}" target="_blank" rel="noreferrer noopener">{{ run.pull_request_url }}</a></span></p>
+{% elif can_deliver and not write_credential %}
+<p class="notice section">{% icon "info" %}<span>This change was written offline and cannot be opened as a pull request from here. Copy the files above into a branch yourself, or mount a write credential and implement it again.</span></p>
+<form method="post" data-confirm="Discard the prepared change? The approved plan can be implemented again.">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="button secondary" type="submit">Discard it</button></form>
+{% elif can_deliver %}
+<h3 class="panel-label">Open the pull request?</h3>
+<p>This writes {{ changes|length }} file(s) to <code>{{ run.proposed_repository }}</code> on a new branch and opens a <strong>draft</strong> pull request against <code>{{ run.base_branch }}</code>. Nothing is merged.</p>
+<div class="actions">
+<form method="post" data-confirm="Open a draft pull request against {{ run.proposed_repository }}? This writes to that repository.">{% csrf_token %}<input type="hidden" name="action" value="publish"><button class="button" type="submit">{% icon "publish" 13 %}Yes, open the pull request</button></form>
+<form method="post" data-confirm="Discard the prepared change? Nothing was written, and the approved plan can be implemented again.">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="button secondary" type="submit">No, discard it</button></form>
+</div>
+{% endif %}
+</details>
+{% endif %}
+
+{% if run.pull_request_url %}
+<details class="stage" open><summary><span class="stage-no">6</span><span class="stage-name">Tests</span><span class="stage-note">{% if run.checks %}{{ run.get_checks_label }}{% else %}waiting for the repository's checks{% endif %}</span></summary>
+<p class="muted">The tests were written by the test author agent above and are run by <code>{{ run.proposed_repository }}</code>'s own CI on branch <code>{{ run.branch }}</code>. This platform never runs the code it writes.</p>
+{% if run.checks %}
+<div class="list-card">{% for check in run.checks %}
+<div class="list-row"><div><strong>{% if check.url %}<a href="{{ check.url }}" target="_blank" rel="noreferrer noopener">{{ check.name }}</a>{% else %}{{ check.name }}{% endif %}</strong><small>{% if check.conclusion %}{{ check.conclusion }}{% else %}{{ check.status|default:"queued" }}{% endif %}</small></div><span class="pill{% if check.conclusion == 'success' %} status-ready{% elif check.conclusion == 'failure' or check.conclusion == 'timed_out' %} status-high{% endif %}">{% if check.conclusion %}{{ check.conclusion }}{% else %}running{% endif %}</span></div>
+{% endfor %}</div>
+{% if run.checks_state == 'running' %}<p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Checks are still running. This page refreshes itself.</span></p>{% endif %}
+{% else %}
+<p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Asking GitHub about this branch. If the repository has no workflow, nothing will appear here.</span></p>
+{% endif %}
+</details>
+{% endif %}
+
+<details class="stage"><summary><span class="stage-no">·</span><span class="stage-name">What each phase cost</span><span class="stage-note">{{ phases|length }} phase(s)</span></summary>
+<div class="list-card">{% for phase in phases %}
+<div class="list-row"><div><strong>{{ phase.get_name_display }}</strong><small>{{ phase.agent }}{% if phase.model %} · {{ phase.model }}{% endif %}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} in / {{ phase.completion_tokens }} out tokens{% endif %}</small>{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div><span class="pill phase-{{ phase.status }}">{{ phase.get_status_display }}</span></div>
+{% empty %}<p class="padded muted">No phase has started yet.</p>{% endfor %}</div>
+{% if run.plan %}<p class="section"><a href="{% url 'plan-detail' application.pk run.plan.pk %}">Open the full change plan {% icon "arrow-right" 13 %}</a></p>{% endif %}
+</details>
+<script src="{% static 'factory.js' %}" defer></script>
 {% endblock %}

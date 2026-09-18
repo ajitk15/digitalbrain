@@ -10,7 +10,7 @@ from unittest.mock import patch
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from platform_core.code_factory import collect_changes, deliver, target_paths
+from platform_core.code_factory import collect_changes, prepare, publish, target_paths
 from platform_core.github_write import (
     BRANCH_PREFIX,
     absent_path,
@@ -166,7 +166,16 @@ class DeliveryGateTests(TestCase):
         )
 
     def deliver(self, user=None):
-        return deliver(user or self.owner, self.app.pk, self.run.pk)
+        """Both halves, as delivery used to be one call.
+
+        Every gate these exercise applies to each half, so driving them
+        together keeps the assertions meaningful while the screen puts a person
+        between the two.
+        """
+        actor = user or self.owner
+        prepare(actor, self.app.pk, self.run.pk)
+        self.run.refresh_from_db()
+        return publish(actor, self.app.pk, self.run.pk)
 
     def test_an_unapproved_plan_cannot_be_delivered(self):
         ChangePlan.objects.filter(pk=self.plan.pk).update(status="pending")
@@ -175,11 +184,19 @@ class DeliveryGateTests(TestCase):
         self.assertIn("Approve the plan", " ".join(raised.exception.messages))
 
     def test_an_unconfirmed_repository_cannot_be_delivered_to(self):
-        """The repository came from ticket text; a person has to say yes."""
-        FactoryRun.objects.filter(pk=self.run.pk).update(repository_confirmed=False)
+        """The repository came from ticket text; a person has to say yes.
+
+        Checked where something actually leaves. Writing the change puts
+        nothing anywhere, so it does not need a repository at all - but opening
+        a pull request does, and that is where the question is asked.
+        """
+        FactoryRun.objects.filter(pk=self.run.pk).update(
+            repository_confirmed=False, status="prepared"
+        )
         self.run.refresh_from_db()
-        with self.assertRaises(ValidationError) as raised:
-            self.deliver()
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with self.assertRaises(ValidationError) as raised:
+                publish(self.owner, self.app.pk, self.run.pk)
         self.assertIn("Confirm the repository", " ".join(raised.exception.messages))
 
     def test_delivery_needs_the_approval_permission(self):
@@ -187,9 +204,12 @@ class DeliveryGateTests(TestCase):
             self.deliver(self.viewer)
 
     def test_the_read_only_credential_is_not_used_for_writing(self):
+        """Required to publish, and only to publish."""
+        FactoryRun.objects.filter(pk=self.run.pk).update(status="prepared")
+        self.run.refresh_from_db()
         with patch("platform_core.code_factory.write_credential", return_value=""):
             with self.assertRaises(ValidationError) as raised:
-                self.deliver()
+                publish(self.owner, self.app.pk, self.run.pk)
         message = " ".join(raised.exception.messages)
         self.assertIn(f"github_write_{self.app.pk}", message)
         self.assertIn("read-only connector credential", message)
@@ -214,7 +234,8 @@ class DeliveryGateTests(TestCase):
         branch.assert_not_called()
         self.run.refresh_from_db()
         self.assertEqual(self.run.status, "failed")
-        self.assertEqual(self.run.phases.get(name="implementation").status, "failed")
+        # Recorded on the work order, which is the agent that does the reading.
+        self.assertEqual(self.run.phases.get(name="work_order").status, "failed")
 
     def test_an_elided_file_is_refused_before_anything_is_written(self):
         """A model that abbreviates would otherwise delete the rest of the file."""
@@ -369,3 +390,527 @@ class TargetPathTests(SimpleTestCase):
 
         paths = target_paths(Plan([Item(["ACE_DEMO_CACHE integration server", "src/queue.py"])]))
         self.assertEqual(paths, ["src/queue.py"])
+
+
+class PreparedChangeTests(DeliveryGateTests):
+    """The stop between writing a change and letting it out.
+
+    These were one act, so the contents existed only inside that call and
+    nobody saw what was about to be written until it had been. What these pin
+    is that the first half writes nothing anywhere, that the second half writes
+    exactly what was shown, and that "no" is a real answer.
+    """
+
+    CURRENT = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
+    ANSWER = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
+
+    def write(self):
+        """Run the first half with the repository and the model stubbed."""
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
+                with patch("platform_core.ai.invoke_ai", return_value=self.ANSWER):
+                    return prepare(self.owner, self.app.pk, self.run.pk)
+
+    def test_preparing_writes_nothing_to_the_repository(self):
+        from platform_core.models import ProposedChange
+
+        with patch("platform_core.github_write.create_branch") as branch:
+            with patch("platform_core.github_write.commit_file") as commit:
+                with patch("platform_core.github_write.open_pull_request") as pull:
+                    self.write()
+        for untouched in (branch, commit, pull):
+            untouched.assert_not_called()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepared")
+        self.assertEqual(self.run.pull_request_url, "")
+        change = ProposedChange.objects.get(run=self.run)
+        self.assertEqual(change.path, "src/queue.py")
+        self.assertEqual(change.content, "bounded")
+        self.assertEqual(change.base_sha, "sha1")
+        self.assertFalse(change.creates)
+
+    def test_the_pull_request_writes_exactly_what_was_shown(self):
+        """Re-read from the stored change, never taken from the request."""
+        self.write()
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
+                with patch("platform_core.github_write.branch_head", return_value="head"):
+                    with patch("platform_core.github_write.create_branch"):
+                        with patch("platform_core.github_write.commit_file") as commit:
+                            with patch(
+                                "platform_core.github_write.open_pull_request",
+                                return_value="https://github.com/acme/widgets/pull/9",
+                            ):
+                                url = publish(self.owner, self.app.pk, self.run.pk)
+        self.assertEqual(commit.call_args.args[2], "src/queue.py")
+        self.assertEqual(commit.call_args.args[3], "bounded")
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "delivered")
+        self.assertEqual(self.run.pull_request_url, url)
+
+    def test_a_file_that_moved_while_the_summary_was_read_is_refused(self):
+        """The window the second verification exists for."""
+        self.write()
+        moved = {"path": "src/queue.py", "text": "somebody else", "sha": "sha2"}
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", return_value=moved):
+                with patch("platform_core.github_write.create_branch") as branch:
+                    with self.assertRaises(ValidationError) as raised:
+                        publish(self.owner, self.app.pk, self.run.pk)
+        branch.assert_not_called()
+        self.assertIn("changed in the repository", " ".join(raised.exception.messages))
+
+    def test_publishing_without_preparing_is_refused(self):
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with self.assertRaises(ValidationError) as raised:
+                publish(self.owner, self.app.pk, self.run.pk)
+        self.assertIn("read its summary first", " ".join(raised.exception.messages))
+
+    def test_discarding_leaves_the_approved_plan_and_writes_nothing(self):
+        from platform_core.code_factory import discard
+        from platform_core.models import ProposedChange
+
+        self.write()
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            discard(self.owner, self.app.pk, self.run.pk)
+        self.run.refresh_from_db()
+        self.plan.refresh_from_db()
+        self.assertEqual(self.run.status, "awaiting_review")
+        self.assertEqual(self.run.pull_request_url, "")
+        self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
+        # The decision that was made stands; only the unwritten change is gone.
+        self.assertEqual(self.plan.status, "approved")
+
+    def test_discarding_what_was_never_prepared_is_refused(self):
+        from platform_core.code_factory import discard
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with self.assertRaises(ValidationError):
+                discard(self.owner, self.app.pk, self.run.pk)
+
+
+class QueuedPreparationTests(DeliveryGateTests):
+    """Stage four runs on the worker, so the screen can show it happening.
+
+    Held in a request it would be a blank page for a minute with nothing to
+    report, which is the opposite of what the screen is for.
+    """
+
+    def test_requesting_queues_rather_than_running(self):
+        from platform_core.code_factory import request_preparation
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.code_factory.run_implementation") as agent:
+                request_preparation(self.owner, self.app.pk, self.run.pk)
+        agent.assert_not_called()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepare_queued")
+        self.assertEqual(self.run.acting_user, self.owner)
+
+    def test_the_worker_runs_it_as_whoever_asked(self):
+        from platform_core.code_factory import process_next_preparation, request_preparation
+        from platform_core.models import ProposedChange
+
+        current = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
+        answer = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            request_preparation(self.owner, self.app.pk, self.run.pk)
+            with patch("platform_core.github_write.read_file", return_value=current):
+                with patch("platform_core.ai.invoke_ai", return_value=answer):
+                    self.assertTrue(process_next_preparation())
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepared")
+        self.assertEqual(ProposedChange.objects.get(run=self.run).content, "bounded")
+
+    def test_approval_withdrawn_while_it_waited_stops_the_work(self):
+        """Re-checked inside the worker call, like every other queued act here."""
+        from platform_core.code_factory import process_next_preparation, request_preparation
+        from platform_core.models import ApplicationGrant, ProposedChange
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            request_preparation(self.owner, self.app.pk, self.run.pk)
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=False
+        )
+        with patch("platform_core.github_write.read_file") as read:
+            self.assertTrue(process_next_preparation())
+        read.assert_not_called()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "failed")
+        self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
+
+    def test_an_empty_queue_is_not_work(self):
+        from platform_core.code_factory import process_next_preparation
+
+        self.assertFalse(process_next_preparation())
+
+    def test_the_lane_runs_analysis_and_implementation(self):
+        from platform_core.document_worker import LANES
+
+        lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
+        self.assertIn("process_next_run", lanes["factory"])
+        self.assertIn("process_next_preparation", lanes["factory"])
+
+
+class AgentChainTests(DeliveryGateTests):
+    """Stage four is a chain of agents, each with its own receipt.
+
+    It used to be one model call. What these pin is that each agent is a real
+    phase, that the reviewer can drop a file without abandoning the change, and
+    that a stumbling test author does not throw away work that is already
+    correct.
+    """
+
+    CURRENT = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
+
+    def answers(self, *, review="ok", tests=True):
+        """One canned reply per agent, in the order the chain asks."""
+        order = json.dumps(
+            {
+                "files": [{"file": "1", "intent": "Bound the retry loop", "checks": ["it stops"]}],
+                "leftover": ["Tell the release manager"],
+            }
+        )
+        implementation = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
+        written = json.dumps({"files": [{"file": "1", "content": "def test_bounded(): pass"}]})
+        verdict = json.dumps(
+            {"files": [{"file": "1", "verdict": review, "reason": "does not do it"}]}
+        )
+        replies = [order, implementation]
+        if tests:
+            replies.append(written)
+        replies.append(verdict)
+        return replies
+
+    def chain(self, **kwargs):
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
+                with patch("platform_core.ai.invoke_ai", side_effect=self.answers(**kwargs)):
+                    return prepare(self.owner, self.app.pk, self.run.pk)
+
+    def test_every_agent_records_its_own_phase(self):
+        self.chain(tests=False)
+        ran = dict(self.run.phases.values_list("name", "status"))
+        self.assertEqual(ran["work_order"], "ok")
+        self.assertEqual(ran["implementation"], "ok")
+        self.assertEqual(ran["review"], "ok")
+        self.assertEqual(ran["verification"], "ok")
+        # No approved item named a test file, so that agent had nothing to do.
+        self.assertEqual(ran["tests"], "skipped")
+
+    def test_an_item_no_file_can_satisfy_is_said_rather_than_forced(self):
+        self.chain(tests=False)
+        messages = [event.message for event in self.run.events.filter(phase="work_order")]
+        self.assertTrue(
+            any("Not implementable as a code change" in message for message in messages),
+            messages,
+        )
+
+    def test_a_rejected_file_is_dropped_and_the_rest_survive(self):
+        from platform_core.models import ProposedChange
+
+        with self.assertRaises(ValidationError) as raised:
+            self.chain(tests=False, review="reject")
+        # One file, rejected, so nothing is left - and it says so rather than
+        # opening an empty pull request.
+        self.assertIn("rejected every file", " ".join(raised.exception.messages))
+        self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
+
+    def test_the_review_reason_reaches_the_record(self):
+        with self.assertRaises(ValidationError):
+            self.chain(tests=False, review="reject")
+        problems = [
+            event.message for event in self.run.events.filter(phase="review", level="problem")
+        ]
+        self.assertTrue(any("does not do it" in message for message in problems), problems)
+
+
+class CheckRunTests(DeliveryGateTests):
+    """What the repository's own CI made of the branch.
+
+    This platform writes the tests and never runs them - it holds knowledge
+    about an application, not a checkout of it. These pin that it reads the
+    result rather than producing one, and that a repository with no CI is not
+    reported as a failure.
+    """
+
+    def delivered(self, checks=None):
+        FactoryRun.objects.filter(pk=self.run.pk).update(
+            status="delivered",
+            pull_request_url="https://github.com/acme/widgets/pull/7",
+            branch="digital-brain/ops-1-abcd1234",
+            checks=checks or [],
+        )
+        self.run.refresh_from_db()
+        return self.run
+
+    def test_a_repository_without_checks_is_not_a_failure(self):
+        run = self.delivered()
+        self.assertEqual(run.checks_state, "pending")
+
+    def test_a_running_suite_reads_as_running(self):
+        run = self.delivered([{"name": "tests", "status": "in_progress", "conclusion": ""}])
+        self.assertEqual(run.checks_state, "running")
+        self.assertIn("0 of 1 finished", run.get_checks_label())
+
+    def test_a_failure_is_reported_as_one(self):
+        run = self.delivered(
+            [
+                {"name": "tests", "status": "completed", "conclusion": "failure"},
+                {"name": "lint", "status": "completed", "conclusion": "success"},
+            ]
+        )
+        self.assertEqual(run.checks_state, "failed")
+        self.assertIn("1 of 2 passed", run.get_checks_label())
+
+    def test_all_green_settles_the_stage(self):
+        run = self.delivered([{"name": "tests", "status": "completed", "conclusion": "success"}])
+        self.assertEqual(run.checks_state, "ok")
+        self.assertEqual(run.stages[5]["state"], "ok")
+
+    def test_the_worker_stops_asking_once_every_check_has_concluded(self):
+        from platform_core.code_factory import process_next_checks
+
+        self.delivered([{"name": "tests", "status": "completed", "conclusion": "success"}])
+        with patch("platform_core.github_write.check_runs") as asked:
+            self.assertFalse(process_next_checks())
+        asked.assert_not_called()
+
+    def test_the_worker_reads_and_records_a_conclusion(self):
+        from platform_core.code_factory import process_next_checks
+
+        self.delivered()
+        reported = [{"name": "tests", "status": "completed", "conclusion": "failure", "url": ""}]
+        with patch("platform_core.link_sources.github_token", return_value="tok"):
+            with patch("platform_core.github_write.check_runs", return_value=reported):
+                self.assertTrue(process_next_checks())
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.checks_state, "failed")
+        self.assertIsNotNone(self.run.checks_read_at)
+        # A conclusion changing is worth a line in the run's own record.
+        messages = [event.message for event in self.run.events.filter(level="problem")]
+        self.assertTrue(any("tests: failure" in message for message in messages), messages)
+
+    def test_the_lane_asks_about_checks(self):
+        from platform_core.document_worker import LANES
+
+        lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
+        self.assertIn("process_next_checks", lanes["factory"])
+
+
+class AgentReportTests(DeliveryGateTests):
+    """Each agent row says what it did in this run, not what it is for.
+
+    "Passed" is true of every successful check and tells a reader nothing. The
+    rows report from the same recorded output the phase receipt is built from,
+    so the summary and the receipt cannot disagree.
+    """
+
+    def report(self, name):
+        from platform_core.workbench import AGENT_ROW, agent_report
+
+        phases = {phase.name: phase for phase in self.run.phases.all()}
+        label, waiting = next(row[1:] for row in AGENT_ROW if row[0] == name)
+        return agent_report(name, label, waiting, phases.get(name), self.run)
+
+    def ran(self, name, status="ok", output=None, **extra):
+        from platform_core.models import RunPhase
+
+        return RunPhase.objects.create(
+            run=self.run, name=name, sequence=1, status=status, output=output or {}, **extra
+        )
+
+    def test_implementation_names_the_files_it_wrote(self):
+        self.ran(
+            "implementation",
+            output={
+                "files": [
+                    {"path": "src/queue.py", "new": False},
+                    {"path": "t.py", "new": True},
+                ]
+            },
+        )
+        detail = self.report("implementation")["detail"]
+        self.assertIn("Wrote 2 file(s)", detail)
+        self.assertIn("1 of them new", detail)
+        self.assertIn("src/queue.py", detail)
+
+    def test_the_review_says_what_it_rejected_and_why(self):
+        self.ran(
+            "review",
+            output={
+                "kept": ["a.py"],
+                "rejected": [{"path": "b.py", "reason": "leaves the item unsatisfied"}],
+            },
+        )
+        detail = self.report("review")["detail"]
+        self.assertIn("Passed 1 file(s)", detail)
+        self.assertIn("b.py", detail)
+        self.assertIn("leaves the item unsatisfied", detail)
+
+    def test_the_pre_write_checks_say_what_they_checked(self):
+        self.ran("verification", output={"checked": ["a.py", "b.py"], "created": ["b.py"]})
+        detail = self.report("verification")["detail"]
+        self.assertIn("Re-read 2 file(s)", detail)
+        self.assertIn("still absent", detail)
+        self.assertNotEqual(detail, "Passed")
+
+    def test_delivery_names_the_branch(self):
+        self.ran("delivery", output={"branch": "digital-brain/ops-1", "pull_request": "u"})
+        self.assertIn("digital-brain/ops-1", self.report("delivery")["detail"])
+
+    def test_a_failure_carries_its_reason(self):
+        self.ran("tests", status="failed", error="Test author did not return usable JSON.")
+        self.assertIn("usable JSON", self.report("tests")["detail"])
+
+    def test_the_cost_is_carried_beside_what_it_did(self):
+        self.ran(
+            "work_order",
+            output={"order": {"1": {}}},
+            prompt_tokens=1200,
+            completion_tokens=90,
+        )
+        detail = self.report("work_order")["detail"]
+        self.assertIn("Set an intent for 1 file(s)", detail)
+        self.assertIn("1,200 in / 90 out tokens", detail)
+
+    def test_an_agent_a_finished_run_never_had_says_so(self):
+        """Rather than waiting forever for something that cannot happen."""
+        FactoryRun.objects.filter(pk=self.run.pk).update(status="delivered")
+        self.run.refresh_from_db()
+        report = self.report("tests")
+        self.assertEqual(report["status"], "absent")
+        self.assertIn("predates this agent", report["detail"])
+
+    def test_an_unfinished_run_still_says_what_the_agent_is_for(self):
+        report = self.report("tests")
+        self.assertEqual(report["status"], "pending")
+        self.assertIn("Writes the tests", report["detail"])
+
+
+class OfflineChangeTests(DeliveryGateTests):
+    """A change written where this platform must never write.
+
+    A client environment with no outbound GitHub write can still run the
+    agents: they read the pinned Code Graph snapshot, produce the files, and
+    stop. Refusing it a credential it does not need would be refusing it the
+    whole product.
+    """
+
+    ANSWERS = [
+        json.dumps({"files": [{"file": "1", "intent": "Bound it", "checks": []}]}),
+        json.dumps({"files": [{"file": "1", "content": "bounded"}]}),
+        json.dumps({"files": [{"file": "1", "verdict": "ok", "reason": ""}]}),
+    ]
+
+    def snapshot(self, path="src/queue.py", content="original"):
+        from platform_core.models import CodeRepository, CodeSnapshot
+
+        repo = CodeRepository.objects.create(
+            application=self.app,
+            provider="github",
+            external_id="acme/widgets",
+            name="acme/widgets",
+            source_url="https://github.com/acme/widgets",
+            added_by=self.owner,
+            status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(number=1, repository=repo, commit_sha="c" * 40)
+        snapshot.files.create(path=path, language="python", content=content, lines=1)
+        FactoryRun.objects.filter(pk=self.run.pk).update(code_snapshot=snapshot)
+        self.run.refresh_from_db()
+        return snapshot
+
+    def offline(self):
+        with patch("platform_core.code_factory.write_credential", return_value=""):
+            with patch("platform_core.ai.invoke_ai", side_effect=self.ANSWERS):
+                with patch("platform_core.github_write.fetch") as reached:
+                    result = prepare(self.owner, self.app.pk, self.run.pk)
+        # The point of the path: GitHub is never called at all.
+        reached.assert_not_called()
+        return result
+
+    def test_the_agents_run_from_the_snapshot_and_touch_nothing(self):
+        from platform_core.models import ProposedChange
+
+        self.snapshot()
+        self.offline()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepared")
+        change = ProposedChange.objects.get(run=self.run)
+        self.assertEqual(change.path, "src/queue.py")
+        self.assertEqual(change.content, "bounded")
+
+    def test_it_says_which_commit_the_files_came_from(self):
+        self.snapshot()
+        self.offline()
+        messages = " ".join(event.message for event in self.run.events.all())
+        self.assertIn("snapshot v1", messages)
+        self.assertIn("Nothing will be written anywhere", messages)
+
+    def test_the_staleness_check_is_named_as_impossible_rather_than_skipped(self):
+        """"Checked" must not quietly mean two different things."""
+        self.snapshot()
+        self.offline()
+        limits = self.run.phases.get(name="verification").output["limits"]
+        self.assertIn("No staleness check was possible", limits)
+        messages = " ".join(event.message for event in self.run.events.all())
+        self.assertIn("Staleness could not be checked", messages)
+
+    def test_an_unconfirmed_repository_does_not_block_writing_the_change(self):
+        """Confirmation is about where we write, and this writes nowhere."""
+        FactoryRun.objects.filter(pk=self.run.pk).update(repository_confirmed=False)
+        self.run.refresh_from_db()
+        self.snapshot()
+        self.offline()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepared")
+
+    def test_no_snapshot_and_no_credential_is_refused_with_both_ways_out(self):
+        with patch("platform_core.code_factory.write_credential", return_value=""):
+            with self.assertRaises(ValidationError) as raised:
+                prepare(self.owner, self.app.pk, self.run.pk)
+        message = " ".join(raised.exception.messages)
+        self.assertIn("Index the repository in Code Graph", message)
+        self.assertIn("mount a write-scoped credential", message)
+
+
+class AnnotatedTargetTests(SimpleTestCase):
+    """A path the design annotated with the symbol it means.
+
+    "app/views.py (index)" is a reasonable reading of "name the files this
+    touches", but the annotation is not part of the path. Left on, the file is
+    not found, is therefore taken to be absent, and is created under that name -
+    a file called `views.py (index)` committed to somebody's repository.
+    """
+
+    def paths(self, *targets):
+        from types import SimpleNamespace
+
+        from platform_core.code_factory import target_paths
+
+        items = [
+            SimpleNamespace(targets=list(targets), sequence=0, status="accepted")
+        ]
+        plan = SimpleNamespace(
+            items=SimpleNamespace(exclude=lambda **kw: SimpleNamespace(order_by=lambda f: items))
+        )
+        return target_paths(plan)
+
+    def test_the_symbol_is_stripped_and_the_path_kept(self):
+        self.assertEqual(
+            self.paths("src/carepath/api/routes_fhir.py (export_everything)"),
+            ["src/carepath/api/routes_fhir.py"],
+        )
+
+    def test_a_plain_path_is_untouched(self):
+        self.assertEqual(self.paths("src/queue.py"), ["src/queue.py"])
+
+    def test_two_annotations_of_one_file_collapse_to_it(self):
+        self.assertEqual(
+            self.paths("a/b.py (one)", "a/b.py (two)", "a/b.py"), ["a/b.py"]
+        )
+
+    def test_a_component_that_is_not_a_path_is_still_dropped(self):
+        """Stripping must not turn prose into a path."""
+        self.assertEqual(self.paths("the consent service (consent.current)"), [])

@@ -1,21 +1,46 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block title %}Onboarding · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+{% if fresh %}
+<section class="onboard-welcome">
+<p class="eyebrow">Welcome</p>
+<h1>{{ application.name }} is ready to set up</h1>
+<p>Nothing is configured yet. Below is everything this application needs, in the order to do it — what each one is for, and where to go and set it up. It takes four or five screens, and you can stop and come back; this page always shows where you got to.</p>
+{% if next_step %}<p class="onboard-start"><strong>Start with {{ next_step.label|lower }}.</strong> {{ next_step.action }}</p>
+<a class="button" href="{% url next_step.route application.pk %}"{% if next_step.modal %} data-modal{% endif %}>{% icon next_step.icon 13 %}{{ next_step.label }}</a>{% endif %}
+</section>
+{% else %}
 <p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
 <h1>Application onboarding</h1>
 <p class="muted">What {{ application.name }} needs before Code Factory can work on it. Each row links to the screen that fixes it; nothing is changed from here.</p>
+{% if next_step %}<p class="onboard-start">{% icon "arrow-right" 14 %}<span><strong>Next: {{ next_step.label|lower }}.</strong> {{ next_step.action }}</span></p>{% endif %}
+{% endif %}
+
+<p class="onboard-progress"><strong>{{ done }} of {{ total }}</strong> done</p>
+
+{% if setup.analysis_ready %}
+<section class="card section onboard-done">
+<h2>{% icon "success" %}{% if setup.complete %}Onboarding complete{% else %}Ready to analyse tickets{% endif %}</h2>
+{% if setup.complete %}
+<p>Everything is in place. {{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.</p>
+{% else %}
+<p>{{ application.name }} has what it needs to analyse a ticket and propose fixes with evidence. Opening pull requests needs the rest of the second gate below — that is a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.</p>
+{% endif %}
+<p class="actions"><a class="button" href="{% url 'graph' application.pk %}">{% icon "graph" 13 %}Open the knowledge graph</a> <a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a></p>
+</section>
+{% endif %}
 
 {% for gate in gates %}
 <section class="card section">
 <h2>{% if gate.ready %}{% icon "success" %}{% else %}{% icon "empty" %}{% endif %}{{ gate.label }} <span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.outstanding|length }} outstanding{% endif %}</span></h2>
 <p class="muted">{{ gate.blurb }}</p>
 <ol class="onboard-list">{% for step in gate.steps %}
-<li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}blocked{% else %}warn{% endif %}">
+<li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}blocked{% else %}warn{% endif %}{% if step.key == next_step.key %} onboard-next{% endif %}">
 <span class="onboard-mark" aria-hidden="true">{% if step.ok %}{% icon "success" 16 %}{% elif step.blocking %}{% icon "error" 16 %}{% else %}{% icon "warning" 16 %}{% endif %}</span>
 <div class="onboard-body">
 <strong>{{ step.label }}</strong>
 <span class="sr-only">{% if step.ok %}Done.{% elif step.blocking %}Required.{% else %}Recommended.{% endif %}</span>
 <p>{{ step.detail }}</p>
 {% if step.action %}<p class="onboard-action">{{ step.action }}</p>
-<a class="button secondary" href="{% url step.route application.pk %}">{% icon step.icon 13 %}Go and set it up</a>{% endif %}
+<a class="button{% if step.key != next_step.key %} secondary{% endif %}" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{% if step.modal %}Set it up here{% else %}Go and set it up{% endif %}</a>{% endif %}
 </div>
 </li>
 {% endfor %}</ol>

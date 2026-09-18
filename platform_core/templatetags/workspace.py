@@ -10,7 +10,44 @@ register = template.Library()
 
 @register.inclusion_tag("application_nav.html", takes_context=True)
 def application_nav(context):
-    return {"application": context.get("application")}
+    """The breadcrumbs, and the setup strip while an application is unfinished.
+
+    The strip rather than a forced redirect: making every screen return here
+    would mean seven views honouring a `next` parameter, which is both invasive
+    and the usual way an open redirect gets in. This keeps the checklist one
+    click away from wherever the work actually happens, and lets somebody look
+    around without being dragged back.
+
+    It stops at `analysis_ready` rather than at complete, so an application
+    nobody intends to deliver from is not nagged forever.
+    """
+    from platform_core.readiness import record_completion, setup
+
+    app = context.get("application")
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    state = None
+    # `setup_completed_at` is the cheap half of this check and comes first: an
+    # application that finished onboarding costs this tag nothing at all, which
+    # is why the milestone is recorded rather than recomputed. Answering "is it
+    # unfinished?" takes seven queries, and a page render has a budget that
+    # test_feature_cache pins.
+    if (
+        app is not None
+        and app.setup_completed_at is None
+        and user is not None
+        and getattr(user, "is_authenticated", False)
+        # Only for somebody who could act on it: a grant, and the feature that
+        # the checklist itself lives behind.
+        and feature_enabled("code_factory", app)
+        and ApplicationGrant.objects.filter(application=app, user=user).exists()
+    ):
+        found = setup(app)
+        if found.analysis_ready:
+            record_completion(app, found)
+        else:
+            state = found
+    return {"application": app, "setup": state}
 
 
 def settings_sections(app, grant):

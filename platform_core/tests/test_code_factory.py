@@ -13,9 +13,10 @@ What this pins, beyond the happy path:
 """
 
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -42,6 +43,9 @@ from . import test_documents
 
 SETTINGS = dict(
     DOCUMENT_AUTO_CONVERT=False,
+    # Off unless a test says otherwise: local.toml may enable it, and a suite
+    # whose result depends on the developer's configuration file is not a suite.
+    ALLOW_SELF_APPROVAL=False,
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
@@ -150,8 +154,18 @@ class PipelineTests(TestCase):
             ),
         ]
 
-    def run_pipeline(self, answers=None):
-        run = start_run(self.owner, self.app.pk, self.ticket)
+    def another_ticket(self, key="OPS-99"):
+        """A second ticket, because one ticket may only have one live run."""
+        return add_knowledge(
+            self.owner,
+            self.app.pk,
+            f"{key} ticket",
+            "Queue Beta overflows when Service Alpha retries.",
+            source=f"https://team.atlassian.net/browse/{key}",
+        )
+
+    def run_pipeline(self, answers=None, ticket=None):
+        run = start_run(self.owner, self.app.pk, ticket or self.ticket)
         with patch("platform_core.ai.invoke_ai", side_effect=answers or self.answers()):
             execute(run)
         run.refresh_from_db()
@@ -458,6 +472,297 @@ class PublishedGraphRequiredTests(TestCase):
 
 
 @override_settings(**SETTINGS)
+class SelectiveApprovalTests(TestCase):
+    """A reviewer chooses which gaps get built, in the same act as approving.
+
+    The model supported this all along - target_paths, the implementation
+    prompt and the pull request body every one of them exclude a rejected item
+    - and there was simply no way to say so. What these pin is that the choice
+    is made once, by somebody entitled to make it, and cannot be revised after
+    the fact.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def approver(self):
+        """A second person who may approve: a grant, and org membership.
+
+        Both, because access is denied by default at both levels - a grant on
+        an application nobody belongs to reaches nothing.
+        """
+        from platform_core.models import ApplicationGrant, OrganizationMember, User
+
+        reviewer = User.objects.create_user("reviewer")
+        OrganizationMember.objects.create(
+            organization=self.app.product.portfolio.organization, user=reviewer
+        )
+        ApplicationGrant.objects.create(
+            application=self.app, user=reviewer, role="owner", can_approve=True
+        )
+        return reviewer
+
+    def test_only_the_chosen_items_survive_approval(self):
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        keep = run.plan.items.order_by("sequence").first()
+        review_plan(
+            self.approver(),
+            self.app.pk,
+            run.plan.pk,
+            "approved",
+            "One of the two is worth building.",
+            chosen=[str(keep.pk)],
+            declared=True,
+        )
+        statuses = dict(run.plan.items.values_list("pk", "status"))
+        self.assertEqual(statuses.pop(keep.pk), "accepted")
+        self.assertEqual(set(statuses.values()), {"rejected"})
+
+    def test_a_rejected_item_reaches_neither_the_files_nor_the_pull_request(self):
+        """The whole point: what was not chosen is not built."""
+        from platform_core.code_factory import pull_request_body, target_paths
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        keep = run.plan.items.order_by("sequence").first()
+        dropped = run.plan.items.exclude(pk=keep.pk).first()
+        review_plan(
+            self.approver(),
+            self.app.pk,
+            run.plan.pk,
+            "approved",
+            "Only the first.",
+            chosen=[str(keep.pk)],
+            declared=True,
+        )
+        run.refresh_from_db()
+        self.assertNotIn(dropped.title, pull_request_body(run))
+        self.assertIn(keep.title, pull_request_body(run))
+        # Both items named queue.py, so the path set is unchanged here; what
+        # matters is that the dropped item no longer contributes to it.
+        self.assertEqual(target_paths(run.plan), ["queue.py"])
+
+    def test_approving_nothing_is_refused_rather_than_delivered_empty(self):
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        with self.assertRaises(ValidationError) as refusal:
+            review_plan(
+                self.approver(),
+                self.app.pk,
+                run.plan.pk,
+                "approved",
+                "Nothing here.",
+                chosen=[],
+                declared=True,
+            )
+        self.assertIn("at least one item", " ".join(refusal.exception.messages))
+        run.plan.refresh_from_db()
+        self.assertEqual(run.plan.status, "pending")
+
+    def test_a_caller_that_says_nothing_about_items_keeps_all_of_them(self):
+        """The marker tells "none of them" from "never heard of items"."""
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        review_plan(
+            self.approver(), self.app.pk, run.plan.pk, "approved", "As proposed."
+        )
+        self.assertEqual(
+            set(run.plan.items.values_list("status", flat=True)), {"proposed"}
+        )
+
+    def test_the_choice_cannot_be_revised_once_the_plan_is_approved(self):
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        reviewer = self.approver()
+        items = list(run.plan.items.order_by("sequence"))
+        review_plan(
+            reviewer, self.app.pk, run.plan.pk, "approved", "The first only.",
+            chosen=[str(items[0].pk)], declared=True,
+        )
+        with self.assertRaises(ValidationError):
+            review_plan(
+                reviewer, self.app.pk, run.plan.pk, "approved", "Actually both.",
+                chosen=[str(i.pk) for i in items], declared=True,
+            )
+        self.assertEqual(run.plan.items.filter(status="rejected").count(), 1)
+
+    def test_the_page_says_why_it_is_not_offering_a_review_form(self):
+        """An absent form reads as a missing feature. The reason is the point."""
+        run = self.run_pipeline()
+        response = self.client.get(reverse("plan-detail", args=[self.app.pk, run.plan.pk]))
+        self.assertContains(response, "somebody else has to review it")
+        self.assertNotContains(response, 'name="items_declared"')
+
+    def test_both_lists_offer_the_review_and_agree_about_the_run(self):
+        """One partial, so the two lists cannot drift apart.
+
+        They each rendered a run row of their own, which is how the label on one
+        came to promise a review while its href gave the run record.
+        """
+        run = self.run_pipeline()
+        run_url = reverse("run-detail", args=[self.app.pk, run.pk])
+        pages = {}
+        for route in ("plans", "runs"):
+            page = self.client.get(reverse(route, args=[self.app.pk]))
+            self.assertContains(page, f'href="{run_url}"')
+            self.assertContains(page, "Review 2 gap(s)")
+            # The same five stages, named the same way as the run screen.
+            self.assertContains(page, "stage-strip")
+            pages[route] = page
+        for stage in ("Pre-checks", "Analysis", "Gaps", "Agents", "Pull request", "Tests"):
+            with self.subTest(stage=stage):
+                for route, page in pages.items():
+                    self.assertContains(page, stage, msg_prefix=route)
+
+    def test_the_review_form_posts_the_choice(self):
+        run = self.run_pipeline()
+        reviewer = self.approver()
+        self.client.force_login(reviewer, backend="django.contrib.auth.backends.ModelBackend")
+        keep = run.plan.items.order_by("sequence").first()
+
+        page = self.client.get(reverse("plan-detail", args=[self.app.pk, run.plan.pk]))
+        self.assertContains(page, 'name="items_declared"')
+        self.assertContains(page, f'value="{keep.pk}"')
+
+        self.client.post(
+            reverse("plan-detail", args=[self.app.pk, run.plan.pk]),
+            {
+                "decision": "approved",
+                "note": "Just the first one.",
+                "items_declared": "1",
+                "item": [str(keep.pk)],
+            },
+        )
+        run.plan.refresh_from_db()
+        self.assertEqual(run.plan.status, "approved")
+        self.assertEqual(run.plan.items.filter(status="accepted").count(), 1)
+
+
+@override_settings(**SETTINGS)
+class SelfApprovalTests(TestCase):
+    """The four-eyes rule, and the one place it is allowed to bend.
+
+    A single-operator instance cannot run this pipeline end to end: whoever
+    starts a run authors its plan, and an author may not review their own work.
+    The concession exists for that and nothing else, so what these pin is mostly
+    the fence around it - off by default, refused in production, and never
+    silent about which plans it let through.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def review(self, run, **kwargs):
+        from platform_core.workbench import review_plan
+
+        return review_plan(
+            self.owner, self.app.pk, run.plan.pk, "approved", "Mine, and I stand by it.",
+            **kwargs,
+        )
+
+    def test_an_author_cannot_approve_their_own_plan_by_default(self):
+        run = self.run_pipeline()
+        self.approve_rights()
+        with self.assertRaises(PermissionDenied):
+            self.review(run)
+
+    def approve_rights(self):
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+
+    @override_settings(ALLOW_SELF_APPROVAL=True)
+    def test_the_concession_lets_one_person_run_the_pipeline(self):
+        run = self.run_pipeline()
+        self.approve_rights()
+        self.review(run)
+        run.plan.refresh_from_db()
+        self.assertEqual(run.plan.status, "approved")
+        self.assertEqual(run.plan.reviewed_by, self.owner)
+
+    @override_settings(ALLOW_SELF_APPROVAL=True)
+    def test_approval_rights_are_still_required(self):
+        """It relaxes who may review, never whether they may."""
+        run = self.run_pipeline()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=False
+        )
+        with self.assertRaises(PermissionDenied):
+            self.review(run)
+
+    @override_settings(ALLOW_SELF_APPROVAL=True)
+    def test_a_self_approved_plan_says_so_in_the_audit_record(self):
+        """A reader must be able to tell a reviewed change from a waved-through one."""
+        from platform_core.models import AuditEvent
+
+        run = self.run_pipeline()
+        self.approve_rights()
+        self.review(run)
+        event = AuditEvent.objects.filter(action="plan.approved").latest("created_at")
+        self.assertTrue(event.details["self_approved"])
+
+    @override_settings(ALLOW_SELF_APPROVAL=True)
+    def test_the_screen_says_what_it_is_doing(self):
+        run = self.run_pipeline()
+        self.approve_rights()
+        response = self.client.get(reverse("plan-detail", args=[self.app.pk, run.plan.pk]))
+        self.assertContains(response, "You are reviewing your own plan")
+        self.assertContains(response, 'name="items_declared"')
+
+
+@override_settings(**SETTINGS)
+class PlanItemPageTests(TestCase):
+    """One gap on its own page, which is also what the dialog fetches."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def test_it_shows_the_gap_the_change_and_the_evidence(self):
+        run = self.run_pipeline()
+        item = run.plan.items.order_by("sequence").first()
+        response = self.client.get(
+            reverse("plan-item", args=[self.app.pk, run.plan.pk, item.pk])
+        )
+        self.assertContains(response, item.title)
+        self.assertContains(response, item.explanation)
+        self.assertContains(response, QUOTE)
+        # modal.js lifts <main>, so it has to be a page that stands on its own.
+        self.assertContains(response, "<main")
+
+    def test_an_item_of_another_plan_is_not_found(self):
+        run = self.run_pipeline()
+        other = self.run_pipeline(ticket=self.another_ticket())
+        item = other.plan.items.first()
+        self.assertEqual(
+            self.client.get(
+                reverse("plan-item", args=[self.app.pk, run.plan.pk, item.pk])
+            ).status_code,
+            404,
+        )
+
+    def test_it_is_read_only(self):
+        run = self.run_pipeline()
+        item = run.plan.items.first()
+        self.assertEqual(
+            self.client.post(
+                reverse("plan-item", args=[self.app.pk, run.plan.pk, item.pk])
+            ).status_code,
+            405,
+        )
+
+
+@override_settings(**SETTINGS)
 class NarrationTests(TestCase):
     """A run says what it is doing, in words the person who started it can read.
 
@@ -471,6 +776,7 @@ class NarrationTests(TestCase):
     setUp = PipelineTests.setUp
     answers = PipelineTests.answers
     run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
 
     def messages(self, run):
         return [event.message for event in run.events.all()]
@@ -530,6 +836,7 @@ class RunPageTests(TestCase):
     setUp = PipelineTests.setUp
     answers = PipelineTests.answers
     run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
 
     def test_the_run_page_shows_the_steps_and_asks_for_approval(self):
         run = self.run_pipeline()
@@ -541,10 +848,10 @@ class RunPageTests(TestCase):
     def test_a_finished_run_does_not_ask_the_page_to_keep_refreshing(self):
         run = self.run_pipeline()
         finished = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertNotContains(finished, "data-document-pending")
+        self.assertNotContains(finished, "data-run-active")
         FactoryRun.objects.filter(pk=run.pk).update(status="running")
         running = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertContains(running, "data-document-pending")
+        self.assertContains(running, "data-run-active")
 
     def test_the_code_factory_screen_shows_each_run_latest_step(self):
         """One line per run, so the list says what is happening without opening it."""
@@ -555,7 +862,7 @@ class RunPageTests(TestCase):
 
     def test_the_history_lists_past_runs_with_their_status(self):
         self.run_pipeline()
-        self.run_pipeline(answers=["not json"])
+        self.run_pipeline(answers=["not json"], ticket=self.another_ticket())
         response = self.client.get(reverse("runs", args=[self.app.pk]))
         self.assertContains(response, "Awaiting review")
         self.assertContains(response, "Failed")
@@ -623,8 +930,13 @@ class PhaseBudgetTests(SimpleTestCase):
         """
         from platform_core.code_factory import PHASE_TOKENS
 
-        calls_a_model = set(BUILD_A) | {"implementation"}
+        # Six agents call a model; verification and delivery do not - they check
+        # and they write. That absence is deliberate rather than missing.
+        calls_a_model = set(BUILD_A) | {"work_order", "implementation", "tests", "review"}
         self.assertEqual(set(PHASE_TOKENS), calls_a_model)
+        from platform_core.code_factory import BUILD_B
+
+        self.assertEqual(set(BUILD_B) - calls_a_model, {"verification", "delivery"})
         self.assertLess(PHASE_TOKENS["triage"], PHASE_TOKENS["analysis"])
         # Implementation returns whole files, so it needs the most room.
         self.assertGreater(PHASE_TOKENS["implementation"], PHASE_TOKENS["analysis"])
@@ -635,3 +947,432 @@ class PhaseBudgetTests(SimpleTestCase):
         lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
         self.assertIn("process_next_run", lanes["factory"])
         self.assertNotIn("process_next_run", lanes["intake"])
+
+
+@override_settings(**SETTINGS)
+class StageVocabularyTests(TestCase):
+    """One run, one answer about where it is, wherever it is shown."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def states(self, run):
+        return {stage["number"]: stage["state"] for stage in run.stages}
+
+    def test_a_queued_run_has_done_nothing_yet(self):
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        self.assertEqual(self.states(run)[1], "pending")
+
+    def test_an_analysed_run_waits_at_the_gaps(self):
+        run = self.run_pipeline()
+        states = self.states(run)
+        self.assertEqual(states[2], "ok")
+        self.assertEqual(states[3], "current")
+        self.assertEqual(states[4], "pending")
+
+    def test_a_failed_run_stops_where_it_stopped(self):
+        """Everything after a failure is not pending; it is not going to happen."""
+        run = self.run_pipeline(answers=["not json"])
+        states = self.states(run)
+        self.assertEqual(states[1], "ok")
+        self.assertEqual(states[2], "failed")
+        # Only the stage that failed is marked, not every later one.
+        self.assertEqual(states[3], "pending")
+
+    def test_an_approved_plan_moves_the_run_to_the_agents(self):
+        from platform_core.models import ApplicationGrant, OrganizationMember, User
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        reviewer = User.objects.create_user("stage-reviewer")
+        OrganizationMember.objects.create(
+            organization=self.app.product.portfolio.organization, user=reviewer
+        )
+        ApplicationGrant.objects.create(
+            application=self.app, user=reviewer, role="owner", can_approve=True
+        )
+        review_plan(reviewer, self.app.pk, run.plan.pk, "approved", "Go ahead.")
+        run.refresh_from_db()
+        states = self.states(run)
+        self.assertEqual(states[3], "ok")
+        self.assertEqual(states[4], "current")
+
+    def test_the_stage_names_match_the_screen(self):
+        """If these drift, "stage 4" means two things."""
+        from platform_core.models import FactoryRun
+
+        self.assertEqual(
+            [label for _, label in FactoryRun.STAGES],
+            ["Pre-checks", "Analysis", "Gaps", "Agents", "Pull request", "Tests"],
+        )
+
+
+@override_settings(**SETTINGS)
+class ExternalLinkTests(TestCase):
+    """A link that leaves this platform opens beside it, not instead of it.
+
+    A run in progress is a page somebody is watching; following a pull request
+    out of it loses that. `rel` goes with the target because the opener should
+    not be reachable from a page this one did not write.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def test_the_ticket_and_the_pull_request_open_in_a_new_tab(self):
+        from platform_core.models import FactoryRun, ProposedChange
+
+        run = self.run_pipeline()
+        ProposedChange.objects.create(
+            run=run, path="src/queue.py", content="bounded", base_sha="sha1"
+        )
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="delivered",
+            pull_request_url="https://github.com/acme/widgets/pull/7",
+            branch="digital-brain/x",
+        )
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        body = page.content.decode()
+        for url in (run.ticket_url, "https://github.com/acme/widgets/pull/7"):
+            with self.subTest(url=url):
+                anchor = body[body.index(f'href="{url}"') :][:120]
+                self.assertIn('target="_blank"', anchor)
+                self.assertIn('rel="noreferrer noopener"', anchor)
+
+
+@override_settings(**SETTINGS)
+class RunNumberTests(TestCase):
+    """A short number people can say out loud.
+
+    The id is a UUID because it addresses one run across a platform. "Run 7" is
+    how somebody refers to it in a sentence, so it only has to be unique within
+    its application - and it has to be stable, because the whole point is that
+    two people mean the same run by it.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def test_runs_are_numbered_from_one_in_order(self):
+        tickets = [self.ticket] + [self.another_ticket(f"OPS-{n}") for n in (90, 91)]
+        numbers = [start_run(self.owner, self.app.pk, ticket).number for ticket in tickets]
+        self.assertEqual(numbers, [1, 2, 3])
+
+    def test_numbering_is_per_application(self):
+        from platform_core.models import Application, ApplicationGrant
+
+        other = Application.objects.create(name="Second", product=self.app.product)
+        ApplicationGrant.objects.create(application=other, user=self.owner, role="owner")
+        first = start_run(self.owner, self.app.pk, self.ticket)
+        # The other application starts again at one; they are separate counts.
+        self.assertEqual(first.number, 1)
+
+    def test_a_number_is_never_reused(self):
+        """Deleting the newest must not hand its number to the next run."""
+
+        start_run(self.owner, self.app.pk, self.ticket)
+        second = start_run(self.owner, self.app.pk, self.another_ticket())
+        self.assertEqual(second.number, 2)
+        self.assertEqual(str(second), "Run 2")
+
+    def test_the_number_is_shown_wherever_a_run_is(self):
+        run = self.run_pipeline()
+        for route, args in (
+            ("plans", [self.app.pk]),
+            ("runs", [self.app.pk]),
+            ("run-detail", [self.app.pk, run.pk]),
+        ):
+            with self.subTest(route=route):
+                page = self.client.get(reverse(route, args=args))
+                self.assertContains(page, f"Run {run.number}")
+
+
+@override_settings(**SETTINGS)
+class StalenessTests(TestCase):
+    """A live run says how current it is, and offers a way to make it current.
+
+    The document poll cannot drive this page: it stops at the first `toggle`,
+    and on a screen built from collapsible stages that means opening one to
+    watch it is what stops it updating.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def test_a_working_run_is_marked_live_and_offers_a_refresh(self):
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "data-run-active")
+        self.assertContains(page, "refreshing itself")
+        self.assertContains(page, "as of")
+
+    def test_a_finished_run_is_not_polled_but_can_still_be_refreshed(self):
+        run = self.run_pipeline()
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(page, "data-run-active")
+        self.assertNotContains(page, "refreshing itself")
+        # The link is a real one to this same page, so it works without script.
+        self.assertContains(page, reverse("run-detail", args=[self.app.pk, run.pk]))
+
+    def test_the_document_poll_does_not_drive_this_page(self):
+        """Its cancel-on-toggle rule is wrong for a page of collapsible stages."""
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(page, "data-document-pending")
+
+
+@override_settings(**SETTINGS)
+class OfflineScreenTests(TestCase):
+    """The screen stops asking for a repository when nothing will be written."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def approved(self):
+        from platform_core.models import (
+            ApplicationGrant,
+            CodeRepository,
+            CodeSnapshot,
+            OrganizationMember,
+            User,
+        )
+        from platform_core.workbench import review_plan
+
+        run = self.run_pipeline()
+        reviewer = User.objects.create_user("offline-reviewer")
+        OrganizationMember.objects.create(
+            organization=self.app.product.portfolio.organization, user=reviewer
+        )
+        ApplicationGrant.objects.create(
+            application=self.app, user=reviewer, role="owner", can_approve=True
+        )
+        review_plan(reviewer, self.app.pk, run.plan.pk, "approved", "Go ahead.")
+        repo = CodeRepository.objects.create(
+            application=self.app,
+            provider="github",
+            external_id="acme/widgets",
+            name="acme/widgets",
+            source_url="https://github.com/acme/widgets",
+            added_by=self.owner,
+            status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(
+            number=1, repository=repo, commit_sha="c" * 40
+        )
+        run.code_snapshot = snapshot
+        run.save(update_fields=["code_snapshot"])
+        return run
+
+    def test_without_a_write_credential_it_says_it_is_working_offline(self):
+        run = self.approved()
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "Working offline")
+        self.assertContains(page, "Nothing reaches GitHub")
+        # And it stops demanding the thing that only matters for writing.
+        self.assertNotContains(page, "Confirm acme/widgets")
+
+    def test_with_a_credential_the_repository_is_confirmed_as_before(self):
+        run = self.approved()
+        # Imported into the view at call time, so it is patched at its source.
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "Confirm acme/widgets")
+        self.assertNotContains(page, "Working offline")
+
+    def test_neither_a_credential_nor_a_snapshot_says_both_ways_out(self):
+        run = self.approved()
+        run.code_snapshot = None
+        run.save(update_fields=["code_snapshot"])
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "nothing to read the named files from")
+
+
+@override_settings(**SETTINGS)
+class OneRunPerTicketTests(TestCase):
+    """Two people must not end up reviewing two sets of gaps for one bug.
+
+    A ticket somebody is already working on is claimed. A finished one is not:
+    re-running after a failure is ordinary, and after a delivery it is how a
+    second change gets made.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    another_ticket = PipelineTests.another_ticket
+
+    def test_a_second_run_on_a_claimed_ticket_is_refused(self):
+        first = start_run(self.owner, self.app.pk, self.ticket)
+        with self.assertRaises(ValidationError) as refusal:
+            start_run(self.owner, self.app.pk, self.ticket)
+        message = " ".join(refusal.exception.messages)
+        # It names the run to open, rather than only saying no.
+        self.assertIn(f"Run {first.number}", message)
+        self.assertIn(self.owner.get_username(), message)
+
+    def test_a_ticket_awaiting_a_decision_is_still_claimed(self):
+        """Somebody is mid-review; a second opinion is a second plan."""
+        self.run_pipeline()
+        with self.assertRaises(ValidationError):
+            start_run(self.owner, self.app.pk, self.ticket)
+
+    def test_a_failed_run_claims_nothing(self):
+        self.run_pipeline(answers=["not json"])
+        again = start_run(self.owner, self.app.pk, self.ticket)
+        self.assertEqual(again.number, 2)
+
+    def test_a_delivered_run_claims_nothing(self):
+        from platform_core.models import FactoryRun
+
+        run = self.run_pipeline()
+        FactoryRun.objects.filter(pk=run.pk).update(status="delivered")
+        self.assertTrue(start_run(self.owner, self.app.pk, self.ticket))
+
+    def test_another_ticket_is_never_blocked(self):
+        start_run(self.owner, self.app.pk, self.ticket)
+        self.assertTrue(start_run(self.owner, self.app.pk, self.another_ticket()))
+
+    def test_the_screen_shows_the_refusal_rather_than_failing(self):
+        start_run(self.owner, self.app.pk, self.ticket)
+        response = self.client.post(
+            reverse("plans", args=[self.app.pk]),
+            {"action": "analyse", "ticket": str(self.ticket.pk)},
+            follow=True,
+        )
+        self.assertContains(response, "is already working on this ticket")
+
+
+@override_settings(**SETTINGS)
+class StalledRunTests(TestCase):
+    """A run whose worker went away must not say "Running" forever.
+
+    Most often a restart: every run the process had claimed is left held, and
+    with one run per ticket that also blocks anyone from starting another.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+
+    def silent_for(self, run, seconds):
+        from platform_core.models import FactoryRun, RunEvent
+
+        when = timezone.now() - timedelta(seconds=seconds)
+        FactoryRun.objects.filter(pk=run.pk).update(status="running", created_at=when)
+        RunEvent.objects.filter(run=run).update(at=when)
+        run.refresh_from_db()
+        return run
+
+    def test_a_run_silent_past_the_limit_is_failed_with_the_reason(self):
+        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+
+        run = self.silent_for(
+            start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60
+        )
+        self.assertTrue(reclaim_stalled_runs())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("No progress for", run.error)
+        self.assertIn("Nothing was written anywhere", run.error)
+
+    def test_a_slow_but_talking_run_is_left_alone(self):
+        """The clock measures progress, not wall time."""
+        from platform_core.code_factory import STALL_AFTER, note, reclaim_stalled_runs
+
+        run = self.silent_for(
+            start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60
+        )
+        note(run, "Still working on it.")
+        self.assertFalse(reclaim_stalled_runs())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "running")
+
+    def test_a_run_waiting_for_a_person_never_stalls(self):
+        """Waiting on purpose is not being stuck."""
+        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+        from platform_core.models import FactoryRun, RunEvent
+
+        run = self.run_pipeline()
+        when = timezone.now() - timedelta(seconds=STALL_AFTER.total_seconds() + 600)
+        RunEvent.objects.filter(run=run).update(at=when)
+        self.assertFalse(reclaim_stalled_runs())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "awaiting_review")
+        self.assertEqual(FactoryRun.objects.filter(status="failed").count(), 0)
+
+    def test_the_phase_it_died_in_is_closed_too(self):
+        """A phase left "running" makes the record a liar."""
+        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs, start_phase
+
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        start_phase(run, "analysis")
+        self.silent_for(run, STALL_AFTER.total_seconds() + 60)
+        reclaim_stalled_runs()
+        self.assertEqual(run.phases.get(name="analysis").status, "failed")
+
+    def test_reclaiming_frees_the_ticket(self):
+        """The point: a held ticket blocks everybody else."""
+        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+
+        self.silent_for(
+            start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60
+        )
+        with self.assertRaises(ValidationError):
+            start_run(self.owner, self.app.pk, self.ticket)
+        reclaim_stalled_runs()
+        self.assertTrue(start_run(self.owner, self.app.pk, self.ticket))
+
+    def test_the_lane_reclaims_before_it_starts_anything(self):
+        from platform_core.document_worker import LANES
+
+        lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
+        self.assertEqual(lanes["factory"][0], "reclaim_stalled_runs")
+
+
+@override_settings(**SETTINGS)
+class QuietRunTests(TestCase):
+    """A working run that has gone quiet says so, before anything acts on it.
+
+    A spinner that means nothing is worse than a number that means something:
+    somebody watching should be able to tell "thinking" from "gone".
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+
+    def test_a_long_silence_is_named_with_what_happens_next(self):
+        from platform_core.models import FactoryRun, RunEvent
+
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        quiet_since = timezone.now() - timedelta(minutes=8)
+        # Both, because a run that has not spoken yet is measured from when it
+        # was created - which is the case this covers.
+        FactoryRun.objects.filter(pk=run.pk).update(status="running", created_at=quiet_since)
+        RunEvent.objects.filter(run=run).update(at=quiet_since)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "said nothing for")
+        self.assertContains(page, "presumed abandoned")
+
+    def test_a_run_that_just_spoke_is_not_accused_of_anything(self):
+        from platform_core.models import FactoryRun
+
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        FactoryRun.objects.filter(pk=run.pk).update(status="running")
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(page, "said nothing for")
+
+    def test_a_run_waiting_for_a_person_is_never_called_quiet(self):
+        run = self.run_pipeline()
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertNotContains(page, "said nothing for")

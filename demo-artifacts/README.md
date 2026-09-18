@@ -76,7 +76,8 @@ then waiver W-01, then risk R-01.
 
 | File | Purpose |
 | --- | --- |
-| `ingestion-plan.md` | Set the application up. Do this first |
+| `demo-setup.md` | The runbook: an empty instance to a working Code Factory in 20 minutes, with the live URLs and placeholders for the four secrets |
+| `ingestion-plan.md` | The reasoning behind the setup — why these names, what the hierarchy is arguing, what to get right first time |
 | `demo-script.md` | Five acts, 35 minutes, or 15 for the short form |
 | `jira-tickets.md` | Seven CARE tickets — five bugs, one story, one task |
 | `jira-export.json` | The same board in Jira Cloud's API shape, verified against the platform's own adapter |

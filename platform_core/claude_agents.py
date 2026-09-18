@@ -10,7 +10,14 @@ import uuid
 from pathlib import Path
 
 import claude_agent_sdk
-from claude_agent_sdk import ClaudeAgentOptions, ClaudeSDKError, ResultMessage, query
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKError,
+    ResultMessage,
+    TextBlock,
+    query,
+)
 from django.core.exceptions import ValidationError
 
 from .agent_runtime.credentials import (
@@ -46,8 +53,34 @@ DIAGNOSES = (
 )
 
 
+#: What the CLI's own terminal reason means for the person reading it. Read from
+#: the structured field rather than matched in prose: the SDK puts it there
+#: precisely so callers can branch on why a run failed without string matching,
+#: and prose from a provider is the thing this module refuses to show.
+TERMINAL_REASONS = {
+    "api_error": (
+        "Claude's API reported an error - most often overload or a timeout on a "
+        "large request. Nothing was written. Run it again; this is usually "
+        "transient. It is not retried automatically because the failed call may "
+        "still have been billed."
+    ),
+    "max_turns": (
+        "Claude stopped after using its allowed turns without producing an "
+        "answer. Nothing was written."
+    ),
+    "refusal": "Claude declined to answer this request. Nothing was written.",
+}
+
+
 def diagnosis(failure):
     """A safe, actionable sentence for a provider failure, or the generic one."""
+    reason = getattr(failure, "terminal_reason", None)
+    if isinstance(reason, str) and reason in TERMINAL_REASONS:
+        status = getattr(failure, "api_error_status", None)
+        detail = TERMINAL_REASONS[reason]
+        # The status is a number, not prose, so it is safe to carry and it is
+        # the difference between "try again" and "something is wrong".
+        return f"{detail} (HTTP {status}.)" if isinstance(status, int) else detail
     text = f"{type(failure).__name__}: {failure}"
     for pattern, message in DIAGNOSES:
         if pattern.search(text):
@@ -140,14 +173,35 @@ async def _run(
             }
         )
         result = None
+        blocks = []
         async with asyncio.timeout(timeout):
             async for message in query(prompt=prompt, options=options):
                 if isinstance(message, ResultMessage):
                     result = message
+                elif isinstance(message, AssistantMessage):
+                    # Collected because `result.result` cannot be relied on to
+                    # carry the whole reply; see the answer selection below.
+                    blocks.extend(
+                        block.text for block in message.content if isinstance(block, TextBlock)
+                    )
         if result is None or result.is_error:
             raise ValueError("No successful result")
         inputs, outputs = claude_usage(result.usage)
-        answer = checked_answer(result.result)
+        # Whichever carries more of the reply.
+        #
+        # `result.result` is the CLI's account of the final assistant message,
+        # and a live run showed it arriving as a 206-character fragment of an
+        # answer the model had spent 4,187 completion tokens on: the tail of a
+        # JSON document, cut mid-word. Every phase that asks for JSON then
+        # failed with "did not return usable JSON" while the reply had in fact
+        # arrived intact in the assistant message itself.
+        #
+        # Longer rather than always preferring the blocks, because the blocks
+        # are not always the whole story either - a turn whose text the SDK
+        # does not surface leaves them empty and the summary is all there is.
+        # Taking whichever carries more is right in both directions.
+        summary = result.result if isinstance(result.result, str) else ""
+        answer = checked_answer(max("".join(blocks).strip(), summary, key=len))
         # Anthropic exposes no transport request ID here, so receipts carry a local run ID.
         return {
             "id": f"claude-{uuid.uuid4()}",

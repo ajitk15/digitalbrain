@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.views import PasswordChangeView
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
@@ -148,3 +148,31 @@ def application_status(request, pk):
     )
     messages.success(request, "Application status updated.")
     return redirect("organization", pk=org.pk)
+
+
+@login_required
+@require_POST
+def reset_organization(request, pk):
+    """Empty one organization between demonstrations.
+
+    POST only and nothing to GET: there is no page for this, only a panel on the
+    platform console that already shows what a reset would remove. A screen of
+    its own would be somewhere to arrive by accident.
+    """
+    from . import demo_reset
+
+    require_platform_admin(request.user)
+    organization = get_object_or_404(Organization, pk=pk)
+    try:
+        removed = demo_reset.reset(request.user, organization, request.POST.get("confirm"))
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+        return redirect("platform-console")
+    total = sum(removed.values())
+    messages.success(
+        request,
+        f"{organization.name} was reset: {total} record(s) removed across "
+        f"{len(removed)} kind(s). The organization, its members and every user "
+        "account are untouched.",
+    )
+    return redirect("platform-console")

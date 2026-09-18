@@ -4,14 +4,15 @@
 <section class="card"><h2>Proposed fixes <span class="count">{{ plan.items.count }}</span></h2>
 <p class="muted">Each item says what the gap is, what will change, and the evidence it rests on. Check a quotation against its source before approving.</p>
 {% for item in plan.items.all %}
-<article class="plan-item">
-<h3>{% if item.category == 'stated' %}{% icon "document" 14 %}{% elif item.category == 'non_functional' %}{% icon "warning" 14 %}{% else %}{% icon "search" 14 %}{% endif %}{{ item.title }}</h3>
+<article class="plan-item" id="item-{{ item.pk }}">
+<h3>{% if can_review %}<input class="item-pick" type="checkbox" name="item" value="{{ item.pk }}" id="pick-{{ item.pk }}" form="plan-review" {% if item.status != 'rejected' %}checked{% endif %}><label class="sr-only" for="pick-{{ item.pk }}">Implement {{ item.title }}</label>{% endif %}{% if item.category == 'stated' %}{% icon "document" 14 %}{% elif item.category == 'non_functional' %}{% icon "warning" 14 %}{% else %}{% icon "search" 14 %}{% endif %}<a href="{% url 'plan-item' application.pk plan.pk item.pk %}" data-modal>{{ item.title }}</a></h3>
 <p><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span></p>
 <p>{{ item.explanation }}</p>
 {% if item.change_summary %}<h4>What changes</h4><p>{{ item.change_summary }}</p>{% endif %}
 {% if item.targets %}<p class="muted"><small>Touches: {% for target in item.targets %}<code>{{ target }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
-{% if item.citations %}<h4>Evidence</h4><ul class="item-evidence">{% for citation in item.citations %}<li><strong>{{ citation.title }}</strong><br>{{ citation.excerpt }}</li>{% endfor %}</ul>
+{% if item.citations %}<p class="muted"><small>{{ item.citations|length }} verified quotation(s). <a href="{% url 'plan-item' application.pk plan.pk item.pk %}" data-modal>Read the evidence</a></small></p>
 {% else %}<p class="notice notice-warning">{% icon "warning" %}<span>No verifiable evidence supports this item. Treat it as a suggestion, not a finding.</span></p>{% endif %}
+{% if item.status == 'rejected' %}<p class="muted"><small>Left out of this plan; nothing will be implemented for it.</small></p>{% endif %}
 </article>
 {% endfor %}
 </section>
@@ -19,7 +20,7 @@
 <section class="card section"><h2>Proposed change</h2><pre class="source-text">{{ plan.proposal }}</pre><h2>Validation & rollback</h2><pre class="source-text">{{ plan.validation }}</pre></section>{% if run %}
 <section class="card section"><h2>{% icon "code" %}Delivery</h2>
 {% if run.pull_request_url %}
-<p class="notice notice-success">{% icon "success" %}<span>A draft pull request is open: <a href="{{ run.pull_request_url }}">{{ run.pull_request_url }}</a></span></p>
+<p class="notice notice-success">{% icon "success" %}<span>A draft pull request is open: <a href="{{ run.pull_request_url }}" target="_blank" rel="noreferrer noopener">{{ run.pull_request_url }}</a></span></p>
 {% else %}
 {% if run.proposed_repository %}
 <p class="muted">The ticket named <code>{{ run.proposed_repository }}</code>. That came out of ticket text, so it is not acted on until someone confirms it — whoever can raise a ticket must not get to choose where this platform writes.</p>
@@ -46,4 +47,9 @@
 </section>
 {% endif %}
 
-{% if can_review %}<section class="card section"><h2>Review decision</h2><form method="post">{% csrf_token %}<label for="review-note">Review note</label><textarea id="review-note" name="note" rows="3" maxlength="2000" required></textarea><div class="actions section"><button name="decision" value="approved" class="button">Approve plan</button><button name="decision" value="rejected" class="button danger">Reject plan</button></div></form></section>{% endif %}{% if plan.reviewed_at %}<section class="card section"><h2>Review by {{ plan.reviewed_by.username }}</h2><p>{{ plan.review_note }}</p></section>{% endif %}{% if plan.status == 'approved' %}<p class="section"><a class="button" href="?download=1">Export approved plan</a></p>{% endif %}<p class="muted section">Approval and delivery are separate decisions. Delivery requires a confirmed repository and a configured write credential; its checks and outputs appear in the run record.</p>{% endblock %}
+{% if not can_review and no_review_because %}<p class="notice section">{% icon "lock" %}<span>{{ no_review_because }}{% if plan.status == 'pending' %} Until then the items below are as proposed, and nothing has been written anywhere.{% endif %}</span></p>{% endif %}
+{% if self_approving %}<p class="notice notice-warning section">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> This instance allows it because there is nobody else to ask; it is a development setting, refused outright in production. The audit record will say this change was approved by its author.</span></p>{% endif %}
+{% if can_review %}<section class="card section"><h2>Review decision</h2>
+<p class="muted">Every item above is ticked to be implemented. Untick the ones you do not want: an unticked item is recorded as rejected and nothing is written for it. This is decided once, here, and cannot be changed after the plan is approved.</p>
+<form method="post" id="plan-review">{% csrf_token %}<input type="hidden" name="items_declared" value="1">
+<label for="review-note">Review note</label><textarea id="review-note" name="note" rows="3" maxlength="2000" required></textarea><div class="actions section"><button name="decision" value="approved" class="button">Approve the ticked items</button><button name="decision" value="rejected" class="button danger">Reject plan</button></div></form></section>{% endif %}{% if plan.reviewed_at %}<section class="card section"><h2>Review by {{ plan.reviewed_by.username }}</h2><p>{{ plan.review_note }}</p></section>{% endif %}{% if plan.status == 'approved' %}<p class="section"><a class="button" href="?download=1">Export approved plan</a></p>{% endif %}<p class="muted section">Approval and delivery are separate decisions. Delivery requires a confirmed repository and a configured write credential; its checks and outputs appear in the run record.</p>{% endblock %}

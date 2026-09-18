@@ -65,6 +65,18 @@ class Step:
     icon: str
     #: A run is refused without it, rather than merely going worse.
     blocking: bool = True
+    #: Whether the screen that fixes this opens as a dialog over the checklist.
+    #:
+    #: True for the form-shaped screens, where the whole interaction is "type
+    #: this, press save" and leaving the list to do it is what made onboarding
+    #: feel like being bounced around. False for Knowledge, Connectors and Code
+    #: Graph, which are places you go and work rather than a field you fill -
+    #: lifting one of those into a dialog would be a worse version of itself.
+    #:
+    #: modal.js fetches the href and lifts its <main>, so the target must be a
+    #: page that renders and submits on its own. Every one of these does, and
+    #: with JavaScript off the link simply navigates.
+    modal: bool = False
 
 
 def steps(app):
@@ -95,6 +107,7 @@ def steps(app):
             "" if enabled else "Tick Code Factory on the Features screen.",
             "application-features",
             "toggle",
+            modal=True,
         )
     )
 
@@ -136,6 +149,7 @@ def steps(app):
             else "Choose a provider and model for plan drafting in Settings.",
             "ai-settings",
             "sliders",
+            modal=True,
         )
     )
 
@@ -170,6 +184,7 @@ def steps(app):
             "credentials",
             "key",
             blocking=not host_login,
+            modal=True,
         )
     )
 
@@ -281,6 +296,7 @@ def steps(app):
             "the connector uses.",
             "credentials",
             "key",
+            modal=True,
         )
     )
 
@@ -304,15 +320,76 @@ def steps(app):
             "screen.",
             "application-access",
             "people",
+            modal=True,
         )
     )
 
     return found
 
 
+@dataclass(frozen=True)
+class Setup:
+    """Where an application has got to, for a screen or a strip to report.
+
+    `analysis_ready` is the threshold that matters for nagging: below it the
+    application cannot do the thing it exists for, and above it the rest is a
+    choice. Delivery is tracked separately and never nags, because an
+    application that only ever analyses tickets is finished, not half-done -
+    and a checklist that can never be satisfied stops being read.
+    """
+
+    steps: tuple
+    done: int
+    total: int
+    next_step: object
+    analysis_ready: bool
+    delivery_ready: bool
+
+    @property
+    def complete(self):
+        return self.analysis_ready and self.delivery_ready
+
+
+def setup(app):
+    """Everything a caller needs to report progress, in one pass."""
+    found = steps(app)
+    return Setup(
+        steps=tuple(found),
+        done=sum(1 for step in found if step.ok),
+        total=len(found),
+        next_step=first_outstanding(found),
+        analysis_ready=gate_ready(found, ANALYSIS),
+        delivery_ready=gate_ready(found, DELIVERY),
+    )
+
+
+def record_completion(app, state):
+    """Stamp the milestone the first time an application has earned it.
+
+    Guarded on the column so two concurrent renders write it once, and done with
+    `update` so it touches nothing else and fires no signal.
+    """
+    from django.utils import timezone
+
+    from .models import Application
+
+    if not state.analysis_ready or app.setup_completed_at:
+        return False
+    Application.objects.filter(pk=app.pk, setup_completed_at__isnull=True).update(
+        setup_completed_at=timezone.now()
+    )
+    return True
+
+
 def gate_ready(app_steps, gate):
     """Whether nothing blocking is outstanding in one gate."""
     return all(step.ok or not step.blocking for step in app_steps if step.gate == gate)
+
+
+def first_outstanding(app_steps):
+    """The one to do next, for a screen that should point rather than list."""
+    remaining = outstanding(app_steps)
+    return remaining[0] if remaining else None
 
 
 def outstanding(app_steps, gate=None):
