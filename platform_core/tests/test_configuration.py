@@ -2,10 +2,30 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
 from digitalbrain.configuration import admin_identity, load_config, read_secret
+
+
+class EventLogTests(SimpleTestCase):
+    """The development event log has somewhere to be written.
+
+    Its handler opens the file when logging is configured, which django.setup()
+    does before any command runs - so a missing directory does not break
+    logging, it breaks every manage.py invocation, including the collectstatic
+    inside a Docker build. .runtime is excluded from git and from the image
+    build context on purpose: it holds uploaded documents and the local
+    database. Something therefore has to create it, and this pins that
+    something to exist.
+    """
+
+    def test_the_directory_the_handler_writes_to_exists(self):
+        handler = settings.LOGGING["handlers"].get("rotating")
+        if handler is None:
+            self.skipTest("Production configures no file handler.")
+        self.assertTrue(Path(handler["filename"]).parent.is_dir())
 
 
 class ConfigurationTests(SimpleTestCase):

@@ -195,6 +195,19 @@ LOGGING = {
 }
 
 if not PRODUCTION:
+    # The handler opens its file the moment logging is configured, and that
+    # happens inside django.setup() - before any management command runs. So a
+    # checkout without .runtime does not fail when something logs; it fails on
+    # every manage.py invocation, configuring a logger, with a traceback that
+    # names logging rather than the missing directory.
+    #
+    # A fresh clone has no .runtime, and neither does a Docker build context:
+    # it holds uploaded documents and the local database, so it is correctly
+    # excluded from both git and the image. Created here because this is where
+    # the dependency is introduced. Production configures no file handler at
+    # all and reaches none of this, which is why a read-only root filesystem is
+    # still fine there.
+    (ROOT / ".runtime").mkdir(parents=True, exist_ok=True)
     LOGGING["handlers"]["rotating"] = {
         "class": "logging.handlers.RotatingFileHandler",
         "formatter": "safe_json",
