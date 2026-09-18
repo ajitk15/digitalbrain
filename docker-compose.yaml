@@ -149,8 +149,8 @@ services:
       # Non-secret settings, which the entrypoint renders into the TOML the
       # platform reads. No secret is ever here - those are files, by design.
       # Mounting your own /etc/digitalbrain/production.toml overrides all of it.
-      DIGITAL_BRAIN_HOSTS: ${DIGITAL_BRAIN_HOSTS:-ajitconnect.in,www.ajitconnect.in}
-      DIGITAL_BRAIN_INSTANCE: ${DIGITAL_BRAIN_INSTANCE:-coolify-1}
+      DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
+      DIGITAL_BRAIN_INSTANCE: "coolify-1"
       DIGITAL_BRAIN_PORT: "8000"
       # Coolify assigns its proxy's address at start, and waitress compares the
       # peer address as a literal string - so there is nothing stable to name.
@@ -160,7 +160,7 @@ services:
       # first sign-in, then remove it.
       SITE_ADMIN_USER_ID: ${SITE_ADMIN_USER_ID:-}
     volumes:
-      - platform-secrets:/run/secrets:ro
+      - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       # Writable, and deliberately a DIFFERENT directory from /run/secrets.
       # An application owner sets their own provider credentials on the

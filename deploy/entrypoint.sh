@@ -80,6 +80,26 @@ else
 fi
 export DIGITAL_BRAIN_CONFIG="$CONFIG"
 
+# ---------------------------------------------------------------- secrets
+# The signing key is generated here when it is absent, rather than relying on a
+# separate init service having run first. Coolify decides for itself how to
+# schedule a one-shot service, and a deployment that crash-loops on
+# "Required mounted secret is unavailable" because of that ordering is a worse
+# failure than a key this process can simply create.
+#
+# Still a file, still owner-only - the rule is that secrets are not environment
+# variables, not that some other container has to write them. An existing key
+# is never replaced: rotating it invalidates every session.
+if [ ! -f /run/secrets/django_secret_key ]; then
+    if head -c 64 /dev/urandom | base64 | tr -d '\n=' > /run/secrets/django_secret_key 2>/dev/null; then
+        chmod 600 /run/secrets/django_secret_key
+        echo "entrypoint: generated a signing key"
+    else
+        echo "entrypoint: /run/secrets is not writable and holds no signing key." >&2
+        exit 1
+    fi
+fi
+
 # ---------------------------------------------------------------- signatures
 # processing.py runs clamscan with --fail-if-cvd-older-than=7, so a database
 # older than a week rejects every document with "signatures stale" rather than
