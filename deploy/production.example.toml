@@ -5,8 +5,11 @@
 # owner-only file under /opt/digitalbrain/secrets, which the container sees at
 # /run/secrets.
 mode = "production"
-hosts = ["ajitconnect.in"]
-csrf_origins = ["https://ajitconnect.in"]
+# Every hostname the proxy may forward under. A request whose Host header is
+# not listed is refused with 400 - which is the check working, but it looks
+# like a broken deployment, so both names a domain is served under belong here.
+hosts = ["ajitconnect.in", "www.ajitconnect.in"]
+csrf_origins = ["https://ajitconnect.in", "https://www.ajitconnect.in"]
 secret_directory = "/run/secrets"
 
 # Coolify's proxy terminates TLS and sets X-Forwarded-Proto. This makes Django
