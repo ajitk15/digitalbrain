@@ -145,6 +145,17 @@ services:
         condition: service_healthy
       secrets-init:
         condition: service_completed_successfully
+    # Declared so the deployment platform can see which port to route to. It
+    # parses this file, not the image, so the Dockerfile's EXPOSE is invisible
+    # to it - and with no port here Coolify generated no Traefik labels at all,
+    # leaving a healthy container with nothing pointing at it.
+    #
+    # `expose` opens the port to the compose network only. It is NOT `ports`,
+    # which would publish to the host and break the one condition that makes
+    # --trusted-proxy '*' sound: that nothing but the proxy can reach the
+    # listener. See scripts/serve.py.
+    expose:
+      - "8000"
     environment:
       # Non-secret settings, which the entrypoint renders into the TOML the
       # platform reads. No secret is ever here - those are files, by design.
