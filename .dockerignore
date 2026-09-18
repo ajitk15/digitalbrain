@@ -1,0 +1,31 @@
+# Everything the image builds for itself, or must never contain.
+#
+# .runtime holds uploaded documents and the local SQLite database; staticfiles
+# is produced by collectstatic inside the build. Copying either from a
+# developer's machine would ship that developer's data and a stale manifest.
+.git
+.github
+.venv
+.runtime
+staticfiles
+**/__pycache__
+**/*.pyc
+.ruff_cache
+.coverage
+htmlcov
+
+# Never: the only thing .env may hold is SITE_ADMIN_USER_ID, and config/local.toml
+# is a development file whose mode is "development".
+.env
+config/local.toml
+
+# Not part of the running platform.
+demo-artifacts
+design
+docs
+*.md
+!README.md
+start-all.cmd
+start-all.ps1
+stop-all.cmd
+stop-all.ps1
