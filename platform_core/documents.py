@@ -79,8 +79,19 @@ def document_path(app, document_id):
 
 
 def intake_enabled():
-    # Production requires application-specific private storage and a scanner before enabling.
-    return not settings.PRODUCTION
+    """Whether this deployment may take a document in at all.
+
+    Storage is already per application - document_folder puts originals under
+    the organization and application that own them, mode 0600 in a directory
+    mode 0700, never anywhere the static server can reach. What was left was
+    the scanner, so that is what this asks about.
+
+    Imported inside the function: processing imports workbench, and workbench
+    is reached from here, so a module-level import would close the circle.
+    """
+    from .processing import scanning_ready
+
+    return scanning_ready()
 
 
 def store_document(actor, application_id, upload):

@@ -4,7 +4,6 @@ import hashlib
 from contextvars import ContextVar
 from decimal import Decimal
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
@@ -21,8 +20,21 @@ from .models import (
 from .observability import request_id_context
 from .policy import application_for, require_platform_admin
 
+
+def _uploads_available():
+    """Document intake needs a scanner it can actually run.
+
+    A callable rather than a constant because the answer is configuration and
+    can change without a release. Imported inside the function so services does
+    not import processing at module scope.
+    """
+    from .processing import scanning_ready
+
+    return scanning_ready()
+
+
 FEATURES = {
-    "document_uploads": ("Document uploads", not settings.PRODUCTION),
+    "document_uploads": ("Document uploads", _uploads_available),
     "usage_reports": ("AI cost reports", True),
     "chat": ("Knowledge chat", True),
     "knowledge": ("Knowledge sources", True),
@@ -42,16 +54,33 @@ FEATURES = {
 OPT_IN_FEATURES = {"chat_api"}
 
 
+def feature_available(key):
+    """Whether this deployment can offer the feature at all.
+
+    Most entries are a plain True. document_uploads is a callable, because
+    whether a document can be taken in depends on whether it can be scanned -
+    a property of the deployment, not of the release. Every reader of the
+    registry goes through here so the two kinds cannot diverge: a callable read
+    as a raw value is always truthy, which would silently offer a feature that
+    cannot work.
+    """
+    entry = FEATURES.get(key)
+    if entry is None:
+        return False
+    available = entry[1]
+    return bool(available()) if callable(available) else bool(available)
+
+
 def available_features():
     """(key, label) for every feature that can actually be switched on here.
 
     Iterating the registry is what makes the create form extensible: adding a
     line to FEATURES puts a new checkbox on it and a new row on the Features
-    screen, with nothing else to change. Entries whose availability flag is
-    False - document_uploads in production - are not offered at all, because
-    all_features would refuse them anyway.
+    screen, with nothing else to change. Entries that are not available -
+    document_uploads where no scanner is configured - are not offered at all,
+    because all_features would refuse them anyway.
     """
-    return [(key, label) for key, (label, available) in FEATURES.items() if available]
+    return [(key, label) for key, (label, _) in FEATURES.items() if feature_available(key)]
 
 
 def audit(user, action, resource, organization=None, details=None):
@@ -102,13 +131,15 @@ def all_features(application):
         else {}
     )
     return {
-        name: available and switches.get(name, True) and local.get(name, True)
-        for name, (_, available) in FEATURES.items()
+        name: feature_available(name)
+        and switches.get(name, True)
+        and local.get(name, True)
+        for name in FEATURES
     }
 
 
 def feature_enabled(key, application):
-    if key not in FEATURES or not FEATURES[key][1]:
+    if not feature_available(key):
         return False
     cache = _feature_cache.get()
     if cache is None:

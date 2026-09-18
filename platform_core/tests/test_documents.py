@@ -1,6 +1,8 @@
+import sys
 import tempfile
 from pathlib import Path
 
+from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -143,9 +145,101 @@ class DocumentTests(TestCase):
         self.assertEqual(self.upload().status_code, 403)
         self.assertFalse(Document.objects.exists())
 
-    @override_settings(PRODUCTION=True)
-    def test_production_intake_fails_closed_until_private_storage_is_connected(self):
+    # ---- intake is gated on scanning, not on the word "production" ----
+    #
+    # It used to be gated on PRODUCTION, and that closed every intake path
+    # there is: upload, link, Jira connector, SharePoint. No documents means no
+    # knowledge graph, and a published graph is mandatory for Code Factory - so
+    # the refusal disabled the product rather than a feature of it. What it was
+    # protecting is content nobody checked, and that is what these pin.
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True, CONFIG={"scanner": ""})
+    def test_intake_is_closed_when_nothing_can_scan(self):
+        """Fail closed, and for the reason that is actually true."""
         self.assertEqual(self.upload().status_code, 403)
+        self.assertFalse(Document.objects.exists())
+
+    @override_settings(
+        PRODUCTION=True,
+        DOCUMENT_SCAN_REQUIRED=True,
+        CONFIG={"scanner": "/nonexistent/clamscan"},
+    )
+    def test_a_configured_scanner_that_is_not_there_is_not_a_scanner(self):
+        """An absolute path is not evidence that anything is at the end of it."""
+        self.assertEqual(self.upload().status_code, 403)
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True)
+    def test_intake_opens_once_a_scanner_is_configured(self):
+        """Production is not the thing being asked about any more."""
+        with override_settings(CONFIG={"scanner": sys.executable}):
+            self.assertEqual(self.upload().status_code, 302)
+        self.assertTrue(Document.objects.exists())
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True, CONFIG={"scanner": ""})
+    def test_uploads_are_not_offered_as_a_feature_with_nothing_to_scan_them(self):
+        """A screen should not offer a switch that cannot do anything.
+
+        The registry entry is a callable rather than a constant, so every reader
+        has to go through feature_available - one read as a raw value would be
+        truthy and would offer it anyway.
+        """
+        from platform_core.services import available_features, feature_available
+
+        self.assertFalse(feature_available("document_uploads"))
+        self.assertNotIn("document_uploads", dict(available_features()))
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True)
+    def test_uploads_are_offered_once_they_can_be_scanned(self):
+        from platform_core.services import available_features, feature_available
+
+        with override_settings(CONFIG={"scanner": sys.executable}):
+            self.assertTrue(feature_available("document_uploads"))
+            self.assertIn("document_uploads", dict(available_features()))
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True)
+    def test_a_document_in_production_is_actually_scanned(self):
+        """The point of lifting the refusal is that scanning replaces it.
+
+        Pinned by watching the call rather than by trusting the branch: a
+        conversion that quietly skipped the scanner would pass every other test
+        in this file.
+        """
+        from unittest.mock import patch
+
+        from platform_core.processing import process_document
+
+        with override_settings(CONFIG={"scanner": sys.executable}):
+            self.assertEqual(self.upload().status_code, 302)
+            doc = Document.objects.get()
+            with patch("platform_core.processing.subprocess.run") as run:
+                run.return_value.returncode = 0
+                run.return_value.stdout = b"text"
+                try:
+                    process_document(self.owner, self.app.pk, doc.pk)
+                except Exception:
+                    # Conversion after the scan is not what this is about.
+                    pass
+        scanned = [call for call in run.call_args_list if sys.executable in call.args[0][0]]
+        self.assertTrue(scanned, "the scanner was never invoked")
+        # Fail-closed on stale signatures is part of the contract, not a flag
+        # somebody may drop: a week-old database rejects rather than passes.
+        self.assertIn("--fail-if-cvd-older-than=7", scanned[0].args[0])
+
+    @override_settings(PRODUCTION=True, DOCUMENT_SCAN_REQUIRED=True)
+    def test_a_rejected_file_is_still_rejected(self):
+        from unittest.mock import patch
+
+        from platform_core.processing import process_document
+
+        with override_settings(CONFIG={"scanner": sys.executable}):
+            self.upload()
+            doc = Document.objects.get()
+            with patch("platform_core.processing.subprocess.run") as run:
+                run.return_value.returncode = 1
+                with self.assertRaises(ValidationError):
+                    process_document(self.owner, self.app.pk, doc.pk)
+        doc.refresh_from_db()
+        self.assertEqual(doc.status, "rejected")
 
     # ---- the application opens on Knowledge ----
 

@@ -27,10 +27,37 @@ def scanner_path():
     return str(found)
 
 
+def scanning_ready():
+    """Whether a document could be scanned right now, without scanning one.
+
+    This is the question the old blanket refusal was standing in for. Production
+    used to raise here unconditionally - "requires the isolated storage/worker
+    adapter" - which closed every intake path there is: upload, link, Jira
+    connector, SharePoint. No documents means no knowledge graph, and a
+    published graph is mandatory for Code Factory, so the refusal disabled the
+    product rather than a feature of it.
+
+    What it was protecting is content nobody checked, and that is enforced
+    directly: DOCUMENT_SCAN_REQUIRED is true whenever PRODUCTION is, and
+    `scanner_path` refuses anything but an absolute path to a real executable.
+    So a production deployment with no scanner still takes in nothing - it just
+    says which thing is missing, and can be fixed by configuring it rather than
+    by editing the platform.
+
+    Asked of the running system rather than of a constant, because a scanner is
+    configuration: it can be mounted, or go missing, without a new release.
+    """
+    if not settings.DOCUMENT_SCAN_REQUIRED:
+        return True
+    try:
+        scanner_path()
+    except ValidationError:
+        return False
+    return True
+
+
 def process_document(user, app_id, document_id):
     app, _ = access(user, app_id, "knowledge", write=True)
-    if settings.PRODUCTION:
-        raise ValidationError("Production processing requires the isolated storage/worker adapter.")
     doc = Document.objects.exclude(status="deleted").get(application=app, pk=document_id)
     if doc.status == "ready":
         return KnowledgeEntry.objects.get(document=doc)
