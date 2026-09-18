@@ -80,9 +80,26 @@ else
 fi
 export DIGITAL_BRAIN_CONFIG="$CONFIG"
 
+# ------------------------------------------------------------- what is mounted
+# Printed every start, because this deployment has now failed three times on
+# something that is invisible from inside the application: whether the volumes
+# the compose file declares actually arrived. A deployment platform is free to
+# rewrite or drop them, and "Directory nonexistent" for a path the compose file
+# mounts is the kind of thing worth one line of output forever.
+echo "entrypoint: mounts"
+for path in /run/secrets /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials; do
+    if mount | grep -q " ${path} "; then
+        echo "  ${path}: volume"
+    elif [ -d "$path" ]; then
+        echo "  ${path}: plain directory in the image - NOT PERSISTENT"
+    else
+        echo "  ${path}: missing"
+    fi
+done
+
 # ---------------------------------------------------------------- secrets
 # The signing key is generated here when it is absent, rather than relying on a
-# separate init service having run first. Coolify decides for itself how to
+# separate init service having run first. A platform decides for itself how to
 # schedule a one-shot service, and a deployment that crash-loops on
 # "Required mounted secret is unavailable" because of that ordering is a worse
 # failure than a key this process can simply create.
@@ -90,14 +107,21 @@ export DIGITAL_BRAIN_CONFIG="$CONFIG"
 # Still a file, still owner-only - the rule is that secrets are not environment
 # variables, not that some other container has to write them. An existing key
 # is never replaced: rotating it invalidates every session.
+#
+# mkdir first: the directory is a mount point when the volume arrives, and
+# nothing at all when it does not. Creating it means the process starts either
+# way, and the mount report above says which happened - a key on a
+# non-persistent path signs sessions that will not survive a restart.
+mkdir -p /run/secrets 2>/dev/null || true
+if [ ! -w /run/secrets ]; then
+    echo "entrypoint: /run/secrets cannot be created or written." >&2
+    exit 1
+fi
+chmod 700 /run/secrets 2>/dev/null || true
 if [ ! -f /run/secrets/django_secret_key ]; then
-    if head -c 64 /dev/urandom | base64 | tr -d '\n=' > /run/secrets/django_secret_key 2>/dev/null; then
-        chmod 600 /run/secrets/django_secret_key
-        echo "entrypoint: generated a signing key"
-    else
-        echo "entrypoint: /run/secrets is not writable and holds no signing key." >&2
-        exit 1
-    fi
+    head -c 64 /dev/urandom | base64 | tr -d '\n=' > /run/secrets/django_secret_key
+    chmod 600 /run/secrets/django_secret_key
+    echo "entrypoint: generated a signing key"
 fi
 
 # ---------------------------------------------------------------- signatures
