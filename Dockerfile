@@ -70,7 +70,7 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH" \
-    DIGITAL_BRAIN_CONFIG=/etc/digitalbrain/production.toml
+    DIGITAL_BRAIN_CONFIG=/app/.runtime/production.toml
 
 COPY --from=deps  --chown=root:root /app/.venv       /app/.venv
 COPY --from=static --chown=root:root /app/staticfiles /app/staticfiles

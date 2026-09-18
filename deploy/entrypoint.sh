@@ -24,14 +24,20 @@ HOST="${DIGITAL_BRAIN_HOST:-0.0.0.0}"
 # Secrets are NOT rendered here and never will be. They are files with
 # owner-only permissions, which is the platform's rule and the reason
 # read_secret refuses anything else.
+# One canonical path, always. The entrypoint's own environment does not reach a
+# later `docker exec`, which gets the image default instead - so a config living
+# wherever it happened to be rendered means every administrative command fails
+# with "Configuration missing" on a perfectly healthy container. An operator's
+# mounted file is copied here rather than read in place, so one path is the
+# answer for the server and for anyone running manage.py afterwards.
 MOUNTED="/etc/digitalbrain/production.toml"
-RENDERED="/app/.runtime/production.toml"
+CONFIG="/app/.runtime/production.toml"
+mkdir -p /app/.runtime
 
 if [ -f "$MOUNTED" ]; then
-    CONFIG="$MOUNTED"
-    echo "entrypoint: using the mounted configuration at $MOUNTED"
+    cp "$MOUNTED" "$CONFIG"
+    echo "entrypoint: using the mounted configuration from $MOUNTED"
 else
-    CONFIG="$RENDERED"
     hosts=""
     origins=""
     # DIGITAL_BRAIN_HOSTS is a comma-separated list; every name the proxy may
@@ -46,7 +52,6 @@ else
     done
     IFS="$old"
 
-    mkdir -p /app/.runtime
     {
         echo 'mode = "production"'
         echo "hosts = [${hosts%, }]"
