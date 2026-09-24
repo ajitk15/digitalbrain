@@ -48,10 +48,15 @@ FEATURES = {
 #: switch off. `feature_enabled` still reads a missing row as enabled - that
 #: rule is untouched - so these are given an explicit disabled row instead:
 #: by migration for applications that already exist, and by an unticked box on
-#: the create form for new ones. `chat_api` is here because it is the only API
-#: surface that calls a model, and nothing should start spending an
-#: application's provider budget because a release shipped.
-OPT_IN_FEATURES = {"chat_api"}
+#: the create form for new ones.
+#:
+#: `chat_api` used to be here, as the only API surface that calls a model. It
+#: was taken out deliberately: a new application now starts with it ticked,
+#: like everything else. That is a choice made on the create form by someone
+#: creating the application, so it is not "a release started spending" - the
+#: applications that existed before migration 0036 keep their disabled row, and
+#: the endpoint still needs an API token, which an owner has to issue.
+OPT_IN_FEATURES = set()
 
 
 def feature_available(key):

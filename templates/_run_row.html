@@ -6,7 +6,7 @@ _source_row.html exists.
 
 The stage strip uses the numbers and names the run screen uses, so "stage 4" is
 one thing wherever you read it.
-{% endcomment %}<div class="list-row run-row" id="run-{{ run.pk }}">
+{% endcomment %}<div class="list-row run-row" id="run-{{ run.pk }}" data-live="run-row-{{ run.pk }}"{% if run.in_flight %} data-live-pending{% endif %}>
 <div class="run-lead">
 <strong><span class="run-number">Run {{ run.number }}</span><a href="{% url 'run-detail' application.pk run.pk %}">{{ run.ticket_title|default:"(untitled ticket)" }}</a></strong>
 <small>{{ run.ticket_external_id }} · {{ run.requested_by.username }} · {{ run.created_at|date:"M d, H:i" }} UTC{% if run.graph_version %} · graph v{{ run.graph_version }}{% else %} · no published graph{% endif %}{% if run.code_snapshot %} · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}{% endif %}</small>

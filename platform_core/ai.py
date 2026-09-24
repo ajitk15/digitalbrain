@@ -104,9 +104,12 @@ DEFAULT_CREDENTIAL_NAMES = {"openai": "openai_default", "claude": "claude_defaul
 #: value stays editable in AI settings.
 DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 
-#: Graph generation can make paid calls whenever sources change, so it is the one
-#: purpose that is seeded switched off. An owner turns it on deliberately.
-SEEDED_DISABLED = {"graph_generation"}
+#: Purposes seeded switched off. Graph generation used to be here, and was taken
+#: out deliberately: enabling it only makes enrichment *available* - a paid call
+#: still needs someone to request an enriched run and name a model (see
+#: `graphs.requested_configuration`), and the structural rebuild never makes one. An
+#: owner can still switch it off in AI settings. Kept as the mechanism.
+SEEDED_DISABLED = set()
 
 
 def configured_providers():

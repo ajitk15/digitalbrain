@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import reverse
 
 from platform_core.code_factory import collect_changes, prepare, publish, target_paths
 from platform_core.github_write import (
@@ -156,6 +157,14 @@ class ChangeCollectionTests(SimpleTestCase):
 class DeliveryGateTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        # These pin the gates and the chain with a plan that names no test file,
+        # and give every agent the same canned reply. The test author now chooses
+        # a test path when the plan names none; that is switched off here so the
+        # replies still reach the agents they were written for, and is covered
+        # on its own by DerivedTestPathTests.
+        derivation = patch("platform_core.code_factory.derived_test_paths", return_value=[])
+        derivation.start()
+        self.addCleanup(derivation.stop)
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
             can_approve=True
         )
@@ -638,6 +647,29 @@ class AgentChainTests(DeliveryGateTests):
         self.assertIn("rejected every file", " ".join(raised.exception.messages))
         self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
 
+    def test_an_unreadable_review_stops_the_change(self):
+        """A review that cannot be read is not a pass.
+
+        It used to send every file on unreviewed with a note, which is how a
+        live run prepared - and then published - a lone test for unwritten code.
+        """
+        from platform_core.models import ProposedChange
+
+        replies = self.answers(tests=False)
+        replies[-1] = "The files look fine to me."  # not JSON: nothing to act on
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
+                with patch("platform_core.ai.invoke_ai", side_effect=replies):
+                    with self.assertRaises(ValidationError) as raised:
+                        prepare(self.owner, self.app.pk, self.run.pk)
+        self.assertIn("could not be read", " ".join(raised.exception.messages))
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "failed")
+        self.assertEqual(self.run.phases.get(name="review").status, "failed")
+        self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
+        # Nothing reached the checks that would have let it through.
+        self.assertFalse(self.run.phases.filter(name="verification", status="ok").exists())
+
     def test_the_review_reason_reaches_the_record(self):
         with self.assertRaises(ValidationError):
             self.chain(tests=False, review="reject")
@@ -804,6 +836,15 @@ class AgentReportTests(DeliveryGateTests):
         self.assertEqual(report["status"], "absent")
         self.assertIn("predates this agent", report["detail"])
 
+    def test_a_prepared_run_says_the_pull_request_is_waiting_not_missing(self):
+        """The pull request waits for a Yes; it has not been skipped as too old."""
+        FactoryRun.objects.filter(pk=self.run.pk).update(status="prepared")
+        self.run.refresh_from_db()
+        report = self.report("delivery")
+        self.assertEqual(report["status"], "pending")
+        self.assertIn("Waiting for your Yes", report["detail"])
+        self.assertNotIn("predates", report["detail"])
+
     def test_an_unfinished_run_still_says_what_the_agent_is_for(self):
         report = self.report("tests")
         self.assertEqual(report["status"], "pending")
@@ -936,3 +977,152 @@ class AnnotatedTargetTests(SimpleTestCase):
     def test_a_component_that_is_not_a_path_is_still_dropped(self):
         """Stripping must not turn prose into a path."""
         self.assertEqual(self.paths("the consent service (consent.current)"), [])
+
+
+class DerivedTestPathTests(SimpleTestCase):
+    """The test file chosen for a changed source file the plan named no test for."""
+
+    def paths(self, changed, known=()):
+        from platform_core.code_factory import derived_test_paths
+
+        return derived_test_paths([{"path": path} for path in changed], list(known))
+
+    def test_python_defaults_to_a_tests_folder(self):
+        self.assertEqual(self.paths(["src/queue.py"]), ["tests/test_queue.py"])
+
+    def test_the_repository_layout_is_followed(self):
+        known = ["src/app.py", "src/pkg/tests/test_app.py", "src/pkg/tests/test_other.py"]
+        self.assertEqual(self.paths(["src/queue.py"], known), ["src/pkg/tests/test_queue.py"])
+
+    def test_an_existing_test_for_the_module_is_extended(self):
+        known = ["tests/unit/test_queue.py"]
+        self.assertEqual(self.paths(["src/queue.py"], known), ["tests/unit/test_queue.py"])
+
+    def test_scripts_get_a_test_beside_them(self):
+        self.assertEqual(self.paths(["web/cart.ts"]), ["web/cart.test.ts"])
+
+    def test_java_follows_the_maven_layout(self):
+        self.assertEqual(
+            self.paths(["src/main/java/com/acme/OrderService.java"]),
+            ["src/test/java/com/acme/OrderServiceTest.java"],
+        )
+
+    def test_java_in_a_module_stays_in_that_module(self):
+        self.assertEqual(
+            self.paths(["billing/src/main/java/com/acme/Invoice.java"]),
+            ["billing/src/test/java/com/acme/InvoiceTest.java"],
+        )
+
+    def test_an_existing_java_test_in_the_same_package_is_extended(self):
+        known = [
+            "src/test/java/com/acme/OrderServiceTests.java",
+            "src/test/java/com/other/OrderServiceTest.java",
+        ]
+        self.assertEqual(
+            self.paths(["src/main/java/com/acme/OrderService.java"], known),
+            ["src/test/java/com/acme/OrderServiceTests.java"],
+        )
+
+    def test_java_outside_the_standard_layout_is_left_to_the_plan(self):
+        self.assertEqual(self.paths(["app/Main.java", "xsrc/main/java/A.java"]), [])
+
+    def test_the_test_language_is_read_from_the_paths(self):
+        from platform_core.code_factory import test_language
+
+        self.assertEqual(test_language(["src/test/java/a/BTest.java"]), "java")
+        self.assertEqual(test_language(["web/a.test.ts"]), "javascript")
+        self.assertEqual(test_language(["tests/test_a.py"]), "python")
+        self.assertIsNone(test_language(["spec/a_spec.rb"]))
+
+    def test_nothing_is_invented_for_other_files(self):
+        self.assertEqual(self.paths(["README.md", "src/__init__.py", "tests/test_x.py"]), [])
+
+
+@override_settings(**SETTINGS)
+class DerivedTestChainTests(TestCase):
+    """With derivation on, the test author writes a test the plan never named."""
+
+    CURRENT = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
+
+    def setUp(self):
+        # The same run and plan as the gate tests, without their switch-off.
+        DeliveryGateTests.setUp(self)
+        patch.stopall()
+
+    def test_a_test_is_written_for_the_changed_code(self):
+        from platform_core.models import ProposedChange
+
+        order = json.dumps({"files": [{"file": "1", "intent": "Bound it", "checks": []}]})
+        implementation = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
+        written = json.dumps({"files": [{"file": "1", "content": "def test_bounded(): pass"}]})
+        verdict = json.dumps(
+            {
+                "files": [
+                    {"file": "1", "verdict": "ok", "reason": ""},
+                    {"file": "2", "verdict": "ok", "reason": ""},
+                ]
+            }
+        )
+
+        def read(repository, path, ref, token):
+            return dict(self.CURRENT) if path == "src/queue.py" else None
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", side_effect=read):
+                with patch(
+                    "platform_core.github_write.absent_path", side_effect=lambda r, p, b, t: p
+                ):
+                    with patch("platform_core.github_write.list_directory", return_value=[]):
+                        with patch(
+                            "platform_core.ai.invoke_ai",
+                            side_effect=[order, implementation, written, verdict],
+                        ) as model:
+                            prepare(self.owner, self.app.pk, self.run.pk)
+        self.assertEqual(
+            dict(self.run.phases.values_list("name", "status"))["tests"], "ok"
+        )
+        self.assertTrue(
+            ProposedChange.objects.filter(run=self.run, path="tests/test_queue.py").exists()
+        )
+        # No configuration at all: the model is told to use the standard library
+        # rather than guess a framework, and nothing is added as a dependency.
+        tests_question = model.call_args_list[2].args[3]
+        self.assertIn("Test framework: none is configured", tests_question)
+        self.assertIn("unittest", tests_question)
+        # And, with no CI, the summary says nothing will run them.
+        self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, self.run.pk]))
+        self.assertContains(page, "The new tests will not run on their own.")
+
+    def test_a_test_for_rejected_code_does_not_go_out_alone(self):
+        """Run 1's shape: the source file rejected, its derived test left behind."""
+        order = json.dumps({"files": [{"file": "1", "intent": "Bound it", "checks": []}]})
+        implementation = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
+        written = json.dumps({"files": [{"file": "1", "content": "def test_bounded(): pass"}]})
+        verdict = json.dumps(
+            {
+                "files": [
+                    {"file": "1", "verdict": "reject", "reason": "misses the masked schema"},
+                    {"file": "2", "verdict": "ok", "reason": ""},
+                ]
+            }
+        )
+
+        def read(repository, path, ref, token):
+            return dict(self.CURRENT) if path == "src/queue.py" else None
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch("platform_core.github_write.read_file", side_effect=read):
+                with patch(
+                    "platform_core.github_write.absent_path", side_effect=lambda r, p, b, t: p
+                ):
+                    with patch("platform_core.github_write.list_directory", return_value=[]):
+                        with patch(
+                            "platform_core.ai.invoke_ai",
+                            side_effect=[order, implementation, written, verdict],
+                        ):
+                            with self.assertRaises(ValidationError) as refusal:
+                                prepare(self.owner, self.app.pk, self.run.pk)
+        self.assertIn("the tests written for them went too", str(refusal.exception))
+        review = self.run.phases.get(name="review").output
+        self.assertEqual([item["path"] for item in review["orphaned"]], ["tests/test_queue.py"])

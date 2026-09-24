@@ -363,6 +363,230 @@ class PipelineTests(TestCase):
 
 @override_settings(**SETTINGS)
 @override_settings(**SETTINGS)
+class ParseJsonTests(SimpleTestCase):
+    """What a model's JSON answer has to look like to be used."""
+
+    WHOLE = json.dumps({"files": [{"file": n, "verdict": "ok"} for n in range(1, 7)]})
+
+    def test_two_turns_joined_use_the_finished_answer(self):
+        """The runtime joins every model turn's text in one call.
+
+        A model that began its JSON, paused, and wrote it again arrived as a
+        half block glued to a whole one, and pairing fences took the half.
+        """
+        from platform_core.code_factory import parse_json
+
+        joined = "```json\n" + self.WHOLE[:40] + "```json\n" + self.WHOLE + "\n```"
+        self.assertEqual(len(parse_json(joined, "Change review")["files"]), 6)
+
+    def test_a_half_answer_alone_is_refused_and_says_where(self):
+        from platform_core.code_factory import UnusableAnswer, parse_json
+
+        with self.assertRaises(UnusableAnswer) as refusal:
+            parse_json("```json\n" + self.WHOLE[:40] + "\n```", "Change review")
+        self.assertIn("parser stopped at line", refusal.exception.sample)
+
+
+class AgentPopupTests(TestCase):
+    """Each implementation agent: its model, what it does, and a rerun on failure."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+
+    def failed_review(self):
+        from platform_core.code_graph_ingest import register
+        from platform_core.models import RunPhase
+
+        run = self.run_pipeline()
+        snapshot = register(self.owner, self.app.pk, "acme/widgets").snapshots.create(
+            number=1, commit_sha="a" * 40
+        )
+        ChangePlan.objects.filter(pk=run.plan.pk).update(status="approved")
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="failed", error="Review failed.", code_snapshot=snapshot
+        )
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        RunPhase.objects.create(
+            run=run,
+            name="review",
+            sequence=7,
+            agent="Change review",
+            status="failed",
+            provider="claude",
+            model="claude-sonnet-5",
+            error="Change review did not return usable JSON.",
+            output={"sample": "907 characters; parser stopped at line 31"},
+        )
+        run.refresh_from_db()
+        return run
+
+    def test_each_agent_row_names_its_model(self):
+        run = self.failed_review()
+        body = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk])).content.decode()
+        # Recorded for the agent that ran; configured for one that has not;
+        # none for the deterministic checks.
+        self.assertIn("agent-model-used", body)
+        self.assertIn("Claude Sonnet 5", body)
+        self.assertIn("(configured)", body)
+        self.assertIn("No model", body)
+        self.assertIn(reverse("run-agent", args=[self.app.pk, run.pk, "review"]), body)
+
+    def test_a_failed_agent_explains_itself_and_offers_a_rerun(self):
+        run = self.failed_review()
+        url = reverse("run-agent", args=[self.app.pk, run.pk, "review"])
+        page = self.client.get(url)
+        self.assertContains(page, "machine-readable format")
+        self.assertContains(page, "What came back")
+        self.assertContains(page, "Rerun the implementation agents")
+        response = self.client.post(url)
+        self.assertRedirects(
+            response,
+            reverse("run-detail", args=[self.app.pk, run.pk]) + "#stage-4",
+            fetch_redirect_response=False,
+        )
+        run.refresh_from_db()
+        self.assertEqual(run.status, "prepare_queued")
+
+    def test_a_viewer_can_read_but_not_rerun(self):
+        run = self.failed_review()
+        url = reverse("run-agent", args=[self.app.pk, run.pk, "review"])
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertNotContains(self.client.get(url), "Rerun the implementation agents")
+        self.client.post(url)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+
+    def test_an_unknown_agent_is_not_found(self):
+        run = self.run_pipeline()
+        response = self.client.get(reverse("run-agent", args=[self.app.pk, run.pk, "triage"]))
+        self.assertEqual(response.status_code, 404)
+
+
+class RetryAnalysisTests(TestCase):
+    """A run that failed before producing a plan can be queued again."""
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+
+    def failed_analysis(self):
+        run = start_run(self.owner, self.app.pk, self.ticket)
+        with patch("platform_core.ai.invoke_ai", side_effect=ValidationError("boom")):
+            execute(run)
+        run.refresh_from_db()
+        return run
+
+    def test_the_button_queues_the_same_run_again(self):
+        run = self.failed_analysis()
+        self.assertEqual(run.status, "failed")
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
+        self.assertContains(page, "Run the analysis again")
+        self.client.post(
+            reverse("run-detail", args=[self.app.pk, run.pk]), {"action": "retry-analysis"}
+        )
+        run.refresh_from_db()
+        self.assertEqual(run.status, "pending")
+        self.assertEqual(FactoryRun.objects.count(), 1)
+        with patch("platform_core.ai.invoke_ai", side_effect=self.answers()):
+            execute(run)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "awaiting_review")
+
+    def test_a_run_with_a_plan_is_not_retried_as_analysis(self):
+        from platform_core.code_factory import retry_analysis
+
+        run = PipelineTests.run_pipeline(self)
+        FactoryRun.objects.filter(pk=run.pk).update(status="failed")
+        with self.assertRaises(ValidationError):
+            retry_analysis(self.owner, self.app.pk, run.pk)
+
+
+class ManualTicketTests(TestCase):
+    """A ticket typed in on the Code Factory screen, for work no tracker holds.
+
+    It runs through the same pipeline as an imported one, but lives on the run
+    alone: no knowledge entry is written, so it never reaches Sources, the
+    ticket picker or a graph build.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+
+    def post(self, **data):
+        payload = {"action": "manual", "title": "Queue Beta overflows", "description": "It does."}
+        payload.update(data)
+        return self.client.post(reverse("plans", args=[self.app.pk]), payload)
+
+    def test_the_screen_offers_a_new_ticket_popup(self):
+        response = self.client.get(reverse("plans", args=[self.app.pk]))
+        new = reverse("ticket-new", args=[self.app.pk])
+        self.assertContains(response, f'href="{new}" data-modal')
+        self.assertNotContains(response, 'name="description"')
+        # The popup's target is a page that renders and submits on its own.
+        page = self.client.get(reverse("ticket-new", args=[self.app.pk]))
+        self.assertContains(page, 'name="description"')
+
+    def test_a_refused_ticket_is_shown_again_with_what_was_typed(self):
+        response = self.client.post(
+            reverse("ticket-new", args=[self.app.pk]), {"title": "Kept", "description": " "}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "needs a title and a description")
+        self.assertContains(response, 'value="Kept"')
+
+    def test_a_hand_written_ticket_is_queued_and_never_becomes_knowledge(self):
+        from platform_core.models import KnowledgeEntry
+
+        before = KnowledgeEntry.objects.count()
+        response = self.post()
+        run = FactoryRun.objects.get()
+        self.assertRedirects(
+            response,
+            reverse("run-detail", args=[self.app.pk, run.pk]),
+            fetch_redirect_response=False,
+        )
+        self.assertEqual(run.ticket_title, "Queue Beta overflows")
+        self.assertEqual(run.ticket_body, "It does.")
+        self.assertEqual(run.ticket_url, "")
+        self.assertEqual(run.ticket_external_id, f"manual-{run.number}")
+        self.assertEqual(KnowledgeEntry.objects.count(), before)
+
+    def test_the_run_reads_the_typed_body_not_some_other_entry(self):
+        run = start_run(
+            self.owner, self.app.pk, title="Overflow", body="Queue Beta overflows on retry."
+        )
+        with patch("platform_core.ai.invoke_ai", side_effect=self.answers()) as model:
+            execute(run)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "awaiting_review")
+        self.assertIn("Queue Beta overflows on retry.", model.call_args_list[0].args[3])
+        self.assertTrue(run.events.filter(message__contains="entered by hand").exists())
+
+    def test_a_title_and_description_are_both_required(self):
+        with self.assertRaises(ValidationError):
+            start_run(self.owner, self.app.pk, title="Only a title", body=" ")
+        self.post(description="")
+        self.assertEqual(FactoryRun.objects.count(), 0)
+
+    def test_a_viewer_cannot_enter_one(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("ticket-new", args=[self.app.pk]))
+        self.assertEqual(response.status_code, 403)
+        self.post()
+        self.assertEqual(FactoryRun.objects.count(), 0)
+
+    def test_without_a_published_graph_it_is_refused(self):
+        GraphRevision.objects.filter(application=self.app).update(published_at=None)
+        self.assertNotContains(
+            self.client.get(reverse("plans", args=[self.app.pk])),
+            reverse("ticket-new", args=[self.app.pk]),
+        )
+        self.post()
+        self.assertEqual(FactoryRun.objects.count(), 0)
+
+
 class PublishedGraphRequiredTests(TestCase):
     """A run without a published graph is refused, not run.
 
@@ -711,11 +935,17 @@ class SelfApprovalTests(TestCase):
         self.assertTrue(event.details["self_approved"])
 
     @override_settings(ALLOW_SELF_APPROVAL=True)
-    def test_the_screen_says_what_it_is_doing(self):
+    def test_the_screen_offers_review_without_a_warning(self):
+        """The warning was removed; the audit record still says who approved."""
         run = self.run_pipeline()
         self.approve_rights()
+        for url in (
+            reverse("plan-detail", args=[self.app.pk, run.plan.pk]),
+            reverse("run-detail", args=[self.app.pk, run.pk]),
+        ):
+            response = self.client.get(url)
+            self.assertNotContains(response, "You are reviewing your own plan")
         response = self.client.get(reverse("plan-detail", args=[self.app.pk, run.plan.pk]))
-        self.assertContains(response, "You are reviewing your own plan")
         self.assertContains(response, 'name="items_declared"')
 
 
@@ -845,13 +1075,25 @@ class RunPageTests(TestCase):
         self.assertContains(response, "Gap analysis found 2 item(s)")
         self.assertContains(response, "Bound the retry loop")
 
+    def test_the_header_strip_links_each_stage_and_shows_its_state(self):
+        run = self.run_pipeline()
+        body = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk])).content.decode()
+        hero = body.split('class="card run-hero"')[1].split("</section>")[0]
+        for number in range(1, 8):
+            self.assertIn(f'href="#stage-{number}"', hero)
+        # Analysis is done and the gaps wait on a reviewer.
+        self.assertIn('class="step step-ok"><a href="#stage-2"', hero)
+        self.assertIn('class="step step-current"><a href="#stage-3"', hero)
+        self.assertIn('id="stage-3" data-live="stage-3"', body)
+        self.assertIn('class="stage stage-current" id="stage-3"', body)
+
     def test_a_finished_run_does_not_ask_the_page_to_keep_refreshing(self):
         run = self.run_pipeline()
         finished = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertNotContains(finished, "data-run-active")
+        self.assertNotContains(finished, "data-live-pending")
         FactoryRun.objects.filter(pk=run.pk).update(status="running")
         running = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertContains(running, "data-run-active")
+        self.assertContains(running, 'data-live="run-hero" data-live-pending')
 
     def test_the_code_factory_screen_shows_each_run_latest_step(self):
         """One line per run, so the list says what is happening without opening it."""
@@ -1302,9 +1544,9 @@ class RunNumberTests(TestCase):
 class StalenessTests(TestCase):
     """A live run says how current it is, and offers a way to make it current.
 
-    The document poll cannot drive this page: it stops at the first `toggle`,
-    and on a screen built from collapsible stages that means opening one to
-    watch it is what stops it updating.
+    The page reload that used to drive this page stopped at the first `toggle`,
+    so opening a stage to watch it was what stopped it updating. Each stage is
+    now swapped in place, keeping whatever the reader opened.
     """
 
     setUp = PipelineTests.setUp
@@ -1315,15 +1557,15 @@ class StalenessTests(TestCase):
     def test_a_working_run_is_marked_live_and_offers_a_refresh(self):
         run = start_run(self.owner, self.app.pk, self.ticket)
         page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertContains(page, "data-run-active")
-        self.assertContains(page, "refreshing itself")
-        self.assertContains(page, "as of")
+        self.assertContains(page, 'data-live="run-hero" data-live-pending')
+        self.assertContains(page, "Updating live")
+        self.assertContains(page, "updated ")
 
     def test_a_finished_run_is_not_polled_but_can_still_be_refreshed(self):
         run = self.run_pipeline()
         page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertNotContains(page, "data-run-active")
-        self.assertNotContains(page, "refreshing itself")
+        self.assertNotContains(page, "data-live-pending")
+        self.assertNotContains(page, "Updating live")
         # The link is a real one to this same page, so it works without script.
         self.assertContains(page, reverse("run-detail", args=[self.app.pk, run.pk]))
 

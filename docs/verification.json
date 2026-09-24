@@ -70,7 +70,7 @@
     "llm": "OpenAI Agents SDK 0.22.2 and Claude Agent SDK 0.2.152; independent per-application/per-task provider/model; two scoped knowledge tools (search_knowledge, fetch_source), bounded to four model turns and eight tool calls; every built-in provider tool disabled",
     "default": "AI mode; Sources mode requires explicit selection; visible missing model/key status",
     "local_configuration_status": "MQACEKnowledge: no AI configuration or mounted OpenAI/Claude key file at diagnosis; live LLM connection not verified",
-    "api": "POST /api/v1/applications/<id>/chat/ answers with the application's own model; JSON, or 202 plus an SSE stream_url with \"stream\": true. Server-side conversations scoped to the token's user. Gated on the opt-in chat_api feature switch, off for every application until an owner enables it - the only API surface that spends a provider budget."
+    "api": "POST /api/v1/applications/<id>/chat/ answers with the application's own model; JSON, or 202 plus an SSE stream_url with \"stream\": true. Server-side conversations scoped to the token's user. Gated on the chat_api feature switch - the only API surface that spends a provider budget. Ticked by default on the create form for new applications; applications that predate migration 0036 keep it off until an owner enables it."
   },
   "connectors": {
     "kinds": "GitHub issues, Jira issues, ServiceNow table records",

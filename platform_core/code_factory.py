@@ -245,6 +245,10 @@ REVIEW_INSTRUCTIONS = GROUND_RULES + (
 )
 
 
+#: The most ticket text a run reads, imported or typed.
+MANUAL_TICKET_LIMIT = 20000
+
+
 def digest_of(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -265,26 +269,55 @@ class UnusableAnswer(ValidationError):
 
 
 def parse_json(answer, label):
-    """A model's JSON, or a readable failure. Fenced output is tolerated."""
+    """A model's JSON, or a readable failure. Fenced output is tolerated.
+
+    Every piece between fences is tried, the last first, then the outermost
+    object, then the whole reply. Nothing is repaired: a candidate is accepted
+    only if it parses as it stands, so a half-written answer is never used.
+
+    When none parses, the sample records the parser's own reason and the text
+    around where it gave up. "Did not return usable JSON" with only the start
+    and end of the reply could not say what was wrong with the middle.
+    """
     raw = answer or ""
     text = raw.strip()
+    candidates = []
     if "```" in text:
-        # Take the fenced block wherever it sits, rather than only at the ends.
-        blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
-        if blocks:
-            text = max(blocks, key=len).strip()
+        # Split on every fence rather than pairing them, and try the pieces last
+        # first. The Claude runtime joins the text of every model turn in a call,
+        # so a model that began its JSON, paused for a tool, and wrote it again
+        # arrives as "```json {half```json {whole} ```". Pairing fences took the
+        # unfinished half and never saw the whole; the last piece is the model's
+        # final answer, which is the one that counts.
+        pieces = [piece.strip() for piece in re.split(r"```(?:json)?", text)]
+        candidates += [piece for piece in reversed(pieces) if piece]
+    start, end = text.find("{"), text.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(text[start : end + 1])
+    candidates.append(text)
+    payload, failure = None, None
+    for candidate in candidates:
+        try:
+            payload = json.loads(candidate)
+            break
+        except ValueError as error:
+            failure = failure or error
     else:
-        # Or the outermost object, when the model wrapped it in commentary.
-        start, end = text.find("{"), text.rfind("}")
-        if start != -1 and end > start:
-            text = text[start : end + 1]
-    try:
-        payload = json.loads(text)
-    except ValueError:
+        if isinstance(failure, json.JSONDecodeError):
+            near = failure.doc[max(0, failure.pos - 80) : failure.pos + 80]
+            reason = (
+                f"parser stopped at line {failure.lineno}, column {failure.colno}: "
+                f"{failure.msg}; near: {near!r}"
+            )
+        else:
+            reason = "no JSON object found"
         raise UnusableAnswer(
             f"{label} did not return usable JSON.",
-            sample=f"{len(raw)} characters; starts: {raw[:400]!r}; ends: {raw[-200:]!r}",
-        ) from None
+            sample=(
+                f"{len(raw)} characters; {reason}; starts: {raw[:300]!r}; "
+                f"ends: {raw[-200:]!r}"
+            ),
+        )
     if not isinstance(payload, dict):
         raise UnusableAnswer(f"{label} did not return a JSON object.", sample=repr(payload)[:400])
     return payload
@@ -361,6 +394,15 @@ def prevalidate(run, entry):
             level="check" if step.ok or step.gate != ANALYSIS else "problem",
         )
 
+    if run.ticket_body:
+        note(
+            run,
+            f"Ticket: {run.ticket_external_id}, entered by hand "
+            f"({len(run.ticket_body)} characters).",
+            level="check",
+        )
+        note(run, "Pre-run checks complete.", level="result")
+        return
     note(
         run,
         f"Ticket: {run.ticket_external_id or 'no id'}, imported text found "
@@ -579,11 +621,33 @@ def pin_repository(run, named):
             f"{snapshot.commit_sha[:8]}.",
             level="result",
         )
+        gap = language_gap(snapshot)
+        if gap:
+            note(run, gap, level="problem")
     elif repository:
         # Only when one was actually found. A name the ticket gave that matches
         # nothing here has already been reported as unregistered, and saying it
         # "has no snapshot yet" as well would contradict that in the next line.
         note(run, f"Repository {proposed} is registered but has no snapshot to read yet.")
+
+
+def language_gap(snapshot):
+    """The sentence for code this run cannot see the structure of, or "".
+
+    Code Graph parses some languages and only counts the rest. A ticket whose
+    code is in one it does not parse is reasoned about without files, symbols or
+    imports, and that should be read on the run before its plan is, not guessed
+    from a thin one. Names come from the snapshot's closed language census.
+    """
+    rows = [row for row in (getattr(snapshot, "languages", None) or []) if not row.get("analysed")]
+    if not rows:
+        return ""
+    named = ", ".join(f"{row['name']} ({row['share']:.1f}%)" for row in rows[:4])
+    verb = "is" if len(rows) == 1 else "are"
+    return (
+        f"{named} {verb} in this repository but not parsed by Code Graph, so this run "
+        "reasons about that code without its files, symbols or imports."
+    )
 
 
 #: A git ref the API path can carry. Checked because `branch_head` interpolates
@@ -627,6 +691,31 @@ def confirm_repository(run, repository, base_branch):
     return normalized
 
 
+def languages_context(languages):
+    """What the repository is written in, for a phase deciding what to change.
+
+    Without it the model sees only the files the graph parses, and a Java
+    service with one Python script reads as a Python repository - so a design
+    confidently proposes Python. When languages the graph does not parse are
+    present, the model is told those files exist and are not listed, rather than
+    left to conclude they do not. Every name is from `LANGUAGE_NAMES`, a closed
+    set, so nothing a repository wrote reaches the prompt here.
+    """
+    from .code_graph_analysis import describe_languages
+
+    if not languages:
+        return []
+    lines = [f"LANGUAGES by share of source: {describe_languages(languages)}."]
+    unparsed = [row["name"] for row in languages if not row.get("analysed")]
+    if unparsed:
+        lines.append(
+            f"Files in {', '.join(unparsed[:6])} exist in this repository but are not "
+            "parsed, so they are not listed below. Propose changes in the language "
+            "the affected code is written in."
+        )
+    return lines
+
+
 def code_context_for(run, question):
     """A bounded structural neighborhood from the snapshot pinned for this run.
 
@@ -667,6 +756,7 @@ def code_context_for(run, question):
         f"Code Graph: {run.code_snapshot.repository.name} snapshot v{run.code_snapshot.number} "
         f"at commit {run.code_snapshot.commit_sha}."
     ]
+    lines += languages_context(run.code_snapshot.languages)
     for item in files:
         symbols = ", ".join(symbol.get("name", "") for symbol in item.symbols[:12])
         description = symbols or "no detected symbols"
@@ -912,8 +1002,14 @@ def run_design(run, triage, items):
     return items
 
 
-def start_run(user, app_id, entry, connector=None):
-    """Queue a run over one imported ticket.
+def start_run(user, app_id, entry=None, connector=None, *, title="", body=""):
+    """Queue a run over one imported ticket, or one typed in by hand.
+
+    A hand-written ticket passes `title` and `body` with no `entry`. It lives on
+    the run alone - `ticket_body` - and never becomes knowledge: it is not in
+    Sources, not in the ticket picker, and not read by a graph build. It has no
+    address, so it gets `manual-<number>` as its id, which also keeps the branch
+    name a delivery derives from it well-formed whatever was typed.
 
     The ticket is copied onto the run rather than referenced, so the record stays
     readable after a later import supersedes the entry it came from.
@@ -927,13 +1023,20 @@ def start_run(user, app_id, entry, connector=None):
 
     app, _ = access(user, app_id, "code_factory", write=True)
     access(user, app_id, "knowledge")
+    manual = entry is None
+    title, body = title.strip(), body.strip()
+    if manual and not (title and body):
+        raise ValidationError("A ticket needs a title and a description.")
     published = published_revision(app_id)
     if published is None:
         raise ValidationError(NO_GRAPH)
     # Identified by the ticket's own address rather than its title, which two
-    # imports of the same ticket can disagree about.
+    # imports of the same ticket can disagree about. A hand-written ticket has
+    # no address, so there is nothing to collide with.
     existing = (
-        FactoryRun.objects.filter(application=app, status__in=CLAIMED)
+        None
+        if manual
+        else FactoryRun.objects.filter(application=app, status__in=CLAIMED)
         .filter(ticket_url=entry.source)
         .exclude(ticket_url="")
         .select_related("requested_by")
@@ -955,11 +1058,14 @@ def start_run(user, app_id, entry, connector=None):
         number=highest + 1,
         application=app,
         requested_by=user,
-        connector=connector,
-        ticket_external_id=(entry.source or "").rsplit("/", 1)[-1][:120],
-        ticket_title=entry.title[:300],
-        ticket_url=(entry.source or "")[:1000],
-        ticket_digest=entry.digest,
+        connector=None if manual else connector,
+        ticket_external_id=f"manual-{highest + 1}"
+        if manual
+        else (entry.source or "").rsplit("/", 1)[-1][:120],
+        ticket_title=(title if manual else entry.title)[:300],
+        ticket_url="" if manual else (entry.source or "")[:1000],
+        ticket_body=body[:MANUAL_TICKET_LIMIT] if manual else "",
+        ticket_digest=digest_of([title, body]) if manual else entry.digest,
         graph_version=published.number if published else None,
     )
     for sequence, name in enumerate(BUILD_A, start=1):
@@ -988,10 +1094,17 @@ def execute(run):
     claimed = FactoryRun.objects.filter(pk=run.pk, status="pending").update(status="running")
     if not claimed:
         return False
-    entry = KnowledgeEntry.objects.filter(
-        application_id=run.application_id, source=run.ticket_url, active=True
-    ).first()
-    body = (entry.content if entry else run.ticket_title)[:20000]
+    # A hand-written ticket carries its own text. Otherwise the body is looked up
+    # by the ticket's address - and only when there is one, since an empty
+    # source would otherwise match any free-text note.
+    entry = (
+        KnowledgeEntry.objects.filter(
+            application_id=run.application_id, source=run.ticket_url, active=True
+        ).first()
+        if run.ticket_url and not run.ticket_body
+        else None
+    )
+    body = (run.ticket_body or (entry.content if entry else run.ticket_title))[:MANUAL_TICKET_LIMIT]
     prevalidate(run, entry)
     # Re-resolved rather than trusted from start_run, for the same reason
     # code_context_for re-checks access: a run sits in a queue, and a revision
@@ -1101,6 +1214,61 @@ def build_plan(run, triage, items):
     return plan
 
 
+def retry_analysis(user, app_id, run_id):
+    """Queue a run whose analysis failed again, on the same run.
+
+    Only a run that stopped before it produced a plan: once there is a plan,
+    what failed is the implementation, and `request_preparation` reruns that.
+    The same record is reused rather than a new run started, so the failed
+    attempt stays readable in its log above the second one - the phases are
+    reset to pending and each is overwritten as it runs again, and every model
+    call either attempt made keeps its own usage receipt.
+
+    Refused for the same reasons `start_run` refuses: no published graph, or
+    another run already working on this ticket.
+    """
+    from django.shortcuts import get_object_or_404
+
+    from .graphs import published_revision
+    from .workbench import access
+
+    app, _ = access(user, app_id, "code_factory", write=True)
+    access(user, app_id, "knowledge")
+    run = get_object_or_404(FactoryRun, pk=run_id, application=app)
+    if run.status != "failed" or run.plan_id is not None:
+        raise ValidationError("Only a run whose analysis failed can be run again here.")
+    if published_revision(app_id) is None:
+        raise ValidationError(NO_GRAPH)
+    if run.ticket_url:
+        other = (
+            FactoryRun.objects.filter(
+                application=app, status__in=CLAIMED, ticket_url=run.ticket_url
+            )
+            .exclude(pk=run.pk)
+            .first()
+        )
+        if other is not None:
+            raise ValidationError(
+                f"Run {other.number} is already working on this ticket. Open it instead."
+            )
+    with transaction.atomic():
+        claimed = FactoryRun.objects.filter(pk=run.pk, status="failed").update(
+            status="pending", error="", finished_at=None, acting_user=user
+        )
+        if not claimed:
+            raise ValidationError("This run is already working. Watch its progress.")
+        RunPhase.objects.filter(run=run, name__in=BUILD_A).update(status="pending", error="")
+    run.refresh_from_db()
+    note(
+        run,
+        f"Analysis rerun requested by {user.get_username()}. Queued again; the "
+        "failed attempt is kept above.",
+        level="check",
+    )
+    audit(user, "factory.run_retried", run.pk, app.product.portfolio.organization)
+    return run
+
+
 def process_next_run():
     """One queued run, for the worker's factory lane."""
     run = FactoryRun.objects.filter(status="pending").order_by("created_at").first()
@@ -1181,6 +1349,13 @@ def write_credential(app):
 #: that name. Stripped rather than refused: the path itself is exactly right.
 ANNOTATED = re.compile(r"^(?P<path>[^()]*[^()\s])\s*\([^()]*\)$")
 
+#: The same mistake in the other notations a model reaches for: "errors.py:Consent",
+#: "views.py::index", "app.py:42", "app.py#L10". Only a suffix after something that
+#: ends in a file extension is taken off, so a name that merely contains a colon
+#: is left alone. A live run wrote all three of its files as new files named
+#: "…/errors.py:ConsentWithheld" and edited none of the real ones.
+SYMBOL_SUFFIX = re.compile(r"^(?P<path>[^:#\s]+\.[A-Za-z0-9]{1,8})(?:::?|#)[^/\s]+$")
+
 
 def target_paths(plan):
     """Every repository path the approved items named, in order, deduplicated."""
@@ -1191,6 +1366,9 @@ def target_paths(plan):
             annotated = ANNOTATED.match(candidate)
             if annotated:
                 candidate = annotated.group("path").strip()
+            suffixed = SYMBOL_SUFFIX.match(candidate)
+            if suffixed:
+                candidate = suffixed.group("path")
             if not candidate or candidate in seen:
                 continue
             # A target is only a path if it looks like one. Design is allowed to
@@ -1498,6 +1676,135 @@ def looks_like_test(path):
     return any(marker in lowered for marker in TEST_MARKERS)
 
 
+#: Source extensions a test path can be derived for, and how that language's
+#: tests are usually named. Anything else is left to a plan that names its test.
+PYTHON_SOURCE = (".py",)
+SCRIPT_SOURCE = (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs")
+JAVA_SOURCE = (".java",)
+#: Maven and Gradle's shared layout: a class's test sits at the same package
+#: path under the test tree. Java code outside it gets no derived test.
+JAVA_MAIN = "src/main/java/"
+JAVA_TEST = "src/test/java/"
+
+
+def derived_test_paths(changes, known):
+    """A test file for each changed source file, when the plan named none.
+
+    The design phase is asked for test files and does not always name one, and
+    a change with no test is the weaker change. So the paths are chosen here, by
+    code, from the repository's own layout - never by the model, which can only
+    fill in the files it is shown (`collect_changes` matches its answer back by
+    number). An existing test for the same module is extended rather than a
+    second one created beside it.
+
+    `known` is every path the repository is known to hold (the pinned snapshot's
+    files); with none, the conventional default for the language is used.
+    """
+    import posixpath
+    from collections import Counter as Tally
+
+    tests = [path for path in known if looks_like_test(path)]
+    by_name = {}
+    for path in tests:
+        by_name.setdefault(posixpath.basename(path).lower(), path)
+    python_home = Tally(
+        posixpath.dirname(path)
+        for path in tests
+        if posixpath.basename(path).startswith("test_") and path.endswith(".py")
+    ).most_common(1)
+    python_dir = python_home[0][0] if python_home else "tests"
+    chosen = []
+    for change in changes:
+        path = change["path"]
+        if looks_like_test(path):
+            continue
+        folder, name = posixpath.split(path)
+        stem, extension = posixpath.splitext(name)
+        if not stem or stem.startswith("__"):
+            continue
+        if extension in PYTHON_SOURCE:
+            candidates = [f"test_{stem}.py", f"{stem}_test.py"]
+            default = posixpath.join(python_dir, f"test_{stem}.py")
+        elif extension in SCRIPT_SOURCE:
+            candidates = [f"{stem}.test{extension}", f"{stem}.spec{extension}"]
+            default = posixpath.join(folder, f"{stem}.test{extension}")
+        elif extension in JAVA_SOURCE:
+            module, marker, package = path.rpartition(JAVA_MAIN)
+            if not marker or (module and not module.endswith("/")):
+                continue
+            # Matched on the whole path, not the name: two packages may both
+            # hold an OrderService, and extending the other one's test is wrong.
+            base = module + JAVA_TEST + posixpath.dirname(package)
+            existing = next(
+                (
+                    known_path
+                    for known_path in (
+                        posixpath.join(base, f"{stem}Test.java"),
+                        posixpath.join(base, f"{stem}Tests.java"),
+                    )
+                    if known_path in tests
+                ),
+                None,
+            )
+            target = existing or posixpath.join(base, f"{stem}Test.java")
+            if target not in chosen:
+                chosen.append(target)
+            continue
+        else:
+            continue
+        existing = next((by_name[c.lower()] for c in candidates if c.lower() in by_name), None)
+        target = existing or default
+        if target not in chosen:
+            chosen.append(target)
+    return chosen
+
+
+def repository_test_setup(run, token):
+    """The run's repository's test framework and CI, as `repo_testing` reads them.
+
+    Live when there is a credential, since the default branch may have moved on
+    since indexing; otherwise what the pinned snapshot recorded.
+    """
+    from . import github_write
+    from .repo_testing import detect
+
+    if token and run.proposed_repository:
+
+        def read(path):
+            found = github_write.read_file(run.proposed_repository, path, run.base_branch, token)
+            return found["text"] if found else None
+
+        def listdir(path):
+            return github_write.list_directory(
+                run.proposed_repository, path, run.base_branch, token
+            )
+
+        try:
+            return detect(read, listdir)
+        except ValidationError:
+            return {}
+    if run.code_snapshot_id:
+        return dict(run.code_snapshot.test_setup or {})
+    return {}
+
+
+def test_language(paths):
+    """The language the test files are in, for choosing a framework line.
+
+    None when they are in none of the languages `repo_testing` reads a
+    framework for; the line then says to follow the tests already there, rather
+    than naming a Python or JavaScript runner for, say, a Ruby spec.
+    """
+    for language, extensions in (
+        ("python", PYTHON_SOURCE),
+        ("javascript", SCRIPT_SOURCE),
+        ("java", JAVA_SOURCE),
+    ):
+        if any(path.endswith(extensions) for path in paths):
+            return language
+    return None
+
+
 def run_tests_agent(run, changes, token):
     """Write the tests that would fail before this change and pass after it.
 
@@ -1516,6 +1823,25 @@ def run_tests_agent(run, changes, token):
     started = time.monotonic()
     phase = start_phase(run, "tests")
     wanted = [path for path in target_paths(run.plan) if looks_like_test(path)][:MAX_FILES]
+    # Whether these paths are the test author's own choice rather than the
+    # plan's. Carried on each file it writes, so review can drop a test that
+    # would otherwise go out without the code it was written for.
+    chosen_here = not wanted
+    if not wanted:
+        known = (
+            list(run.code_snapshot.files.values_list("path", flat=True))
+            if run.code_snapshot_id
+            else []
+        )
+        wanted = derived_test_paths(changes, known)[:MAX_FILES]
+        if wanted:
+            note(
+                run,
+                "Test author: no approved item named a test file, so tests are written "
+                f"for the changed code at {', '.join(wanted)}, following the "
+                "repository's own layout.",
+                phase="tests",
+            )
     if not token:
         # The offline path reads the same snapshot the other agents did.
         existing = snapshot_targets(run, wanted) if wanted else []
@@ -1534,21 +1860,31 @@ def run_tests_agent(run, changes, token):
             phase,
             "skipped",
             started,
-            output={"reason": "No approved item named a test file."},
+            output={
+                "reason": "No approved item named a test file, and none of the changed "
+                "files is in a language a test path can be chosen for."
+            },
         )
         note(
             run,
-            "Test author: no approved item named a test file, so none were written.",
+            "Test author: no approved item named a test file and no test path could be "
+            "chosen for the changed files, so none were written.",
             phase="tests",
             level="check",
         )
         return []
+    from .repo_testing import ci_summary, instruction
+
+    setup = repository_test_setup(run, token)
+    framework_line = instruction(setup, test_language([item["path"] for item in existing]))
     note(
         run,
         f"Test author: writing tests for {len(existing)} test file(s), against the "
-        "code as it will be after the change.",
+        f"code as it will be after the change. {framework_line}",
         phase="tests",
     )
+    if setup.get("known") and not setup.get("ci"):
+        note(run, f"Test author: {ci_summary(setup)}", phase="tests", level="problem")
     finished = "\n\n".join(
         f"FILE {change['path']}\n{change['content'][:8000]}" for change in changes
     )[:20000]
@@ -1560,6 +1896,7 @@ def run_tests_agent(run, changes, token):
             "tests",
             TEST_INSTRUCTIONS,
             f"Approved changes:\n{approved_summary(run.plan)}\n\n"
+            f"{framework_line}\n\n"
             f"The files as they will be:\n{finished}",
             numbered_files(existing),
             receipt,
@@ -1588,7 +1925,11 @@ def run_tests_agent(run, changes, token):
         phase,
         "ok",
         started,
-        output={"files": [change["path"] for change in written]},
+        output={
+            "files": [change["path"] for change in written],
+            "framework": framework_line,
+            "setup": setup,
+        },
         usage=receipt,
     )
     note(
@@ -1598,6 +1939,8 @@ def run_tests_agent(run, changes, token):
         phase="tests",
         level="result",
     )
+    for change in written:
+        change["test_for_changed_code"] = chosen_here
     return written
 
 
@@ -1642,8 +1985,13 @@ def run_review(run, changes, order):
         )
         payload = parse_json(answer, "Change review")
     except ValidationError as failure:
-        # A review that cannot be read is not a pass. The change goes on to the
-        # mechanical checks unreviewed, and says so.
+        # A review that cannot be read is not a pass, so the change stops here.
+        # It used to go on to the mechanical checks unreviewed, with a note -
+        # which is how a live run came to prepare, and then publish, a change
+        # that was one test for code nobody had written. The mechanical checks
+        # confirm paths and staleness; they cannot tell a wrong change from a
+        # right one, and a note is easy to miss on the way to "Yes". Rerunning
+        # the implementation agents is one button on the run.
         finish_phase(
             phase,
             "failed",
@@ -1654,12 +2002,16 @@ def run_review(run, changes, order):
         )
         note(
             run,
-            "Change review produced nothing readable. Every file goes forward "
-            "unreviewed; read the summary with that in mind.",
+            "Change review produced nothing readable, so the change is stopped "
+            "rather than sent on unreviewed.",
             phase="review",
             level="problem",
         )
-        return changes
+        raise ValidationError(
+            "The change review could not be read, so nothing was prepared: an "
+            "unreviewed change is not offered for a pull request. Rerun the "
+            "implementation agents; this is usually a one-off."
+        ) from failure
     verdicts = {}
     for entry in (payload.get("files") or [])[: len(changes)]:
         if isinstance(entry, dict):
@@ -1680,6 +2032,10 @@ def run_review(run, changes, order):
             )
             continue
         kept.append(change)
+    orphaned = orphaned_tests(kept, [path for path, _ in dropped])
+    for path, reason in orphaned:
+        note(run, f"Dropped {path}: {reason}", phase="review", level="problem")
+    kept = [change for change in kept if change["path"] not in dict(orphaned)]
     finish_phase(
         phase,
         "ok",
@@ -1687,21 +2043,74 @@ def run_review(run, changes, order):
         output={
             "kept": [change["path"] for change in kept],
             "rejected": [{"path": path, "reason": reason} for path, reason in dropped],
+            "orphaned": [{"path": path, "reason": reason} for path, reason in orphaned],
         },
         usage=receipt,
     )
     note(
         run,
         f"Change review: {len(kept)} file(s) passed"
-        + (f", {len(dropped)} rejected and dropped from the change." if dropped else "."),
+        + (f", {len(dropped)} rejected and dropped from the change" if dropped else "")
+        + (f", {len(orphaned)} test file(s) dropped with them" if orphaned else "")
+        + ".",
         phase="review",
         level="result",
     )
     if not kept:
         raise ValidationError(
-            "The change review rejected every file. Nothing is left to write."
+            "The change review rejected every file"
+            + (", and the tests written for them went too" if orphaned else "")
+            + ". Nothing is left to write."
         )
     return kept
+
+
+def test_subject(path):
+    """The module a test file is for, by the naming `derived_test_paths` uses."""
+    import posixpath
+
+    name = posixpath.basename(path)
+    stem, extension = posixpath.splitext(name)
+    if extension in PYTHON_SOURCE:
+        return stem.removeprefix("test_").removesuffix("_test")
+    if extension in SCRIPT_SOURCE:
+        return stem.removesuffix(".test").removesuffix(".spec")
+    return ""
+
+
+def orphaned_tests(kept, rejected):
+    """Test files that would go out without the code they test.
+
+    A reviewer rejecting a file used to drop that file and keep the tests
+    written for it, so a live run's change came to consist of one test file
+    checking a consent guard that was never written - a test certain to fail,
+    presented as the whole change.
+
+    Only tests the test author wrote to paths it chose itself are candidates
+    (`test_for_changed_code`): those exist only because of the changed code. One
+    goes when the file it tests, matched by name, was rejected, or when no
+    source file survives at all. Tests the plan named are always kept - a plan
+    whose change *is* tests is a real plan - and so is anything the
+    implementation wrote.
+    """
+    import posixpath
+
+    rejected_subjects = {
+        posixpath.splitext(posixpath.basename(path))[0]
+        for path in rejected
+        if not looks_like_test(path)
+    }
+    source_left = any(not looks_like_test(change["path"]) for change in kept)
+    orphaned = []
+    for change in kept:
+        path = change["path"]
+        if not change.get("test_for_changed_code"):
+            continue
+        if test_subject(path) in rejected_subjects:
+            orphaned.append((path, "it tests a file the review rejected."))
+        elif not source_left:
+            orphaned.append((path, "it was written for changed code, and none is left."))
+    return orphaned
 
 
 def collect_changes(payload, files):

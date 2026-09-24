@@ -130,6 +130,28 @@ def read_file(repository, path, ref, token):
     return {"path": path, "text": text, "sha": data.get("sha")}
 
 
+def list_directory(repository, path, ref, token):
+    """File names directly inside one directory at a ref, or [] if none.
+
+    The same contents endpoint as `read_file`, which answers a directory with a
+    list. Used only to see whether CI configuration exists.
+    """
+    try:
+        path = safe_path(path)
+        data = call(
+            f"{API}/repos/{repository}/contents/{path}?ref={ref}", token, label="GitHub read"
+        )
+    except ValidationError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return sorted(
+        str(entry.get("name"))
+        for entry in data
+        if isinstance(entry, dict) and entry.get("type") == "file" and entry.get("name")
+    )
+
+
 def absent_path(repository, path, ref, token):
     """The normalised path when GitHub says nothing is there, otherwise None.
 

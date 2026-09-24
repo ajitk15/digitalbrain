@@ -611,3 +611,82 @@ class DocumentRetryTests(TestCase):
         self.assertEqual(
             self.client.get(reverse("document-retry", args=[self.app.pk, doc.pk])).status_code, 405
         )
+
+
+@override_settings(
+    DOCUMENT_AUTO_CONVERT=False,
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class DocumentProgressTests(TestCase):
+    """Each source shows its stages, and refreshes in place while in flight.
+
+    The status used to be one pill, and seeing it move meant a manual reload:
+    the page's own reload gave up as soon as the reader touched anything.
+    """
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+
+    def document(self, status, origin="link", sha256=""):
+        return Document.objects.create(
+            application=self.app,
+            uploaded_by=self.owner,
+            name=f"{status}-{origin}.md",
+            size=1,
+            sha256=sha256,
+            status=status,
+            origin=origin,
+            source_url="https://example.com/a" if origin != "upload" else "",
+        )
+
+    def steps(self, status, origin="link", sha256=""):
+        from platform_core.templatetags.workspace import document_steps
+
+        doc = Document(status=status, origin=origin, sha256=sha256)
+        return [(step["key"], step["state"]) for step in document_steps(doc)]
+
+    def test_a_link_moves_through_download_conversion_and_ready(self):
+        self.assertEqual(
+            self.steps("pending"),
+            [("download", "waiting"), ("convert", "todo"), ("ready", "todo")],
+        )
+        self.assertEqual(self.steps("fetching")[0], ("download", "active"))
+        self.assertEqual(
+            self.steps("converting", sha256="a"),
+            [("download", "done"), ("convert", "active"), ("ready", "todo")],
+        )
+        self.assertEqual({state for _, state in self.steps("ready", sha256="a")}, {"done"})
+
+    def test_an_upload_has_no_download_stage(self):
+        self.assertEqual(
+            self.steps("queued", origin="upload"),
+            [("upload", "done"), ("convert", "waiting"), ("ready", "todo")],
+        )
+
+    def test_a_failure_sits_on_the_stage_that_failed(self):
+        self.assertEqual(self.steps("failed")[0], ("download", "failed"))
+        self.assertEqual(self.steps("failed", sha256="a")[1], ("convert", "failed"))
+        self.assertEqual(self.steps("rejected", origin="upload")[1], ("convert", "failed"))
+
+    def test_an_in_flight_row_is_marked_for_live_refresh(self):
+        pending = self.document("fetching")
+        ready = self.document("ready", sha256="b" * 64)
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        self.assertIn(f'data-live="document-{pending.pk}" data-live-pending', body)
+        self.assertIn(f'data-live="document-{ready.pk}">', body)
+        self.assertIn("Downloading", body)
+        self.assertIn('class="doc-step is-done"', body)
+
+    def test_add_a_source_is_a_popup_onto_a_page_of_its_own(self):
+        body = self.client.get(reverse("knowledge", args=[self.app.pk])).content.decode()
+        self.assertIn(f'href="{reverse("source-add", args=[self.app.pk])}" data-modal', body)
+        self.assertNotIn('enctype="multipart/form-data"', body)
+        page = self.client.get(reverse("source-add", args=[self.app.pk]))
+        self.assertContains(page, 'enctype="multipart/form-data"')
+        self.assertContains(page, 'name="url"')
+
+    def test_a_viewer_cannot_open_the_add_source_page(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("source-add", args=[self.app.pk]))
+        self.assertEqual(response.status_code, 403)

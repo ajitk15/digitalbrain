@@ -1097,9 +1097,29 @@
     animation: spin 0.9s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* A document's way in, one step per stage. Finished stages are a filled
+     green tick, the live one spins, a failed one is a filled red cross, and
+     what has not started is a hollow ring - legible without reading a word. */
+  .doc-steps { list-style: none; display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); margin: 0 0 var(--s-1); padding: 0; }
+  .doc-step { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-12); color: var(--c-ink-3); white-space: nowrap; }
+  .doc-step-mark { flex: none; width: 16px; height: 16px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--c-line-strong); color: #fff; }
+  .doc-step-mark svg { stroke-width: 3.2; }
+  .doc-step.is-done { color: var(--c-ok); }
+  .doc-step.is-done .doc-step-mark { background: var(--c-ok); border-color: var(--c-ok); }
+  .doc-step.is-failed { color: var(--c-bad); font-weight: 600; }
+  .doc-step.is-failed .doc-step-mark { background: var(--c-bad); border-color: var(--c-bad); }
+  .doc-step.is-active, .doc-step.is-waiting { color: var(--c-ink); font-weight: 600; }
+  .doc-step.is-active .doc-step-mark { border: 0; }
+  .doc-step.is-waiting .doc-step-mark { border-style: dashed; border-color: var(--c-brand); }
+  .doc-step-spin { width: 14px; height: 14px; border: 2px solid var(--c-line-strong); border-top-color: var(--c-brand); border-radius: 50%; animation: spin 0.9s linear infinite; }
+  .doc-card .doc-steps { margin-top: var(--s-1); }
+  /* Code Factory's hand-written ticket: the description is prose, so it gets
+     the same box as every other input rather than the browser's default. */
+  .manual-ticket-form textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--c-line-strong); border-radius: 6px; font: inherit; resize: vertical; }
   /* Respect a reader who has asked for less motion; the text still updates. */
   @media (prefers-reduced-motion: reduce) {
-    .spinner { animation: none; border-top-color: var(--c-brand); }
+    .spinner, .doc-step-spin { animation: none; border-top-color: var(--c-brand); }
   }
   .graph-progress-facts {
     display: grid;
@@ -1329,12 +1349,75 @@
   .pick-all { margin: 0 0 var(--s-2); font-size: var(--t-13); }
   .agent-row { list-style: none; display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; }
   .agent { display: flex; align-items: flex-start; gap: var(--s-3); }
+  /* The status icon keeps its size. A long reason used to squeeze it, so the
+     one row with the most to say had the smallest icon, sitting out of line. */
+  .agent > svg, .agent > .spinner { flex: none; margin-top: 3px; }
   .agent small { color: var(--c-ink-3); }
   .agent-ok > svg { color: var(--c-ok); }
   .agent-failed > svg { color: var(--c-bad); }
   .agent-pending { opacity: 0.6; }
   .agent-absent, .agent-skipped { opacity: 0.7; }
   .agent-absent > svg, .agent-skipped > svg { color: var(--c-ink-3); }
+  /* The model beside each agent: what it used once it has run, what it will use
+     before then, and "No model" for the two that are fixed code. */
+  .agent-text { flex: 1 1 auto; min-width: 0; }
+  .agent-text a { color: inherit; }
+  .agent-text a:hover strong { color: var(--c-brand-strong); text-decoration: underline; }
+  .agent-model { flex: none; align-self: center; font-size: var(--t-11); font-weight: 600; padding: 2px 8px; border-radius: var(--r-sm); border: 1px solid var(--c-line); background: var(--c-subtle); color: var(--c-ink-2); white-space: nowrap; }
+  .agent-model em { font-style: normal; font-weight: 500; color: var(--c-ink-3); }
+  .agent-model-used { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .agent-model-deterministic, .agent-model-missing { color: var(--c-ink-3); }
+  /* The agent popup. */
+  .agent-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--s-2); margin: var(--s-3) 0; }
+  .agent-facts > div { padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-subtle); }
+  .agent-facts dt { font-size: var(--t-11); color: var(--c-ink-3); text-transform: uppercase; letter-spacing: .06em; }
+  .agent-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+  .agent-facts code { font-size: var(--t-11); font-weight: 400; }
+  .agent-explained h2, .agent-result h2 { font-size: var(--t-15); margin: var(--s-4) 0 var(--s-1); }
+  .agent-explained h3, .agent-result h3 { font-size: var(--t-12); text-transform: uppercase; letter-spacing: .06em; color: var(--c-ink-3); margin: var(--s-3) 0 2px; }
+  .agent-explained p { margin: 0; }
+  .agent-list { list-style: none; margin: var(--s-2) 0; padding: 0; display: grid; gap: var(--s-2); }
+  .agent-list li { display: grid; gap: 2px; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); }
+  .agent-list code { overflow-wrap: anywhere; }
+  .agent-list small { color: var(--c-ink-3); }
+  .run-retry, .agent-rerun { margin-top: var(--s-3); }
+
+  /* The Analysis stage: three result cards, a line per phase, then the log. */
+  .analysis-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--s-3); margin: 0 0 var(--s-3); align-items: start; }
+  .analysis-card { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-3); background: var(--c-subtle); min-width: 0; }
+  .analysis-card h3 { display: flex; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-2); font-size: var(--t-12); text-transform: uppercase; letter-spacing: .06em; color: var(--c-ink-3); }
+  .analysis-card h3 svg { margin: 0; }
+  .analysis-lead { margin: 0 0 var(--s-2); font-size: var(--t-13); }
+  .analysis-list { margin: 0; padding-left: 1.1em; font-size: var(--t-12); color: var(--c-ink-2); display: grid; gap: 2px; }
+  .analysis-facts { display: grid; gap: var(--s-1); margin: 0; font-size: var(--t-12); }
+  .analysis-facts > div { display: flex; justify-content: space-between; gap: var(--s-2); }
+  .analysis-facts dt { color: var(--c-ink-3); }
+  .analysis-facts dd { margin: 0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+  .analysis-facts code { font-size: var(--t-11); font-weight: 400; }
+  .analysis-warning, .analysis-problems li { display: flex; gap: var(--s-2); align-items: flex-start; color: var(--c-warn); font-size: var(--t-12); }
+  .analysis-warning { margin: var(--s-2) 0 0; }
+  .analysis-warning svg, .analysis-problems svg { flex: none; margin: 2px 0 0; }
+  .analysis-total { margin: 0 0 var(--s-2); font-size: var(--t-13); }
+  .analysis-total strong { font-size: var(--t-20); }
+  .analysis-chips { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); font-size: var(--t-12); }
+  .analysis-chips a { display: inline-flex; align-items: center; gap: var(--s-2); color: inherit; }
+  .analysis-steps { list-style: none; margin: 0 0 var(--s-3); padding: 0; display: grid; gap: var(--s-1); }
+  .analysis-step { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); font-size: var(--t-13); padding: var(--s-1) 0; }
+  .analysis-step-mark { flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--c-line); background: var(--c-subtle); color: var(--c-ink-3); }
+  .analysis-step-mark svg { margin: 0; stroke-width: 2.6; }
+  .analysis-step.is-ok .analysis-step-mark { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .analysis-step.is-failed .analysis-step-mark { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .analysis-step.is-running .analysis-step-mark { border: 0; background: none; }
+  .analysis-step-meta { color: var(--c-ink-3); font-size: var(--t-12); }
+  .analysis-step-error { flex-basis: 100%; padding-left: calc(18px + var(--s-3)); color: var(--c-bad); }
+  .analysis-problems { list-style: none; margin: 0 0 var(--s-3); padding: var(--s-2) var(--s-3); display: grid; gap: var(--s-1); border: 1px solid var(--c-warn-line); background: var(--c-warn-bg); border-radius: var(--r-md); }
+  .analysis-log > summary { cursor: pointer; font-size: var(--t-12); font-weight: 600; color: var(--c-ink-2); }
+  .analysis-log[open] > summary { margin-bottom: var(--s-2); }
+  .run-retry p, .agent-rerun p { margin: 0 0 var(--s-2); }
+  .agent-failed .agent-text strong { color: var(--c-bad); }
+  .agent-why { display: block; margin-top: 2px; color: var(--c-ink-2); }
+  .agent-sample { margin: var(--s-2) 0; }
+  .agent-sample pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--t-11); max-height: 240px; overflow: auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-subtle); margin: var(--s-1) 0 0; }
   .stage-no {
     flex: none;
     display: grid;
@@ -1446,6 +1529,46 @@
   .step-failed { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
   .step-failed > span { background: var(--c-bad); }
   .run-review-cta { padding: 0 var(--s-4) var(--s-3); font-weight: 600; }
+
+  /* The run screen's header: title, status and the seven stages in one card,
+     so where the run has got to is readable without opening anything. Each
+     stage is a link to its section below. */
+  .run-back { margin: 0 0 var(--s-2); font-size: var(--t-13); }
+  .run-hero { padding: var(--s-4) var(--s-5); }
+  .run-hero-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3); }
+  .run-hero-head h1 { font-size: var(--t-20); margin: 0; }
+  .run-hero-head .eyebrow { margin-bottom: var(--s-1); }
+  .run-status { display: inline-flex; align-items: center; gap: var(--s-2); flex: none; font-size: var(--t-12); padding: 4px 10px; }
+  .run-stepper { margin: var(--s-3) 0 var(--s-2); gap: var(--s-1); counter-reset: none; }
+  .run-stepper .step { padding: 0; font-size: var(--t-12); }
+  .run-stepper .step a { display: inline-flex; align-items: center; gap: var(--s-2); padding: 4px 10px 4px 6px; color: inherit; text-decoration: none; border-radius: inherit; }
+  .run-stepper .step a:hover { filter: brightness(0.96); }
+  /* The chip already carries the state's tint, so its marker is just the glyph
+     in the state's colour on white - no second filled disc inside the first. */
+  .run-stepper .step > a > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: currentColor; font-size: 10px; font-weight: 700; }
+  .run-stepper .step > a > span svg { stroke-width: 2.8; }
+  .run-stepper .step-running > a > span { animation: run-pulse 1.4s ease-in-out infinite; }
+  @keyframes run-pulse { 50% { box-shadow: 0 0 0 4px var(--c-info-bg); } }
+  .run-hero .run-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); margin: 0; font-size: var(--t-12); }
+  .run-hero .run-latest { margin: 0; font-weight: 600; color: var(--c-ink-2); }
+  .run-hero .run-refresh { margin-left: auto; }
+  .run-live { color: var(--c-info); font-weight: 600; }
+  .run-hero .notice { margin: var(--s-3) 0 0; }
+  /* A stage's number turns into its state, matching the strip above. Tinted
+     rather than solid: a column of filled discs read heavier than the stage
+     names beside them, and the state only needs to be told apart, not shouted. */
+  .stage { scroll-margin-top: var(--s-4); }
+  .stage-ok .stage-no, .stage-running .stage-no, .stage-current .stage-no,
+  .stage-failed .stage-no, .stage-pending .stage-no, .stage-meta .stage-no { border: 1px solid; font-weight: 600; }
+  .stage-ok .stage-no { background: var(--c-ok-bg); border-color: var(--c-ok-line); color: var(--c-ok); }
+  .stage-running .stage-no { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .stage-current .stage-no { background: var(--c-warn-bg); border-color: var(--c-warn-line); color: var(--c-warn); }
+  .stage-failed .stage-no { background: var(--c-bad-bg); border-color: var(--c-bad-line); color: var(--c-bad); }
+  .stage-pending .stage-no, .stage-meta .stage-no { background: var(--c-subtle); border-color: var(--c-line); color: var(--c-ink-3); }
+  /* `summary svg` spaces an icon from the label after it; inside the badge that
+     margin pushed the tick 3px left of centre. */
+  .stage-no svg { stroke-width: 2.6; margin: 0; }
+  @media (prefers-reduced-motion: reduce) { .run-stepper .step-running > a > span { animation: none; } }
   .run-latest { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-2); color: var(--c-ink-2); }
   /* The run log. A monospaced time column so the steps line up as a list of
      events rather than a paragraph, and a left rule that carries the level's
@@ -1709,6 +1832,10 @@
   .org-tree summary:hover .tree-add,
   .tree-add:focus-visible { opacity: 1; color: var(--c-brand-strong); }
   .org-tree summary { display: flex; align-items: center; gap: var(--s-1); }
+  /* An application an organization admin can see in the structure but not
+     open: named, never linked, since the link would be a 404. */
+  .sidebar .org-tree .tree-locked { color: var(--c-ink-3); cursor: default; }
+  .sidebar .org-tree .tree-locked .tree-kind { margin-left: auto; white-space: nowrap; }
 
   /* Feature checkboxes on the create form: a checkbox per registry entry. */
   .checkbox-grid { display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; border: 0; }
@@ -1776,9 +1903,6 @@
 
   /* The graph is the main work area; one optional side panel at a time. */
   .shell:has(.kb-panes) { height: auto; min-height: 100dvh; }
-  .graph-metrics { display: flex; gap: var(--s-3); flex-wrap: wrap; margin: 0 0 var(--s-3); }
-  .graph-metrics .metric { display: flex; align-items: baseline; gap: var(--s-2); flex: 0 1 auto; min-width: 0; padding: var(--s-2) var(--s-3); }
-  .graph-metrics .metric strong { margin: 0; font-size: var(--t-17); }
   .workspace-tools { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
   .workspace-tools button[aria-expanded=true] { background: var(--c-brand-tint); border-color: var(--c-brand-border); color: var(--c-brand-strong); }
   .workspace-tools .muted { margin-left: auto; font-size: var(--t-12); }
@@ -1990,6 +2114,22 @@
   .code-repository-head .card-heading:not(:last-child) { margin-bottom: var(--s-3); }
   .code-repository-head h2 { margin-bottom: 2px; }
   .code-repository-head .card-heading p { margin-bottom: 0; }
+  .code-languages { margin-top: var(--s-3); }
+  .language-bar { display: block; width: 100%; height: 8px; border-radius: 4px; overflow: hidden; background: var(--c-line); }
+  .language-list { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); margin: var(--s-2) 0 0; padding: 0; list-style: none; font-size: var(--t-13); }
+  .language-list li { display: inline-flex; align-items: center; gap: 6px; }
+  .language-name { font-weight: 600; color: var(--c-ink); }
+  .language-share { color: var(--c-ink-3); }
+  .language-unparsed { color: var(--c-ink-3); font-style: italic; }
+  .language-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .language-bar .lang-1 { fill: #3b82f6; } .language-swatch.lang-1 { background: #3b82f6; }
+  .language-bar .lang-2 { fill: #f59e0b; } .language-swatch.lang-2 { background: #f59e0b; }
+  .language-bar .lang-3 { fill: #10b981; } .language-swatch.lang-3 { background: #10b981; }
+  .language-bar .lang-4 { fill: #a855f7; } .language-swatch.lang-4 { background: #a855f7; }
+  .language-bar .lang-5 { fill: #ef4444; } .language-swatch.lang-5 { background: #ef4444; }
+  .language-bar .lang-6 { fill: #06b6d4; } .language-swatch.lang-6 { background: #06b6d4; }
+  .language-bar .lang-7 { fill: #ec4899; } .language-swatch.lang-7 { background: #ec4899; }
+  .language-bar .lang-other { fill: #94a3b8; } .language-swatch.lang-other { background: #94a3b8; }
   /* A collapsed disclosure is a line, not a card with a line in it. */
   .code-graph-add:not([open]) { padding: var(--s-3) var(--s-4); }
   .code-graph-add > summary { font-weight: 600; }
@@ -2123,6 +2263,13 @@
   .graph-statusbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-1); font-size: var(--t-12); color: var(--c-ink-3); border-top: 1px solid var(--c-line); }
   .graph-statusbar strong { color: var(--c-ink); font-weight: 600; }
   .graph-match { margin: var(--s-2) 0 0; font-size: var(--t-12); color: var(--c-ink-2); }
+  /* The snapshot's size and commit, on the graph's own toolbar rather than in a
+     row of cards floating above it: they describe what is drawn below. */
+  .graph-facts { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0; }
+  .graph-facts > div { display: flex; align-items: baseline; gap: var(--s-2); padding: var(--s-1) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-well, transparent); }
+  .graph-facts dt { order: 2; font-size: var(--t-12); color: var(--c-ink-3); }
+  .graph-facts dd { margin: 0; font-size: var(--t-14); font-weight: 600; color: var(--c-ink); }
+  .graph-facts dd.mono { font-family: var(--f-mono); font-size: var(--t-13); }
   .graph-subset { color: var(--c-ink-3); font-style: italic; }
 
   /* The file tree. */
@@ -2251,9 +2398,6 @@
     .kb-panes, .kb-panes-empty, .kb-panes.panels-ready, .kb-panes.panels-ready.has-panel { display: flex; flex-direction: column; }
     .kb-panes .kb-pane { width: 100%; max-height: none; }
     .kb-panes .kb-pane-body { overflow: visible; }
-    .graph-metrics { gap: var(--s-1); }
-    .graph-metrics .metric { font-size: var(--t-12); padding: var(--s-1) var(--s-2); }
-    .graph-metrics .metric strong { font-size: var(--t-14); }
     .workspace-tools button { flex: 1; }
     .chat-workspace { min-height: 0; }
     .chat-panel { min-height: 500px; }
@@ -2739,9 +2883,12 @@
   justify-content: space-between;
   gap: var(--s-4);
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--c-line);
 }
-/* The strip keeps its own bottom rule; it now runs the width of the row. */
-.view-bar .tabs { flex: 1 1 auto; margin-bottom: 0; }
+/* The rule belongs to the bar, not the strip. On the strip it stopped where
+   the last tab did and left a stub short of the button beside it. The strip
+   sits 1px over the bar's rule so the current tab's underline covers it. */
+.view-bar .tabs { flex: 1 1 auto; margin-bottom: -1px; border-bottom: 0; }
 .view-bar > .button { margin-bottom: var(--s-3); }
 
 @media (max-width: 700px) {

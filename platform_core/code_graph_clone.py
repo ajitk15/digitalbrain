@@ -20,6 +20,7 @@ Repository content is read, never run:
 * the checkout is deleted when indexing finishes
 """
 
+import base64
 import logging
 import os
 import shutil
@@ -30,7 +31,13 @@ from pathlib import Path
 
 from django.core.exceptions import ValidationError
 
-from .code_graph_analysis import MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, included
+from .code_graph_analysis import (
+    MAX_FILE_BYTES,
+    MAX_FILES,
+    MAX_TOTAL_BYTES,
+    census,
+    included,
+)
 
 CLONE_TIMEOUT_SECONDS = 300
 REMOTE = "https://github.com/{name}.git"
@@ -71,9 +78,16 @@ def _environment(scratch, token):
     config = scratch / "gitconfig"
     lines = ["[core]", f"\thooksPath = {hooks.as_posix()}"]
     if token:
+        # Basic, not Bearer. GitHub's REST API takes a token as Bearer, but its
+        # git-over-HTTPS endpoint does not: a Bearer header is ignored, git falls
+        # back to asking for a username, and with prompts off every private
+        # clone failed as "refused the credential" while the same token read the
+        # repository through the API. `x-access-token` is the username GitHub
+        # documents for a token, and what actions/checkout sends.
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
         lines += [
             '[http "https://github.com/"]',
-            f"\textraHeader = Authorization: Bearer {token}",
+            f"\textraHeader = Authorization: Basic {basic}",
         ]
     config.write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
@@ -125,7 +139,46 @@ def _redact(message, token):
     return text[:200]
 
 
-def clone_sources(name, ref, token):
+#: The most of any one configuration file the test-setup check reads.
+SETUP_READ_BYTES = 200_000
+
+
+def _setup_of(checkout):
+    """Which test framework and CI the checkout declares. See `repo_testing`."""
+    from .repo_testing import detect
+
+    root = checkout.resolve()
+
+    def inside(path):
+        target = (checkout / path).resolve()
+        # Configuration names are fixed strings, but a symlinked one could
+        # still point out of the checkout; nothing outside it is read.
+        return target if target.is_relative_to(root) else None
+
+    def read(path):
+        target = inside(path)
+        if target is None or not target.is_file() or target.is_symlink():
+            return None
+        try:
+            if target.stat().st_size > SETUP_READ_BYTES:
+                return None
+            return target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    def listdir(path):
+        target = inside(path)
+        if target is None or not target.is_dir():
+            return []
+        try:
+            return sorted(entry.name for entry in target.iterdir() if entry.is_file())
+        except OSError:
+            return []
+
+    return detect(read, listdir)
+
+
+def clone_sources(name, ref, token, setup=None, languages=None):
     """Clone one repository and return (commit, branch, files, warnings, complete).
 
     `files` is a list of (path, text) with repository-relative POSIX paths, and
@@ -134,6 +187,16 @@ def clone_sources(name, ref, token):
     `branch` is the name the clone landed on. Asking git rather than GitHub
     costs nothing - the checkout is already here - and it is the answer for this
     repository rather than a guess at the convention it follows.
+
+    `setup`, when a dict is passed, is filled with the repository's test
+    framework and CI configuration, read from the same checkout. Those files are
+    not source and are not indexed, so this is the one moment they are at hand
+    for an offline run's test author.
+
+    `languages`, when a list is passed, is filled with `census` over every file
+    in the checkout - including the ones past the file and byte caps and the
+    ones in languages the graph does not parse, which is what makes it worth
+    recording separately from the indexed files.
     """
     warnings = []
     complete = True
@@ -194,7 +257,7 @@ def clone_sources(name, ref, token):
         if named.returncode != 0 or branch in ("", "HEAD"):
             branch = ref or ""
 
-        files, total = [], 0
+        entries = []
         for absolute in sorted(checkout.rglob("*")):
             if absolute.is_dir() or absolute.is_symlink():
                 continue
@@ -202,9 +265,14 @@ def clone_sources(name, ref, token):
             if relative.startswith(".git/"):
                 continue
             try:
-                size = absolute.stat().st_size
+                entries.append((absolute, relative, absolute.stat().st_size))
             except OSError:
                 continue
+        if languages is not None:
+            languages.extend(census((relative, size) for _, relative, size in entries))
+
+        files, total = [], 0
+        for absolute, relative, size in entries:
             if not included(relative, min(size, MAX_FILE_BYTES)):
                 continue
             if len(files) >= MAX_FILES:
@@ -225,6 +293,9 @@ def clone_sources(name, ref, token):
                 continue
             total += size
             files.append((relative, text))
+
+        if setup is not None:
+            setup.update(_setup_of(checkout))
 
         # Read everything out before the directory goes away; Windows keeps a
         # handle on a checkout until the last reader closes.

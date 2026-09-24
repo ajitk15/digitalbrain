@@ -2,6 +2,7 @@ import io
 import warnings
 
 from django import forms
+from django.db.models import Q
 from PIL import Image, UnidentifiedImageError
 
 from .models import ApplicationGrant, ChatRetention, Portfolio, Product, User
@@ -12,8 +13,45 @@ class ResourceForm(forms.Form):
     name = forms.CharField(max_length=120, label="Name")
 
 
-class OrganizationForm(ResourceForm):
-    administrator = forms.ModelChoiceField(queryset=User.objects.filter(is_active=True))
+class AdministratorsField(forms.ModelMultipleChoiceField):
+    widget = forms.CheckboxSelectMultiple
+
+    def label_from_instance(self, user):
+        name = user.get_full_name()
+        return f"{user.username} ({name})" if name else user.username
+
+
+class OrganizationAdministratorsForm(forms.Form):
+    """Who administers an organization. One is required, several are allowed.
+
+    Choices are active users, plus anyone already an administrator of this
+    organization: a deactivated admin who is not offered would silently drop out
+    of the posted set and be demoted by a save that never mentioned them.
+    """
+
+    administrators = AdministratorsField(
+        queryset=User.objects.none(),
+        label="Organization administrators",
+        help_text="Choose one or more existing users. Administering an organization "
+        "does not grant access to its applications.",
+        error_messages={"required": "An organization needs at least one administrator."},
+    )
+
+    def __init__(self, *args, organization=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        eligible = Q(is_active=True)
+        if organization is not None:
+            eligible |= Q(
+                organizationmember__organization=organization,
+                organizationmember__is_admin=True,
+            )
+        self.fields["administrators"].queryset = (
+            User.objects.filter(eligible).distinct().order_by("username")
+        )
+
+
+class OrganizationForm(ResourceForm, OrganizationAdministratorsForm):
+    pass
 
 
 class MemberForm(forms.Form):
@@ -46,8 +84,17 @@ class ApplicationForm(ResourceForm):
     )
     new_product = forms.CharField(max_length=120, required=False, label="New product name")
     owner = forms.ModelChoiceField(queryset=User.objects.none(), label="Application owner")
+    # Ticked by default. Approval can only be handed on by someone who holds it
+    # (`services.change_grant`), so an owner created without it could never give
+    # it to anyone, themselves included, and Code Factory stalled at review with
+    # no way out through the UI. Unticking it still records an owner without it.
+    # Holding it does not let anyone approve their own plan: `review_plan`
+    # refuses that unless `allow_self_approval` is set.
     owner_can_approve = forms.BooleanField(
-        required=False, label="Explicitly grant this owner Code Factory approval rights"
+        required=False,
+        initial=True,
+        label="Grant this owner Code Factory approval rights",
+        help_text="An owner without approval rights cannot give them to anyone later.",
     )
     grant_me_owner = forms.BooleanField(
         required=False,

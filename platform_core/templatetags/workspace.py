@@ -1,7 +1,8 @@
 from django import template
+from django.db.models import Exists, OuterRef, Q
 from django.urls import reverse
 
-from platform_core.models import ApplicationGrant, OrganizationMember, Portfolio
+from platform_core.models import Application, ApplicationGrant, OrganizationMember, Portfolio
 from platform_core.policy import applications_for, organizations_for
 from platform_core.services import feature_enabled
 
@@ -67,8 +68,12 @@ def settings_sections(app, grant):
     if grant and grant.role == "owner":
         if feature_enabled("connectors", app):
             sections.append(
-                ("Connectors", "connectors",
-                 {"connectors", "connector-new", "connector-edit"}, "plug")
+                (
+                    "Connectors",
+                    "connectors",
+                    {"connectors", "connector-new", "connector-edit"},
+                    "plug",
+                )
             )
         sections.append(("Credentials", "credentials", {"credentials"}, "lock"))
         sections.append(("People & access", "application-access", {"application-access"}, "people"))
@@ -199,10 +204,12 @@ def organization_tree(context):
     # and the sidebar did not change, so the create looked as though it had
     # failed. Empty levels are exactly the ones whose "+" is needed next.
     #
-    # Portfolios and products are the organization's own shape, and an admin
-    # already sees all of them on the organization page. Applications are not
-    # added here - they still arrive only through `applications_for`, so a name
-    # nobody has been granted stays out of the tree.
+    # Portfolios, products and application names are the organization's own
+    # shape, and an admin already sees all of them in the organization page's
+    # Structure panel. An application this admin holds no grant for is listed
+    # but not linked, because the link would land on a 404. Naming it is what
+    # the Structure panel already does; opening it still takes a grant, and
+    # `accessible` is decided by `applications_for` alone.
     for portfolio in (
         Portfolio.objects.filter(organization_id__in=administered & set(tree))
         .prefetch_related("products")
@@ -223,9 +230,19 @@ def organization_tree(context):
                 },
             )
 
-    for app in applications_for(request.user).order_by(
-        "product__portfolio__name", "product__name", "name", "id"
-    ):
+    # One query for both: what this person was granted, and - only in
+    # organizations they administer - everything else, marked as not openable.
+    granted = applications_for(request.user)
+    listed = (
+        Application.objects.filter(
+            Q(pk__in=granted.values("pk"))
+            | Q(product__portfolio__organization_id__in=administered & set(tree))
+        )
+        .annotate(accessible=Exists(granted.filter(pk=OuterRef("pk"))))
+        .select_related("product__portfolio")
+        .order_by("product__portfolio__name", "product__name", "name", "id")
+    )
+    for app in listed:
         org = tree.get(app.organization_id)
         if org is None:
             continue
@@ -243,15 +260,74 @@ def organization_tree(context):
                 "current": False,
             },
         )
-        current = bool(selected_app and app.pk == selected_app.pk)
+        current = bool(app.accessible and selected_app and app.pk == selected_app.pk)
         branch["current"] |= current
         product["current"] |= current
-        product["applications"].append({"id": app.pk, "name": app.name, "current": current})
+        product["applications"].append(
+            {
+                "id": app.pk,
+                "name": app.name,
+                "current": current,
+                "accessible": app.accessible,
+                "active": app.active,
+            }
+        )
     for org in tree.values():
         org["portfolios"] = list(org["portfolios"].values())
         for portfolio in org["portfolios"]:
             portfolio["products"] = list(portfolio["products"].values())
     return {"tree": list(tree.values())}
+
+
+#: Per-stage wording: (waiting, active, done, failed). A download stage exists
+#: only for documents that arrive as a link; an upload already has its bytes.
+_STEP_LABELS = {
+    "download": ("Waiting to download", "Downloading", "Downloaded", "Download failed"),
+    "upload": ("Uploaded", "Uploaded", "Uploaded", "Upload failed"),
+    "convert": (
+        "Queued for conversion",
+        "Converting to Markdown",
+        "Converted",
+        "Conversion failed",
+    ),
+    "ready": ("Ready to search", "Ready to search", "Ready to search", "Not searchable"),
+}
+_STATE_INDEX = {"waiting": 0, "active": 1, "done": 2, "failed": 3, "todo": 0}
+
+
+@register.simple_tag
+def document_steps(doc):
+    """Where a document is on its way in, one entry per stage.
+
+    Read from `Document.status` alone, so it can never claim more than the row
+    says. A failure is placed on the download stage when nothing was ever
+    downloaded (`sha256` is written with the bytes) and on conversion otherwise,
+    which is the same test `documents.retry` uses to decide where to send it back.
+    """
+    first = "upload" if doc.origin == "upload" else "download"
+    status = doc.status
+    downloaded = first == "upload" or bool(doc.sha256)
+    if status == "pending":
+        states = ["waiting", "todo", "todo"]
+    elif status == "fetching":
+        states = ["active", "todo", "todo"]
+    elif status in {"quarantined", "queued"}:
+        states = ["done", "waiting", "todo"]
+    elif status == "converting":
+        states = ["done", "active", "todo"]
+    elif status == "ready":
+        states = ["done", "done", "done"]
+    elif status in {"failed", "rejected"}:
+        states = ["done", "failed", "todo"] if downloaded else ["failed", "todo", "todo"]
+    else:
+        return []
+    steps = []
+    for key, state in zip((first, "convert", "ready"), states, strict=True):
+        label = _STEP_LABELS[key][_STATE_INDEX[state]]
+        if key == "convert" and status == "rejected":
+            label = "Rejected by scanner"
+        steps.append({"key": key, "state": state, "label": label})
+    return steps
 
 
 @register.filter

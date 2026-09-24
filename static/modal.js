@@ -66,9 +66,13 @@
       control.addEventListener("click", (event) => { event.preventDefault(); close(); });
     });
     body.querySelectorAll("form").forEach((form) => {
-      if (!form.getAttribute("action")) form.action = url;
+      // Read the attribute, never `form.action`: a control named "action" (the
+      // hidden field several forms use to say which button was meant) shadows
+      // that property, and the POST then went to "[object HTMLInputElement]".
+      if (!form.getAttribute("action")) form.setAttribute("action", url);
+      const target = new URL(form.getAttribute("action"), window.location.href).href;
       form.addEventListener("submit", async (event) => {
-        if (event.defaultPrevented || form.enctype === "multipart/form-data" || form.method.toLowerCase() !== "post") return;
+        if (event.defaultPrevented || form.getAttribute("enctype") === "multipart/form-data" || (form.getAttribute("method") || "get").toLowerCase() !== "post") return;
         event.preventDefault();
         if (submitting || form.dataset.outcomeUnknown) return;
         const data = new FormData(form);
@@ -80,7 +84,7 @@
         form.setAttribute("aria-busy", "true");
         let uncertain = false;
         try {
-          const response = await fetch(form.action, { method: "POST", body: data,
+          const response = await fetch(target, { method: "POST", body: data,
             headers: { "X-Requested-With": "fetch" }, credentials: "same-origin", redirect: "follow", signal: AbortSignal.timeout(30000) });
           if (!response.ok) {
             uncertain = response.status >= 500;
@@ -89,8 +93,8 @@
             return;
           }
           const landed = new URL(response.url);
-          if (landed.pathname !== new URL(form.action).pathname) { window.location.assign(landed.href); return; }
-          render(await response.text(), form.action);
+          if (landed.pathname !== new URL(target).pathname) { window.location.assign(landed.href); return; }
+          render(await response.text(), target);
           focusContent();
         } catch {
           uncertain = true;

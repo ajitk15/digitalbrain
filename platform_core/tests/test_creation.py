@@ -57,6 +57,22 @@ class ApplicationCreationTests(TestCase):
         data.update(overrides)
         return {key: value for key, value in data.items() if value is not None}
 
+    def test_the_owner_is_offered_approval_rights_by_default(self):
+        """Approval can only be handed on by someone who holds it.
+
+        An owner created without it could never give it to anyone, so Code
+        Factory stalled at review. The box starts ticked; unticking it is still
+        honoured.
+        """
+        page = self.client.get(self.url()).content.decode()
+        self.assertRegex(page, r'name="owner_can_approve"[^>]*checked')
+        self.client.post(self.url(), self.payload(name="Approving", owner_can_approve="on"))
+        grant = ApplicationGrant.objects.get(application__name="Approving", user=self.owner)
+        self.assertTrue(grant.can_approve)
+        self.client.post(self.url(), self.payload(name="Plain", new_portfolio="P2"))
+        grant = ApplicationGrant.objects.get(application__name="Plain", user=self.owner)
+        self.assertFalse(grant.can_approve)
+
     def test_one_submission_creates_portfolio_product_application_and_grant(self):
         response = self.client.post(self.url(), self.payload())
         self.assertEqual(response.status_code, 302)
@@ -568,6 +584,15 @@ class StructureVisibilityTests(TestCase):
         self.assertNotIn(reverse("application", args=[self.app.pk]), self.tree())
         ApplicationGrant.objects.create(application=self.app, user=self.admin, role="owner")
         self.assertIn(reverse("application", args=[self.app.pk]), self.tree())
+
+    def test_the_tree_names_an_ungranted_application_to_an_admin_without_linking_it(self):
+        tree = self.tree()
+        self.assertIn("MQACEKnowledge", tree)
+        self.assertIn("No access", tree)
+        self.assertNotIn(reverse("application", args=[self.app.pk]), tree)
+
+    def test_a_member_does_not_see_an_application_they_were_not_granted(self):
+        self.assertNotIn("MQACEKnowledge", self.tree(user=self.member))
 
     def test_a_member_who_does_not_administer_sees_no_scaffolding(self):
         """A plain member's tree is still built from what they were granted."""

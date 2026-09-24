@@ -1,0 +1,28 @@
+{% extends 'base.html' %}{% load icons %}{% block content %}<p class="eyebrow">Run {{ run.number }} · Implementation agent</p><h1>{{ label }}</h1>
+<dl class="agent-facts">
+<div><dt>Model</dt><dd>{{ model.label }}{% if model.source == 'configured' %} <small class="muted">(will use this application's Code Factory model)</small>{% elif model.source == 'deterministic' %} <small class="muted">(fixed checks, no model is called)</small>{% elif model.source == 'missing' %} <small class="muted">(set one in AI settings)</small>{% endif %}{% if model.id %}<br><code>{{ model.id }}</code>{% endif %}</dd></div>
+<div><dt>Status</dt><dd>{% if phase %}{{ phase.get_status_display }}{% else %}Not started{% endif %}</dd></div>
+{% if phase and phase.duration_ms %}<div><dt>Took</dt><dd>{{ phase.duration_ms }} ms</dd></div>{% endif %}
+{% if phase and phase.prompt_tokens %}<div><dt>Tokens</dt><dd>{{ phase.prompt_tokens }} in / {{ phase.completion_tokens }} out</dd></div>{% endif %}
+</dl>
+<section class="agent-explained">
+<h2>What it does</h2><p>{{ explained.does }}</p>
+<h3>Reads</h3><p>{{ explained.reads }}</p>
+<h3>Produces</h3><p>{{ explained.produces }}</p>
+<h3>Never</h3><p>{{ explained.never }}</p>
+</section>
+{% if phase %}<section class="agent-result"><h2>In this run</h2>
+{% if phase.error %}<p class="notice notice-error">{% icon "error" %}<span><strong>{{ phase.error }}</strong>{% if explanation %} {{ explanation }}{% endif %}</span></p>{% if output.sample %}<details class="agent-sample"><summary>What came back</summary><p class="muted">A bounded extract of the reply, and where it stopped being readable. Model text, shown as text.</p><pre>{{ output.sample }}</pre></details>{% endif %}{% endif %}
+{% if output.reason %}<p class="muted">{{ output.reason }}</p>{% endif %}
+{% if name == 'work_order' %}{% if order %}<ul class="agent-list">{% for path, entry in order %}<li><code>{{ path }}</code><span>{{ entry.intent }}</span>{% if entry.checks %}<small>Checks: {{ entry.checks|join:"; " }}</small>{% endif %}</li>{% endfor %}</ul>{% endif %}{% if output.leftover %}<p class="muted">No file could satisfy: {{ output.leftover|join:"; " }}</p>{% endif %}
+{% elif name == 'implementation' %}{% if output.files %}<ul class="agent-list">{% for file in output.files %}<li><code>{{ file.path }}</code><span>{% if file.new %}New file{% else %}Changed{% endif %}{% if file.bytes %} · {{ file.bytes|filesizeformat }}{% endif %}</span></li>{% endfor %}</ul>{% endif %}{% if output.notes %}<p class="muted">{{ output.notes }}</p>{% endif %}
+{% elif name == 'tests' %}{% if output.framework %}<p class="muted">{{ output.framework }}</p>{% endif %}{% if output.setup.known %}<p class="muted">{% if output.setup.ci %}Run by CI: {{ output.setup.ci_files|join:", " }}.{% else %}<strong>No CI configuration in this repository, so nothing will run these tests.</strong>{% endif %}{% if output.setup.evidence %} Detected from: {{ output.setup.evidence|join:"; " }}.{% endif %}</p>{% endif %}{% if output.files %}<ul class="agent-list">{% for path in output.files %}<li><code>{{ path }}</code></li>{% endfor %}</ul>{% endif %}
+{% elif name == 'review' %}{% if output.kept %}<p><strong>Kept</strong></p><ul class="agent-list">{% for path in output.kept %}<li><code>{{ path }}</code></li>{% endfor %}</ul>{% endif %}{% if output.rejected %}<p><strong>Rejected</strong></p><ul class="agent-list">{% for item in output.rejected %}<li><code>{{ item.path }}</code><span>{{ item.reason }}</span></li>{% endfor %}</ul>{% endif %}{% if output.orphaned %}<p><strong>Dropped with them</strong></p><p class="muted">Tests the test author wrote for code that is no longer in the change. Sent on their own they would test something that was never written, and fail.</p><ul class="agent-list">{% for item in output.orphaned %}<li><code>{{ item.path }}</code><span>{{ item.reason }}</span></li>{% endfor %}</ul>{% endif %}
+{% elif name == 'verification' %}{% if output.checked %}<ul class="agent-list">{% for path in output.checked %}<li><code>{{ path }}</code><span>{% if path in output.created %}New path, confirmed still absent{% else %}Unchanged since it was read{% endif %}</span></li>{% endfor %}</ul>{% endif %}{% if output.limits %}<p class="muted">{{ output.limits }}</p>{% endif %}
+{% elif name == 'delivery' %}{% if output.branch %}<p>Branch <code>{{ output.branch }}</code>{% if output.pull_request %} · <a href="{{ output.pull_request }}" target="_blank" rel="noreferrer noopener">draft pull request {% icon "external" 12 %}</a>{% endif %}</p>{% endif %}
+{% endif %}
+{% if events %}<h3>Log</h3><ol class="run-log">{% for event in events %}<li class="run-line run-line-{{ event.level }}"><span class="run-time">{{ event.at|date:"H:i:s" }}</span><span class="run-message">{{ event.message }}</span></li>{% endfor %}</ol>{% endif %}
+{% if can_rerun %}<form method="post" class="agent-rerun">{% csrf_token %}<p class="muted">Rerunning starts the implementation agents again from the work order, because each one works from the one before. Nothing is written to the repository.</p><button class="button" type="submit">{% icon "refresh" 13 %}Rerun the implementation agents</button></form>{% elif phase.status == 'failed' and name == 'delivery' %}<p class="muted">Opening the pull request writes to the repository, so it is tried again from the summary on the run page, where it asks first.</p>{% endif %}
+</section>{% else %}<p class="muted">This agent has not run yet in this run.</p>{% endif %}
+<div class="actions"><a class="button secondary" href="{% url 'run-detail' application.pk run.pk %}#stage-4" data-modal-close>Close</a></div>
+{% endblock %}

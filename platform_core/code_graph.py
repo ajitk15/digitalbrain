@@ -159,6 +159,38 @@ def folder_tree(files):
     ]
 
 
+#: Languages drawn individually; the rest are summed into one "Other" row.
+LANGUAGES_SHOWN = 7
+
+
+def language_mix(languages):
+    """The snapshot's language census as rows for the bar and its legend.
+
+    `x` and `width` are preformatted: they are SVG attributes, and a CSP of
+    `style-src 'self'` rules out setting a width any other way.
+    """
+    rows = [dict(row) for row in languages[:LANGUAGES_SHOWN]]
+    rest = languages[LANGUAGES_SHOWN:]
+    if rest:
+        rows.append(
+            {
+                "name": f"{len(rest)} other",
+                "files": sum(row["files"] for row in rest),
+                "share": round(sum(row["share"] for row in rest), 1),
+                "analysed": all(row.get("analysed") for row in rest),
+                "other": True,
+            }
+        )
+    offset = 0.0
+    for index, row in enumerate(rows):
+        row["swatch"] = "other" if row.get("other") else index + 1
+        row["x"] = f"{offset:.2f}"
+        row["width"] = f"{row['share']:.2f}"
+        row["label"] = "<0.1%" if row["share"] < 0.1 else f"{row['share']:.1f}%"
+        offset += row["share"]
+    return rows
+
+
 def can_manage(grant):
     return grant.role in {ApplicationGrant.Role.OWNER, ApplicationGrant.Role.CONTRIBUTOR}
 
@@ -183,15 +215,19 @@ def selected_repository(app, raw):
 
 @login_required
 @require_http_methods(["GET", "POST"])
-def code_graph(request, pk):
+def repository_add(request, pk):
+    """Register a GitHub repository, on a page of its own.
+
+    Opened as a popup from Code Graph by `modal.js`, which fetches this URL and
+    lifts its `<main>`; with JavaScript off the button navigates here instead.
+    """
     app, grant = access(request.user, pk, "code_graph")
+    if not can_manage(grant):
+        raise PermissionDenied
     form = RepositoryForm(request.POST or None)
     if request.method == "POST":
         access(request.user, pk, "code_graph", write=True)
-        if not can_manage(grant):
-            raise PermissionDenied
-        action = request.POST.get("action")
-        if action == "register" and form.is_valid():
+        if form.is_valid():
             try:
                 repository = register(
                     request.user, pk, form.cleaned_data["repository"], form.cleaned_data["ref"]
@@ -200,7 +236,25 @@ def code_graph(request, pk):
                 form.add_error("repository", " ".join(failure.messages))
             else:
                 messages.success(request, "Repository queued for indexing.")
-                return redirect(f"{request.path}?repository={repository.pk}")
+                return redirect(
+                    f"{reverse('code-graph', args=[pk])}?repository={repository.pk}"
+                )
+    return render(request, "repository_add.html", {"application": app, "form": form})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def code_graph(request, pk):
+    app, grant = access(request.user, pk, "code_graph")
+    form = RepositoryForm(request.POST or None)
+    if request.method == "POST":
+        access(request.user, pk, "code_graph", write=True)
+        if not can_manage(grant):
+            raise PermissionDenied
+        action = request.POST.get("action")
+        if action == "register":
+            # The form lives on its own page; a failed submission is shown there.
+            return repository_add(request, pk)
         elif action == "refresh":
             repository = get_object_or_404(
                 CodeRepository, pk=request.POST.get("repository"), application=app
@@ -355,6 +409,7 @@ def code_graph(request, pk):
             "query": search,
             "more_files": more_files,
             "languages": languages,
+            "language_mix": language_mix(snapshot.languages) if snapshot else [],
             "roles": ROLES,
             "shown_count": len(listed_files),
             "edge_count": len(edges),

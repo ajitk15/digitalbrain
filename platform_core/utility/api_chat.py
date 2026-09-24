@@ -3,8 +3,9 @@
 This is the one `/api/v1/` surface that calls a model, and therefore the one
 that spends the application's provider budget. `graph/search/` and the MCP
 server deliberately do not, so the guard here is a feature switch an owner has
-to turn on: `chat_api` is written disabled for every application that already
-existed, and starts unticked on the create form.
+to have on: `chat_api` is written disabled for every application that existed
+before migration 0036. A new application starts with it ticked on the create
+form, and an owner can untick it there or under Features.
 
 Everything else is the browser's, unchanged. The token names a user, `access`
 runs the same checks a session request runs, and answering goes through

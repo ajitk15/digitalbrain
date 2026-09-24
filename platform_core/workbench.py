@@ -6,6 +6,7 @@ import re
 import threading
 import uuid
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django import forms
 from django.contrib import messages
@@ -28,6 +29,7 @@ from django.views.decorators.http import require_http_methods
 
 from .agent_runtime import streaming
 from .agent_runtime.runtime import HISTORY_TURNS, HistoryTurn
+from .model_catalog import MODEL_CHOICES
 from .models import (
     CHAT_MODES,
     AIConfiguration,
@@ -1017,6 +1019,8 @@ def plans(request, pk):
             f"Queued analysis of {entry.title}. Its stages appear below as it runs.",
         )
         return redirect("run-detail", pk=pk, run_id=run.pk)
+    if request.method == "POST" and request.POST.get("action") == "manual":
+        return ticket_new(request, pk)
     if request.method == "POST":
         return HttpResponseNotAllowed(["GET"])
     runs_shown = list(
@@ -1045,6 +1049,47 @@ def plans(request, pk):
             ).first(),
         },
     )
+@login_required
+@require_http_methods(["GET", "POST"])
+def ticket_new(request, pk):
+    """Enter a ticket by hand, on a page of its own.
+
+    Opened as a popup from Code Factory by `modal.js`, which fetches this URL
+    and lifts its `<main>`; with JavaScript off the button navigates here. The
+    ticket is kept on the run alone and never becomes knowledge - see
+    `code_factory.start_run`.
+    """
+    from .code_factory import NO_GRAPH, start_run
+
+    app, _ = access(request.user, pk, "code_factory", write=True)
+    published = published_graph_version(app.pk)
+    title = request.POST.get("title", "")[:300]
+    description = request.POST.get("description", "")
+    error = "" if published else NO_GRAPH
+    if request.method == "POST":
+        try:
+            run = start_run(request.user, pk, title=title, body=description)
+        except ValidationError as refusal:
+            error = " ".join(refusal.messages)
+        else:
+            messages.success(
+                request,
+                f"Queued analysis of {run.ticket_title}. Its stages appear below as it runs.",
+            )
+            return redirect("run-detail", pk=pk, run_id=run.pk)
+    return render(
+        request,
+        "ticket_new.html",
+        {
+            "application": app,
+            "published_graph": published,
+            "title": title,
+            "description": description,
+            "error": error,
+        },
+    )
+
+
 @login_required
 @require_http_methods(["GET"])
 def plan_item(request, pk, plan_id, item_id):
@@ -1165,7 +1210,214 @@ AGENT_ROW = (
 )
 
 
-def agent_report(name, label, waiting, phase, run):
+#: Each implementation agent in full, for the popup its row opens. The row keeps
+#: the one-line version in AGENT_ROW. `model` says whether the agent calls one:
+#: the last two are deterministic code, and naming a model for them would be
+#: inventing a fact.
+AGENT_EXPLAINED = {
+    "work_order": {
+        "does": "Reads every approved gap together and decides, for each file the "
+        "change touches, what that file must end up doing and how to tell.",
+        "reads": "The approved gaps, and the current contents of each file they name.",
+        "produces": "One intent and a short list of checks per file, plus any approved "
+        "gap that no file could satisfy.",
+        "never": "Writes code. It only states what each file is for.",
+        "model": True,
+    },
+    "implementation": {
+        "does": "Writes the new contents of each file, one file at a time, against the "
+        "intent the work order set for it.",
+        "reads": "The work order, the approved gaps, and each file as it is now.",
+        "produces": "A complete new version of every file it changes or creates.",
+        "never": "Touches the repository. The files are held here until you publish.",
+        "model": True,
+    },
+    "tests": {
+        "does": "Writes the tests that prove the change. It uses the test files the "
+        "approved gaps name; when they name none, it picks one per changed source file "
+        "from the repository's own layout, extending an existing test where there is one.",
+        "reads": "The approved gaps, the files the implementation agent wrote, any "
+        "existing test file it is extending, and which test framework and CI the "
+        "repository is configured with - so new tests use what is already there.",
+        "produces": "New or updated test files.",
+        "never": "Runs the tests. The repository's own CI does, once a pull request exists.",
+        "model": True,
+    },
+    "review": {
+        "does": "Reads each finished file against the approved gap and intent it was "
+        "written for, and rejects anything that falls short or goes further.",
+        "reads": "The work order and every file the other agents wrote.",
+        "produces": "A keep or reject decision per file, with the reason for each rejection.",
+        "never": "Edits a file. A rejected file is simply left out of the change.",
+        "model": True,
+    },
+    "verification": {
+        "does": "Re-reads every file just before anything is written, so nothing lands "
+        "on top of a change somebody else made in the meantime.",
+        "reads": "Each target file as it is now, compared with the version the agents read.",
+        "produces": "A list of the files checked, and the new paths confirmed still absent.",
+        "never": "Calls a model. These are fixed checks: paths, elisions and staleness.",
+        "model": False,
+    },
+    "delivery": {
+        "does": "Creates a branch, commits the kept files and opens a draft pull request.",
+        "reads": "The files that survived review, and the confirmed repository and branch.",
+        "produces": "A branch and a draft pull request. Nothing is merged.",
+        "never": "Calls a model, or runs anything without your Yes on the summary.",
+        "model": False,
+    },
+}
+
+#: "claude-sonnet-5" as people say it, from the same catalogue AI settings offers.
+MODEL_LABELS = {
+    value.split(":", 1)[1]: label
+    for _, group in MODEL_CHOICES
+    for value, label in group
+    if ":" in value
+}
+
+
+def agent_model(name, phase, configured):
+    """The model an agent used, or would use, and which of the two this is.
+
+    Recorded on the phase once it has run, because the setting can change
+    afterwards; before that, the application's Code Factory model, since every
+    model-backed agent asks through the `plan_drafting` configuration.
+    """
+    if not AGENT_EXPLAINED[name]["model"]:
+        return {"label": "No model", "source": "deterministic", "id": ""}
+    if phase is not None and phase.model:
+        return {
+            "label": MODEL_LABELS.get(phase.model, phase.model),
+            "source": "used",
+            "id": f"{phase.provider}:{phase.model}" if phase.provider else phase.model,
+        }
+    if configured is not None:
+        return {
+            "label": MODEL_LABELS.get(configured.model, configured.model),
+            "source": "configured",
+            "id": f"{configured.provider}:{configured.model}",
+        }
+    return {"label": "No model configured", "source": "missing", "id": ""}
+
+
+#: What an agent's failure means, for someone who is not reading the code.
+#: Keyed on the start of the recorded error, which `code_factory` writes.
+FAILURE_EXPLAINED = (
+    (
+        "did not return usable JSON",
+        "The agent must answer in a fixed, machine-readable format (JSON) so its "
+        "answer can be checked before anything is used. This reply could not be read "
+        "in that format, so it was set aside and nothing was written. It is usually a "
+        "one-off slip by the model; rerunning normally works.",
+    ),
+    (
+        "did not return a JSON object",
+        "The agent answered in JSON, but not in the shape it was asked for, so the "
+        "answer was set aside and nothing was written. Rerunning normally works.",
+    ),
+)
+
+
+def failure_explained(error):
+    for fragment, explanation in FAILURE_EXPLAINED:
+        if fragment in (error or ""):
+            return explanation
+    return ""
+
+
+def analysis_view(run, phases_by_name, items):
+    """The Analysis stage as results first and log second.
+
+    It used to be the run log alone - about twenty timestamped lines where
+    "Code Factory switched on" and "Gap analysis found 7 item(s)" looked the
+    same. Everything here is read from what the phases already recorded, so the
+    cards cannot say more than the receipt does.
+    """
+    from .code_factory import AGENTS, BUILD_A, BUILD_B, language_gap
+    from .code_graph_analysis import describe_languages
+    from .models import ITEM_CATEGORIES
+
+    triage_phase = phases_by_name.get("triage")
+    triage = (triage_phase.output or {}) if triage_phase and triage_phase.status == "ok" else {}
+    analysis_phase = phases_by_name.get("analysis")
+    snapshot = run.code_snapshot
+    languages = getattr(snapshot, "languages", None) or []
+    counts = {}
+    for item in items:
+        counts[item.category] = counts.get(item.category, 0) + 1
+    steps = []
+    for name in BUILD_A:
+        phase = phases_by_name.get(name)
+        steps.append(
+            {
+                "label": AGENTS.get(name, name),
+                "status": phase.status if phase else "pending",
+                "model": MODEL_LABELS.get(phase.model, phase.model) if phase else "",
+                "seconds": (
+                    round(phase.duration_ms / 1000, 1) if phase and phase.duration_ms else None
+                ),
+                "tokens": (
+                    f"{phase.prompt_tokens:,} in / {phase.completion_tokens:,} out"
+                    if phase and phase.prompt_tokens
+                    else ""
+                ),
+                "error": (phase.error or "")[:200] if phase else "",
+            }
+        )
+    # Analysis is everything before implementation was asked for. Later
+    # problems - a review that failed, a CI result - belong to later stages,
+    # and listing them here made the analysis read as if it had gone wrong.
+    events = list(run.events.all())
+    later = next(
+        (
+            index
+            for index, event in enumerate(events)
+            if event.phase in BUILD_B or event.message.startswith("Implementation requested")
+        ),
+        len(events),
+    )
+    events = events[:later]
+    return {
+        "triage": triage,
+        "evidence": {
+            "graph_version": run.graph_version,
+            "verified": analysis_phase.citations_verified if analysis_phase else 0,
+            "rejected": analysis_phase.citations_rejected if analysis_phase else 0,
+            "snapshot": snapshot,
+            "languages": describe_languages(languages) if languages else "",
+        },
+        "language_gap": language_gap(snapshot) if snapshot else "",
+        "gaps": [
+            {"key": key, "label": label, "count": counts[key]}
+            for key, label in ITEM_CATEGORIES
+            if counts.get(key)
+        ],
+        "gap_total": len(items),
+        "steps": steps,
+        "problems": [event for event in events if event.level == "problem"],
+    }
+
+
+def tests_unrun(phase):
+    """The sentence for a change whose new tests nothing will run, or ""."""
+    from .repo_testing import ci_summary
+
+    if phase is None or phase.status != "ok":
+        return ""
+    setup = (phase.output or {}).get("setup") or {}
+    if setup.get("known") and not setup.get("ci"):
+        return ci_summary(setup)
+    return ""
+
+
+def code_factory_model(app):
+    return AIConfiguration.objects.filter(
+        application=app, purpose="plan_drafting", enabled=True
+    ).first()
+
+
+def agent_report(name, label, waiting, phase, run, configured=None):
     """One agent's row: what it is for, or what it actually did.
 
     A finished agent should say what happened in *this* run rather than repeat
@@ -1177,16 +1429,26 @@ def agent_report(name, label, waiting, phase, run):
         # A run that has already been through this stage and has no row for an
         # agent never had that agent: it predates it. Saying "waiting" about
         # something that was never going to happen is worse than saying so.
-        past = run.status in {"prepared", "delivered", "complete"}
+        # The pull request is the one agent a prepared run has not reached yet
+        # by design: it waits for a Yes on the summary, so it is waiting, not
+        # missing.
+        awaiting_yes = name == "delivery" and run.status == "prepared"
+        past = run.status in {"prepared", "delivered", "complete"} and not awaiting_yes
+        if awaiting_yes:
+            waiting = "Waiting for your Yes on the summary below. Nothing is written until then."
         return {
+            "name": name,
             "label": label,
             "detail": "Did not run: this run predates this agent." if past else waiting,
             "status": "absent" if past else "pending",
+            "model": agent_model(name, None, configured),
         }
     output = phase.output or {}
     detail = waiting
+    explanation = ""
     if phase.status == "failed":
         detail = phase.error[:200] or "Failed, with no reason recorded."
+        explanation = failure_explained(phase.error)
     elif phase.status == "skipped":
         detail = output.get("reason", "Nothing for it to do.")
     elif phase.status == "running":
@@ -1208,8 +1470,16 @@ def agent_report(name, label, waiting, phase, run):
             detail += f", {len(created)} of them new" if created else ""
             detail += f": {named}" + ("…" if len(files) > 3 else "") + "."
         elif name == "tests":
+            from .repo_testing import ci_summary
+
             files = output.get("files", [])
             detail = f"Wrote {len(files)} test file(s): {', '.join(files[:3])}."
+            setup = output.get("setup") or {}
+            chosen = setup.get("python") or setup.get("javascript")
+            if chosen:
+                detail += f" Framework: {chosen}."
+            if setup.get("known") and not setup.get("ci"):
+                detail += f" {ci_summary(setup)}"
         elif name == "review":
             kept, rejected = output.get("kept", []), output.get("rejected", [])
             detail = f"Passed {len(kept)} file(s)"
@@ -1218,6 +1488,12 @@ def agent_report(name, label, waiting, phase, run):
                 detail += (
                     f"; rejected {len(rejected)}, including {first.get('path', '')}"
                     f" — {first.get('reason', 'no reason given')}"
+                )
+            orphaned = output.get("orphaned", [])
+            if orphaned:
+                detail += (
+                    f"; dropped {len(orphaned)} test file(s) written for rejected code: "
+                    + ", ".join(item.get("path", "") for item in orphaned[:3])
                 )
             detail += "."
         elif name == "verification":
@@ -1233,7 +1509,82 @@ def agent_report(name, label, waiting, phase, run):
             )
     if phase.prompt_tokens:
         detail += f" ({phase.prompt_tokens:,} in / {phase.completion_tokens:,} out tokens)"
-    return {"label": label, "detail": detail, "status": phase.status}
+    return {
+        "name": name,
+        "label": label,
+        "detail": detail,
+        "explanation": explanation,
+        "status": phase.status,
+        "model": agent_model(name, phase, configured),
+    }
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def run_agent(request, pk, run_id, name):
+    """One implementation agent of one run: what it is for and what it did.
+
+    A page rather than a panel, because `modal.js` opens it by fetching this URL
+    and lifting its `<main>`; with JavaScript off the link simply navigates
+    here. Read-only. Everything shown is what the phase recorded - its output
+    is model text, so the template escapes it like any other.
+    """
+    from .code_factory import request_preparation
+    from .models import FactoryRun
+
+    app, grant = access(request.user, pk, "code_factory")
+    run = get_object_or_404(
+        FactoryRun.objects.select_related("plan"), pk=run_id, application=app
+    )
+    labels = {key: label for key, label, _ in AGENT_ROW}
+    if name not in labels:
+        raise Http404
+    phase = run.phases.filter(name=name).first()
+    output = (phase.output or {}) if phase else {}
+    # Rerunning an agent is rerunning the implementation: the agents feed one
+    # another, so one of them alone would be working from a stale input. The
+    # pull request is not offered here - it writes to somebody's repository,
+    # and that decision belongs on the summary where the Yes is asked for.
+    can_rerun = bool(
+        phase
+        and phase.status == "failed"
+        and run.status == "failed"
+        and name != "delivery"
+        and grant.can_approve
+        and run.plan
+        and run.plan.status == "approved"
+        and not run.pull_request_url
+    )
+    if request.method == "POST":
+        try:
+            if not can_rerun:
+                raise ValidationError("This agent cannot be rerun from here.")
+            request_preparation(request.user, pk, run.pk)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        else:
+            messages.success(
+                request, "The implementation agents are running again. Watch them below."
+            )
+        return redirect(f"{reverse('run-detail', args=[pk, run.pk])}#stage-4")
+    return render(
+        request,
+        "run_agent.html",
+        {
+            "application": app,
+            "run": run,
+            "name": name,
+            "label": labels[name],
+            "explained": AGENT_EXPLAINED[name],
+            "phase": phase,
+            "model": agent_model(name, phase, code_factory_model(app)),
+            "output": output,
+            "order": sorted((output.get("order") or {}).items()),
+            "events": run.events.filter(phase=name).order_by("sequence"),
+            "can_rerun": can_rerun,
+            "explanation": failure_explained(phase.error) if phase else "",
+        },
+    )
 
 
 @login_required
@@ -1286,6 +1637,9 @@ def run_detail(request, pk, run_id):
                     run, request.POST.get("repository"), request.POST.get("base_branch")
                 )
                 messages.success(request, "Repository confirmed.")
+            elif action == "retry-analysis":
+                code_factory.retry_analysis(request.user, pk, run.pk)
+                messages.success(request, "Analysis queued again. Its stages appear below.")
             elif action == "prepare":
                 # Queued for the worker rather than run here: it is several
                 # model calls and a series of reads, and holding the request
@@ -1324,8 +1678,22 @@ def run_detail(request, pk, run_id):
         if step.gate == "analysis" or step.key == "github_write"
     ]
     phases_by_name = {phase.name: phase for phase in run.phases.all()}
+    items = list(run.plan.items.order_by("sequence")) if run.plan else []
+    analysis = analysis_view(run, phases_by_name, items)
+    if run.code_snapshot:
+        # A pre-check the run itself can answer: whether the code it pinned is
+        # code it can see the structure of.
+        checks.append(
+            SimpleNamespace(
+                ok=not analysis["language_gap"],
+                label="Every code language parsed"
+                if not analysis["language_gap"]
+                else "Some code is in a language Code Graph does not parse",
+            )
+        )
+    configured = code_factory_model(app)
     agents = [
-        agent_report(name, label, waiting, phases_by_name.get(name), run)
+        agent_report(name, label, waiting, phases_by_name.get(name), run, configured)
         for name, label, waiting in AGENT_ROW
     ]
     # How long since the run last said anything. A working run that has gone
@@ -1354,6 +1722,20 @@ def run_detail(request, pk, run_id):
             "phases": run.phases.all(),
             "items": plan.items.order_by("sequence") if plan else (),
             "active": run.in_flight,
+            # Each stage section's state, keyed by its number as a string so the
+            # template can say `stage_state.3`. Read from `run.stages`, the same
+            # list the header strip and every run list render.
+            "stage_state": {str(stage["number"]): stage["state"] for stage in run.stages},
+            # A run that stopped before producing a plan failed in analysis, and
+            # can be queued again on the same record.
+            "can_retry_analysis": bool(
+                run.status == "failed"
+                and run.plan is None
+                and grant.role in {"owner", "contributor"}
+            ),
+            "failed_agent": next(
+                (agent for agent in agents if agent["status"] == "failed"), None
+            ),
             # Section one: the gate, as green ticks rather than a page.
             "checks": checks,
             "checks_passed": sum(1 for step in checks if step.ok),
@@ -1362,10 +1744,11 @@ def run_detail(request, pk, run_id):
             "quiet_for": quiet_for,
             "stall_after": int(code_factory.STALL_AFTER.total_seconds() // 60),
             "reviewable": reviewable,
-            "self_approving": bool(
-                plan and plan.author_id == request.user.pk and self_approval_allowed()
-            ),
             "changes": run.changes.all() if run.status in {"prepared", "delivered"} else (),
+            # Said on the summary, before anyone opens a pull request: tests that
+            # nothing runs are not evidence, and a green PR would not say so.
+            "tests_unrun": tests_unrun(phases_by_name.get("tests")),
+            "analysis": analysis,
             "can_deliver": bool(
                 plan
                 and plan.status == "approved"
@@ -1395,8 +1778,8 @@ def self_approval_allowed():
     included, instead of a development-only concession.
 
     What did not change is that it is never silent. `ChangePlan` records the
-    approver, so a plan approved by its author says so; the run and plan screens
-    carry a warning while it is in force; and `review_plan` still refuses
+    approver, so a plan approved by its author says so in the audit record; and
+    `review_plan` still refuses
     outright when the setting is off.
     """
     from django.conf import settings
@@ -1562,7 +1945,6 @@ def plan_detail(request, pk, plan_id):
             "can_review": grant.can_approve
             and (plan.author_id != request.user.pk or self_approval_allowed())
             and plan.status == "pending",
-            "self_approving": plan.author_id == request.user.pk and self_approval_allowed(),
             # Why not, in the words of the rule that says not. A review form
             # that is simply absent reads as a missing feature.
             "no_review_because": (

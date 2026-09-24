@@ -39,6 +39,88 @@ SKIP_DIRS = {
     "vendor",
     "coverage",
 }
+#: Every language a repository is counted in, parsed or not. The graph parses
+#: only `SUPPORTED`; this says what else is there, so a Java service with one
+#: Python script does not read as a Python repository. A closed set on purpose:
+#: these names reach Code Factory's prompts, and a repository must not be able
+#: to put words there by naming its files. Data and prose formats (JSON, YAML,
+#: Markdown) are not languages a change is written in and are not counted.
+LANGUAGE_NAMES = {
+    ".py": "Python",
+    ".pyi": "Python",
+    ".ipynb": "Jupyter Notebook",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".mts": "TypeScript",
+    ".cts": "TypeScript",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".kts": "Kotlin",
+    ".scala": "Scala",
+    ".groovy": "Groovy",
+    ".gradle": "Groovy",
+    ".go": "Go",
+    ".rs": "Rust",
+    ".c": "C",
+    ".h": "C",
+    ".cc": "C++",
+    ".cpp": "C++",
+    ".cxx": "C++",
+    ".hh": "C++",
+    ".hpp": "C++",
+    ".hxx": "C++",
+    ".cs": "C#",
+    ".fs": "F#",
+    ".fsx": "F#",
+    ".vb": "Visual Basic",
+    ".swift": "Swift",
+    ".m": "Objective-C",
+    ".mm": "Objective-C",
+    ".rb": "Ruby",
+    ".php": "PHP",
+    ".pl": "Perl",
+    ".pm": "Perl",
+    ".lua": "Lua",
+    ".r": "R",
+    ".dart": "Dart",
+    ".ex": "Elixir",
+    ".exs": "Elixir",
+    ".erl": "Erlang",
+    ".hs": "Haskell",
+    ".clj": "Clojure",
+    ".cljs": "Clojure",
+    ".ml": "OCaml",
+    ".jl": "Julia",
+    ".cob": "COBOL",
+    ".cbl": "COBOL",
+    ".f90": "Fortran",
+    ".sol": "Solidity",
+    ".zig": "Zig",
+    ".sql": "SQL",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".ps1": "PowerShell",
+    ".psm1": "PowerShell",
+    ".bat": "Batchfile",
+    ".cmd": "Batchfile",
+    ".tf": "HCL",
+    ".html": "HTML",
+    ".htm": "HTML",
+    ".css": "CSS",
+    ".scss": "CSS",
+    ".sass": "CSS",
+    ".less": "CSS",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+}
+LANGUAGE_FILENAMES = {"dockerfile": "Dockerfile", "makefile": "Makefile"}
+#: The languages the graph parses, by the name the census gives them.
+ANALYSED_LANGUAGES = {"Python", "JavaScript", "TypeScript"}
+
 MAX_FILES = 500
 MAX_FILE_BYTES = 400_000
 MAX_TOTAL_BYTES = 20 * 1024 * 1024
@@ -153,6 +235,63 @@ def included(path, size):
         and 0 <= size <= MAX_FILE_BYTES
         and not parts[-1].endswith((".min.js", ".bundle.js"))
     )
+
+
+def language_name(path):
+    """The census name for one path, or None when it is not a counted language."""
+    name = path.rsplit("/", 1)[-1].lower()
+    if name in LANGUAGE_FILENAMES:
+        return LANGUAGE_FILENAMES[name]
+    if name.endswith((".min.js", ".bundle.js")):
+        return None
+    dot = name.rfind(".")
+    return LANGUAGE_NAMES.get(name[dot:]) if dot > 0 else None
+
+
+def census(entries):
+    """Which languages a repository is written in, over every file it holds.
+
+    `entries` is (path, size) for every file in the checkout, not only the ones
+    the graph indexes: the point is to describe the repository, and the file
+    and byte caps exist to bound parsing, not counting. Skipped directories are
+    skipped here too - a vendored node_modules is not the repository's language.
+
+    Returns one row per language, largest first, as
+    {"name", "files", "bytes", "share", "analysed"}; `share` is a percentage of
+    the counted bytes, to one decimal place.
+    """
+    totals = {}
+    for path, size in entries:
+        parts = path.replace("\\", "/").split("/")
+        if any(part in SKIP_DIRS or part.startswith("cmake-build-") for part in parts):
+            continue
+        name = language_name("/".join(parts))
+        if name is None:
+            continue
+        files, total = totals.get(name, (0, 0))
+        totals[name] = (files + 1, total + max(size, 0))
+    counted = sum(total for _, total in totals.values()) or 1
+    rows = [
+        {
+            "name": name,
+            "files": files,
+            "bytes": total,
+            "share": round(100 * total / counted, 1),
+            "analysed": name in ANALYSED_LANGUAGES,
+        }
+        for name, (files, total) in totals.items()
+    ]
+    rows.sort(key=lambda row: (-row["bytes"], -row["files"], row["name"]))
+    return rows
+
+
+def describe_languages(languages, limit=6):
+    """"Java 71.2%, TypeScript 22.0%, Shell 6.8%" - the census in one line."""
+    shown = [f"{row['name']} {row['share']:.1f}%" for row in languages[:limit]]
+    rest = len(languages) - limit
+    if rest > 0:
+        shown.append(f"{rest} more")
+    return ", ".join(shown)
 
 
 def python_facts(path, text):

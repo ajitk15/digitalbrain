@@ -24,6 +24,11 @@ urlpatterns = [
     ),
     path("applications/<uuid:pk>/code-graph/", code_graph.code_graph, name="code-graph"),
     path(
+        "applications/<uuid:pk>/code-graph/add/",
+        code_graph.repository_add,
+        name="code-graph-add",
+    ),
+    path(
         "applications/<uuid:pk>/code-graph/files/<uuid:file_id>/",
         code_graph.code_file,
         name="code-file",
@@ -104,9 +109,15 @@ urlpatterns = [
         name="chat-message",
     ),
     path("applications/<uuid:pk>/plans/", workbench.plans, name="plans"),
+    path("applications/<uuid:pk>/plans/new-ticket/", workbench.ticket_new, name="ticket-new"),
     path("applications/<uuid:pk>/onboarding/", workbench.onboarding, name="onboarding"),
     path("applications/<uuid:pk>/runs/", workbench.runs, name="runs"),
     path("applications/<uuid:pk>/runs/<uuid:run_id>/", workbench.run_detail, name="run-detail"),
+    path(
+        "applications/<uuid:pk>/runs/<uuid:run_id>/agents/<slug:name>/",
+        workbench.run_agent,
+        name="run-agent",
+    ),
     path("applications/<uuid:pk>/plans/<uuid:plan_id>/", workbench.plan_detail, name="plan-detail"),
     path(
         "applications/<uuid:pk>/plans/<uuid:plan_id>/items/<uuid:item_id>/",
@@ -116,6 +127,11 @@ urlpatterns = [
     path("applications/<uuid:pk>/connectors/", connectors.connectors, name="connectors"),
     path("platform/users/", administration.users, name="users"),
     path("platform/users/<uuid:pk>/status/", administration.user_status, name="user-status"),
+    path(
+        "platform/organizations/<uuid:pk>/administrators/",
+        administration.organization_administrators,
+        name="organization-administrators",
+    ),
     path(
         "platform/organizations/<uuid:pk>/status/",
         administration.organization_status,
@@ -137,6 +153,7 @@ urlpatterns = [
     ),
     path("", views.dashboard, name="dashboard"),
     path("branding/logo.png", views.logo, name="logo"),
+    path("favicon.ico", views.favicon, name="favicon"),
     path("platform/", views.platform_console, name="platform-console"),
     path(
         "platform/organizations/<uuid:pk>/reset/",
@@ -177,6 +194,7 @@ urlpatterns = [
     ),
     path("applications/<uuid:pk>/", views.application_home, name="application"),
     path("applications/<uuid:pk>/documents/", documents.documents, name="documents"),
+    path("applications/<uuid:pk>/documents/add/", documents.source_add, name="source-add"),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/",
         documents.document_detail,

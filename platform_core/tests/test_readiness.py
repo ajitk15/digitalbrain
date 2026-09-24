@@ -111,6 +111,7 @@ class ReadinessTests(TestCase):
 
     # ---- a single approver cannot approve anything ----
 
+    @override_settings(ALLOW_SELF_APPROVAL=False)
     def test_one_approver_is_reported_because_they_cannot_approve_their_own_plan(self):
         step = self.by_key()["approver"]
         self.assertFalse(step.ok)
@@ -121,6 +122,21 @@ class ReadinessTests(TestCase):
             can_approve=True
         )
         self.assertTrue(self.by_key()["approver"].ok)
+
+    @override_settings(ALLOW_SELF_APPROVAL=True)
+    def test_with_self_approval_one_approver_is_enough_and_no_step_is_shown(self):
+        """A second approver is not asked for where one person may approve.
+
+        Nobody holding approval is still reported: no plan could be approved.
+        """
+        ApplicationGrant.objects.filter(application=self.app).update(can_approve=False)
+        step = self.by_key()["approver"]
+        self.assertFalse(step.ok)
+        self.assertEqual(step.label, "An approver")
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        self.assertNotIn("approver", self.by_key())
 
     # ---- the host login concession is reported, not hidden ----
 

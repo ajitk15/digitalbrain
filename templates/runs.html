@@ -2,7 +2,7 @@
 <p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
 <h1>Pipeline runs</h1>
 <p class="muted">Every run, newest first, kept for as long as the application is.</p>
-<div class="list-card"{% if active %} data-document-pending{% endif %}>{% for run in page %}{% include "_run_row.html" %}
+<div class="list-card">{% for run in page %}{% include "_run_row.html" %}
 {% empty %}<p class="padded muted">No run has been started for this application.</p>{% endfor %}</div>
 {% include 'pagination.html' with pagination_label="Run history" %}
 {% endblock %}

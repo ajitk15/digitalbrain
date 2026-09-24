@@ -87,15 +87,15 @@ class ChatApiTests(TestCase):
         self.assertEqual(response.json()["error"]["code"], "chat_api_disabled")
         model.assert_not_called()
 
-    def test_chat_api_starts_unticked_on_the_create_form(self):
-        self.assertIn("chat_api", OPT_IN_FEATURES)
+    def test_chat_api_starts_ticked_on_the_create_form(self):
+        self.assertNotIn("chat_api", OPT_IN_FEATURES)
         org = self.app.product.portfolio.organization
         form = ApplicationForm(organization=org)
-        self.assertFalse(form.fields["feature_chat_api"].initial)
+        self.assertTrue(form.fields["feature_chat_api"].initial)
         self.assertTrue(form.fields["feature_chat"].initial)
-        # With no marker posted, the defaults stand - and the opt-in stays off.
+        # With no marker posted, the defaults stand - and those now include it.
         defaults = ApplicationForm(data={}, organization=org).selected_features()
-        self.assertFalse(defaults["chat_api"])
+        self.assertTrue(defaults["chat_api"])
         self.assertTrue(defaults["chat"])
 
     def test_api_access_shows_the_endpoint_and_says_when_it_is_off(self):

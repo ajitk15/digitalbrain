@@ -433,6 +433,16 @@ class CodeSnapshot(models.Model):
     #: one problem. Counted across every file, not the drawn ones.
     cycle_count = models.PositiveIntegerField(default=0)
     orphan_count = models.PositiveIntegerField(default=0)
+    #: The test framework and CI the repository declares, read from the clone
+    #: (`repo_testing.detect`). Configuration is not source and is not indexed,
+    #: so an offline test author has no other way to know. Empty on snapshots
+    #: taken before this was recorded, which read as "not known".
+    test_setup = models.JSONField(default=dict, blank=True)
+    #: Which languages the repository is written in, counted over every file
+    #: in the clone rather than the indexed subset (`code_graph_analysis.census`).
+    #: Names come from a closed set, so they are safe to put in a prompt. Empty
+    #: on snapshots taken before this was recorded, which read as "not known".
+    languages = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -742,6 +752,11 @@ class FactoryRun(models.Model):
     ticket_title = models.CharField(max_length=300, blank=True)
     ticket_url = models.URLField(max_length=1000, blank=True)
     ticket_digest = models.CharField(max_length=64, blank=True)
+    #: The text of a ticket typed in on the Code Factory screen. Empty for an
+    #: imported ticket, whose body is read from its knowledge entry instead.
+    #: Held here, not as knowledge, so a hand-written ticket never reaches
+    #: Sources or a graph build.
+    ticket_body = models.TextField(blank=True)
     #: Which published graph answered. Null means none was available.
     graph_version = models.PositiveIntegerField(null=True, blank=True)
     code_snapshot = models.ForeignKey(

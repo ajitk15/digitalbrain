@@ -300,7 +300,30 @@ def steps(app):
         )
     )
 
+    from django.conf import settings
+
     approvers = ApplicationGrant.objects.filter(application=app, can_approve=True).count()
+    if settings.ALLOW_SELF_APPROVAL:
+        # One person may approve their own plan here, so a second approver is
+        # not something this instance needs, and asking for one is a step that
+        # can never be ticked on a one-person deployment. Somebody must still
+        # hold approval, or no plan is ever approved - that alone is reported.
+        if not approvers:
+            found.append(
+                Step(
+                    "approver",
+                    DELIVERY,
+                    "An approver",
+                    False,
+                    "Nobody can approve a plan.",
+                    "Grant approval to a member on the People & access screen. This "
+                    "instance lets one person approve the plan they asked for.",
+                    "application-access",
+                    "people",
+                    modal=True,
+                )
+            )
+        return found
     found.append(
         Step(
             "approver",

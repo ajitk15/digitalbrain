@@ -4,25 +4,29 @@ The pipeline on one screen, one stage per step, each collapsed to a line that
 says how it went. The stage you can act on is the one left open: a finished
 step is a fact you may want to check, and the current step is work.
 {% endcomment %}
-<p><a href="{% url 'runs' application.pk %}">← All runs</a></p>
-<p class="eyebrow">Run {{ run.number }}</p><h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1>
-<p class="run-meta"{% if active %} data-run-active{% endif %}><span class="pill">{{ run.get_status_display }}</span> <span class="muted">as of {% now "H:i:s" %} UTC{% if active %} · refreshing itself{% endif %} · {{ run.ticket_external_id }}{% if run.ticket_url %} · <a href="{{ run.ticket_url }}" target="_blank" rel="noreferrer noopener">open the ticket</a>{% endif %} · started by {{ run.requested_by.username }} · {{ run.created_at|date:"M d, H:i" }} UTC</span><a class="run-refresh" href="{% url 'run-detail' application.pk run.pk %}" title="Reload this page">{% icon "refresh" 13 %}Refresh</a></p>
-
+<p class="run-back"><a href="{% url 'runs' application.pk %}">← All runs</a></p>
+{% comment %}The header and every stage carry a data-live key: while the run is moving, static/documents.js re-fetches this page and swaps only what changed, keeping any stage the reader opened or closed and anything they typed or ticked. The Refresh link is the same page for a browser without script.{% endcomment %}
+<section class="card run-hero" data-live="run-hero"{% if active %} data-live-pending{% endif %}>
+<div class="run-hero-head"><div><p class="eyebrow">Run {{ run.number }}{% if run.ticket_external_id %} · {{ run.ticket_external_id }}{% endif %}</p><h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1></div><span class="pill run-status run-status-{{ run.status }}">{% if active %}<span class="spinner" aria-hidden="true"></span>{% endif %}{{ run.get_status_display }}</span></div>
+<ol class="stage-strip run-stepper" aria-label="Stages">{% for stage in run.stages %}<li class="step step-{{ stage.state }}"><a href="#stage-{{ stage.number }}" title="Stage {{ stage.number }}: {{ stage.label }} ({{ stage.state }})"><span aria-hidden="true">{% if stage.state == 'ok' %}{% icon "check" 12 %}{% elif stage.state == 'failed' %}{% icon "cross" 10 %}{% else %}{{ stage.number }}{% endif %}</span>{{ stage.label }}</a></li>{% endfor %}</ol>
+<div class="run-meta">{% with latest=run.latest_step %}{% if latest %}<span class="run-latest" role="status">{{ latest.message }}</span>{% endif %}{% endwith %}<span class="muted">{{ run.requested_by.username }} · {{ run.created_at|date:"M d, H:i" }} UTC{% if run.ticket_url %} · <a href="{{ run.ticket_url }}" target="_blank" rel="noreferrer noopener">ticket {% icon "external" 12 %}</a>{% endif %} · updated {% now "H:i:s" %}</span>{% if active %}<span class="run-live">Updating live</span>{% endif %}<a class="run-refresh" href="{% url 'run-detail' application.pk run.pk %}" title="Reload this page">{% icon "refresh" 13 %}Refresh</a></div>
 {% if run.error %}<p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ run.error }}</span></p>{% endif %}
 {% if quiet_for >= 3 %}<p class="notice notice-warning">{% icon "warning" %}<span>This run has said nothing for <strong>{{ quiet_for }} minutes</strong>. A phase may simply be waiting on the model. If it stays silent past {{ stall_after }} minutes it is presumed abandoned — most often because the server restarted while it was working — and marked failed, with nothing written anywhere.</span></p>{% endif %}
+</section>
 
-<details class="stage"><summary><span class="stage-no">1</span><span class="stage-name">Pre-checks</span><span class="stage-note">{% if checks_passed == checks|length %}All {{ checks|length }} passed{% else %}{{ checks_passed }} of {{ checks|length }} passed{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.1 }}" id="stage-1" data-live="stage-1"><summary><span class="stage-no">{% if stage_state.1 == "ok" %}{% icon "check" 14 %}{% else %}1{% endif %}</span><span class="stage-name">Pre-checks</span><span class="stage-note">{% if checks_passed == checks|length %}All {{ checks|length }} passed{% else %}{{ checks_passed }} of {{ checks|length }} passed{% endif %}</span></summary>
 <ul class="check-row">{% for step in checks %}
 <li class="check check-{% if step.ok %}ok{% else %}no{% endif %}">{% if step.ok %}{% icon "success" 14 %}{% else %}{% icon "error" 14 %}{% endif %}{{ step.label }}</li>
 {% endfor %}</ul>
 </details>
 
-<details class="stage"{% if active and not items %} open{% endif %}><summary><span class="stage-no">2</span><span class="stage-name">Analysis</span><span class="stage-note">{% if items %}{{ items|length }} gap(s) found{% else %}{{ run.get_status_display|lower }}{% endif %}{% if run.graph_version %} · graph v{{ run.graph_version }}{% endif %}{% if run.code_snapshot %} · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}{% endif %}</span></summary>
-{% include "_run_progress.html" %}
+<details class="stage stage-{{ stage_state.2 }}" id="stage-2" data-live="stage-2"{% if active and not items %} open{% endif %}><summary><span class="stage-no">{% if stage_state.2 == "ok" %}{% icon "check" 14 %}{% else %}2{% endif %}</span><span class="stage-name">Analysis</span><span class="stage-note">{% if items %}{{ items|length }} gap(s) found{% else %}{{ run.get_status_display|lower }}{% endif %}{% if run.graph_version %} · graph v{{ run.graph_version }}{% endif %}{% if run.code_snapshot %} · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}{% endif %}</span></summary>
+{% include "_run_analysis.html" %}
+{% if can_retry_analysis %}<form method="post" class="run-retry">{% csrf_token %}<input type="hidden" name="action" value="retry-analysis"><p class="muted">The analysis stopped before it produced a plan. Running it again reuses this run and keeps the failed attempt in the log above.</p><button class="button" type="submit">{% icon "refresh" 13 %}Run the analysis again</button></form>{% endif %}
 </details>
 
 {% if items %}
-<details class="stage" {% if reviewable %}open{% endif %}><summary><span class="stage-no">3</span><span class="stage-name">Gaps</span><span class="stage-note">{% if run.plan.status == 'approved' %}{{ accepted_count }} of {{ items|length }} approved{% elif run.plan.status == 'rejected' %}All rejected{% else %}{{ items|length }} awaiting your decision{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.3 }}" id="stage-3" data-live="stage-3" {% if reviewable %}open{% endif %}><summary><span class="stage-no">{% if stage_state.3 == "ok" %}{% icon "check" 14 %}{% else %}3{% endif %}</span><span class="stage-name">Gaps</span><span class="stage-note">{% if run.plan.status == 'approved' %}{{ accepted_count }} of {{ items|length }} approved{% elif run.plan.status == 'rejected' %}All rejected{% else %}{{ items|length }} awaiting your decision{% endif %}</span></summary>
 <p class="muted">{% if reviewable %}All ticked. Untick what you do not want, then approve.{% endif %} Click a gap to read its evidence.</p>
 <form method="post" id="run-review">{% csrf_token %}<input type="hidden" name="action" value="review"><input type="hidden" name="items_declared" value="1"></form>
 {% if reviewable %}<p class="pick-all" hidden data-pick-all="gap-pick"><button type="button" class="text-button" data-pick="all">Select all</button> · <button type="button" class="text-button" data-pick="none">Clear all</button></p>{% endif %}
@@ -38,7 +42,6 @@ step is a fact you may want to check, and the current step is work.
 {% endfor %}</ul>
 
 {% if reviewable %}
-{% if self_approving %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>You are reviewing your own plan.</strong> This instance allows it because there is nobody else to ask. The audit record will say this change was approved by its author.</span></p>{% endif %}
 <div class="gap-decide">
 <label for="review-note">Review note</label>
 <textarea id="review-note" name="note" rows="2" maxlength="2000" required form="run-review"></textarea>
@@ -51,7 +54,7 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 {% if run.plan.status == 'approved' %}
-<details class="stage" {% if not changes %}open{% endif %}><summary><span class="stage-no">4</span><span class="stage-name">Implementation agents</span><span class="stage-note">{% if changes %}{{ changes|length }} file(s) written, nothing published{% elif run.in_flight %}running{% elif not run.repository_confirmed %}repository not confirmed{% elif not write_credential %}no write credential{% else %}not started{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.4 }}" id="stage-4" data-live="stage-4" {% if not changes %}open{% endif %}><summary><span class="stage-no">{% if stage_state.4 == "ok" %}{% icon "check" 14 %}{% else %}4{% endif %}</span><span class="stage-name">Implementation agents</span><span class="stage-note">{% if changes %}{{ changes|length }} file(s) written, nothing published{% elif run.in_flight %}running{% elif not run.repository_confirmed %}repository not confirmed{% elif not write_credential %}no write credential{% else %}not started{% endif %}</span></summary>
 
 {% if not write_credential and not run.code_snapshot %}<p class="notice notice-warning">{% icon "warning" %}<span>No write credential and no code snapshot, so there is nothing to read the named files from. Index the repository in <a href="{% url 'code-graph' application.pk %}">Code Graph</a>, or add <strong>GitHub (write)</strong> on the <a href="{% url 'credentials' application.pk %}">Credentials screen</a>.</span></p>
 {% else %}
@@ -66,22 +69,23 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 <ul class="agent-row">{% for agent in agents %}
-<li class="agent agent-{{ agent.status }}">{% if agent.status == 'ok' %}{% icon "success" 14 %}{% elif agent.status == 'failed' %}{% icon "error" 14 %}{% elif agent.status == 'running' %}<span class="spinner" aria-hidden="true"></span>{% elif agent.status == 'skipped' or agent.status == 'absent' %}{% icon "info" 14 %}{% else %}{% icon "empty" 14 %}{% endif %}<span><strong>{{ agent.label }}</strong><small>{{ agent.detail }}</small></span></li>
+<li class="agent agent-{{ agent.status }}">{% if agent.status == 'ok' %}{% icon "success" 14 %}{% elif agent.status == 'failed' %}{% icon "error" 14 %}{% elif agent.status == 'running' %}<span class="spinner" aria-hidden="true"></span>{% elif agent.status == 'skipped' or agent.status == 'absent' %}{% icon "info" 14 %}{% else %}{% icon "empty" 14 %}{% endif %}<span class="agent-text"><a href="{% url 'run-agent' application.pk run.pk agent.name %}" data-modal><strong>{{ agent.label }}</strong></a><small>{{ agent.detail }}</small>{% if agent.explanation %}<small class="agent-why">{{ agent.explanation }} <a href="{% url 'run-agent' application.pk run.pk agent.name %}" data-modal>What came back</a></small>{% endif %}</span><span class="agent-model agent-model-{{ agent.model.source }}" title="{% if agent.model.source == 'used' %}Model this agent used: {{ agent.model.id }}{% elif agent.model.source == 'configured' %}Will use this application's Code Factory model: {{ agent.model.id }}{% elif agent.model.source == 'deterministic' %}Fixed checks and API calls; no model is called{% else %}No Code Factory model is configured in AI settings{% endif %}">{{ agent.model.label }}{% if agent.model.source == 'configured' %} <em>(configured)</em>{% endif %}</span></li>
 {% endfor %}</ul>
 
 {% if run.status == 'prepare_queued' or run.status == 'preparing' %}
 <p class="notice" role="status">{% icon "info" %}<span>The agents are working. This page refreshes itself; nothing is written to {{ run.proposed_repository }} by this stage.</span></p>
 {% elif not changes %}
-<p class="muted">The agents read the named files and write their new contents here, not to the repository.</p>
-<form method="post">{% csrf_token %}<input type="hidden" name="action" value="prepare"><button class="button" type="submit">{% icon "code" 13 %}Run the implementation agents</button></form>
+{% if run.status == 'failed' and failed_agent %}<p class="notice notice-error">{% icon "error" %}<span><strong>{{ failed_agent.label }} failed.</strong> {{ failed_agent.detail }} Rerunning starts the implementation agents again from the work order, because each one works from the one before.</span></p>{% else %}<p class="muted">The agents read the named files and write their new contents here, not to the repository.</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="prepare"><button class="button" type="submit">{% if run.status == 'failed' %}{% icon "refresh" 13 %}Rerun the implementation agents{% else %}{% icon "code" 13 %}Run the implementation agents{% endif %}</button></form>
 {% endif %}
 {% endif %}
 </details>
 {% endif %}
 
 {% if changes %}
-<details class="stage" open><summary><span class="stage-no">5</span><span class="stage-name">Summary</span><span class="stage-note">{{ changes|length }} file(s) · {{ created_count }} new · nothing written yet</span></summary>
+<details class="stage stage-{{ stage_state.5 }}" id="stage-5" data-live="stage-5" open><summary><span class="stage-no">{% if stage_state.5 == "ok" %}{% icon "check" 14 %}{% else %}5{% endif %}</span><span class="stage-name">Summary</span><span class="stage-note">{{ changes|length }} file(s) · {{ created_count }} new · nothing written yet</span></summary>
 <p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) ready</strong> for <code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>. <strong>Nothing has been written yet.</strong></span></p>
+{% if tests_unrun %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>The new tests will not run on their own.</strong> {{ tests_unrun }} Run them locally before merging, or add a CI workflow, so a green pull request means something.</span></p>{% endif %}
 <div class="list-card">{% for change in changes %}
 <div class="list-row"><div><strong><code>{{ change.path }}</code></strong><small>{{ change.size|filesizeformat }}{% if change.creates %} · this file does not exist yet{% else %} · replaces the file read at {{ change.base_sha|slice:':8' }}{% endif %}</small></div><span class="pill{% if change.creates %} status-high{% endif %}">{% if change.creates %}New file{% else %}Modified{% endif %}</span></div>
 {% endfor %}</div>
@@ -104,7 +108,7 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 {% if run.pull_request_url %}
-<details class="stage" open><summary><span class="stage-no">6</span><span class="stage-name">Tests</span><span class="stage-note">{% if run.checks %}{{ run.get_checks_label }}{% else %}waiting for the repository's checks{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.6 }}" id="stage-6" data-live="stage-6" open><summary><span class="stage-no">{% if stage_state.6 == "ok" %}{% icon "check" 14 %}{% else %}6{% endif %}</span><span class="stage-name">Tests</span><span class="stage-note">{% if run.checks %}{{ run.get_checks_label }}{% else %}waiting for the repository's checks{% endif %}</span></summary>
 <p class="muted">The tests were written by the test author agent above and are run by <code>{{ run.proposed_repository }}</code>'s own CI on branch <code>{{ run.branch }}</code>. This platform never runs the code it writes.</p>
 {% if run.checks %}
 <div class="list-card">{% for check in run.checks %}
@@ -118,7 +122,7 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 {% if refresh_stage.state != 'pending' %}
-<details class="stage" {% if refresh_stage.state == 'current' %}open{% endif %}><summary><span class="stage-no">7</span><span class="stage-name">Refresh</span><span class="stage-note">{% if run.refresh_choice == 'queued' %}queued: {{ run.refresh_scope|join:", " }}{% elif run.refresh_choice == 'declined' %}left as they are{% else %}waiting on your answer{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.7 }}" id="stage-7" data-live="stage-7" {% if refresh_stage.state == 'current' %}open{% endif %}><summary><span class="stage-no">{% if stage_state.7 == "ok" %}{% icon "check" 14 %}{% else %}7{% endif %}</span><span class="stage-name">Refresh</span><span class="stage-note">{% if run.refresh_choice == 'queued' %}queued: {{ run.refresh_scope|join:", " }}{% elif run.refresh_choice == 'declined' %}left as they are{% else %}waiting on your answer{% endif %}</span></summary>
 {% if run.refresh_choice %}
 <p class="muted">{% if run.refresh_choice == 'queued' %}{{ run.refresh_by.username }} asked for this on {{ run.refresh_at|date:"d M Y H:i" }}. Watch each one on its own screen.{% else %}{{ run.refresh_by.username }} left them as they are on {{ run.refresh_at|date:"d M Y H:i" }}.{% endif %}</p>
 {% else %}
@@ -135,7 +139,7 @@ step is a fact you may want to check, and the current step is work.
 </details>
 {% endif %}
 
-<details class="stage"><summary><span class="stage-no">·</span><span class="stage-name">What each phase cost</span><span class="stage-note">{{ phases|length }} phase(s)</span></summary>
+<details class="stage stage-meta" id="stage-cost" data-live="stage-cost"><summary><span class="stage-no">·</span><span class="stage-name">What each phase cost</span><span class="stage-note">{{ phases|length }} phase(s)</span></summary>
 <div class="list-card">{% for phase in phases %}
 <div class="list-row"><div><strong>{{ phase.get_name_display }}</strong><small>{{ phase.agent }}{% if phase.model %} · {{ phase.model }}{% endif %}{% if phase.duration_ms %} · {{ phase.duration_ms }} ms{% endif %}{% if phase.prompt_tokens %} · {{ phase.prompt_tokens }} in / {{ phase.completion_tokens }} out tokens{% endif %}</small>{% if phase.error %}<p class="notice notice-error">{{ phase.error }}</p>{% endif %}</div><span class="pill phase-{{ phase.status }}">{{ phase.get_status_display }}</span></div>
 {% empty %}<p class="padded muted">No phase has started yet.</p>{% endfor %}</div>

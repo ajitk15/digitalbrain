@@ -1,10 +1,9 @@
 {% load icons %}{% comment %}
 What a run is doing, in order, in the words of whoever pressed Analyse.
 
-The page this sits on owns the refreshing: factory.js reloads a live run, and
-the document poll deliberately does not - that one stops at the first toggle,
-and this page is built from collapsible stages, so opening one to watch it
-would be what stopped it updating.
+The page this sits on owns the refreshing: its stage carries a data-live key,
+and documents.js swaps it in place while the run moves, keeping the stage open
+or closed as the reader left it.
 
 Every line is server-rendered and escaped by the template, as model text always
 is here - none of this is drawn by script.
@@ -13,5 +12,5 @@ is here - none of this is drawn by script.
 {% empty %}
 <li class="run-line run-line-check"><span class="run-message muted">Nothing recorded yet. The run reports each step as it reaches it.</span></li>
 {% endfor %}{% if active %}
-<li class="run-line run-line-step"><span class="run-time"><span class="spinner" aria-hidden="true"></span></span><span class="run-message muted">Working. This page refreshes itself; leaving it does not stop the run.</span></li>
+<li class="run-line run-line-step"><span class="run-time"><span class="spinner" aria-hidden="true"></span></span><span class="run-message muted">Working. This updates as it goes; leaving the page does not stop the run.</span></li>
 {% endif %}</ol>

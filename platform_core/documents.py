@@ -163,11 +163,65 @@ def return_route(request):
 @require_http_methods(["GET", "POST"])
 def documents(request, pk):
     app, grant = application_for(request.user, pk)
-    can_upload = (
+    can_upload = can_add_sources(app, grant)
+    response, form, link_form = intake(request, pk, can_upload)
+    if response is not None:
+        return response
+    if request.method == "POST":
+        # The forms live on their own page now, so a submission that failed is
+        # shown there - re-rendering the list would hide the error it carries.
+        return render_source_add(request, app, grant, form, link_form)
+    return render(
+        request,
+        "documents.html",
+        {
+            "application": app,
+            "grant": grant,
+            "can_upload": can_upload,
+            "intake_enabled": intake_enabled(),
+            "uploads_enabled": feature_enabled("document_uploads", app),
+            **library_context(app, request),
+        },
+    )
+
+
+def can_add_sources(app, grant):
+    return (
         grant.role in {"owner", "contributor"}
         and intake_enabled()
         and feature_enabled("document_uploads", app)
     )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def source_add(request, pk):
+    """Upload files or import a link, on a page of its own.
+
+    The Sources screen opens this as a popup through `modal.js`, which fetches
+    this URL and lifts its `<main>`; with JavaScript off the button simply
+    navigates here. It posts to itself and redirects to Sources on success.
+    """
+    app, grant = application_for(request.user, pk)
+    can_upload = can_add_sources(app, grant)
+    if not can_upload:
+        raise PermissionDenied
+    response, form, link_form = intake(request, pk, can_upload)
+    if response is not None:
+        return response
+    return render_source_add(request, app, grant, form, link_form)
+
+
+def render_source_add(request, app, grant, form, link_form):
+    return render(
+        request,
+        "source_add.html",
+        {"application": app, "grant": grant, "form": form, "link_form": link_form},
+    )
+
+
+def intake(request, pk, can_upload):
+    """Handle an upload or link POST. Returns (redirect or None, form, link_form)."""
     form = DocumentForm(request.POST or None, request.FILES or None)
     link_form = LinkForm(request.POST or None)
     if request.method == "POST" and request.POST.get("action") == "link":
@@ -191,7 +245,7 @@ def documents(request, pk):
                 # instead of arriving as good news.
                 for note in notes:
                     messages.warning(request, note)
-                return redirect(return_route(request), pk=pk)
+                return redirect(return_route(request), pk=pk), form, link_form
     elif request.method == "POST":
         if not can_upload:
             raise PermissionDenied
@@ -213,21 +267,8 @@ def documents(request, pk):
                     f"Uploaded {saved} document(s). "
                     "Markdown conversion runs automatically when Knowledge is enabled.",
                 )
-            return redirect(return_route(request), pk=pk)
-    return render(
-        request,
-        "documents.html",
-        {
-            "application": app,
-            "grant": grant,
-            "can_upload": can_upload,
-            "intake_enabled": intake_enabled(),
-            "uploads_enabled": feature_enabled("document_uploads", app),
-            "form": form,
-            "link_form": link_form,
-            **library_context(app, request),
-        },
-    )
+            return redirect(return_route(request), pk=pk), form, link_form
+    return None, form, link_form
 
 
 @login_required

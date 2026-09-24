@@ -131,11 +131,14 @@ default-off: under `updated >= -30d`, absence means the ticket is old.
 
 `graph/search/` and the MCP server call no model. `utility/api_chat.py` does - it is the
 one API surface that spends the application's provider budget - so it is gated on
-the `chat_api` feature switch, which is **opt-in**: `services.OPT_IN_FEATURES`
-keeps it unticked on the create form, and migration 0036 wrote an explicit
-disabled row for every application that already existed. `feature_enabled` still
-reads a missing row as enabled; that rule is untouched, and this works by never
-leaving the row missing. It answers through `workbench.answer_question` and the
+the `chat_api` feature switch. It used to be **opt-in**, unticked on the create
+form through `services.OPT_IN_FEATURES`. **That was traded, deliberately, for
+convenience**: a new application now starts with it ticked like every other
+feature, and `OPT_IN_FEATURES` is empty but kept as the mechanism. What still
+holds: migration 0036's explicit disabled row for every application that existed
+before it is untouched, so no release turned it on anywhere; the person creating
+an application sees the box and can untick it; and the endpoint is unreachable
+without an API token an owner issues. It answers through `workbench.answer_question` and the
 browser's own streaming worker - no second answering path, and no way for a
 caller to choose a model or a credential.
 
@@ -227,12 +230,24 @@ is off unless written down, which keeps two-person review the default, but
 refuse it. It is the one flag of the three that does; `claude_use_host_login` and
 `allow_demo_reset` are still refused there, and the difference is intentional —
 those spend somebody else's money and delete somebody else's work, while this one
-only records a weaker fact about a change. Nothing became silent: `ChangePlan`
-stores the approver, so a self-approved plan says so in the audit record, and both
-review screens carry a warning while the setting is in force. `deploy/entrypoint.sh`
+only records a weaker fact about a change. It is not silent where it counts:
+`ChangePlan` stores the approver, so a self-approved plan says so in the audit
+record. The review screens used to carry a warning too; **that was removed,
+deliberately**, because on a one-person instance it told the only reviewer the
+same thing on every plan. The audit record is the part that must stay. `deploy/entrypoint.sh`
 renders it **on** for the container image, because that image is deployed
 single-operator; `DIGITAL_BRAIN_SELF_APPROVAL=0` turns it off where two people
 really do review every change.
+
+For the same reason the create form's "Grant this owner Code Factory approval
+rights" box starts **ticked**. An owner born without `can_approve` could never hand
+it to anyone, so every reviewer an application would ever have had to exist before
+it did. Holding the flag is not self-approval - `review_plan` still refuses an
+author's own plan unless `allow_self_approval` is set.
+
+Onboarding follows the same setting. With it on, `readiness.steps` does not ask for
+"A second approver" - a step a one-person instance could never tick - and reports
+only the case where nobody holds approval at all, as "An approver".
 
 **Creating an application never widens access.** `views.create_application` writes the
 portfolio, product, application, owner grant and feature rows in one transaction, but

@@ -8,8 +8,10 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods, require_POST
 
+from .forms import OrganizationAdministratorsForm
 from .models import Application, ApplicationGrant, Organization, OrganizationMember, User
 from .policy import organization_for, require_platform_admin
 from .services import audit
@@ -125,6 +127,56 @@ def organization_status(request, pk):
     audit(request.user, "organization.enabled" if org.active else "organization.disabled", org.pk)
     messages.success(request, "Organization status updated.")
     return redirect("platform-console")
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def organization_administrators(request, pk):
+    """Promote and demote an organization's administrators after creation.
+
+    A platform administrator manages this without being a member: the platform
+    console already lists every organization, and nothing here grants the
+    platform administrator membership or application access. Demoting keeps the
+    membership - removing someone from the organization is a different act.
+    """
+    require_platform_admin(request.user)
+    org = get_object_or_404(Organization, pk=pk)
+    current = set(
+        OrganizationMember.objects.filter(organization=org, is_admin=True).values_list(
+            "user_id", flat=True
+        )
+    )
+    form = OrganizationAdministratorsForm(
+        request.POST or None, organization=org, initial={"administrators": list(current)}
+    )
+    if request.method == "POST" and form.is_valid():
+        chosen = {user.pk for user in form.cleaned_data["administrators"]}
+        with transaction.atomic():
+            Organization.objects.select_for_update().get(pk=org.pk)
+            current = set(
+                OrganizationMember.objects.filter(organization=org, is_admin=True).values_list(
+                    "user_id", flat=True
+                )
+            )
+            for user_id in chosen - current:
+                OrganizationMember.objects.update_or_create(
+                    organization=org, user_id=user_id, defaults={"is_admin": True}
+                )
+                audit(request.user, "organization.admin_added", user_id, org)
+            removed = current - chosen
+            if removed:
+                OrganizationMember.objects.filter(organization=org, user_id__in=removed).update(
+                    is_admin=False
+                )
+                for user_id in removed:
+                    audit(request.user, "organization.admin_removed", user_id, org)
+        messages.success(request, f"Administrators of {org.name} updated.")
+        return redirect("platform-console")
+    return render(
+        request,
+        "organization_admins.html",
+        {"form": form, "organization": org, "cancel_url": reverse("platform-console")},
+    )
 
 
 @login_required

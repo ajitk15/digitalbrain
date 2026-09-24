@@ -17,7 +17,13 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
-from .code_graph_analysis import ANALYZER_VERSION, classify, facts, relationships
+from .code_graph_analysis import (
+    ANALYZER_VERSION,
+    classify,
+    describe_languages,
+    facts,
+    relationships,
+)
 from .code_graph_clone import clone_sources
 from .link_sources import github_token
 from .models import CodeFile, CodeRelationship, CodeRepository, CodeSnapshot
@@ -116,8 +122,9 @@ def index_repository(repository):
             raise PermissionDenied
         valid_name(repository.name)
         token = github_token(app)
+        setup, languages = {}, []
         commit, branch, sources, warnings, complete = clone_sources(
-            repository.name, repository.default_ref, token
+            repository.name, repository.default_ref, token, setup=setup, languages=languages
         )
         # What was asked for, else what the clone landed on, else the
         # convention. "HEAD" used to be the fallback here and it was wrong in
@@ -127,9 +134,14 @@ def index_repository(repository):
         default_ref = repository.default_ref or branch or "main"
         analyzed = [facts(path, content) for path, content in sources]
         if not analyzed:
+            found = (
+                f" This repository is written in {describe_languages(languages)}."
+                if languages
+                else ""
+            )
             warnings.append(
-                "No supported source files were indexed. Python, JavaScript, JSX, "
-                "TypeScript and TSX are analysed; other languages are not yet."
+                f"No supported source files were indexed.{found} Python, JavaScript, "
+                "JSX, TypeScript and TSX are analysed; other languages are not yet."
             )
         # The analyser version is part of what a manifest identifies, not just the
         # bytes it read: the same commit analysed by a better parser is a
@@ -159,6 +171,14 @@ def index_repository(repository):
             analyzer_version=ANALYZER_VERSION,
         ).first()
         if existing:
+            # Also when the detector has learned a language since (the same
+            # commit, so the fresh reading is simply the more complete one).
+            if setup and set(setup) - set(existing.test_setup or {}):
+                CodeSnapshot.objects.filter(pk=existing.pk).update(test_setup=setup)
+            # Snapshots taken before the census was recorded learn it here,
+            # from the same commit, rather than waiting for the next push.
+            if languages and not existing.languages:
+                CodeSnapshot.objects.filter(pk=existing.pk).update(languages=languages)
             # Same rule as a fresh snapshot: nothing indexed is never "ready".
             CodeRepository.objects.filter(pk=repository.pk, job_id=job_id).update(
                 status="ready" if existing.complete and analyzed else "partial",
@@ -194,6 +214,8 @@ def index_repository(repository):
                 warnings=warnings,
                 cycle_count=cycle_count,
                 orphan_count=orphan_count,
+                test_setup=setup,
+                languages=languages,
             )
             created = {
                 item["path"]: CodeFile.objects.create(snapshot=snapshot, **item)

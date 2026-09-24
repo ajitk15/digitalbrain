@@ -24,24 +24,23 @@
     });
   });
 
-  // Keep a working run current.
-  //
-  // Deliberately not the document poll: that one stops at the first `toggle`,
-  // which on this page means opening a stage to watch it is what stops it
-  // updating. What must not be interrupted here is narrower and knowable -
-  // text somebody has typed into the review note, and an open dialog - so
-  // those are what hold it off, and it resumes when they are done.
-  const live = document.querySelector("[data-run-active]");
-  if (!live) return;
+  // The stage strip in the header: jump to a stage and open it. Without script
+  // the anchor still scrolls there, and the section opens with one more click.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest(".run-stepper a[href^='#stage-']");
+    if (!link) return;
+    const stage = document.getElementById(link.hash.slice(1));
+    if (!stage || stage.tagName !== "DETAILS") return;
+    event.preventDefault();
+    stage.open = true;
+    stage.dataset.liveTouched = "true";
+    const summary = stage.querySelector("summary");
+    stage.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (summary) summary.focus({ preventScroll: true });
+  });
 
-  const typing = () => {
-    const field = document.querySelector("textarea, input:not([type=hidden])");
-    return Boolean(field && field.value.trim());
-  };
-  const busy = () =>
-    typing() || document.hidden || Boolean(document.querySelector("dialog[open]"));
-
-  window.setInterval(() => {
-    if (!busy()) window.location.reload();
-  }, 5000);
+  // Keeping a working run current is the shared in-place refresh in
+  // documents.js: the header and each stage carry a data-live key, and only
+  // what changed is swapped. It used to reload the whole page every five
+  // seconds, which closed whatever stage the reader had opened.
 })();

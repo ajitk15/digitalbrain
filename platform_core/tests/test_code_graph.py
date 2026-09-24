@@ -48,6 +48,19 @@ class CodeGraphTests(TestCase):
         response = self.client.get(reverse("code-graph", args=[self.app.pk]))
         self.assertEqual(response.status_code, 404)
 
+    def test_add_repository_is_a_popup_onto_a_page_of_its_own(self):
+        add = reverse("code-graph-add", args=[self.app.pk])
+        body = self.client.get(reverse("code-graph", args=[self.app.pk])).content.decode()
+        self.assertIn(f'href="{add}" data-modal', body)
+        self.assertNotIn('value="register"', body)
+        self.assertContains(self.client.get(add), 'value="register"')
+        # A refusal is shown on the form page rather than lost on the list.
+        response = self.client.post(add, {"action": "register", "repository": "not a name"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="errorlist')
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.get(add).status_code, 403)
+
     def test_a_repository_is_retired_rather_than_deleted(self):
         """Removing one must not rewrite what past runs were given.
 
@@ -80,6 +93,20 @@ class CodeGraphTests(TestCase):
         # The row, its snapshot, and the run's pin all survive.
         self.assertTrue(CodeRepository.objects.filter(pk=repository.pk).exists())
         self.assertEqual(run.code_snapshot_id, snapshot.pk)
+
+    def test_the_snapshot_facts_sit_on_the_graph_toolbar(self):
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        repository.snapshots.create(number=1, commit_sha="a" * 40)
+        repository.status = "ready"
+        repository.save(update_fields=["status"])
+        response = self.client.get(
+            reverse("code-graph", args=[self.app.pk]), {"repository": repository.pk}
+        )
+        toolbar = response.content.decode().split('class="graph-toolbar"')[1]
+        toolbar = toolbar.split('class="code-graph-layout"')[0]
+        self.assertIn('class="graph-facts"', toolbar)
+        self.assertIn("aaaaaaaa", toolbar)
+        self.assertNotContains(response, "graph-metrics")
 
     def test_a_retired_repository_is_not_offered_or_pinned(self):
         from platform_core.code_factory import pin_repository
@@ -429,15 +456,18 @@ class CodeGraphTests(TestCase):
 
     # ---------------------------------------------------------------- cloning
 
-    def _clone(self, files, commit="c" * 40, warnings=None, complete=True, branch="main"):
-        """Stand in for a clone, returning what clone_sources returns."""
-        return lambda name, ref, token: (
-            commit,
-            branch,
-            list(files),
-            list(warnings or []),
-            complete,
-        )
+    def _clone(
+        self, files, commit="c" * 40, warnings=None, complete=True, branch="main", languages=()
+    ):
+        """Stand in for a clone, returning (and filling) what clone_sources does."""
+
+        def clone(name, ref, token, setup=None, **extra):
+            found = extra.get("languages")
+            if found is not None:
+                found.extend(dict(row) for row in languages)
+            return commit, branch, list(files), list(warnings or []), complete
+
+        return clone
 
     @patch("platform_core.code_graph_ingest.github_token", return_value="")
     @patch("platform_core.code_graph_ingest.clone_sources")
@@ -481,7 +511,7 @@ class CodeGraphTests(TestCase):
     def test_a_superseded_index_cannot_publish_its_snapshot(self, clone, _token):
         repository = register(self.owner, self.app.pk, "acme/widgets")
 
-        def racing(name, ref, token):
+        def racing(name, ref, token, setup=None, **_):
             CodeRepository.objects.filter(pk=repository.pk).update(
                 status="queued", job_id=uuid.uuid4()
             )
@@ -534,6 +564,182 @@ class CodeGraphTests(TestCase):
         self.assertEqual(snapshot.files.count(), 0)
         self.assertIn("No supported source files", " ".join(snapshot.warnings))
 
+    # -------------------------------------------------------------- languages
+
+    JAVA_SERVICE = [
+        {"name": "Java", "files": 40, "bytes": 71_000, "share": 71.0, "analysed": False},
+        {"name": "TypeScript", "files": 9, "bytes": 22_000, "share": 22.0, "analysed": True},
+        {"name": "Shell", "files": 3, "bytes": 7_000, "share": 7.0, "analysed": False},
+    ]
+
+    def test_the_census_counts_every_language_not_only_the_parsed_ones(self):
+        from platform_core.code_graph_analysis import census
+
+        rows = census(
+            [
+                ("src/main/java/App.java", 6000),
+                ("src/main/java/Repo.java", 2000),
+                ("web/app.ts", 1500),
+                ("web/view.tsx", 500),
+                ("scripts/build.py", 1000),
+                ("Dockerfile", 200),
+                ("README.md", 90_000),
+                ("config.yaml", 5000),
+                ("web/node_modules/lib/index.js", 500_000),
+                ("web/dist/vendor.min.js", 300_000),
+            ]
+        )
+        by_name = {row["name"]: row for row in rows}
+        # Largest first; prose, data, vendored and minified files are not languages.
+        self.assertEqual(
+            [row["name"] for row in rows], ["Java", "TypeScript", "Python", "Dockerfile"]
+        )
+        self.assertEqual(by_name["Java"]["files"], 2)
+        self.assertEqual(by_name["TypeScript"]["bytes"], 2000)  # .ts and .tsx together
+        self.assertFalse(by_name["Java"]["analysed"])
+        self.assertTrue(by_name["Python"]["analysed"])
+        self.assertEqual(by_name["Java"]["share"], round(100 * 8000 / 11200, 1))
+
+    def test_the_clone_counts_languages_past_the_file_cap(self):
+        """The cap bounds parsing, not counting - and Go is counted, never read."""
+        import subprocess
+        from pathlib import Path
+
+        from platform_core import code_graph_clone
+
+        def fake_run(arguments, environment, cwd=None, timeout=None):
+            if arguments[1] == "clone":
+                checkout = Path(arguments[-1])
+                for index in range(4):
+                    (checkout / "svc").mkdir(parents=True, exist_ok=True)
+                    (checkout / "svc" / f"h{index}.go").write_text("package svc\n" * 50)
+                (checkout / "tools").mkdir()
+                (checkout / "tools" / "a.py").write_text("x = 1\n")
+                (checkout / "tools" / "b.py").write_text("y = 2\n")
+                return subprocess.CompletedProcess(arguments, 0, "", "")
+            answer = "main" if "--abbrev-ref" in arguments else "a" * 40
+            return subprocess.CompletedProcess(arguments, 0, answer, "")
+
+        languages = []
+        with (
+            patch.object(code_graph_clone, "_run", fake_run),
+            patch.object(code_graph_clone, "MAX_FILES", 1),
+        ):
+            _, _, files, _, complete = code_graph_clone.clone_sources(
+                "acme/widgets", "", "", languages=languages
+            )
+        self.assertEqual([path for path, _ in files], ["tools/a.py"])
+        self.assertFalse(complete)
+        self.assertEqual(
+            [(row["name"], row["files"]) for row in languages], [("Go", 4), ("Python", 2)]
+        )
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_the_snapshot_records_its_languages_and_a_reuse_learns_them(self, clone, _token):
+        clone.side_effect = self._clone(
+            [("web/app.ts", "export const a = 1\n")], languages=self.JAVA_SERVICE
+        )
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+        self.assertEqual(
+            [row["name"] for row in snapshot.languages], ["Java", "TypeScript", "Shell"]
+        )
+
+        # A snapshot taken before the census existed learns it on the next index
+        # of the same commit, rather than waiting for somebody to push.
+        CodeSnapshot.objects.filter(pk=snapshot.pk).update(languages=[])
+        CodeRepository.objects.filter(pk=repository.pk).update(
+            status="queued", job_id=uuid.uuid4()
+        )
+        repository.refresh_from_db()
+        self.assertTrue(index_repository(repository))
+        snapshot.refresh_from_db()
+        self.assertEqual(repository.snapshots.count(), 1)
+        self.assertEqual(snapshot.languages[0]["name"], "Java")
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_a_reuse_learns_a_test_framework_detected_since(self, clone, _token):
+        """A setup recorded before Java was detected has no "java" key at all."""
+        detected = {"python": None, "javascript": None, "known": True}
+
+        def cloned(name, ref, token, setup=None, **_):
+            setup.update(detected)
+            return "c" * 40, "main", [("web/app.ts", "export const a = 1\n")], [], True
+
+        clone.side_effect = cloned
+        repository = register(self.owner, self.app.pk, "acme/widgets")
+        self.assertTrue(index_repository(repository))
+        detected["java"] = "junit5"
+        CodeRepository.objects.filter(pk=repository.pk).update(
+            status="queued", job_id=uuid.uuid4()
+        )
+        repository.refresh_from_db()
+        self.assertTrue(index_repository(repository))
+        snapshot = repository.snapshots.get()
+        self.assertEqual(snapshot.test_setup["java"], "junit5")
+
+    @patch("platform_core.code_graph_ingest.github_token", return_value="")
+    @patch("platform_core.code_graph_ingest.clone_sources")
+    def test_an_unparsed_repository_says_what_it_is_written_in(self, clone, _token):
+        clone.side_effect = self._clone(
+            [],
+            languages=[
+                {"name": "COBOL", "files": 12, "bytes": 9000, "share": 100.0, "analysed": False}
+            ],
+        )
+        repository = register(self.owner, self.app.pk, "acme/legacy")
+        self.assertTrue(index_repository(repository))
+        warning = " ".join(repository.snapshots.get().warnings)
+        self.assertIn("written in COBOL 100.0%", warning)
+
+    def test_code_factory_is_told_the_languages_and_what_is_not_listed(self):
+        run = self._pinned_run()
+        CodeSnapshot.objects.filter(pk=run.code_snapshot_id).update(
+            languages=self.JAVA_SERVICE
+        )
+        run.refresh_from_db()
+        context = code_context_for(run, "Update charge")
+        self.assertIn(
+            "LANGUAGES by share of source: Java 71.0%, TypeScript 22.0%, Shell 7.0%.", context
+        )
+        self.assertIn("Files in Java, Shell exist in this repository but are not parsed", context)
+
+    def test_an_all_parsed_or_unknown_repository_adds_no_caveat(self):
+        run = self._pinned_run()
+        self.assertNotIn("LANGUAGES", code_context_for(run, "Update charge"))
+        CodeSnapshot.objects.filter(pk=run.code_snapshot_id).update(
+            languages=[
+                {"name": "Python", "files": 3, "bytes": 900, "share": 100.0, "analysed": True}
+            ]
+        )
+        run.refresh_from_db()
+        context = code_context_for(run, "Update charge")
+        self.assertIn("LANGUAGES by share of source: Python 100.0%.", context)
+        self.assertNotIn("not parsed", context)
+
+    def test_the_page_draws_the_language_mix(self):
+        run = self._pinned_run()
+        languages = [
+            {"name": f"Lang{index}", "files": 1, "bytes": 10, "share": 10.0, "analysed": False}
+            for index in range(10)
+        ]
+        CodeSnapshot.objects.filter(pk=run.code_snapshot_id).update(languages=languages)
+        response = self.client.get(
+            reverse("code-graph", args=[self.app.pk]),
+            {"repository": run.code_snapshot.repository_id},
+        )
+        body = response.content.decode()
+        self.assertIn('class="language-bar"', body)
+        self.assertIn("Lang0", body)
+        # Seven drawn by name; the other three share one row.
+        self.assertNotIn("Lang7", body)
+        self.assertIn("3 other", body)
+        self.assertIn('x="70.00" y="0" width="30.00"', body)
+        self.assertNotIn("style=", body.split('class="code-languages"')[1].split("</div>")[0])
+
     def test_the_clone_never_takes_a_host_from_anyone(self):
         """The remote is built from a validated owner/name against a fixed host."""
         from platform_core.code_graph_clone import REMOTE
@@ -566,9 +772,12 @@ class CodeGraphTests(TestCase):
             self.assertEqual(environment["USERPROFILE"], str(scratch / "home"))
             self.assertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
             self.assertNotIn("GITHUB_TOKEN", environment)
-            # The token lives in a config file, never in the process arguments.
+            # The token lives in a config file, never in the process arguments -
+            # as Basic auth, the form git accepts (test_code_graph_clone_auth).
+            import base64
+
             config = (scratch / "gitconfig").read_text(encoding="utf-8")
-            self.assertIn("ghp_secret_value", config)
+            self.assertIn(base64.b64encode(b"x-access-token:ghp_secret_value").decode(), config)
             self.assertIn("hooksPath", config)
 
     # ------------------------------------------------------------ credentials

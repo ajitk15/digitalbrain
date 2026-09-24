@@ -185,9 +185,9 @@ class CredentialSeedingTests(TestCase):
         for purpose, row in rows.items():
             self.assertEqual(row.provider, "claude")
             self.assertEqual(row.model, DEFAULT_MODELS["claude"])
-            # Graph generation can spend money whenever sources change, so it is
-            # the one purpose an owner has to switch on deliberately.
             self.assertEqual(row.enabled, purpose not in SEEDED_DISABLED)
+        # Enabled only makes enrichment available; a paid run is still requested.
+        self.assertTrue(rows["graph_generation"].enabled)
 
     def test_host_login_alone_seeds_a_configuration_with_no_file(self):
         with override_settings(SECRET_DIRECTORY=self.secrets.name, CLAUDE_USE_HOST_LOGIN=True):

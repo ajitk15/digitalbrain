@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% load icons %}{% block content %}<p class="eyebrow">{{ application.name }} · Code Factory</p><h1>New ticket</h1><p class="muted">For work that is not in Jira or ServiceNow. It is analysed exactly like an imported ticket{% if published_graph %}, against <strong>published graph version {{ published_graph }}</strong>{% endif %}, but it is kept on the run alone: it does not become a knowledge source and is not read by a graph build.</p>{% if error %}<ul class="errorlist"><li>{{ error }}</li></ul>{% endif %}
+<form method="post" class="manual-ticket-form">{% csrf_token %}<input type="hidden" name="action" value="manual">
+<p><label for="manual-title">Title</label><input id="manual-title" name="title" maxlength="300" required value="{{ title }}" placeholder="What needs to change"></p>
+<p><label for="manual-description">Description</label><textarea id="manual-description" name="description" rows="8" maxlength="20000" required placeholder="The problem, what should happen instead, and anything that narrows where to look.">{{ description }}</textarea></p>
+<div class="actions"><button class="button" type="submit"{% if not published_graph %} disabled{% endif %}>{% icon "code" %}Analyse</button> <a class="button secondary" href="{% url 'plans' application.pk %}" data-modal-close>Cancel</a></div>
+</form>{% endblock %}

@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Count, Sum
+from django.db.models import Count, Prefetch, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -85,6 +85,19 @@ def default_logo():
 
 
 @require_GET
+def favicon(request):
+    """/favicon.ico, which browsers ask for whether or not a page names an icon.
+
+    Every page links the icon through its hashed static URL; this answers the
+    bare path those requests use, by sending them to the same file rather than
+    letting them 404 into the error log. Resolved per request, so it always
+    names the current manifest entry.
+    """
+    from django.templatetags.static import static
+
+    return redirect(static("brand/favicon.ico"), permanent=False)
+
+
 def logo(request):
     brand = Branding.objects.filter(pk=1).first()
     content, digest = (bytes(brand.png), brand.digest) if brand else default_logo()
@@ -202,7 +215,17 @@ def platform_console(request):
     )
     from . import demo_reset
 
-    organizations = list(Organization.objects.all())
+    organizations = list(
+        Organization.objects.prefetch_related(
+            Prefetch(
+                "members",
+                queryset=OrganizationMember.objects.filter(is_admin=True)
+                .select_related("user")
+                .order_by("user__username"),
+                to_attr="admin_members",
+            )
+        )
+    )
     return render(
         request,
         "platform.html",
@@ -244,15 +267,27 @@ def create_organization(request):
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             org = Organization.objects.create(name=form.cleaned_data["name"])
-            OrganizationMember.objects.create(
-                organization=org, user=form.cleaned_data["administrator"], is_admin=True
+            administrators = list(form.cleaned_data["administrators"])
+            OrganizationMember.objects.bulk_create(
+                OrganizationMember(organization=org, user=user, is_admin=True)
+                for user in administrators
             )
-            audit(request.user, "organization.created", org.pk)
-        messages.success(request, "Organization created with its assigned administrator.")
+            audit(
+                request.user,
+                "organization.created",
+                org.pk,
+                org,
+                {"administrators": [str(user.pk) for user in administrators]},
+            )
+        messages.success(
+            request,
+            f"Organization created with {len(administrators)} administrator"
+            f"{'' if len(administrators) == 1 else 's'}.",
+        )
         return redirect("platform-console")
     return render(
         request,
-        "form.html",
+        "organization_admins.html",
         {
             "form": form,
             "title": "New organization",
