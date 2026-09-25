@@ -55,6 +55,23 @@ class ReferenceFileTests(TestCase):
         self.assertNotIn("tests/test_backoff.py", chosen)
         self.assertNotIn("src/config.py", chosen)
 
+    def test_imports_are_followed_two_levels_deep(self):
+        """What decides a request's behaviour is often one module further away.
+
+        A live run's route reached the database only through its dependency
+        module, never saw that an error rolls the transaction back, and wrote an
+        audit record the rollback discarded.
+        """
+        clock = self.snapshot.files.get(path="src/clock.py")
+        db = self.snapshot.files.create(
+            path="src/db.py", language="python", digest="d", content="def transaction(): ...\n"
+        )
+        CodeRelationship.objects.create(
+            snapshot=self.snapshot, source=clock, target=db, confidence="static"
+        )
+        chosen = [item["path"] for item in reference_files(self.run, [{"path": "src/queue.py"}])]
+        self.assertEqual(chosen, ["src/backoff.py", "src/clock.py", "src/db.py"])
+
     def test_the_implementation_sees_them_read_only_and_cannot_edit_them(self):
         order = json.dumps({"files": [{"file": "1", "intent": "Use backoff", "checks": []}]})
         # The model tries to edit the reference file as "file 2": it is not a
@@ -87,3 +104,21 @@ class ReferenceFileTests(TestCase):
         )
         output = self.run.phases.get(name="implementation").output
         self.assertEqual(output["references"], ["src/backoff.py", "src/clock.py"])
+        # The review is shown the same reference, so it can check calls against
+        # real code. It used to see none of it.
+        review_question = model.call_args_list[2].args[3]
+        self.assertIn("--- src/backoff.py ---", review_question)
+
+    def test_test_fixtures_are_part_of_the_reference(self):
+        """A test author not shown conftest.py invents fixtures."""
+        from platform_core.code_factory import test_support
+
+        self.snapshot.files.create(
+            path="tests/conftest.py", language="python", digest="d", content="def client(): ...\n"
+        )
+        self.assertEqual(
+            test_support(self.snapshot, ["tests/test_backoff.py"]), ["tests/conftest.py"]
+        )
+        chosen = reference_files(self.run, [{"path": "src/queue.py"}])
+        support = [item["path"] for item in chosen if item["support"]]
+        self.assertEqual(support, ["tests/conftest.py"])

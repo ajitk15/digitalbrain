@@ -68,13 +68,16 @@ PHASE_TOKENS = {
     # need applying, and a patch that almost applies is worse than one that does
     # not: this way the content either arrives complete or is refused.
     "implementation": 16384,
-    # A work order is a short instruction per file, not prose.
-    "work_order": 2048,
+    # A work order is an intent and checks per file, plus the items no file can
+    # satisfy. 2048 was sized for one file: a live run with four hit it at 2145
+    # tokens and was cut off mid-sentence, so the JSON never closed.
+    "work_order": 4096,
     # Tests are whole files like implementation, and usually longer than the
     # change they cover.
     "tests": 16384,
-    # A review is a verdict and a reason per file, nothing more.
-    "review": 2048,
+    # A review is a verdict and a reason per file - but a rejection's reason is
+    # prose, and several files' worth ran past 2048 on a live run.
+    "review": 4096,
 }
 
 #: A run in one of these has somebody's attention on it: it is working, or it
@@ -232,7 +235,16 @@ TEST_INSTRUCTIONS = GROUND_RULES + (
     "the new precondition or asserts the new behaviour, and leave the rest of "
     "the file exactly as it is. Never loosen an assertion the approved change "
     "does not touch, never delete a test, and say in notes which tests you "
-    "updated and why."
+    "updated and why. Never replace, patch or mock the function whose effect a "
+    "test is meant to prove: if a test says a refusal is recorded, it reads the "
+    "record back from where it is stored. Mock only collaborators outside the "
+    "behaviour under test, and prefer the repository's own fixtures and APIs for "
+    "setting up state - for example recording a decision through the endpoint "
+    "that records it - over patching what reads it. Call only functions, "
+    "fixtures, tables and fields that appear in the files you were shown - the "
+    "code as it will be, the existing tests, and the read-only reference. Never "
+    "invent one a test would find convenient: use what exists, or leave the test "
+    "out and say why in notes."
 )
 
 REVIEW_INSTRUCTIONS = GROUND_RULES + (
@@ -244,8 +256,16 @@ REVIEW_INSTRUCTIONS = GROUND_RULES + (
     "and reason (one sentence; required when rejecting). Reject a file that "
     "leaves the approved item unsatisfied, that changes behaviour nobody asked "
     "for, that contains a placeholder or an elision where code should be, or "
-    "that weakens a test. Being unsure is a reason to reject: a rejected file is "
-    "simply left alone, and nothing is lost but the attempt."
+    "that weakens a test. Reject a test that mocks or patches the very behaviour "
+    "it claims to prove, since it passes whether or not the code works. Reject "
+    "code that writes something and then raises, where the reference shows the "
+    "error rolls that write back. You may also be shown read-only reference: the "
+    "code these files call and the existing tests that cover them. Reject a file "
+    "that calls a function, fixture, table or field that appears nowhere in what "
+    "you were shown, and a change that breaks behaviour an existing test you were "
+    "shown checks, unless an approved item deliberately changes it and that test "
+    "is updated in the same change. Being unsure is a reason to reject: a "
+    "rejected file is simply left alone, and nothing is lost but the attempt."
 )
 
 
@@ -439,6 +459,15 @@ def finish_phase(
     output = dict(output or {})
     if sample:
         output["sample"] = sample[:2000]
+    limit = PHASE_TOKENS.get(phase.name)
+    spent = (usage or {}).get("completion_tokens") or 0
+    if status == "failed" and limit and spent >= limit * 0.95:
+        # The usual reason an answer "is not usable JSON" is that it stopped
+        # before it finished. Saying so points at the budget, not the model.
+        error = (
+            f"{error} The reply used {spent:,} output tokens against a {limit:,}-token "
+            "limit, so it was most likely cut off before it finished."
+        ).strip()
     RunPhase.objects.filter(pk=phase.pk).update(
         status=status,
         output=output,
@@ -1330,7 +1359,13 @@ IMPLEMENTATION_INSTRUCTIONS = GROUND_RULES + (
     "file's complete new text). Return only files you are actually changing, and "
     "return each one in full - not a diff, not an excerpt, and never a "
     "placeholder or an elision. If a change cannot be made from what you were "
-    "given, leave that file out and explain why in a notes string on the object."
+    "given, leave that file out and explain why in a notes string on the object. "
+    "If the code writes something - an audit record, a status - and then raises "
+    "an error, check in the reference how a failed request's transaction ends: "
+    "if an error rolls it back, the write is lost unless it is committed first "
+    "or kept outside that transaction. Keep every behaviour the existing tests in "
+    "the reference check - an unknown record still not found, a permission still "
+    "refused - unless an approved item deliberately changes it."
 )
 
 
@@ -1593,8 +1628,8 @@ def readable_targets(run, token):
 
 #: How much read-only reference the implementation is given: enough to call the
 #: code a change depends on correctly, not so much that it drowns the targets.
-REFERENCE_FILES = 6
-REFERENCE_BYTES = 48_000
+REFERENCE_FILES = 10
+REFERENCE_BYTES = 64_000
 REFERENCE_FILE_BYTES = 12_000
 
 #: File stems too common to mean a specific module when a gap uses the word.
@@ -1647,21 +1682,37 @@ def reference_files(run, targets):
             continue
         named.append(path)
     # The first target's imports first: it is the file the change is about,
-    # and its dependencies are the ones the new code will sit beside.
+    # and its dependencies are the ones the new code will sit beside. Then their
+    # imports, one level further. What decides a request's behaviour is often
+    # two steps away: a live run's route reached the database only through its
+    # dependency module, never saw that an error rolls the request's
+    # transaction back, and wrote an audit record the rollback then discarded.
     edges = {}
     for source, target in CodeRelationship.objects.filter(
-        snapshot=snapshot, source__path__in=targets, kind="import"
+        snapshot=snapshot, kind="import"
     ).values_list("source__path", "target__path"):
         edges.setdefault(source, []).append(target)
-    imported = [
+
+    def specific(path):
+        return path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() not in GENERIC_STEMS
+
+    first = [
         path
         for source in ordered_targets
         for path in sorted(edges.get(source, []))
-        if path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() not in GENERIC_STEMS
+        if specific(path)
     ]
+    second = [
+        path
+        for source in dict.fromkeys(first)
+        for path in sorted(edges.get(source, []))
+        if specific(path)
+    ]
+    imported = list(dict.fromkeys(first + second))
     covering = list(covering_tests(snapshot, ordered_targets))
+    support = test_support(snapshot, covering)
     chosen, spent = [], 0
-    everything = covering + named + imported
+    everything = covering + support + named + imported
     held = {item.path: item for item in snapshot.files.filter(path__in=everything)}
     # Tests first: they say what the change must keep true, which is the one
     # thing a design that forgot to mention them cannot recover.
@@ -1670,7 +1721,7 @@ def reference_files(run, targets):
         if found is None or path in targets:
             continue
         text_part = found.content[:REFERENCE_FILE_BYTES]
-        limit = REFERENCE_FILES + len(covering)
+        limit = REFERENCE_FILES + len(covering) + len(support)
         if len(chosen) >= limit or spent + len(text_part) > REFERENCE_BYTES:
             break
         chosen.append(
@@ -1679,6 +1730,7 @@ def reference_files(run, targets):
                 "text": text_part,
                 "named": path in named,
                 "test": path in covering,
+                "support": path in support,
             }
         )
         spent += len(text_part)
@@ -1688,6 +1740,39 @@ def reference_files(run, targets):
 #: Prefixes a route or view module carries that its test file often drops:
 #: `routes_fhir.py` is tested by `test_fhir.py`.
 MODULE_PREFIXES = ("routes_", "route_", "views_", "view_", "api_", "handlers_")
+
+#: Files that define what tests may use - fixtures, clients, setup - without
+#: being tests themselves. A test author not shown these invents fixtures.
+SUPPORT_NAMES = ("conftest.py",)
+SUPPORT_PREFIXES = ("setupTests.", "jest.setup.", "vitest.setup.", "test_helpers.", "helpers.")
+
+
+def test_support(snapshot, tests):
+    """The fixture and setup files the given tests can see, nearest first.
+
+    pytest collects every conftest.py from the test's directory up to the root,
+    so those are the ones a test can use; for a repository with no covering test
+    yet, the top-level test directories' support files stand in.
+    """
+    paths = list(snapshot.files.values_list("path", flat=True))
+
+    def is_support(path):
+        name = path.rsplit("/", 1)[-1]
+        return name in SUPPORT_NAMES or name.startswith(SUPPORT_PREFIXES)
+
+    support = [path for path in paths if is_support(path)]
+    folders = {test.rsplit("/", 1)[0] if "/" in test else "" for test in tests}
+    if not folders:
+        folders = {path.rsplit("/", 1)[0] for path in support if path.count("/") <= 1}
+    chosen = []
+    for folder in sorted(folders, key=len, reverse=True):
+        parts = folder.split("/") if folder else []
+        for depth in range(len(parts), -1, -1):
+            prefix = "/".join(parts[:depth])
+            for path in support:
+                if (path.rsplit("/", 1)[0] if "/" in path else "") == prefix and path not in chosen:
+                    chosen.append(path)
+    return chosen[:2]
 COVERING_TESTS = 3
 
 
@@ -1767,13 +1852,15 @@ def reference_block(snapshot, references):
             "EXISTING TEST - keep it passing; where the approved change deliberately "
             "alters what it asserts, the test author will update it"
             if item.get("test")
+            else "TEST SUPPORT - the fixtures and setup tests may use"
+            if item.get("support")
             else ""
         )
         parts.append(f"--- {item['path']}{' (' + label + ')' if label else ''} ---\n{item['text']}")
     return "\n\n".join(parts)
 
 
-def run_implementation(run, token, files, order=None):
+def run_implementation(run, token, files, order=None, references=None):
     """Write the new contents of each file, against the intent set for it.
 
     The model is shown the work order's intent above each file's current
@@ -1784,7 +1871,8 @@ def run_implementation(run, token, files, order=None):
     started = time.monotonic()
     phase = start_phase(run, "implementation")
     numbered = numbered_files(files)
-    references = reference_files(run, files)
+    if references is None:
+        references = reference_files(run, files)
     if references:
         note(
             run,
@@ -2012,7 +2100,7 @@ def test_language(paths):
     return None
 
 
-def run_tests_agent(run, changes, token):
+def run_tests_agent(run, changes, token, references=None):
     """Write the tests that would fail before this change and pass after it.
 
     Given the files *as they will be*, not as they are: a test written against
@@ -2120,9 +2208,21 @@ def run_tests_agent(run, changes, token):
             run.application_id,
             "tests",
             TEST_INSTRUCTIONS,
-            f"Approved changes:\n{approved_summary(run.plan)}\n\n"
-            f"{framework_line}\n\n"
-            f"The files as they will be:\n{finished}",
+            "\n\n".join(
+                part
+                for part in (
+                    f"Approved changes:\n{approved_summary(run.plan)}",
+                    framework_line,
+                    f"The files as they will be:\n{finished}",
+                    # The existing tests it may edit are numbered files already;
+                    # everything else it may only read.
+                    reference_block(
+                        run.code_snapshot,
+                        [item for item in references or [] if item["path"] not in wanted],
+                    ),
+                )
+                if part
+            ),
             test_entries(existing, covering),
             receipt,
         )
@@ -2183,7 +2283,7 @@ def test_entries(existing, covering):
     return entries
 
 
-def run_review(run, changes, order):
+def run_review(run, changes, order, references=None):
     """A second model reading the finished change before anybody is asked to.
 
     It sees what a reviewer would: the approved items, and the files as they
@@ -2218,7 +2318,23 @@ def run_review(run, changes, order):
             run.application_id,
             "review",
             REVIEW_INSTRUCTIONS,
-            f"Approved changes:\n{approved_summary(run.plan)}",
+            "\n\n".join(
+                part
+                for part in (
+                    f"Approved changes:\n{approved_summary(run.plan)}",
+                    # Shown the original of anything not being changed, so it can
+                    # check calls against real code and changes against real tests.
+                    reference_block(
+                        run.code_snapshot,
+                        [
+                            item
+                            for item in references or []
+                            if item["path"] not in {change["path"] for change in changes}
+                        ],
+                    ),
+                )
+                if part
+            ),
             numbered,
             receipt,
         )
@@ -2773,9 +2889,30 @@ def prepare(user, app_id, run_id):
         # Each is its own phase with its own receipt, so the screen can show
         # which agent produced what and which one refused.
         files, order = run_work_order(run, token)
-        changes = run_implementation(run, token, files, order=order)
-        changes = changes + run_tests_agent(run, changes, token)
-        changes = run_review(run, changes, order)
+        # One reference set for the whole chain. It was the implementation's
+        # alone, so a live run's test author - never shown the consent service,
+        # the audit module or the fixtures - wrote tests against functions and a
+        # table that do not exist, and the review, shown none of it either,
+        # could not tell.
+        references = reference_files(run, files)
+        changes = run_implementation(run, token, files, order=order, references=references)
+        # A target the implementation left unchanged - the consent service it
+        # calls, say - is still code the tests and the review must see. It was
+        # a numbered file for the implementation; for them it is reference.
+        changed = {change["path"] for change in changes}
+        later = [
+            {
+                "path": item["path"],
+                "text": item["text"][:REFERENCE_FILE_BYTES],
+                "named": True,
+                "test": False,
+                "support": False,
+            }
+            for item in files
+            if item["path"] not in changed and item["text"]
+        ] + references
+        changes = changes + run_tests_agent(run, changes, token, references=later)
+        changes = run_review(run, changes, order, references=later)
         run_verification(run, changes, token)
     except ValidationError as failure:
         note(run, "Implementation stopped. Nothing was written.", level="problem")

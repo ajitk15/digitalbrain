@@ -94,6 +94,8 @@ class CoveringTestTests(TestCase):
         # The test author was handed it to update, marked as an existing test.
         shown = model.call_args_list[2].args[4]
         self.assertTrue(shown[0]["excerpt"].startswith("EXISTING TEST covering"))
+        # It is numbered for editing, so it is not repeated as read-only reference.
+        self.assertNotIn("--- tests/test_fhir.py", model.call_args_list[2].args[3])
         self.assertEqual(
             sorted(ProposedChange.objects.filter(run=self.run).values_list("path", flat=True)),
             ["src/api/routes_fhir.py", "tests/test_fhir.py"],
