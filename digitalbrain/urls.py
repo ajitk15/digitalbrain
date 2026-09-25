@@ -14,7 +14,7 @@ from platform_core import (
     views,
     workbench,
 )
-from platform_core.utility import api_chat
+from platform_core.utility import api_chat, api_triage
 
 urlpatterns = [
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
@@ -72,6 +72,12 @@ urlpatterns = [
     # The one API surface that calls a model. Gated on the `chat_api` feature
     # switch, which an owner has to turn on.
     path("api/v1/applications/<str:reference>/chat/", api_chat.chat, name="api-chat"),
+    path("api/v1/applications/<str:reference>/triage/", api_triage.triage, name="api-triage"),
+    path(
+        "api/v1/applications/<str:reference>/triage/<uuid:run_id>/",
+        api_triage.brief,
+        name="api-triage-brief",
+    ),
     path(
         "api/v1/applications/<str:reference>/chat/<uuid:message_id>/stream/",
         api_chat.chat_stream,
@@ -80,6 +86,11 @@ urlpatterns = [
     path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path("applications/<uuid:pk>/serviceops/", serviceops.serviceops, name="serviceops"),
+    path(
+        "applications/<uuid:pk>/serviceops/hypotheses/<uuid:hypothesis_id>/verdict/",
+        serviceops.triage_verdict,
+        name="serviceops-verdict",
+    ),
     path(
         "applications/<uuid:pk>/chat/conversations/<uuid:conversation_id>/",
         workbench.chat_conversation,

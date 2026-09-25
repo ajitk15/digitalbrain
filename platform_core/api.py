@@ -16,6 +16,7 @@ version produced it so a caller can pin it deliberately afterwards.
 """
 
 import json
+import uuid
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponse, JsonResponse
@@ -23,6 +24,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from .api_auth import ApiError, authenticate
+from .models import TriageRun
+from .serviceops_triage import brief_payload
 from .services import audit
 from .workbench import access
 
@@ -55,7 +58,19 @@ TOOLS = [
             },
             "required": ["question"],
         },
-    }
+    },
+    {
+        "name": "triage_brief",
+        "description": (
+            "Read a saved ServiceOps triage brief with current source verification. "
+            "No model call."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {"run_id": {"type": "string"}},
+            "required": ["run_id"],
+        },
+    },
 ]
 
 
@@ -87,9 +102,7 @@ def search(user, app_id, question, version):
         _, number = graph_snapshot(app_id, version)
         citations = graph_citations(app_id, question, version=version)
     except ValidationError as failure:
-        raise ApiError(
-            " ".join(failure.messages), status=409, code="graph_unavailable"
-        ) from None
+        raise ApiError(" ".join(failure.messages), status=409, code="graph_unavailable") from None
     return {
         "question": question,
         "version": number,
@@ -221,13 +234,36 @@ def mcp(request, reference):
 
     if method == "tools/call":
         name = params.get("name")
+        if name == "triage_brief":
+            arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+            try:
+                access(user, app.pk, "service_ops")
+                identity = uuid.UUID(str(arguments.get("run_id", "")))
+                run = TriageRun.objects.filter(pk=identity, application=app).first()
+                if not run:
+                    raise ValidationError("No such triage run.")
+                payload = brief_payload(run)
+            except (PermissionDenied, Http404, ValueError, ValidationError):
+                return rpc_result(
+                    request_id,
+                    {
+                        "content": [{"type": "text", "text": "Triage brief unavailable."}],
+                        "isError": True,
+                    },
+                )
+            return rpc_result(
+                request_id,
+                {
+                    "content": [{"type": "text", "text": json.dumps(payload, indent=2)}],
+                    "structuredContent": payload,
+                    "isError": False,
+                },
+            )
         if name != TOOLS[0]["name"]:
             return rpc_error(request_id, -32602, f"Unknown tool: {name}")
         arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
         try:
-            payload = search(
-                user, app.pk, arguments.get("question"), arguments.get("version")
-            )
+            payload = search(user, app.pk, arguments.get("question"), arguments.get("version"))
         except ApiError as failure:
             # A tool failure is a result the model can read and react to, not a
             # protocol error.

@@ -87,9 +87,7 @@ def provider_credential(config, app):
         return value
     if config.provider == "claude" and host_login_enabled():
         return ""
-    raise ImproperlyConfigured(
-        f"Required credential is unavailable: {config.provider}_{app.pk}"
-    )
+    raise ImproperlyConfigured(f"Required credential is unavailable: {config.provider}_{app.pk}")
 
 
 #: Written once by scripts/ai_setup.py during first-run setup. Deliberately not
@@ -188,6 +186,8 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
             raise PermissionDenied
     elif purpose == "plan_drafting":
         access(user, app_id, "code_factory", write=True)
+    elif purpose == "serviceops_triage":
+        access(user, app_id, "service_ops", write=True)
     else:
         raise ValidationError("Unsupported AI purpose.")
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
@@ -231,6 +231,8 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         access(user, app_id, "knowledge", write=True)
     if purpose == "plan_drafting":
         access(user, app_id, "code_factory", write=True)
+    if purpose == "serviceops_triage":
+        access(user, app_id, "service_ops", write=True)
     if receipt is not None:
         receipt.update(
             {
@@ -328,9 +330,7 @@ def chat_configuration(user, app_id, mode="ai"):
     access(user, app_id, "knowledge")
     access(user, app_id, "chat")
     purpose = MODE_PURPOSE.get(mode, "chat")
-    config = AIConfiguration.objects.filter(
-        application=app, purpose=purpose, enabled=True
-    ).first()
+    config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
     if not config:
         raise ValidationError(
             "An application owner must configure Graph retrieval first."

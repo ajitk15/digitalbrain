@@ -117,8 +117,7 @@ def header(pairs):
 def incident_header(pairs):
     """Keep provider text on one line so it cannot masquerade as another field."""
     return header(
-        (label, " ".join(value.split())[:2000] if value else "")
-        for label, value in pairs
+        (label, " ".join(value.split())[:2000] if value else "") for label, value in pairs
     )
 
 
@@ -218,7 +217,7 @@ class JiraForm(forms.Form):
         max_length=400,
         required=False,
         label="JQL filter",
-        help_text='Optional, for example project = OPS AND updated >= -30d',
+        help_text="Optional, for example project = OPS AND updated >= -30d",
     )
 
     def clean_base_url(self):
@@ -352,6 +351,17 @@ class ServiceNowForm(forms.Form):
         label="Encoded query",
         help_text="Optional sysparm_query, for example active=true^priority<=2",
     )
+    history_pages = forms.IntegerField(
+        min_value=1,
+        max_value=10,
+        initial=1,
+        required=False,
+        label="Incident history pages",
+        help_text=(
+            "Import up to 10 pages of 100 incidents per sync. "
+            "Use more pages for a bounded history backfill."
+        ),
+    )
     assignment_groups = forms.CharField(
         max_length=1000,
         required=False,
@@ -453,29 +463,58 @@ def servicenow_records(config, secret):
     if table == "incident":
         fields.extend(
             [
-                "cmdb_ci", "business_service", "environment", "impact",
-                "assignment_group", "priority", "state", "opened_at",
-                "resolved_at", "close_code", "close_notes", "problem_id",
+                "cmdb_ci",
+                "business_service",
+                "environment",
+                "impact",
+                "assignment_group",
+                "priority",
+                "state",
+                "opened_at",
+                "resolved_at",
+                "close_code",
+                "close_notes",
+                "problem_id",
                 "caused_by_change",
             ]
         )
+    elif table == "change_request":
+        fields.extend(["cmdb_ci", "business_service", "start_date", "end_date", "state", "type"])
     encoded_query = config.get("query") or "ORDERBYDESCsys_updated_on"
     if groups:
         encoded_query = f"assignment_group.nameIN{','.join(groups)}^{encoded_query}"
-    query = urlencode(
-        {
-            "sysparm_limit": MAX_RECORDS,
-            "sysparm_query": encoded_query,
-            "sysparm_fields": ",".join(dict.fromkeys(fields)),
-            "sysparm_display_value": "true",
-        }
-    )
-    payload = api_json(
-        f"{base}/api/now/table/{quote(table)}?{query}", headers, label="ServiceNow"
-    )
-    rows = payload.get("result") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
-        raise ValidationError("ServiceNow returned an unexpected record list.")
+    try:
+        pages = int(config.get("history_pages") or 1) if table == "incident" else 1
+    except (TypeError, ValueError):
+        raise ValidationError("Incident history pages must be between 1 and 10.") from None
+    if not 1 <= pages <= 10:
+        raise ValidationError("Incident history pages must be between 1 and 10.")
+    rows = []
+    seen_ids = set()
+    for page in range(pages):
+        query = urlencode(
+            {
+                "sysparm_limit": MAX_RECORDS,
+                "sysparm_offset": page * MAX_RECORDS,
+                "sysparm_query": encoded_query,
+                "sysparm_fields": ",".join(dict.fromkeys(fields)),
+                "sysparm_display_value": "true",
+            }
+        )
+        payload = api_json(
+            f"{base}/api/now/table/{quote(table)}?{query}", headers, label="ServiceNow"
+        )
+        batch = payload.get("result") if isinstance(payload, dict) else None
+        if not isinstance(batch, list):
+            raise ValidationError("ServiceNow returned an unexpected record list.")
+        for row in batch:
+            if not isinstance(row, dict) or not isinstance(row.get("sys_id"), str):
+                raise ValidationError("ServiceNow returned an unexpected record.")
+            if row["sys_id"] not in seen_ids:
+                rows.append(row)
+                seen_ids.add(row["sys_id"])
+        if len(batch) < MAX_RECORDS:
+            break
     records = []
     allowed_groups = {group.casefold() for group in groups}
     for row in rows:
@@ -510,6 +549,20 @@ def servicenow_records(config, secret):
                     ("Close notes", text(row.get("close_notes"))),
                     ("Problem", named(row.get("problem_id"))),
                     ("Caused by change", named(row.get("caused_by_change"))),
+                ]
+            )
+            body = f"{state}\n\n{body}".strip()
+        elif table == "change_request":
+            state = incident_header(
+                [
+                    ("Type", "Change"),
+                    ("Number", number),
+                    ("State", named(row.get("state"))),
+                    ("Service", named(row.get("business_service"))),
+                    ("CI", named(row.get("cmdb_ci"))),
+                    ("Start", text(row.get("start_date"))),
+                    ("End", text(row.get("end_date"))),
+                    ("Change type", named(row.get("type"))),
                 ]
             )
             body = f"{state}\n\n{body}".strip()

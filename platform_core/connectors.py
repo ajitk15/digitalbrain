@@ -119,7 +119,11 @@ def sync(user, connector_id, app_id):
                 continue
             # Prior revisions stay immutable for plan hashes and audit evidence.
             existing.update(active=False)
-            add_knowledge(user, app_id, record.title, content, source=record.url)
+            entry = add_knowledge(user, app_id, record.title, content, source=record.url)
+            if locked.kind == "servicenow" and locked.config.get("table") == "incident":
+                from .serviceops_triage import profile
+
+                profile(entry)
             count += 1
         pruned = prune(locked, app, kind, records)
         empty = locked.kind == "servicenow" and not records
@@ -131,7 +135,8 @@ def sync(user, connector_id, app_id):
             (
                 "ServiceNow returned no records. Check the instance, account read access, "
                 "table and filters."
-                if empty else ""
+                if empty
+                else ""
             ),
         )
         audit(
@@ -174,18 +179,20 @@ def prune(connector, app, kind, records):
         namespace = kind.namespace(connector.config)
     except KeyError:
         return 0
-    rivals = Connector.objects.filter(
-        application=app, kind=connector.kind, enabled=True
-    ).exclude(pk=connector.pk)
+    rivals = Connector.objects.filter(application=app, kind=connector.kind, enabled=True).exclude(
+        pk=connector.pk
+    )
     for rival in rivals:
         try:
             if kind.namespace(rival.config) == namespace:
                 return 0
         except KeyError:
             continue
-    return KnowledgeEntry.objects.filter(
-        application=app, active=True, source__startswith=namespace
-    ).exclude(source__in=[record.url for record in records]).update(active=False)
+    return (
+        KnowledgeEntry.objects.filter(application=app, active=True, source__startswith=namespace)
+        .exclude(source__in=[record.url for record in records])
+        .update(active=False)
+    )
 
 
 def finish(connector, status, count, started, error):

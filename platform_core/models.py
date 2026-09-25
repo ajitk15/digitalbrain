@@ -241,9 +241,7 @@ class KnowledgeSource(models.Model):
     class Meta:
         ordering = ["name", "created_at"]
         constraints = [
-            models.UniqueConstraint(
-                fields=["application", "url"], name="unique_knowledge_source"
-            )
+            models.UniqueConstraint(fields=["application", "url"], name="unique_knowledge_source")
         ]
         indexes = [models.Index(fields=["application", "status"])]
 
@@ -344,6 +342,87 @@ class KnowledgeEntry(models.Model):
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["application", "active"])]
+
+
+class IncidentProfile(models.Model):
+    """Searchable, rebuildable projection of an imported incident revision."""
+
+    entry = models.OneToOneField(KnowledgeEntry, primary_key=True, on_delete=models.CASCADE)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    source_digest = models.CharField(max_length=64)
+    number = models.CharField(max_length=80, blank=True)
+    service = models.CharField(max_length=500, blank=True)
+    ci = models.CharField(max_length=500, blank=True)
+    priority = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=100, blank=True)
+    fingerprint = models.CharField(max_length=16, blank=True)
+    terms = models.JSONField(default=list)
+    opened_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["application", "service", "resolved_at"]),
+            models.Index(fields=["application", "fingerprint"]),
+        ]
+
+
+class TriageRun(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    incident = models.ForeignKey(KnowledgeEntry, on_delete=models.PROTECT)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    trigger = models.CharField(max_length=12, default="manual")
+    status = models.CharField(max_length=20, default="evidence")
+    incident_digest = models.CharField(max_length=64)
+    fingerprint = models.CharField(max_length=16, blank=True)
+    pack_digest = models.CharField(max_length=64)
+    evidence = models.JSONField(default=list)
+    band = models.CharField(max_length=20, default="insufficient")
+    score_components = models.JSONField(default=dict)
+    limitations = models.JSONField(default=list)
+    provider = models.CharField(max_length=20, blank=True)
+    model = models.CharField(max_length=160, blank=True)
+    prompt_version = models.CharField(max_length=20, default="v1")
+    scorer_version = models.CharField(max_length=20, default="v1")
+    error = models.CharField(max_length=300, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["application", "incident", "created_at"])]
+
+
+class TriageHypothesis(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    run = models.ForeignKey(TriageRun, related_name="hypotheses", on_delete=models.CASCADE)
+    rank = models.PositiveSmallIntegerField()
+    statement = models.CharField(max_length=600)
+    next_step = models.CharField(max_length=600)
+    citations = models.JSONField(default=list)
+    counter_evidence = models.CharField(max_length=600, blank=True)
+
+    class Meta:
+        ordering = ["rank"]
+        constraints = [models.UniqueConstraint(fields=["run", "rank"], name="unique_triage_rank")]
+
+
+class TriageVerdict(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    hypothesis = models.ForeignKey(
+        TriageHypothesis, related_name="verdicts", on_delete=models.CASCADE
+    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    verdict = models.CharField(
+        max_length=12,
+        choices=[("accepted", "Accepted"), ("rejected", "Rejected"), ("partial", "Partial")],
+    )
+    note = models.CharField(max_length=1000, blank=True)
+    actual_cause = models.ForeignKey(
+        KnowledgeEntry, null=True, blank=True, on_delete=models.PROTECT
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class CodeRepository(models.Model):
@@ -743,9 +822,7 @@ class FactoryRun(models.Model):
     number = models.PositiveIntegerField(default=0)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    connector = models.ForeignKey(
-        "Connector", null=True, blank=True, on_delete=models.SET_NULL
-    )
+    connector = models.ForeignKey("Connector", null=True, blank=True, on_delete=models.SET_NULL)
     # The ticket, copied rather than referenced: a run has to stay readable after
     # the source entry is superseded by a later import.
     ticket_external_id = models.CharField(max_length=120, blank=True)
@@ -889,9 +966,7 @@ class FactoryRun(models.Model):
             5: "ok"
             if self.pull_request_url
             else (
-                "running"
-                if self.status == "delivering"
-                else ("current" if written else "pending")
+                "running" if self.status == "delivering" else ("current" if written else "pending")
             ),
             # The repository's own CI, which this platform reads and never runs.
             6: self.checks_state,
@@ -902,9 +977,7 @@ class FactoryRun(models.Model):
             7: "ok"
             if self.refresh_choice
             else (
-                "current"
-                if self.pull_request_url and self.checks_state != "running"
-                else "pending"
+                "current" if self.pull_request_url and self.checks_state != "running" else "pending"
             ),
         }
         # A failed run stops where it stopped: everything after the failure is
@@ -1010,9 +1083,7 @@ class RunPhase(models.Model):
 
     class Meta:
         ordering = ["run", "sequence"]
-        constraints = [
-            models.UniqueConstraint(fields=["run", "name"], name="unique_run_phase")
-        ]
+        constraints = [models.UniqueConstraint(fields=["run", "name"], name="unique_run_phase")]
 
 
 class ProposedChange(models.Model):
@@ -1039,9 +1110,7 @@ class ProposedChange(models.Model):
 
     class Meta:
         ordering = ["run", "path"]
-        constraints = [
-            models.UniqueConstraint(fields=["run", "path"], name="unique_run_change")
-        ]
+        constraints = [models.UniqueConstraint(fields=["run", "path"], name="unique_run_change")]
 
     @property
     def creates(self):
@@ -1189,6 +1258,7 @@ class Connector(models.Model):
 
 AI_PURPOSES = [
     ("chat", "Chat conversation"),
+    ("serviceops_triage", "ServiceOps triage"),
     ("graph_generation", "Graph generation"),
     ("graph_retrieval", "Graph retrieval"),
     ("conversation_title", "Conversation titles"),

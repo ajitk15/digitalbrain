@@ -1,22 +1,23 @@
-"""Read-only incident context and precedent retrieval for ServiceOps.
-
-This first slice deliberately makes no model call and assigns no cause or
-confidence. A similarity rank describes shared observable signals only.
-"""
+"""Incident context, precedent retrieval and ServiceOps browser views."""
 
 import hashlib
 import re
 import uuid
 
+from django import forms
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.http import Http404
-from django.shortcuts import get_object_or_404, render
-from django.views.decorators.http import require_GET
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.views.decorators.http import require_http_methods, require_POST
 
-from .models import KnowledgeEntry
-from .workbench import access
+from .models import KnowledgeEntry, TriageHypothesis, TriageRun, TriageVerdict
+from .services import audit
+from .workbench import access, add_knowledge
 
 INCIDENT_LIMIT = 100
 CANDIDATE_LIMIT = 500
@@ -57,7 +58,22 @@ STRUCTURED_FIELDS = {
     "Problem",
     "Caused by change",
     "Updated",
+    "Start",
+    "End",
+    "Change type",
 }
+
+
+class ManualIncidentForm(forms.Form):
+    title = forms.CharField(max_length=200)
+    description = forms.CharField(max_length=5000, widget=forms.Textarea(attrs={"rows": 4}))
+    number = forms.CharField(max_length=80, required=False)
+    service = forms.CharField(max_length=200, required=False)
+    ci = forms.CharField(max_length=200, required=False, label="Configuration item")
+    priority = forms.ChoiceField(
+        choices=[("", "Unknown")] + [(str(value), f"P{value}") for value in range(1, 6)],
+        required=False,
+    )
 
 
 def incident_queryset(app):
@@ -111,12 +127,14 @@ def verified(entry):
     return entry.active and hashlib.sha256(entry.content.encode()).hexdigest() == entry.digest
 
 
-def precedent_rows(app, incident, limit=5):
+def precedent_rows(app, incident, limit=5, as_of=None):
     """Rank resolved incidents, without mistaking lexical fit for confidence."""
     fields, description = fields_and_description(incident)
     terms = symptom_terms(incident.title, description)
     signature = fingerprint(incident.title, description)
     candidates = incident_queryset(app).exclude(pk=incident.pk)
+    if as_of is not None:
+        candidates = candidates.filter(created_at__lte=as_of)
     narrowing = Q()
     if fields.get("CI"):
         narrowing |= Q(content__icontains=f"CI: {fields['CI']}")
@@ -132,6 +150,12 @@ def precedent_rows(app, incident, limit=5):
         if not verified(candidate):
             continue
         other, other_description = fields_and_description(candidate)
+        if as_of is not None:
+            from .serviceops_triage import _date
+
+            resolved_at = _date(other.get("Resolved"))
+            if resolved_at is None or resolved_at > as_of:
+                continue
         if not (
             other.get("Resolved")
             or other.get("Close code")
@@ -177,12 +201,78 @@ def precedent_rows(app, incident, limit=5):
                 "close_code": other.get("Close code", ""),
                 "score": score,
                 "reasons": reasons,
+                "differences": [
+                    f"different {key.lower()}: {other[key]}"
+                    for key in ("Service", "CI", "Environment")
+                    if fields.get(key)
+                    and other.get(key)
+                    and fields[key].casefold() != other[key].casefold()
+                ],
                 "excerpt": excerpt,
             }
         )
     rows.sort(
         key=lambda row: (-row["score"], -row["entry"].created_at.timestamp(), str(row["entry"].pk))
     )
+    return rows[:limit]
+
+
+def related_open_rows(app, incident, limit=5):
+    """Group live incidents with exactly the same stable symptom fingerprint."""
+    _, description = fields_and_description(incident)
+    signature = fingerprint(incident.title, description)
+    if not signature:
+        return []
+    rows = []
+    for candidate in incident_queryset(app).exclude(pk=incident.pk).order_by("-created_at")[:500]:
+        if not verified(candidate):
+            continue
+        other, other_description = fields_and_description(candidate)
+        if other.get("Resolved") or other.get("State", "").casefold() in {"resolved", "closed"}:
+            continue
+        if fingerprint(candidate.title, other_description) == signature:
+            rows.append({"entry": candidate, "fields": other})
+            if len(rows) == limit:
+                break
+    return rows
+
+
+def change_rows(app, incident, limit=5):
+    """Recent same-CI changes preceding the incident, when timestamps are known."""
+    from datetime import timedelta
+
+    from .serviceops_triage import _date
+
+    fields, _ = fields_and_description(incident)
+    opened = _date(fields.get("Opened"))
+    ci = fields.get("CI")
+    if not (opened and ci):
+        return []
+    candidates = KnowledgeEntry.objects.filter(
+        application=app,
+        active=True,
+        source__icontains="change_request.do",
+        content__icontains=f"CI: {ci}",
+    ).order_by("-created_at")[:500]
+    rows = []
+    for entry in candidates:
+        if not verified(entry):
+            continue
+        other, description = fields_and_description(entry)
+        started = _date(other.get("Start"))
+        if other.get("CI", "").casefold() != ci.casefold() or not started:
+            continue
+        gap = opened - started
+        if timedelta(0) <= gap <= timedelta(days=2):
+            rows.append(
+                {
+                    "entry": entry,
+                    "fields": other,
+                    "excerpt": description[:500] or entry.title,
+                    "hours_before": round(gap.total_seconds() / 3600, 1),
+                }
+            )
+    rows.sort(key=lambda row: (row["hours_before"], str(row["entry"].pk)))
     return rows[:limit]
 
 
@@ -202,17 +292,60 @@ def graph_rows(app, incident):
 
 
 @login_required
-@require_GET
+@require_http_methods(["GET", "POST"])
 def serviceops(request, pk):
     app, grant = access(request.user, pk, "service_ops")
     access(request.user, pk, "knowledge")
+    if request.method == "POST":
+        access(request.user, pk, "service_ops", write=True)
+        if request.POST.get("action") == "manual":
+            access(request.user, pk, "knowledge", write=True)
+            manual = ManualIncidentForm(request.POST)
+            if not manual.is_valid():
+                messages.error(request, "Enter a title and description for the incident.")
+                return redirect("serviceops", pk=app.pk)
+            values = manual.cleaned_data
+            header = "\n".join(
+                f"{key}: {' '.join(value.split())}"
+                for key, value in (
+                    ("Type", "Incident"),
+                    ("Number", values["number"]),
+                    ("Service", values["service"]),
+                    ("CI", values["ci"]),
+                    ("Priority", values["priority"]),
+                )
+                if value
+            )
+            content = f"{values['title']}\n\n{header}\n\n{values['description']}"
+            entry = add_knowledge(request.user, app.pk, values["title"], content)
+            from .serviceops_triage import profile
+
+            profile(entry)
+            return redirect(f"{reverse('serviceops', args=[app.pk])}?incident={entry.pk}")
+        try:
+            incident_uuid = uuid.UUID(request.POST.get("incident", ""))
+        except ValueError:
+            raise Http404 from None
+        incident = get_object_or_404(incident_queryset(app), pk=incident_uuid)
+        from .serviceops_triage import create_run
+
+        try:
+            run = create_run(request.user, app.pk, incident)
+        except ValidationError:
+            raise Http404 from None
+        return redirect(
+            f"{reverse('serviceops', args=[app.pk])}?incident={incident.pk}&run={run.pk}"
+        )
     incident_id = request.GET.get("incident", "").strip()
     selected = None
     fields = {}
     description = ""
     precedents = []
+    related_open = []
+    changes = []
     graph = []
     graph_available = False
+    run = None
     if incident_id:
         try:
             incident_uuid = uuid.UUID(incident_id)
@@ -223,7 +356,30 @@ def serviceops(request, pk):
             raise Http404
         fields, description = fields_and_description(selected)
         precedents = precedent_rows(app, selected)
+        related_open = related_open_rows(app, selected)
+        changes = change_rows(app, selected)
         graph, graph_available = graph_rows(app, selected)
+        run_id = request.GET.get("run", "")
+        if run_id:
+            try:
+                run_uuid = uuid.UUID(run_id)
+            except ValueError:
+                raise Http404 from None
+            run = get_object_or_404(
+                TriageRun.objects.prefetch_related("hypotheses"),
+                pk=run_uuid,
+                application=app,
+                incident=selected,
+            )
+        else:
+            run = TriageRun.objects.filter(application=app, incident=selected).first()
+        if run and run.incident_digest != selected.digest:
+            run = None
+        if run:
+            from .serviceops_triage import run_still_verified
+
+            if not run_still_verified(run):
+                run = None
     incidents = []
     for entry in incident_queryset(app).order_by("-created_at")[:INCIDENT_LIMIT]:
         incident_fields, _ = fields_and_description(entry)
@@ -247,8 +403,50 @@ def serviceops(request, pk):
             "priority_tone": priority_tone(fields.get("Priority")),
             "description": description,
             "precedents": precedents,
+            "related_open": related_open,
+            "changes": changes,
             "graph": graph,
             "graph_available": graph_available,
             "fingerprint": fingerprint(selected.title, description) if selected else "",
+            "run": run,
+            "manual_form": ManualIncidentForm(),
         },
+    )
+
+
+@login_required
+@require_POST
+def triage_verdict(request, pk, hypothesis_id):
+    app, _ = access(request.user, pk, "service_ops", write=True)
+    access(request.user, pk, "knowledge")
+    hypothesis = get_object_or_404(
+        TriageHypothesis.objects.select_related("run"),
+        pk=hypothesis_id,
+        run__application=app,
+    )
+    from .serviceops_triage import run_still_verified
+
+    if not run_still_verified(hypothesis.run):
+        raise Http404
+    verdict = request.POST.get("verdict")
+    if verdict not in {"accepted", "rejected", "partial"}:
+        raise ValidationError("Choose a verdict.")
+    note = request.POST.get("note", "").strip()[:1000]
+    with transaction.atomic():
+        TriageVerdict.objects.create(
+            hypothesis=hypothesis,
+            user=request.user,
+            verdict=verdict,
+            note=note,
+        )
+        audit(
+            request.user,
+            "serviceops.verdict",
+            hypothesis.pk,
+            app.product.portfolio.organization,
+            details={"verdict": verdict},
+        )
+    run = hypothesis.run
+    return redirect(
+        f"{reverse('serviceops', args=[app.pk])}?incident={run.incident_id}&run={run.pk}"
     )
