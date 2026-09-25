@@ -185,6 +185,27 @@ async def _run(
                         block.text for block in message.content if isinstance(block, TextBlock)
                     )
         if result is None or result.is_error:
+            # The structured fields only - never `result.result` or `errors`,
+            # which are provider prose and may carry request details. These are
+            # enough to tell an overload from a limit from a stalled stream,
+            # which two identical "api_error" failures at ~170s could not.
+            if result is not None:
+                logger.warning(
+                    "claude_result_error",
+                    extra={
+                        "event": "claude_result_error",
+                        "subtype": result.subtype,
+                        "terminal_reason": getattr(result, "terminal_reason", None),
+                        "api_error_status": getattr(result, "api_error_status", None),
+                        "stop_reason": result.stop_reason,
+                        "duration_ms": result.duration_ms,
+                        "duration_api_ms": result.duration_api_ms,
+                        "num_turns": result.num_turns,
+                        "error_count": len(getattr(result, "errors", None) or []),
+                        "prompt_bytes": len(prompt),
+                        "max_tokens": max_tokens,
+                    },
+                )
             raise ValueError("No successful result")
         inputs, outputs = claude_usage(result.usage)
         # Whichever carries more of the reply.
@@ -215,4 +236,52 @@ def completion(config, question, citations, token, history=None, **options):
     except (ClaudeSDKError, TimeoutError, OSError, ValueError, TypeError) as failure:
         # The operator needs the real text to debug; the user must never see it.
         logger.warning("claude_completion_failed", exc_info=True)
+        log_result_failure(failure, options.get("max_tokens"))
         raise ValidationError(diagnosis(failure)) from None
+
+
+#: What an "API Error: ..." result was about, as a fixed label. The text itself
+#: is provider prose and is never logged; the label is enough to tell an
+#: overload from a timeout from a request the API would not take.
+API_ERROR_KINDS = (
+    ("overloaded", re.compile(r"overload|529|capacity", re.I)),
+    ("rate_limited", re.compile(r"rate.?limit|429", re.I)),
+    ("timeout", re.compile(r"time(d)?.?out|deadline", re.I)),
+    ("stream", re.compile(r"stream|connection|socket|reset|closed|terminated", re.I)),
+    ("too_long", re.compile(r"too long|context|prompt is too|exceed", re.I)),
+    ("output_limit", re.compile(r"max.?tokens|output token", re.I)),
+    ("server_error", re.compile(r"\b5\d\d\b|internal", re.I)),
+)
+
+
+def log_result_failure(failure, max_tokens=None):
+    """The structured fields of a failed CLI result, for the operator's log.
+
+    `ResultError` is raised by the SDK while the stream is read, so the result
+    never reaches the check after it. Three live reviews failed as a bare
+    "api_error" at ~175s with nothing to say why; this is what says why,
+    without writing the provider's prose anywhere.
+    """
+    data = getattr(failure, "data", None)
+    if not isinstance(data, dict):
+        return
+    errors = " ".join(getattr(failure, "errors", None) or [])
+    text = f"{getattr(failure, 'result', '') or ''} {errors}"
+    kind = next((label for label, pattern in API_ERROR_KINDS if pattern.search(text)), "other")
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    logger.warning(
+        "claude_result_error",
+        extra={
+            "event": "claude_result_error",
+            "subtype": getattr(failure, "subtype", None),
+            "terminal_reason": getattr(failure, "terminal_reason", None),
+            "api_error_status": getattr(failure, "api_error_status", None),
+            "api_error_kind": kind,
+            "stop_reason": data.get("stop_reason"),
+            "duration_ms": data.get("duration_ms"),
+            "duration_api_ms": data.get("duration_api_ms"),
+            "num_turns": data.get("num_turns"),
+            "output_tokens": usage.get("output_tokens"),
+            "max_tokens": max_tokens,
+        },
+    )

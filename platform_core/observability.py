@@ -31,6 +31,19 @@ class SafeJsonFormatter(logging.Formatter):
             "lane",
             "count",
             "exception_type",
+            # A failed Claude CLI result's structured fields: SDK labels and
+            # numbers, never the provider's prose (see claude_agents).
+            "subtype",
+            "terminal_reason",
+            "api_error_status",
+            "stop_reason",
+            "duration_api_ms",
+            "num_turns",
+            "error_count",
+            "prompt_bytes",
+            "max_tokens",
+            "api_error_kind",
+            "output_tokens",
         ):
             if hasattr(record, field):
                 entry[field] = getattr(record, field)
