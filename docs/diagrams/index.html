@@ -269,7 +269,18 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
     <a href="#d01"><span class="n">02</span><span>System overview</span></a>
     <a href="#d02"><span class="n">03</span><span>Knowledge graph</span></a>
     <a href="#d03"><span class="n">04</span><span>Bug fix</span></a>
-    <a href="#d04"><span class="n">05</span><span>Incident management</span></a>
+    <a href="#d04"><span class="n">05</span><span>SDLC incident management</span></a>
+  </nav>
+
+  <nav class="rail-group">
+    <div class="rail-label">ServiceOps · proposed</div>
+    <a href="#serviceops"><span class="n">06</span><span>Incident triage</span></a>
+    <a href="#so-architecture"><span class="n">6.1</span><span>Architecture</span></a>
+    <a href="#so-confidence"><span class="n">6.2</span><span>Confidence score</span></a>
+    <a href="#so-functional"><span class="n">6.3</span><span>Functional</span></a>
+    <a href="#so-nfr"><span class="n">6.4</span><span>Non-functional</span></a>
+    <a href="#so-data"><span class="n">6.5</span><span>Data &amp; interfaces</span></a>
+    <a href="#so-rollout"><span class="n">6.6</span><span>Rollout &amp; decisions</span></a>
   </nav>
 
   <nav class="rail-group">
@@ -659,6 +670,365 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
           <li>A code change goes back through the Code Factory gates, not around them</li>
         </ul></div>
     </div>
+
+    <p class="band">This is the flow as it stands. <strong>ServiceOps</strong> (section 06) proposes the next step: a triage brief built before anyone asks, from past incidents, runbooks and recent changes, with a confidence score computed from the evidence. <a href="#serviceops" style="color:var(--cyan)">Read the proposal →</a></p>
+  </section>
+
+  <!-- ═══ 06 · SERVICEOPS ═══ -->
+  <section id="serviceops">
+    <div class="sec-head"><span class="sec-num">06</span><h2>ServiceOps · incident triage</h2></div>
+    <p class="sec-sub"><span class="chip no">in progress</span>&nbsp; The first read-only ServiceOps tab now shows imported incident context, similar resolved records and verified graph passages. The architecture below proposes the next stages: recent changes, up to three cited causes, and a confidence score the platform computes from evidence rather than asks the model for. The responder decides; confirmed outcomes, rather than clicks alone, calibrate the score.</p>
+
+    <div class="grid g3 why">
+      <div>
+        <div class="why-label">What section 05 gives today</div>
+        <p>A responder can ask chat about an incident and get a cited answer. But they have to know what to ask, past incidents are just more text in the pile, and nothing says <strong>how much to trust</strong> the answer.</p>
+      </div>
+      <div>
+        <div class="why-label">What triage actually needs</div>
+        <p>"Have we seen this before, what fixed it, what changed, and who owns it" — answered <strong>before</strong> anyone asks, ranked, with the reasons a senior engineer would give, and honest about when it does not know.</p>
+      </div>
+      <div class="why-answer">
+        <div class="why-label">What ServiceOps adds</div>
+        <p>A structured incident memory, a <strong>model-free evidence pack</strong> that works even when the AI provider is down, a single bounded model call over that pack, and an evidence score that abstains instead of guessing. Calibration is added only after confirmed outcomes exist.</p>
+      </div>
+    </div>
+
+    <div class="grid g4" style="margin-top:1.8rem">
+      <div class="stat"><div class="k">≤ 3 s</div><div class="v">evidence pack, p95 — no model involved</div></div>
+      <div class="stat"><div class="k">≥ 0.80</div><div class="v">recall@5 for a true precedent, on replay</div></div>
+      <div class="stat"><div class="k">≥ 85%</div><div class="v">precision of the High band, measured</div></div>
+      <div class="stat"><div class="k">0</div><div class="v">unverified citations ever rendered</div></div>
+    </div>
+  </section>
+
+  <!-- ═══ 6.1 · ARCHITECTURE ═══ -->
+  <section id="so-architecture">
+    <div class="sec-head"><span class="sec-num">6.1</span><h2>Triage architecture</h2></div>
+    <p class="sec-sub">Three stages, and the order is the design. <strong>Evidence first</strong>, deterministically without a model charge. <strong>Reasoning second</strong>, in one bounded call that may only cite what the evidence pack already holds. <strong>Trust last</strong>: citations re-verified, scores computed, and a person deciding.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>workflow · intake → evidence → reason, verify, score → decide and learn</span>
+        <a href="05_serviceops-triage.html" target="_blank" rel="noopener">Open standalone — guided views ↗</a>
+      </div>
+      <iframe data-src="05_serviceops-triage.html" data-vw="1200" data-vh="660" loading="lazy" title="ServiceOps incident triage workflow diagram"></iframe>
+    </div>
+
+    <h3>Components</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>What it does</th><th>Built on</th><th class="paid">Model?</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Intake</td>
+            <td>A <b>Triage</b> button on any imported incident; <code>POST /api/v1/triage/</code> for a token holder; optional auto-triage when a scheduled sync brings in a matching incident</td>
+            <td>Existing ServiceNow / Jira connectors and the <code>connectors</code> worker lane</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Structured import</td>
+            <td>Pulls <code>cmdb_ci</code>, service, environment, impact, assignment group, priority, state, opened/resolved times, close code, close notes, problem and caused-by change into the record <b>header</b> — so they are inside the digest</td>
+            <td><code>connector_kinds.header</code>, extended field list</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Fingerprint</td>
+            <td>Normalises the error text — strips ids, hex, timestamps, numbers, hostnames — and hashes the error class and top frames. Records service, CI and <b>environment</b> beside it, and leaves unknowns visibly unknown. Same input, same fingerprint, shown on the brief</td>
+            <td>Pure Python, new <code>serviceops/fingerprint.py</code></td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Incident memory</td>
+            <td>One <code>IncidentProfile</code> per imported incident: service, CI, signature, times, close code, resolution excerpt, MTTR. Rebuilt when the source digest changes. A separate bounded historical backfill keeps older precedents; the current connector's latest-100 pull retires records outside its window and cannot supply a 500-incident replay set</td>
+            <td>New typed index over <code>KnowledgeEntry</code></td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Similarity ranker</td>
+            <td>Top five precedents, scored from signature match, same CI or service, term overlap and recency. Also flags <b>other open incidents</b> with the same fingerprint — an alert storm is one triage, not fifty</td>
+            <td>Same deterministic discipline as <code>workbench.retrieve</code>; no embeddings in v1</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Context assembler</td>
+            <td>Runbooks and KB articles from the published graph; upstream and downstream services from its topology, for <b>blast radius</b>; changes on the same CI inside the window; code locations for any stack frame</td>
+            <td><code>graph_citations</code>, a <code>change_request</code> connector, the code graph</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Triage agent</td>
+            <td>Ranks up to three causes, a read-only diagnostic step for each, the one check that best tells them apart, a suggested owner and severity. Cites passages <b>by id from the pack</b>; tools are bound to one application and one user before the run</td>
+            <td><code>agent_runtime</code>, a new triage prompt, one receipt per turn</td>
+            <td class="paid"><b>Yes — one bounded call</b></td></tr>
+        <tr><td class="layer">Citation check</td>
+            <td>Active source, unchanged digest, exact excerpt and passage id. A failed citation is dropped. The claim and quote are shown together because an exact quote alone does not prove the inference</td>
+            <td>The verification <code>graph_ai.py</code> and chat already use</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Confidence scorer</td>
+            <td>A deterministic function of the evidence, plus a per-application calibration table fitted only from independently confirmed outcomes. See 6.2</td>
+            <td>New <code>serviceops/confidence.py</code></td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Triage brief</td>
+            <td>Server-rendered; progress may stream, but hypotheses appear only after citation verification and scoring. Every control is a real form</td>
+            <td><code>chat.js</code>-style interception over a synchronous path</td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Feedback &amp; calibration</td>
+            <td>Accept, reject, or "the cause was…" linked to a real record. Feedback helps review; only independently confirmed outcomes enter calibration. Refits nightly once there are enough labels</td>
+            <td>New <code>TriageVerdict</code>, <code>Calibration</code></td>
+            <td class="paid">No</td></tr>
+        <tr><td class="layer">Replay evaluator</td>
+            <td>Replays resolved incidents from an as-of snapshot, hiding the target resolution and every later source or change; reports recall, hit rate, band precision and calibration error</td>
+            <td><code>manage.py serviceops_replay</code></td>
+            <td class="paid">Optional</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <p class="band"><strong>Why the model cites by id.</strong> What leaves the platform is redacted: emails, phone numbers, card numbers and anything shaped like a secret are masked before the model sees them. If the model quoted redacted text, no quote would ever match the stored source. So it names a passage from the pack, and the <strong>platform cuts the quote from the stored source</strong> — the redaction protects privacy without weakening verification.</p>
+  </section>
+
+  <!-- ═══ 6.2 · CONFIDENCE ═══ -->
+  <section id="so-confidence">
+    <div class="sec-head"><span class="sec-num">6.2</span><h2>Confidence score</h2></div>
+    <p class="sec-sub">The same rule as citations, applied to certainty: <strong>what the model claims is not evidence</strong>. A model asked how sure it is will answer fluently and badly. The score is computed from things the platform can check, it is capped by what is missing, and it earns a percentage only once real outcomes show what its numbers mean.</p>
+
+    <p class="band" style="margin-top:0;margin-bottom:1.6rem">A score means <strong>how well the evidence supports this hypothesis</strong> — not the chance that a mitigation will work. Each precedent's similarity is shown on its own row of the brief; it enters a hypothesis's score only through the precedents that support that hypothesis.</p>
+
+    <figure style="margin-top:0">
+      <div class="svg-wrap">
+      <svg viewBox="0 0 1000 150" role="img" aria-label="Confidence scale from 0 to 1: below 0.35 abstain, 0.35 to 0.55 low, 0.55 to 0.75 medium, 0.75 and above high">
+        <rect x="40"  y="40" width="322" height="30" rx="6" fill="var(--rose)"    opacity=".22"/>
+        <rect x="362" y="40" width="184" height="30" fill="var(--amber)"   opacity=".22"/>
+        <rect x="546" y="40" width="184" height="30" fill="var(--cyan)"    opacity=".22"/>
+        <rect x="730" y="40" width="230" height="30" rx="6" fill="var(--emerald)" opacity=".26"/>
+        <text class="s-title" x="201" y="60" text-anchor="middle">Insufficient · abstain</text>
+        <text class="s-title" x="454" y="60" text-anchor="middle">Low</text>
+        <text class="s-title" x="638" y="60" text-anchor="middle">Medium</text>
+        <text class="s-title" x="845" y="60" text-anchor="middle">High</text>
+        <text class="s-edge" x="40"  y="90" text-anchor="middle">0</text>
+        <text class="s-edge" x="362" y="90" text-anchor="middle">0.35</text>
+        <text class="s-edge" x="546" y="90" text-anchor="middle">0.55</text>
+        <text class="s-edge" x="730" y="90" text-anchor="middle">0.75</text>
+        <text class="s-edge" x="960" y="90" text-anchor="middle">1</text>
+        <text class="s-sub" x="201" y="118" text-anchor="middle">shows the evidence, proposes no cause</text>
+        <text class="s-sub" x="454" y="118" text-anchor="middle">a lead worth checking</text>
+        <text class="s-sub" x="638" y="118" text-anchor="middle">likely, with stated gaps</text>
+        <text class="s-sub" x="845" y="118" text-anchor="middle">strong precedent and agreement</text>
+        <text class="s-tag" x="40" y="24">STARTING BANDS · RE-THRESHOLDED BY CALIBRATION</text>
+      </svg>
+      </div>
+      <figcaption>Starting bands describe evidence strength, not a measured probability. A band is shown in words and never by colour alone.</figcaption>
+    </figure>
+
+    <h3>What each band does</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Band</th><th>What the responder sees</th><th>What the platform must do</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">High</td><td>The leading hypothesis and the precedents that match it closely</td><td>Show supporting <b>and</b> conflicting citations side by side; the next step is still a check a person runs, never an action</td></tr>
+        <tr><td class="layer">Medium</td><td>Several ranked hypotheses and what separates them</td><td>Recommend the one diagnostic observation that best tells them apart</td></tr>
+        <tr><td class="layer">Low</td><td>A lead worth checking, with its gaps named</td><td>List the missing signals that would raise or sink it</td></tr>
+        <tr><td class="layer">Insufficient</td><td>The evidence found, and a plain statement that it is not enough</td><td>Propose no cause and show no percentage; ask for the missing signals or suggest escalation</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <h3>Signals</h3>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Signal</th><th>What it measures</th><th>How it is computed</th><th class="paid">Weight</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">M · match</td><td>How closely the best <b>supporting</b> precedent resembles this one</td><td>Exact fingerprint 1.0; same CI and error class 0.7; same service and term overlap scaled below that; decayed by age. A precedent that resolved some other way counts as counter-evidence, not match</td><td class="paid">0.25</td></tr>
+        <tr><td class="layer">A · agreement</td><td>Whether the precedents resolved the same way</td><td>Share of the top five precedents (match ≥ 0.5) whose close code or resolution agrees with the hypothesis</td><td class="paid">0.20</td></tr>
+        <tr><td class="layer">V · citation coverage</td><td>How much of the hypothesis has intact source references</td><td>Claims mapped to a current, exact pack passage ÷ claims made. The headline claim needs a valid citation or the hypothesis is dropped. This checks provenance; semantic support is measured separately by reviewed examples</td><td class="paid">0.20</td></tr>
+        <tr><td class="layer">C · change correlation</td><td>Whether a relevant change preceded the symptom</td><td>A change on the same CI and before onset, with a relevant deployment or configuration diff, decayed with time since: <code>exp(−Δt / 6h)</code>. Time proximity alone is not proof of cause</td><td class="paid">0.15</td></tr>
+        <tr><td class="layer">R · reliability</td><td>How much the supporting sources can be trusted</td><td>By kind: a reviewed postmortem or approved runbook 1.0; a structured close code 0.8; close notes 0.6; a ticket's free-text body 0.4</td><td class="paid">0.10</td></tr>
+        <tr><td class="layer">D · diversity</td><td>Whether independent kinds of evidence point the same way</td><td>Distinct kinds among incident, runbook, change and code, capped at three: <code>min(n, 3) / 3</code></td><td class="paid">0.05</td></tr>
+        <tr><td class="layer">F · freshness</td><td>Whether the evidence is still about the system as it is</td><td>Penalises a runbook older than the last change to its service, and precedents over a year old</td><td class="paid">0.05</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.4rem">
+      <div>
+        <h3 style="margin-top:0">Score, then caps</h3>
+        <pre><b>raw</b> = 0.25·M + 0.20·A + 0.20·V + 0.15·C + 0.10·R + 0.05·D + 0.05·F
+
+<i># caps are applied after the sum, and the brief says which one fired</i>
+no verified citation            → <b>Insufficient</b>
+one kind of evidence only        → at most <b>Medium</b>
+a recent precedent disagrees     → at most <b>Medium</b>, both shown
+no published graph               → runbook signal absent; says <b>NO_GRAPH</b>
+model's own confidence           → <b>ignored, never an input</b></pre>
+      </div>
+      <div>
+        <h3 style="margin-top:0">From a score to a probability</h3>
+        <div class="card c-em ledger" style="margin-top:0">
+          <ul>
+            <li><span class="tick">1</span><span>Until an application has at least <b>200 independently confirmed outcomes</b>, show only a provisional evidence-strength band — no percentage it has not earned</span></li>
+            <li><span class="tick">2</span><span>After that, a nightly isotonic fit maps the raw score to how often the hypothesis was confirmed for <b>that application</b>. Report service and severity slices only when each has enough labels; otherwise mark the slice insufficient</span></li>
+            <li><span class="tick">3</span><span>The brief can then read "High — 88% of 214 comparable triages were confirmed", with the sample size and calibration period beside it</span></li>
+            <li><span class="tick">4</span><span>Band edges are moved so High keeps <b>≥ 85% precision</b>; a drop of ten points over 30 days raises an alert. Weights and edges are set by replay, never by hand-tuning on live incidents</span></li>
+            <li><span class="tick">5</span><span>Every run stores its components and calibration version, so any score can be recomputed exactly</span></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <p class="band" style="border-left-color:var(--amber)"><strong>A high score must be arguable.</strong> The brief shows each signal as a bar, names any cap that fired, and lists the <strong>counter-evidence</strong> beside the evidence — a precedent that resolved differently is shown, not hidden. A responder who can see why the score is high can also see when it should not be.</p>
+  </section>
+
+  <!-- ═══ 6.3 · FUNCTIONAL ═══ -->
+  <section id="so-functional">
+    <div class="sec-head"><span class="sec-num">6.3</span><h2>Functional requirements</h2></div>
+    <p class="sec-sub">What the tab must do, each with the check that proves it and the rollout phase that delivers it. <strong>P1 needs no model at all</strong> — responders get value before any AI budget is spent.</p>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>ID</th><th>Requirement</th><th>Accepted when</th><th>Phase</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">SO-F01</td><td><b>Triage an incident</b> from its record with one action, through the API with a token, or from a <b>manual entry</b> for one not yet imported</td><td>Read paths honour application grants; creating a manual source requires knowledge write access before it can be cited</td><td><span class="chip">P1</span></td></tr>
+        <tr><td class="layer">SO-F02</td><td><b>Structured import</b> of CI, service, environment, impact, group, priority, state, times, close code and notes, problem and caused-by change; bounded paginated backfill of resolved history</td><td>Fields appear in the record header; a changed close note produces a new revision; older precedents remain indexed when they leave the latest-100 sync window</td><td><span class="chip">P0</span></td></tr>
+        <tr><td class="layer">SO-F03</td><td><b>Change records</b> imported and linked to a CI and a time window</td><td>A change on the same CI inside the window appears on the brief with its time offset</td><td><span class="chip">P0</span></td></tr>
+        <tr><td class="layer">SO-F04</td><td><b>Deterministic fingerprint</b> of every incident</td><td>Two records differing only in ids, timestamps or hosts produce the same fingerprint</td><td><span class="chip">P0</span></td></tr>
+        <tr><td class="layer">SO-F05</td><td><b>Similar incidents</b>: top five with score, symptoms, cause, mitigation and resolution as separate quoted fields, MTTR and date — and <b>how each one differs</b> from this incident</td><td>Works with AI switched off; replay recall@5 ≥ 0.80; a different environment or service is shown, not smoothed over</td><td><span class="chip">P1</span></td></tr>
+        <tr><td class="layer">SO-F06</td><td><b>Related open incidents</b> with the same fingerprint are grouped</td><td>A storm of alerts produces one triage and a count, not one triage each</td><td><span class="chip">P1</span></td></tr>
+        <tr><td class="layer">SO-F07</td><td><b>Runbooks and KB</b> matched from the published graph, quoted</td><td>Every excerpt passes live digest and quote verification; the brief states the graph revision and source age; no graph reads as NO_GRAPH</td><td><span class="chip">P1</span></td></tr>
+        <tr><td class="layer">SO-F08</td><td><b>Ranked hypotheses</b>: up to three causes, each with a read-only diagnostic step, plus the <b>one check that best separates them</b></td><td>Every claim cites a pack passage by id; an unknown or stale citation is dropped; claim and quote appear together for responder judgment; no step changes the service</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F09</td><td><b>Provisional evidence-strength band</b> per hypothesis, with signal breakdown, caps and counter-evidence</td><td>The score recomputes exactly from stored components; below 0.35 the brief abstains; the band carries no probability claim before calibration</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F10</td><td><b>Suggested owner and severity</b>, as suggestions with their evidence</td><td>Shown as "8 of 10 similar incidents went to DB-Ops", never applied to the ticket</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F11</td><td><b>What we could not tell</b>: the checks the evidence cannot answer</td><td>Each open question names the missing signal (no logs imported, no change data, no runbook)</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F12</td><td><b>Responder feedback</b>: accept, reject, or link the real cause</td><td>Works without JavaScript, recorded with who and when; an accept click alone is not a confirmed cause</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F13</td><td><b>Re-triage</b> when relevant evidence changes</td><td>Cache key covers the incident digest, evidence-pack digest, graph and code revisions, prompt, scorer and model versions; only identical inputs reuse a paid result</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F14</td><td><b>Calibrated percentages</b> once an application has enough confirmed outcomes</td><td>Shown only with n ≥ 200 independent labels, sample size and calibration period; service or severity percentages need adequate labels in that slice</td><td><span class="chip">P3</span></td></tr>
+        <tr><td class="layer">SO-F15</td><td><b>Auto-triage on sync</b> for incidents matching an owner's filter, e.g. P1 and P2</td><td>Runs as the connector's creator; revoking their grant stops it; daily budget enforced</td><td><span class="chip">P3</span></td></tr>
+        <tr><td class="layer">SO-F16</td><td><b>Hand-over</b>: copy-ready brief, and a read-only REST and MCP view of it</td><td>REST and MCP reads call no model</td><td><span class="chip">P2</span></td></tr>
+        <tr><td class="layer">SO-F17</td><td><b>Possible work-note write-back</b> is a separate future decision outside the read-only triage scope</td><td>Requires its own threat review, owner opt-in, credential and audit contract before being added to a delivery phase</td><td><span class="chip no">Deferred</span></td></tr>
+        <tr><td class="layer">SO-F18</td><td><b>Knowledge gaps</b>: services with incidents but no runbook, and abstained triages</td><td>Owners see a list; importing a runbook clears the gap on the next rebuild</td><td><span class="chip">P4</span></td></tr>
+        <tr><td class="layer">SO-F19</td><td><b>Code Factory hand-off</b> from a hypothesis that points at code</td><td>Opens a run with the evidence attached; both existing gates still apply</td><td><span class="chip">P4</span></td></tr>
+        <tr><td class="layer">SO-F20</td><td><b>Time-correct replay evaluation</b> over resolved incidents</td><td>A command reconstructs only evidence available at incident time, excludes the target's later resolution and related write-ups, uses a temporal holdout, and reports recall@5, top-3 hit rate, band precision, calibration error and abstention</td><td><span class="chip">P0</span></td></tr>
+        <tr><td class="layer">SO-F21</td><td><b>Impact and blast radius</b>: a short impact summary and the upstream and downstream services the graph knows about</td><td>Every dependency shown is quoted from the published graph; an unknown dependency is stated as unknown</td><td><span class="chip">P1</span></td></tr>
+        <tr><td class="layer">SO-F22</td><td><b>Outcome capture</b> after resolution: timeline, actual cause, mitigation and the evidence that was missing</td><td>Linked to the triage run; the write-up is imported as a source and reviewed before it can become a precedent</td><td><span class="chip">P4</span></td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ═══ 6.4 · NON-FUNCTIONAL ═══ -->
+  <section id="so-nfr">
+    <div class="sec-head"><span class="sec-num">6.4</span><h2>Non-functional requirements</h2></div>
+    <p class="sec-sub">During an incident, a slow tool is not used and a confidently wrong one is worse than nothing. These targets are what "ready" means, and each one names how it is measured.</p>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Quality</th><th>Requirement</th><th>Target</th><th>Verified by</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Latency</td><td>Evidence pack, first hypothesis, full brief</td><td><b>≤ 3 s</b> p95 at 50k incidents per application · <b>≤ 15 s</b> first hypothesis · <b>≤ 45 s</b> full brief</td><td>Stage timings on every run; load test on a seeded application</td></tr>
+        <tr><td class="layer">Resilience</td><td>Triage never depends on the provider being up</td><td>Provider failure or timeout still renders the evidence pack, with hypotheses marked unavailable. Search and raw source links stay available when ranking, the model or a connector fails. Triage reads imported data, so a slow or down ticket system cannot block it; imports are idempotent and time-boxed, and partial results say so</td><td>Tests with a failing mocked provider and an unreachable connector</td></tr>
+        <tr><td class="layer">Accuracy</td><td>Measured on replay before each phase ships</td><td>recall@5 <b>≥ 0.80</b> · top-3 cause hit <b>≥ 0.60</b> · High precision <b>≥ 0.85</b>; report coverage and abstention by service and severity without pressuring the scorer to guess</td><td><code>serviceops_replay</code> on a time-correct held-out set plus blinded review of whether each cited passage actually supports its claim; re-run on ranking, weights, prompt or threshold changes</td></tr>
+        <tr><td class="layer">Calibration</td><td>Percentages mean what they say</td><td>Expected calibration error <b>≤ 0.08</b> overall and on sufficiently sized slices; suppress a slice percentage when its sample is too small; alert when High precision drops 10 points in 30 days</td><td>Nightly refit reports ECE, sample size and uncertainty per slice</td></tr>
+        <tr><td class="layer">Cost</td><td>Bounded, receipted, never repeated</td><td>Per-triage token cap; daily auto-triage budget per application; one receipt per model turn; cache on identical input</td><td><code>usage.py</code> rules — a missing count is an error</td></tr>
+        <tr><td class="layer">Isolation</td><td>One application's incidents never inform another's</td><td>No grant is a <code>404</code>; tools bound before the run; a foreign id reads as not found. Once source-level access control lands (Appendix A), it is enforced at retrieval and again at citation</td><td>Extends <code>test_security</code></td></tr>
+        <tr><td class="layer">Injection</td><td>Incident text is data, never instruction</td><td>A corpus of hostile incident bodies changes no tool scope, citation or score</td><td>Adversarial test set, run on every build</td></tr>
+        <tr><td class="layer">Privacy</td><td>Minimum personal data leaves the platform</td><td>Emails, phones, card numbers and secret-shaped strings masked before the model and in logs; stored source untouched; bodies never in audit details; triage runs follow the application's retention and deletion policy</td><td>Redaction unit tests over real-shaped samples</td></tr>
+        <tr><td class="layer">Reproducibility</td><td>Any brief can be explained after the fact</td><td>Run stores fingerprint, evidence ids and digests, graph, prompt and calibration versions, model and score components</td><td>Recompute test: stored components → identical score</td></tr>
+        <tr><td class="layer">Freshness</td><td>The brief says how current it is</td><td>"Data as of" per source; target incidents syncable every 5 min after changing the current 15-minute minimum; change lag and failed syncs shown</td><td>Record source timestamp and a new connector <code>last_success_at</code>; an attempted sync alone does not prove fresh data</td></tr>
+        <tr><td class="layer">Capacity</td><td>A storm does not starve everything else</td><td>A <code>serviceops</code> worker lane; bounded concurrency per application and globally; ≤ 40 passages per pack</td><td>Storm test: 500 incidents in a minute</td></tr>
+        <tr><td class="layer">Auditability</td><td>Every run, feedback item and confirmed outcome is recorded</td><td>Each is an audit event in the same transaction as the change</td><td>Existing audit discipline and tests</td></tr>
+        <tr><td class="layer">Observability</td><td>The feature is measurable in production</td><td>Latency by stage, time to first useful clue, acceptance, abstention, false-High count, band precision, cost per triage, connector lag and published graph age — each by service</td><td>JSON logs with request and triage id; dashboard</td></tr>
+        <tr><td class="layer">Accessibility</td><td>Usable by keyboard, screen reader and with JavaScript off</td><td>Brief and verdicts work without JavaScript; confidence is never colour alone</td><td>Synchronous-path tests; keyboard pass</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <!-- ═══ 6.5 · DATA & INTERFACES ═══ -->
+  <section id="so-data">
+    <div class="sec-head"><span class="sec-num">6.5</span><h2>Data model &amp; interfaces</h2></div>
+    <p class="sec-sub">Six new tables and one registry line. The run is a state machine in rows, as Code Factory's is, so "where did this stop and why" is answered from the record, not a log.</p>
+
+    <div class="grid g2">
+      <pre><b>IncidentProfile</b>   <i># one per imported incident, rebuilt on digest change</i>
+  entry → KnowledgeEntry (1:1) · application
+  service · ci · fingerprint · signature_terms
+  priority · opened_at · resolved_at · mttr_minutes
+  close_code · resolution_excerpt · caused_by_change
+
+<b>TriageRun</b>
+  application · incident → KnowledgeEntry · requested_by
+  trigger (manual | api | auto) · status
+  graph_version · fingerprint · pack_digest · evidence_as_of
+  prompt_version · scorer_version · provider · model · calibration_version
+
+<b>TriagePhase</b>       <i># fingerprint → evidence → hypotheses → verify → score</i>
+  run · name · status · started_at · finished_at · error</pre>
+      <pre><b>Hypothesis</b>
+  run · rank · statement · category · next_step
+  raw_score · band · components (json) · caps_fired
+  citations (json) · counter_evidence (json)
+
+<b>TriageVerdict</b>
+  hypothesis · user · verdict (accepted | rejected | partial)
+  actual_cause → KnowledgeEntry (nullable) · confirmation_source
+  confirmed_at (nullable) · note  <i># feedback alone is not ground truth</i>
+
+<b>Calibration</b>        <i># per application, versioned, never overwritten</i>
+  application · version · fitted_at · sample_size
+  mapping (json) · ece · band_edges (json)</pre>
+    </div>
+
+    <div class="grid g3" style="margin-top:1.2rem">
+      <div class="card c-cyan"><h4><span class="dot"></span>The tab</h4>
+        <ul>
+          <li><code>"service_ops": ("ServiceOps triage", True)</code> in <code>services.FEATURES</code> — a checkbox, a Features row and a nav entry, nothing else</li>
+          <li>Readable by viewers; feedback needs contributor; manual incident creation needs knowledge write access; auto-triage is an owner setting</li>
+        </ul></div>
+      <div class="card c-vi"><h4><span class="dot"></span>The API</h4>
+        <ul>
+          <li><code>POST /api/v1/triage/</code> spends budget, so it is gated like <code>chat_api</code></li>
+          <li><code>GET /api/v1/triage/&lt;id&gt;/</code> and an MCP <code>triage_brief</code> tool read a finished brief and call no model</li>
+        </ul></div>
+      <div class="card c-am"><h4><span class="dot"></span>The worker</h4>
+        <ul>
+          <li>A <code>serviceops</code> lane beside <code>connectors</code>, with its own concurrency limit</li>
+          <li>Auto-triage has no background identity: it runs as the connector's creator, re-checking their grant</li>
+        </ul></div>
+    </div>
+  </section>
+
+  <!-- ═══ 6.6 · ROLLOUT ═══ -->
+  <section id="so-rollout">
+    <div class="sec-head"><span class="sec-num">6.6</span><h2>Rollout, decisions and risks</h2></div>
+    <p class="sec-sub">Five phases, each with an exit test measured on replay rather than asserted. The first two spend nothing on AI, so the value of the incident memory is proven <strong>before</strong> anyone pays for reasoning over it.</p>
+
+    <div class="grid g3">
+      <div class="card c-cyan"><h4><span class="dot"></span>P0 · Foundations</h4>
+        <p>Structured ServiceNow fields, bounded paginated history backfill, change import, fingerprints, <code>IncidentProfile</code>, an as-of replay harness and a baseline.</p>
+        <ul><li><strong>Exit:</strong> baseline measured on ≥ 500 resolved incidents</li></ul></div>
+      <div class="card c-cyan"><h4><span class="dot"></span>P1 · Evidence pack</h4>
+        <p>The ServiceOps tab with precedents, storms, runbooks and changes. No model.</p>
+        <ul><li><strong>Exit:</strong> recall@5 ≥ 0.80, pack p95 ≤ 3 s</li></ul></div>
+      <div class="card c-em"><h4><span class="dot"></span>P2 · Hypotheses</h4>
+        <p>Triage agent, verification, starting bands, abstention, verdicts, caching, receipts.</p>
+        <ul><li><strong>Exit:</strong> top-3 hit ≥ 0.60, High precision ≥ 0.85, zero unverified citations, and time to first useful clue improves on replay</li></ul></div>
+      <div class="card c-em"><h4><span class="dot"></span>P3 · Calibrated &amp; automatic</h4>
+        <p>Isotonic calibration, earned percentages, auto-triage on sync, drift alerts.</p>
+        <ul><li><strong>Exit:</strong> ECE ≤ 0.08 over 30 live days</li></ul></div>
+      <div class="card c-vi"><h4><span class="dot"></span>P4 · Closing the loop</h4>
+        <p>Knowledge gaps, Code Factory hand-off, outcome capture and postmortem prompts. The triage feature remains read-only.</p>
+        <ul><li><strong>Exit:</strong> a resolved incident traces from its first signal to a published learning; owners opt in per application</li></ul></div>
+    </div>
+
+    <div class="grid g2" style="margin-top:1.4rem">
+      <div class="card c-am ledger"><h4><span class="dot"></span>Decisions to make — with a recommendation</h4>
+        <ul>
+          <li><span class="todo">?</span><span><strong>Embeddings for similarity?</strong> Not in v1: fingerprint, CI and terms stay reproducible. Revisit only if replay recall misses 0.80</span></li>
+          <li><span class="todo">?</span><span><strong>Write back to the ticket?</strong> Deferred outside this read-only rollout. If requested later, design and approve a separate work-note-only gate and credential</span></li>
+          <li><span class="todo">?</span><span><strong>Show percentages?</strong> Provisional evidence-strength bands until 200 independently confirmed outcomes; then calibrated percentages with sample size and period beside them</span></li>
+          <li><span class="todo">?</span><span><strong>Require a published graph?</strong> Not for precedents, which read active sources; yes for runbooks, and the brief says so</span></li>
+          <li><span class="todo">?</span><span><strong>Who owns the auto-triage budget?</strong> The application owner, per day, visible on AI cost reports</span></li>
+          <li><span class="todo">?</span><span><strong>When does a resolution become a precedent?</strong> A resolved record imported from the ticket system counts at once, as chat's Sources mode already reads active sources. A postmortem, or a link to "the real cause", goes through normal graph review first</span></li>
+          <li><span class="todo">?</span><span><strong>Ingest monitoring alerts?</strong> Not in v1: an inbound alert webhook is a new surface with its own authentication to design. Tickets carry the alert reference; revisit once the brief proves useful</span></li>
+        </ul></div>
+      <div class="card c-ro ledger"><h4><span class="dot"></span>Risks and how the design meets them</h4>
+        <ul>
+          <li><span class="todo">!</span><span><strong>Cold start</strong> — little history means more abstentions, which is the honest answer; P1 shows value anyway</span></li>
+          <li><span class="todo">!</span><span><strong>Poor close notes</strong> — "fixed" teaches nothing; a precedent with no resolution text scores low on agreement</span></li>
+          <li><span class="todo">!</span><span><strong>Automation bias</strong> — counter-evidence is always shown, and High-band precision is watched</span></li>
+          <li><span class="todo">!</span><span><strong>Alert storms</strong> — grouped by fingerprint, bounded by lane concurrency and budget</span></li>
+          <li><span class="todo">!</span><span><strong>Hostile incident text</strong> — data, never instruction; scope is closed over before the run</span></li>
+        </ul></div>
+    </div>
+
+    <p class="band" style="border-left-color:var(--emerald)"><strong>The read-only releases preserve the platform boundaries.</strong> Deny by default, scope closed over, citations verified live, secrets in files, usage receipted, no background identity and progressive enhancement. ServiceOps adds two rules: <strong>confidence is computed, never claimed</strong>, and <strong>a hypothesis is never evidence</strong>. Feedback helps review, while a confirmed system-of-record outcome or reviewed write-up supplies a calibration label or future precedent.</p>
   </section>
 
   <!-- ═══ B · PRODUCTION ═══ -->

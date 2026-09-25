@@ -1,0 +1,290 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "ServiceOps · incident triage",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "ground",
+        "label": "Building the evidence pack",
+        "focus": [
+          "raised",
+          "fingerprint",
+          "similar",
+          "context"
+        ],
+        "note": "Deterministic and model-free: the pack exists before any model is called, and survives a provider outage."
+      },
+      {
+        "id": "reason",
+        "label": "Reasoning, verified and scored",
+        "focus": [
+          "hypothesize",
+          "verify",
+          "score"
+        ],
+        "note": "The model proposes; citations are re-checked; confidence is computed from evidence, never taken from the model."
+      },
+      {
+        "id": "learn",
+        "label": "Deciding and learning",
+        "focus": [
+          "brief",
+          "decide",
+          "outcome",
+          "resolved"
+        ],
+        "note": "A person decides. Feedback is recorded; independently confirmed outcomes calibrate the score and reviewed resolutions inform future triage."
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "signal",
+      "label": "Incident signal"
+    },
+    {
+      "id": "evidence",
+      "label": "Incident and knowledge evidence"
+    },
+    {
+      "id": "reasoning",
+      "label": "Reason and trust gates"
+    },
+    {
+      "id": "responder",
+      "label": "Responder"
+    }
+  ],
+  "phases": [
+    {
+      "id": "ph_intake",
+      "label": "Intake",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "ph_evidence",
+      "label": "Evidence, no model",
+      "fromCol": 2,
+      "toCol": 2
+    },
+    {
+      "id": "ph_reason",
+      "label": "Reason, verify, score",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "ph_learn",
+      "label": "Decide and learn",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "raised",
+    "fingerprint",
+    "similar",
+    "hypothesize",
+    "verify",
+    "score",
+    "brief",
+    "decide"
+  ],
+  "nodes": [
+    {
+      "id": "raised",
+      "lane": "signal",
+      "col": 0,
+      "width": 150,
+      "type": "messagebus",
+      "label": "Incident raised",
+      "sublabel": "ServiceNow, Jira or API"
+    },
+    {
+      "id": "fingerprint",
+      "lane": "signal",
+      "col": 1,
+      "width": 150,
+      "type": "backend",
+      "label": "Fingerprint",
+      "sublabel": "service, CI, error signature",
+      "tag": "text is data, never instruction"
+    },
+    {
+      "id": "resolved",
+      "lane": "signal",
+      "col": 5,
+      "width": 150,
+      "type": "database",
+      "label": "Resolution imported",
+      "sublabel": "close notes, postmortem"
+    },
+    {
+      "id": "similar",
+      "lane": "evidence",
+      "col": 1,
+      "width": 150,
+      "type": "database",
+      "label": "Similar incidents",
+      "sublabel": "signature, CI, terms"
+    },
+    {
+      "id": "outcome",
+      "lane": "evidence",
+      "col": 5,
+      "width": 150,
+      "type": "database",
+      "label": "Outcome label",
+      "sublabel": "accepted or rejected"
+    },
+    {
+      "id": "context",
+      "lane": "evidence",
+      "col": 2,
+      "width": 150,
+      "type": "database",
+      "label": "Runbooks and changes",
+      "sublabel": "published graph, change window"
+    },
+    {
+      "id": "hypothesize",
+      "lane": "reasoning",
+      "col": 2,
+      "width": 150,
+      "type": "backend",
+      "label": "Hypotheses",
+      "sublabel": "one bounded model call"
+    },
+    {
+      "id": "verify",
+      "lane": "reasoning",
+      "col": 3,
+      "width": 150,
+      "type": "security",
+      "label": "Citation check",
+      "sublabel": "live source, exact quote"
+    },
+    {
+      "id": "score",
+      "lane": "reasoning",
+      "col": 4,
+      "width": 150,
+      "type": "security",
+      "label": "Confidence score",
+      "sublabel": "computed, never claimed",
+      "tag": "abstains below the floor"
+    },
+    {
+      "id": "brief",
+      "lane": "responder",
+      "col": 4,
+      "width": 150,
+      "type": "frontend",
+      "label": "Triage brief",
+      "sublabel": "ranked, cited, banded"
+    },
+    {
+      "id": "decide",
+      "lane": "responder",
+      "col": 5,
+      "width": 150,
+      "type": "external",
+      "label": "Responder decides",
+      "sublabel": "nothing is executed"
+    }
+  ],
+  "edges": [
+    {
+      "from": "raised",
+      "to": "fingerprint",
+      "label": "normalised"
+    },
+    {
+      "from": "fingerprint",
+      "to": "similar",
+      "label": "match",
+      "variant": "emphasis"
+    },
+    {
+      "from": "fingerprint",
+      "to": "context",
+      "label": "service, window"
+    },
+    {
+      "from": "similar",
+      "to": "hypothesize",
+      "label": "evidence pack",
+      "variant": "emphasis"
+    },
+    {
+      "from": "context",
+      "to": "hypothesize"
+    },
+    {
+      "from": "hypothesize",
+      "to": "verify",
+      "variant": "emphasis"
+    },
+    {
+      "from": "verify",
+      "to": "score",
+      "label": "verified claims",
+      "variant": "emphasis"
+    },
+    {
+      "from": "score",
+      "to": "brief",
+      "label": "banded",
+      "variant": "emphasis"
+    },
+    {
+      "from": "brief",
+      "to": "decide",
+      "variant": "emphasis"
+    },
+    {
+      "from": "decide",
+      "to": "outcome",
+      "role": "async",
+      "variant": "dashed"
+    },
+    {
+      "from": "outcome",
+      "to": "score",
+      "label": "calibrates",
+      "role": "return",
+      "variant": "dashed"
+    },
+    {
+      "from": "decide",
+      "to": "resolved",
+      "role": "async",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Evidence first, model second",
+      "items": [
+        "Past incidents, runbooks and changes are found without a model charge",
+        "The model only ranks and explains evidence that was already retrieved",
+        "Citations have an active source and exact quote; responders judge whether each quote supports its claim"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Confidence is computed, not claimed",
+      "items": [
+        "Scored from similarity, agreement, change correlation and verified coverage",
+        "Below the floor it abstains and shows the evidence instead of guessing",
+        "Confirmed outcomes calibrate the bands; nothing is executed on the service"
+      ]
+    }
+  ]
+}
