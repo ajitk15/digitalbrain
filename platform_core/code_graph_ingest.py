@@ -19,12 +19,14 @@ from django.utils import timezone
 
 from .code_graph_analysis import (
     ANALYZER_VERSION,
+    JS_FAMILY,
     classify,
     describe_languages,
     facts,
     relationships,
 )
 from .code_graph_clone import clone_sources
+from .code_graph_graphify import analyse as graphify_analyse
 from .link_sources import github_token
 from .models import CodeFile, CodeRelationship, CodeRepository, CodeSnapshot
 from .services import audit, feature_enabled
@@ -141,7 +143,8 @@ def index_repository(repository):
             )
             warnings.append(
                 f"No supported source files were indexed.{found} Python, JavaScript, "
-                "JSX, TypeScript and TSX are analysed; other languages are not yet."
+                "TypeScript, Java, Kotlin, Scala, Go, Rust, C, C++, C#, Swift, Ruby "
+                "and PHP are analysed; other languages are not yet."
             )
         # The analyser version is part of what a manifest identifies, not just the
         # bytes it read: the same commit analysed by a better parser is a
@@ -187,6 +190,33 @@ def index_repository(repository):
             )
             return True
         edges = relationships(analyzed)
+        # Graphify reads every language through Tree-sitter and resolves calls
+        # and inheritance across files. It runs after the reuse check above, so
+        # an unchanged commit costs nothing. A failure leaves the snapshot the
+        # in-house analyser produced, marked partial, rather than no snapshot.
+        try:
+            symbols, extra, unparsed = graphify_analyse(analyzed)
+        except Exception:
+            logger.warning(
+                "code_graph_graphify_failed", extra={"event": "code_graph_graphify_failed"}
+            )
+            complete = False
+            warnings.append(
+                "Call graph and multi-language symbols could not be computed for this "
+                "snapshot; imports between Python and JavaScript files are still shown."
+            )
+        else:
+            for item in analyzed:
+                if item["path"] in symbols:
+                    item["symbols"] = symbols[item["path"]]
+                if item["path"] in unparsed and item["language"] not in {"python", *JS_FAMILY}:
+                    item["parse_ok"] = False
+            # A pair the in-house analyser already connected keeps its edge of
+            # that kind; Graphify adds kinds, it does not overwrite them.
+            seen = {(edge["source"], edge["target"], edge["kind"]) for edge in edges}
+            edges += [
+                edge for edge in extra if (edge["source"], edge["target"], edge["kind"]) not in seen
+            ]
         # Over every file in the snapshot, not the subset a page later draws.
         roles, groups, cycle_count = classify([item["path"] for item in analyzed], edges)
         for item in analyzed:

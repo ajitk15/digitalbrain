@@ -486,8 +486,8 @@ digest is never returned, as on the retrieval endpoints.
 
 Owners and contributors register a GitHub repository as `owner/name`. A background worker lane,
 separate from the knowledge-graph lane and sharing nothing with its fingerprint, clones the
-repository at the resolved commit, indexes files, symbols, routes and import relationships, and
-deletes the checkout. Bounds: 500 files, 400 KB per file, 20 MiB in total, a five-minute clone
+repository at the resolved commit, indexes files, symbols, routes, imports, calls and inheritance,
+and deletes the checkout. Bounds: 500 files, 400 KB per file, 20 MiB in total, a five-minute clone
 timeout. Snapshots are numbered per repository; an unchanged commit produces no new snapshot.
 
 The clone reads content and never runs it. Hooks are redirected to an empty directory,
@@ -590,9 +590,30 @@ A graph is served only if its fingerprint matches current active sources. Delete
 therefore invalidate old graph views and exports immediately while the worker rebuilds. Application
 access and the Knowledge feature switch are checked on every view/export. IDs are application-scoped.
 
-This local deterministic generator does not integrate Graphify, LLM entity extraction, a graph
-database, vector retrieval or a labeled semantic evaluation set. Those design integrations remain
-separate work; current graphs expose the structural facts and limitations directly.
+This generator uses no graph database, vector retrieval or labeled semantic evaluation set; those
+design integrations remain separate work.
+
+### Graphify
+
+[Graphify](https://graphify.net) (the `graphifyy` package) is used in two places, and only its
+deterministic parts:
+
+- **Code Graph** reads Java, Kotlin, Scala, Go, Rust, C, C++, C#, Swift, Ruby and PHP through
+  Graphify's Tree-sitter pass, alongside the in-house Python and JavaScript/TypeScript analyser,
+  and stores calls and inheritance between files as well as imports. Each edge keeps the line it
+  was read from and whether it was written in the source (static) or resolved across files
+  (inferred). Code Factory follows calls and inheritance, not only imports, when it chooses the
+  reference code a change is shown - in a Java package, where files use each other without
+  importing, imports alone reached almost nothing.
+- **Knowledge → Quality** lists the graph's themes: Leiden community detection over the stored
+  relationships, each named after its most-connected node, with a cohesion figure.
+
+Graphify's semantic pass, which sends text to a model under its own API key, is never called:
+it would bypass the application's own credential and its usage receipts. Document relationships
+are still extracted by the application's configured model and kept only when their quote
+verifies. Graphify runs on text already read and bounded, in a scratch directory of its own, and
+calls no network. If it fails, the snapshot keeps what the in-house analyser found and is marked
+partial with a warning.
 
 
 ### Answering from a chosen graph version

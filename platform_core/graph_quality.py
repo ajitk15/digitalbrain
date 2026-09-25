@@ -18,6 +18,15 @@ Two deliberate departures from the reference design this panel is modelled on:
   after their quote and both entity names are verified against the source.
 """
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+#: Themes the Health panel lists; the rest are counted, not shown.
+THEMES_SHOWN = 6
+#: A cluster smaller than this is a stray pair, not a theme.
+MIN_THEME = 3
+
 #: An orphan share above this reads as a fragmented extraction.
 ORPHAN_LIMIT = 15.0
 #: Below this, the graph has no dominant connected body.
@@ -120,6 +129,46 @@ def document_share(data):
     return rows
 
 
+def themes(nodes, edges):
+    """What the graph is about, as clusters of densely linked nodes.
+
+    Leiden community detection from Graphify (`graphify.cluster`), over the
+    relationships already stored - no model, no provider, the same on every
+    render. Each theme is named after its most-connected node, which is
+    Graphify's own LLM-free labelling, so a name is always a real node label
+    and never an invented summary. Cohesion is the share of possible links
+    inside the theme that exist; it describes the structure, not correctness.
+    """
+    import networkx as nx
+    from graphify.cluster import cluster, cohesion_score, label_communities_by_hub
+
+    graph = nx.Graph()
+    for node in nodes:
+        graph.add_node(node["id"], label=node.get("label", ""))
+    for edge in edges:
+        left, right = edge.get("source"), edge.get("target")
+        if left in graph and right in graph and left != right:
+            graph.add_edge(left, right)
+    if not graph.number_of_edges():
+        return {"count": 0, "rows": []}
+    found = {key: members for key, members in cluster(graph).items() if len(members) >= MIN_THEME}
+    labels = label_communities_by_hub(graph, found)
+    owner = {node["id"]: node.get("knowledge_id") for node in nodes}
+    total = graph.number_of_nodes()
+    rows = [
+        {
+            "label": labels[key][:80],
+            "nodes": len(members),
+            "percent": _percent(len(members), total),
+            "documents": len({owner[m] for m in members if owner.get(m)}),
+            "cohesion": round(100 * cohesion_score(graph, members)),
+        }
+        for key, members in found.items()
+    ]
+    rows.sort(key=lambda row: (-row["nodes"], row["label"]))
+    return {"count": len(rows), "rows": rows[:THEMES_SHOWN]}
+
+
 def health_report(data, quality):
     """Structural signals for the Health panel.
 
@@ -159,7 +208,16 @@ def health_report(data, quality):
     if edge_count and bands["unquoted"]:
         issues.append(f"{bands['unquoted']} relationship(s) do not quote a source.")
 
+    # Informational, so it never changes the grade, and a clustering failure
+    # hides the table rather than the whole panel.
+    try:
+        found_themes = themes(nodes, edges)
+    except Exception:
+        logger.warning("graph_themes_failed", extra={"event": "graph_themes_failed"})
+        found_themes = None
+
     return {
+        "themes": found_themes,
         "grade": "Good" if not issues else ("Fair" if len(issues) == 1 else "Poor"),
         "issues": issues,
         "nodes": node_count,

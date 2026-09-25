@@ -14,7 +14,28 @@ SUPPORTED = {
     ".cjs": "javascript",
     ".ts": "typescript",
     ".tsx": "tsx",
+    # Parsed by Graphify's Tree-sitter pass (`code_graph_graphify`), not here.
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".scala": "scala",
+    ".go": "go",
+    ".rs": "rust",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".hh": "cpp",
+    ".hpp": "cpp",
+    ".hxx": "cpp",
+    ".cs": "csharp",
+    ".swift": "swift",
+    ".rb": "ruby",
+    ".php": "php",
 }
+#: The languages whose symbols and imports this module reads itself.
+JS_FAMILY = {"javascript", "jsx", "typescript", "tsx"}
 SKIP_DIRS = {
     ".git",
     ".hg",
@@ -119,14 +140,29 @@ LANGUAGE_NAMES = {
 }
 LANGUAGE_FILENAMES = {"dockerfile": "Dockerfile", "makefile": "Makefile"}
 #: The languages the graph parses, by the name the census gives them.
-ANALYSED_LANGUAGES = {"Python", "JavaScript", "TypeScript"}
+ANALYSED_LANGUAGES = {
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "Java",
+    "Kotlin",
+    "Scala",
+    "Go",
+    "Rust",
+    "C",
+    "C++",
+    "C#",
+    "Swift",
+    "Ruby",
+    "PHP",
+}
 
 MAX_FILES = 500
 MAX_FILE_BYTES = 400_000
 MAX_TOTAL_BYTES = 20 * 1024 * 1024
 #: Bump when the facts a snapshot stores change shape or meaning. The snapshot
 #: reuse check keys on this, so a bump is what makes a re-index recompute.
-ANALYZER_VERSION = "structural-v4"
+ANALYZER_VERSION = "structural-v5-graphify"
 
 JS_IMPORT = re.compile(
     r"(?:import\s+(?:(?P<clause>[^;\"']*?)\s+from\s+)?"
@@ -373,14 +409,19 @@ def js_facts(text):
 
 def facts(path, text):
     language = language_for(path)
-    symbols, imports, parse_ok = (
-        python_facts(path, text) if language == "python" else js_facts(text)
-    )
+    if language == "python":
+        symbols, imports, parse_ok = python_facts(path, text)
+    elif language in JS_FAMILY:
+        symbols, imports, parse_ok = js_facts(text)
+    else:
+        # Every other language is read by Graphify over the whole snapshot at
+        # once (`code_graph_graphify.analyse`), which fills these in.
+        symbols, imports, parse_ok = [], [], True
     return {
         "path": path,
         "language": language,
         "routes": python_routes(text) if language == "python" else [],
-        "calls": js_calls(text) if language != "python" else [],
+        "calls": js_calls(text) if language in JS_FAMILY else [],
         "digest": hashlib.sha256(text.encode()).hexdigest(),
         "content": text,
         "parse_ok": parse_ok,

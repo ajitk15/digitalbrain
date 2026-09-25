@@ -168,6 +168,15 @@ cannot reach the operator's own git credentials. The token is written to that
 scratch config rather than passed in argv, where the process list would expose
 it. Do not widen this to accept a URL, and do not add a third fetcher.
 
+**Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
+calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
+inheritance) on text the clone already read, in a scratch directory of its own;
+`graph_quality.themes` uses its Leiden clustering and hub labels. Its semantic
+pass (`graphify.llm`) must never be called: it spends a model under Graphify's
+own key, which bypasses per-application credentials and `AIUsage`, and its
+edges carry no quote for `graph_ai` to verify. A Graphify failure degrades a
+snapshot to partial, never to no snapshot.
+
 **SharePoint reads as the application, not as the user.** `sharepoint.py` uses
 app-only client credentials, so the app registration's grant is the boundary. Under
 `Sites.Read.All` an importing user can obtain documents they could not open

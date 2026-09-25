@@ -49,6 +49,17 @@ LANGUAGE_BADGE = {
     "jsx": "JSX",
     "typescript": "TS",
     "tsx": "TSX",
+    "java": "JAVA",
+    "kotlin": "KT",
+    "scala": "SC",
+    "go": "GO",
+    "rust": "RS",
+    "c": "C",
+    "cpp": "C++",
+    "csharp": "C#",
+    "swift": "SW",
+    "ruby": "RB",
+    "php": "PHP",
 }
 FUNCTION_KINDS = {"function"}
 TYPE_KINDS = {"class", "interface", "enum", "type"}

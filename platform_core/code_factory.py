@@ -1651,7 +1651,8 @@ def reference_files(run, targets):
     * modules the approved items name by word - a gap about "consent" brings
       `services/consent.py` - because the code a fix must start calling is, by
       definition, not imported yet; and
-    * what the target files already import, from the snapshot's edges.
+    * what the target files already import, call or extend, from the
+      snapshot's edges.
 
     Chosen by code from paths the snapshot holds, never by the model. Returned
     outside the numbered files, so `collect_changes` cannot accept an edit to
@@ -1687,9 +1688,12 @@ def reference_files(run, targets):
     # two steps away: a live run's route reached the database only through its
     # dependency module, never saw that an error rolls the request's
     # transaction back, and wrote an audit record the rollback then discarded.
+    # Calls and inheritance count as well as imports: in Java, Go or C# a file
+    # uses its own package without importing it, so imports alone reach almost
+    # nothing there. Those edges come from Graphify (`code_graph_graphify`).
     edges = {}
     for source, target in CodeRelationship.objects.filter(
-        snapshot=snapshot, kind="import"
+        snapshot=snapshot, kind__in=["import", "call", "inherit"]
     ).values_list("source__path", "target__path"):
         edges.setdefault(source, []).append(target)
 

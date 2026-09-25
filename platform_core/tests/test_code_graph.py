@@ -596,12 +596,14 @@ class CodeGraphTests(TestCase):
         )
         self.assertEqual(by_name["Java"]["files"], 2)
         self.assertEqual(by_name["TypeScript"]["bytes"], 2000)  # .ts and .tsx together
-        self.assertFalse(by_name["Java"]["analysed"])
+        # Java is read by Graphify's Tree-sitter pass; a Dockerfile is counted only.
+        self.assertTrue(by_name["Java"]["analysed"])
         self.assertTrue(by_name["Python"]["analysed"])
+        self.assertFalse(by_name["Dockerfile"]["analysed"])
         self.assertEqual(by_name["Java"]["share"], round(100 * 8000 / 11200, 1))
 
     def test_the_clone_counts_languages_past_the_file_cap(self):
-        """The cap bounds parsing, not counting - and Go is counted, never read."""
+        """The cap bounds parsing, not counting - and Elixir is counted, never read."""
         import subprocess
         from pathlib import Path
 
@@ -612,7 +614,7 @@ class CodeGraphTests(TestCase):
                 checkout = Path(arguments[-1])
                 for index in range(4):
                     (checkout / "svc").mkdir(parents=True, exist_ok=True)
-                    (checkout / "svc" / f"h{index}.go").write_text("package svc\n" * 50)
+                    (checkout / "svc" / f"h{index}.ex").write_text("defmodule Svc do\nend\n" * 50)
                 (checkout / "tools").mkdir()
                 (checkout / "tools" / "a.py").write_text("x = 1\n")
                 (checkout / "tools" / "b.py").write_text("y = 2\n")
@@ -631,7 +633,7 @@ class CodeGraphTests(TestCase):
         self.assertEqual([path for path, _ in files], ["tools/a.py"])
         self.assertFalse(complete)
         self.assertEqual(
-            [(row["name"], row["files"]) for row in languages], [("Go", 4), ("Python", 2)]
+            [(row["name"], row["files"]) for row in languages], [("Elixir", 4), ("Python", 2)]
         )
 
     @patch("platform_core.code_graph_ingest.github_token", return_value="")

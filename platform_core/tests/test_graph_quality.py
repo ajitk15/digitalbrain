@@ -6,6 +6,7 @@ from platform_core.graph_quality import (
     document_share,
     health_report,
     provenance_bands,
+    themes,
 )
 
 
@@ -164,3 +165,73 @@ class HealthReportTests(SimpleTestCase):
         report = health_report(data, {"nodes": 4, "edges": 2, "isolated_nodes": 0})
         self.assertEqual(report["evidence_percent"], 100.0)
         self.assertEqual(report["bands"]["inferred"], 2)
+
+
+class ThemeTests(SimpleTestCase):
+    """Leiden clusters from Graphify, named after a real node, never invented."""
+
+    def two_topics(self):
+        # Two dense groups of five, joined by one bridge.
+        nodes, edges = [], []
+        for topic, document in (("billing", "doc-a"), ("auth", "doc-b")):
+            members = [f"{topic}-{i}" for i in range(5)]
+            nodes += [node(member, knowledge_id=document) for member in members]
+            edges += [
+                edge(left, right, knowledge_id=document)
+                for i, left in enumerate(members)
+                for right in members[i + 1 :]
+            ]
+            # One node every other member points at, so the theme has a clear hub.
+            nodes.append(node(topic, kind="value", knowledge_id=None))
+            edges += [edge(member, topic, knowledge_id=document) for member in members]
+        edges.append(edge("billing", "auth"))
+        return nodes, edges
+
+    def test_dense_groups_become_themes_named_after_their_hub(self):
+        found = themes(*self.two_topics())
+        self.assertEqual(found["count"], 2)
+        labels = {row["label"] for row in found["rows"]}
+        self.assertEqual(labels, {"billing", "auth"})
+        for row in found["rows"]:
+            self.assertEqual(row["nodes"], 6)
+            self.assertEqual(row["documents"], 1)
+            self.assertEqual(row["percent"], 50.0)
+            self.assertEqual(row["cohesion"], 100)
+
+    def test_the_same_graph_gives_the_same_themes(self):
+        self.assertEqual(themes(*self.two_topics()), themes(*self.two_topics()))
+
+    def test_stray_pairs_and_an_unlinked_graph_are_not_themes(self):
+        self.assertEqual(themes([node("a"), node("b")], []), {"count": 0, "rows": []})
+        found = themes([node("a"), node("b")], [edge("a", "b")])
+        self.assertEqual(found["count"], 0)
+
+    def test_the_health_report_carries_themes_without_changing_the_grade(self):
+        nodes, edges = self.two_topics()
+        report = health_report({"nodes": nodes, "edges": edges}, {})
+        self.assertEqual(report["themes"]["count"], 2)
+        self.assertEqual(report["grade"], "Good")
+
+    def test_a_clustering_failure_hides_the_themes_not_the_panel(self):
+        from unittest.mock import patch
+
+        with patch("platform_core.graph_quality.themes", side_effect=RuntimeError):
+            report = health_report({"nodes": [node("a")], "edges": []}, {})
+        self.assertIsNone(report["themes"])
+        self.assertEqual(report["nodes"], 1)
+
+
+    def test_the_quality_panel_lists_the_themes(self):
+        from django.template.loader import render_to_string
+
+        nodes, edges = self.two_topics()
+        report = health_report({"nodes": nodes, "edges": edges}, {})
+        html = render_to_string("_kb_quality.html", {"health": report, "graph": {"quality": {}}})
+        self.assertIn("Themes", html)
+        self.assertIn("<td>billing</td>", html)
+        self.assertIn("2 themes", html)
+        # Nothing to cluster: no empty table, and the rest of the panel still renders.
+        bare = health_report({"nodes": [node("a")], "edges": []}, {})
+        html = render_to_string("_kb_quality.html", {"health": bare, "graph": {"quality": {}}})
+        self.assertNotIn("Themes", html)
+        self.assertIn("Edge provenance", html)
