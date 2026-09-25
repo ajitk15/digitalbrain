@@ -41,6 +41,7 @@ FEATURES = {
     "code_graph": ("Code Graph", True),
     "code_factory": ("Code Factory plans", True),
     "connectors": ("External connectors", True),
+    "service_ops": ("ServiceOps incident triage", True),
     "chat_api": ("Chat API", True),
 }
 

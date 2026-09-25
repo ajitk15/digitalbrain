@@ -122,6 +122,7 @@ def application_menu(context):
             "code",
             {"plans", "plan-detail", "runs", "run-detail", "onboarding"},
         ),
+        ("ServiceOps", "serviceops", "service_ops", "warning", {"serviceops"}),
         ("Chat", "chat", "chat", "chat", {"chat"}),
     ]
     items = [
@@ -132,7 +133,8 @@ def application_menu(context):
             "current": current in routes,
         }
         for label, route, feature, name, routes in definitions
-        if feature is None or feature_enabled(feature, app)
+        if (feature is None or feature_enabled(feature, app))
+        and (route != "serviceops" or feature_enabled("knowledge", app))
     ]
     sections = settings_sections(app, grant)
     if sections:

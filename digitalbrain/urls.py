@@ -10,6 +10,7 @@ from platform_core import (
     documents,
     graphs,
     secrets,
+    serviceops,
     views,
     workbench,
 )
@@ -78,6 +79,7 @@ urlpatterns = [
     ),
     path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
+    path("applications/<uuid:pk>/serviceops/", serviceops.serviceops, name="serviceops"),
     path(
         "applications/<uuid:pk>/chat/conversations/<uuid:conversation_id>/",
         workbench.chat_conversation,

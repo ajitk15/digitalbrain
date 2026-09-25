@@ -2909,3 +2909,32 @@
   font-size: var(--t-12);
   color: var(--c-ink-muted);
 }
+
+@layer redesign {
+  .incident-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s-2);
+    margin-bottom: var(--s-2);
+  }
+
+  .incident-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--r-pill);
+    padding: var(--s-1) var(--s-2);
+    font-size: var(--t-11);
+    font-weight: 700;
+    line-height: var(--lh-tight);
+    white-space: nowrap;
+  }
+
+  .incident-number { background: var(--c-brand); color: var(--c-surface); font-family: var(--f-mono); }
+  .priority-p1 { background: var(--c-bad-bg); color: var(--c-bad); }
+  .priority-p2 { background: var(--c-warn-bg); color: var(--c-warn); }
+  .priority-p3 { background: var(--c-priority-3-bg); color: var(--c-priority-3); }
+  .priority-p4 { background: var(--c-info-bg); color: var(--c-info); }
+  .priority-p5 { background: var(--c-priority-5-bg); color: var(--c-priority-5); }
+  .priority-unknown { background: var(--c-subtle); color: var(--c-ink-3); }
+}

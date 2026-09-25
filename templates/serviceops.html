@@ -1,0 +1,60 @@
+{% extends 'base.html' %}{% load workspace %}
+{% block title %}ServiceOps · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}
+<div class="page-heading"><div><p class="eyebrow">{{ application.name }} / SERVICEOPS</p><h1>Incident triage</h1><p class="muted">Read-only evidence from this application's imported incidents and published knowledge. Similarity is a search aid, not a cause or confidence score.</p></div></div>
+
+<div class="split">
+  <section class="card">
+    <h2>Imported incidents</h2>
+    <p class="muted">The most recent 100 active incident sources are listed. Import records under Settings → Connectors to add or refresh them.</p>
+    {% for item in incidents %}
+      <div class="list-row"><div>
+        {% if item.number or item.priority %}<div class="incident-tags">
+          {% if item.number %}<span class="incident-badge incident-number">{{ item.number }}</span>{% endif %}
+          {% if item.priority %}<span class="incident-badge incident-priority priority-{{ item.priority_tone }}">Priority {{ item.priority }}</span>{% endif %}
+        </div>{% endif %}
+        <strong>{{ item.entry.title }}</strong><small>{{ item.entry.created_at|date:"M d, Y H:i" }} UTC</small>
+      </div><a class="link-button" href="?incident={{ item.entry.pk }}">Triage</a></div>
+    {% empty %}<div class="empty"><h3>No imported incidents</h3><p>Connect a ServiceNow incident table or a Jira issue feed with incident records.</p></div>{% endfor %}
+  </section>
+
+  <section class="card">
+    {% if selected %}
+      <h2>{{ selected.title }}</h2>
+      <p class="muted">Source revision {{ selected.created_at|date:"M d, Y H:i" }} UTC · symptom signature {% if fingerprint %}<code>{{ fingerprint }}</code>{% else %}unavailable{% endif %}</p>
+      <p><a href="{% url 'knowledge-detail' application.pk selected.pk %}">Read the original source</a></p>
+      <dl>
+        {% if fields.Number %}<dt>Number</dt><dd><span class="incident-badge incident-number">{{ fields.Number }}</span></dd>{% endif %}
+        {% if fields.Key %}<dt>Key</dt><dd>{{ fields.Key }}</dd>{% endif %}
+        {% if fields.Service %}<dt>Service</dt><dd>{{ fields.Service }}</dd>{% endif %}
+        {% if fields.CI %}<dt>Configuration item</dt><dd>{{ fields.CI }}</dd>{% endif %}
+        {% if fields.Environment %}<dt>Environment</dt><dd>{{ fields.Environment }}</dd>{% endif %}
+        {% if fields.Impact %}<dt>Impact</dt><dd>{{ fields.Impact }}</dd>{% endif %}
+        {% if fields.Priority %}<dt>Priority</dt><dd><span class="incident-badge incident-priority priority-{{ priority_tone }}">Priority {{ fields.Priority }}</span></dd>{% endif %}
+        {% if fields.State %}<dt>State</dt><dd>{{ fields.State }}</dd>{% endif %}
+        {% if fields.Status %}<dt>Status</dt><dd>{{ fields.Status }}</dd>{% endif %}
+      </dl>
+      {% if description %}<h3>Reported symptoms</h3><p>{{ description|truncatechars:800 }}</p>{% endif %}
+    {% else %}
+      <div class="empty"><h3>Choose an incident</h3><p>The evidence pack will compare it with resolved records and search the published graph. No model is called.</p></div>
+    {% endif %}
+  </section>
+</div>
+
+{% if selected %}
+<section class="section"><h2>Similar resolved incidents</h2><p class="muted">Ranked from at most 500 recent candidates by shared CI, service, environment, symptom signature and terms. Only active source revisions with intact digests appear. A match does not establish the cause of this incident.</p>
+  <div class="card-grid">
+  {% for row in precedents %}<article class="card"><div class="incident-tags">{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{% if row.fields.Priority %}<span class="incident-badge incident-priority priority-{{ row.priority_tone }}">Priority {{ row.fields.Priority }}</span>{% endif %}</div><h3><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">{{ row.entry.title }}</a></h3><p class="muted">{{ row.entry.created_at|date:"M d, Y" }} · {{ row.reasons|join:", " }}</p>{% if row.close_code %}<p>Close code: {{ row.close_code }}</p>{% endif %}<p>{{ row.excerpt|truncatechars:500 }}</p><p><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">Verify source and full resolution</a></p></article>
+  {% empty %}<div class="empty"><h3>No comparable resolved incidents yet</h3><p>Check the original record and available knowledge. A missing precedent is not evidence that the incident is new.</p></div>{% endfor %}
+  </div>
+</section>
+
+<section class="section"><h2>Published knowledge</h2><p class="muted">These graph passages were checked against active sources and exact quotes when the page loaded. Review whether a passage actually applies before using it.</p>
+  {% if not graph_available %}<p class="notice notice-warning">No published graph is available. Incident precedent search remains usable.</p>{% endif %}
+  <div class="card-grid">
+  {% for row in graph %}<article class="card"><h3><a href="{% url 'knowledge-detail' application.pk row.id %}">{{ row.title }}</a></h3><p>{{ row.excerpt|truncatechars:600 }}</p><p class="muted">Published graph version {{ row.graph_version }}</p></article>
+  {% empty %}{% if graph_available %}<div class="empty"><h3>No matching graph passages</h3><p>Search Knowledge directly or add a runbook for this service.</p></div>{% endif %}{% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}

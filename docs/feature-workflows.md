@@ -5,6 +5,22 @@ Only explicitly granted active applications are shown. Opening an application ex
 ancestors and highlights it. Functional tools live in the top menus; the tree remains available
 across pages. The mobile tree has its own bounded scroll area.
 
+## ServiceOps incident triage: first read-only slice
+
+The ServiceOps application tab lists up to 100 recent active incident sources imported from a
+ServiceNow incident table or Jira issues typed Incident. Selecting one shows its structured
+context, up to five similar resolved incidents, and verified passages from the published graph.
+Similarity uses shared CI, service, environment and symptom terms; it is not a root-cause or
+confidence score. The page calls no model and makes no changes to a ticket or live service.
+
+ServiceNow incident imports now place state, priority, impact, service, CI, environment, assignment
+group, times, close code and close notes inside the immutable source body. Other ServiceNow tables
+keep their existing body format. Older imported incidents without these fields remain readable,
+but matching has less context. The precedent search currently checks at most 500 recent candidate
+records and makes no completeness or recall claim. Historical backfill, change correlation,
+calibrated confidence, outcome feedback and automated triage remain in the
+[ServiceOps architecture proposal](diagrams/index.html#serviceops).
+
 All implemented feature switches default to enabled. Global and per-application switches remain
 enforced on server routes. Platform administration does not grant application knowledge access.
 
@@ -526,9 +542,19 @@ An owner configures the instance, the table to read, and which fields carry the 
 body - so incidents, problems, changes and knowledge articles all import through one adapter.
 OAuth client credentials are used when configured, basic authentication otherwise.
 
-Structure is deliberately not preserved: severity, state and timestamps arrive as prose inside
-the body rather than as columns, so the platform can retrieve "incidents mentioning this service"
-but cannot aggregate over them. See the gap list in
+For the `incident` table, the owner can enter one or more assignment group names in the
+connector form. The adapter adds those names to the ServiceNow query and checks every returned
+record's displayed assignment group before import. Groups are matched without regard to case;
+records with a missing or different group are skipped. Leaving the field blank preserves the
+existing all-groups import. The filter affects new imports; knowledge already imported from
+other groups remains until retired under the connector's existing retention controls.
+If ServiceNow returns no records, the connector shows **No records** with checks for the
+instance, account read access, table and filters. An empty provider response never retires
+previously imported knowledge, even when retirement is enabled.
+
+Incident state, priority, impact, service, CI, assignment group and resolution details are
+recorded in a structured header inside the digested source body. They are still not separate
+database columns for aggregation. See the gap list in
 [`sdlc-scenarios.md`](sdlc-scenarios.md#gaps-and-how-to-fill-them).
 
 GitHub Enterprise and local Git adapters remain pending.

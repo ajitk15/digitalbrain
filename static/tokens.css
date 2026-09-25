@@ -74,6 +74,10 @@
   --c-info: #33437d;
   --c-info-bg: #eef1fb;
   --c-info-line: #d8dff4;
+  --c-priority-3: #765808;
+  --c-priority-3-bg: #fff3c9;
+  --c-priority-5: #42506a;
+  --c-priority-5-bg: #e9edf5;
 
   /* Graph node kinds. These are duplicated in static/graph.js (COLORS); change
      both together or the legend stops matching the canvas. */

@@ -38,7 +38,15 @@ CODE = "ajitk15/carepath"
 #: Ticked on the create form in the runbook. chat_api is deliberately absent:
 #: it is the one API surface that spends the application's model budget, so it
 #: stays opt-in and gets an explicit disabled row rather than a missing one.
-ENABLED = ("knowledge", "code_factory", "code_graph", "connectors", "chat", "usage_reports")
+ENABLED = (
+    "knowledge",
+    "code_factory",
+    "code_graph",
+    "connectors",
+    "service_ops",
+    "chat",
+    "usage_reports",
+)
 DISABLED = ("chat_api",)
 
 
