@@ -1227,7 +1227,9 @@ AGENT_EXPLAINED = {
     "implementation": {
         "does": "Writes the new contents of each file, one file at a time, against the "
         "intent the work order set for it.",
-        "reads": "The work order, the approved gaps, and each file as it is now.",
+        "reads": "The work order, the approved gaps, each file as it is now, and - "
+        "read-only - the code those files import and the modules the gaps name, so "
+        "it calls existing code as it really is.",
         "produces": "A complete new version of every file it changes or creates.",
         "never": "Touches the repository. The files are held here until you publish.",
         "model": True,
@@ -1310,6 +1312,13 @@ FAILURE_EXPLAINED = (
         "answer can be checked before anything is used. This reply could not be read "
         "in that format, so it was set aside and nothing was written. It is usually a "
         "one-off slip by the model; rerunning normally works.",
+    ),
+    (
+        "returned no usable file changes",
+        "The agent answered, but gave back no file it had actually changed, so "
+        "nothing was written. When it says why above, that reason is the model's "
+        "own; the usual one is that the change depends on a file it was not shown, "
+        "which a plan naming that file fixes.",
     ),
     (
         "did not return a JSON object",

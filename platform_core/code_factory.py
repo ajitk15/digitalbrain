@@ -226,9 +226,13 @@ TEST_INSTRUCTIONS = GROUND_RULES + (
     "each entry having file (the number you were shown) and content (the entire "
     "file). Return a file only if you are changing it; a file returned "
     "unchanged is dropped. Follow the conventions of the tests you were shown - "
-    "the same framework, the same imports, the same fixtures. Never weaken an "
-    "existing test to make it pass, and never delete one: if an existing test "
-    "contradicts the approved change, leave it and say so in notes."
+    "the same framework, the same imports, the same fixtures. A file marked "
+    "EXISTING TEST already covers the changed code: where the approved change "
+    "deliberately alters behaviour it asserts, update that test so it sets up "
+    "the new precondition or asserts the new behaviour, and leave the rest of "
+    "the file exactly as it is. Never loosen an assertion the approved change "
+    "does not touch, never delete a test, and say in notes which tests you "
+    "updated and why."
 )
 
 REVIEW_INSTRUCTIONS = GROUND_RULES + (
@@ -1395,7 +1399,10 @@ def numbered_files(files):
         {
             "id": str(index),
             "title": found["path"],
-            "excerpt": found["text"][:20000] if found["sha"] else NEW_FILE,
+            # Text, not a sha, decides this. A file read from the offline
+            # snapshot has no blob sha, and was shown as NEW FILE - so an
+            # offline implementation rewrote existing files from nothing.
+            "excerpt": found["text"][:20000] if (found["sha"] or found["text"]) else NEW_FILE,
             "digest": found["sha"] or "",
         }
         for index, found in enumerate(files, start=1)
@@ -1584,16 +1591,208 @@ def readable_targets(run, token):
     return files
 
 
+#: How much read-only reference the implementation is given: enough to call the
+#: code a change depends on correctly, not so much that it drowns the targets.
+REFERENCE_FILES = 6
+REFERENCE_BYTES = 48_000
+REFERENCE_FILE_BYTES = 12_000
+
+#: File stems too common to mean a specific module when a gap uses the word.
+GENERIC_STEMS = {
+    "__init__", "__main__", "main", "app", "base", "common", "config", "core",
+    "helpers", "index", "models", "settings", "types", "utils", "util", "views",
+}
+
+
+def reference_files(run, targets):
+    """Files the change depends on but does not change, from the pinned snapshot.
+
+    The implementation used to see only the files the design named. A live run
+    whose design named the export route but not the consent service it had to
+    call was asked to add a consent check without being shown how consent is
+    read - and, correctly, declined to invent one, twice. So it is also shown,
+    read-only:
+
+    * modules the approved items name by word - a gap about "consent" brings
+      `services/consent.py` - because the code a fix must start calling is, by
+      definition, not imported yet; and
+    * what the target files already import, from the snapshot's edges.
+
+    Chosen by code from paths the snapshot holds, never by the model. Returned
+    outside the numbered files, so `collect_changes` cannot accept an edit to
+    one: they are context, and the change stays what the plan approved.
+    """
+    from .models import CodeRelationship
+
+    snapshot = run.code_snapshot if run.code_snapshot_id else None
+    if snapshot is None:
+        return []
+    ordered_targets = [item["path"] for item in targets]
+    targets = set(ordered_targets)
+    text = " ".join(
+        f"{item.title} {item.explanation} {item.change_summary}"
+        for item in run.plan.items.exclude(status="rejected")
+    ).lower()
+    paths = list(snapshot.files.values_list("path", flat=True))
+    named = []
+    for path in paths:
+        stem = path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower()
+        if (
+            path in targets
+            or looks_like_test(path)
+            or len(stem) < 4
+            or stem in GENERIC_STEMS
+            or not re.search(rf"\b{re.escape(stem)}\b", text)
+        ):
+            continue
+        named.append(path)
+    # The first target's imports first: it is the file the change is about,
+    # and its dependencies are the ones the new code will sit beside.
+    edges = {}
+    for source, target in CodeRelationship.objects.filter(
+        snapshot=snapshot, source__path__in=targets, kind="import"
+    ).values_list("source__path", "target__path"):
+        edges.setdefault(source, []).append(target)
+    imported = [
+        path
+        for source in ordered_targets
+        for path in sorted(edges.get(source, []))
+        if path.rsplit("/", 1)[-1].rsplit(".", 1)[0].lower() not in GENERIC_STEMS
+    ]
+    covering = list(covering_tests(snapshot, ordered_targets))
+    chosen, spent = [], 0
+    everything = covering + named + imported
+    held = {item.path: item for item in snapshot.files.filter(path__in=everything)}
+    # Tests first: they say what the change must keep true, which is the one
+    # thing a design that forgot to mention them cannot recover.
+    for path in dict.fromkeys(everything):
+        found = held.get(path)
+        if found is None or path in targets:
+            continue
+        text_part = found.content[:REFERENCE_FILE_BYTES]
+        limit = REFERENCE_FILES + len(covering)
+        if len(chosen) >= limit or spent + len(text_part) > REFERENCE_BYTES:
+            break
+        chosen.append(
+            {
+                "path": path,
+                "text": text_part,
+                "named": path in named,
+                "test": path in covering,
+            }
+        )
+        spent += len(text_part)
+    return chosen
+
+
+#: Prefixes a route or view module carries that its test file often drops:
+#: `routes_fhir.py` is tested by `test_fhir.py`.
+MODULE_PREFIXES = ("routes_", "route_", "views_", "view_", "api_", "handlers_")
+COVERING_TESTS = 3
+
+
+def covering_tests(snapshot, targets):
+    """Existing test files that exercise the target files, from the snapshot.
+
+    Found three ways, because a test often reaches its subject over HTTP and
+    imports nothing of it: the test's name (`test_fhir.py` for `routes_fhir.py`),
+    the module's name in the test, and a distinctive literal segment of a route
+    the target declares (`$everything`). Returns {test path: [targets covered]}.
+
+    A live run changed an endpoint without being shown its existing tests, so
+    it could neither keep them passing nor update the one the ticket made
+    wrong; CI then failed on both.
+    """
+    if snapshot is None:
+        return {}
+    wanted = {item for item in targets if not looks_like_test(item)}
+    held = {item.path: item for item in snapshot.files.filter(path__in=wanted)}
+    tests = [item for item in snapshot.files.all() if looks_like_test(item.path)]
+
+    def rare(needle, pattern=None):
+        """Whether a clue is specific: found in at most two test files.
+
+        "Patient" or "audit" appear across a whole suite and pick nothing out;
+        a first live try matched half of one and missed the test that mattered.
+        """
+        hits = sum(
+            1
+            for test in tests
+            if (re.search(pattern, test.content) if pattern else needle in test.content)
+        )
+        return 0 < hits <= 2
+
+    scores, found = {}, {}
+    for target in wanted:
+        stem = target.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        short = next(
+            (stem[len(prefix):] for prefix in MODULE_PREFIXES if stem.startswith(prefix)),
+            stem,
+        )
+        names = {f"test_{stem}", f"test_{short}", f"{stem}_test", f"{short}_test"}
+        word = rf"\b{re.escape(stem)}\b"
+        stem_is_clue = stem.lower() not in GENERIC_STEMS and rare(stem, word)
+        segments = set()
+        source = held.get(target)
+        for route in (source.routes if source else None) or []:
+            for part in str(route.get("raw") or "").split("/"):
+                if len(part) >= 4 and "{" not in part and "*" not in part and rare(part):
+                    segments.add(part)
+        for test in tests:
+            test_stem = test.path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            score = (
+                3 * (test_stem in names)
+                + 2 * bool(stem_is_clue and re.search(word, test.content))
+                + 2 * any(segment in test.content for segment in segments)
+            )
+            if score >= 2:
+                scores[test.path] = scores.get(test.path, 0) + score
+                found.setdefault(test.path, []).append(target)
+    ranked = sorted(scores, key=lambda path: (-scores[path], path))[:COVERING_TESTS]
+    return {path: sorted(found[path]) for path in ranked}
+
+
+def reference_block(snapshot, references):
+    """The read-only files as prompt text, labelled so they are not mistaken."""
+    if not references:
+        return ""
+    parts = [
+        f"READ-ONLY REFERENCE from snapshot v{snapshot.number} at "
+        f"{snapshot.commit_sha[:8]}. These files are not yours to change and must "
+        "not be returned. Use them to call existing code as it really is - its "
+        "names, arguments and return values - instead of guessing:"
+    ]
+    for item in references:
+        label = (
+            "EXISTING TEST - keep it passing; where the approved change deliberately "
+            "alters what it asserts, the test author will update it"
+            if item.get("test")
+            else ""
+        )
+        parts.append(f"--- {item['path']}{' (' + label + ')' if label else ''} ---\n{item['text']}")
+    return "\n\n".join(parts)
+
+
 def run_implementation(run, token, files, order=None):
     """Write the new contents of each file, against the intent set for it.
 
     The model is shown the work order's intent above each file's current
     contents, so it is answering "make this file do X" rather than re-reading
-    the whole ticket per file.
+    the whole ticket per file. It is also shown, read-only, the code those
+    files depend on (`reference_files`).
     """
     started = time.monotonic()
     phase = start_phase(run, "implementation")
     numbered = numbered_files(files)
+    references = reference_files(run, files)
+    if references:
+        note(
+            run,
+            "Implementation: also shown, read-only, "
+            + ", ".join(item["path"] for item in references)
+            + " - code the change depends on but does not change.",
+            phase="implementation",
+        )
     for entry in numbered:
         intent = (order or {}).get(entry["id"])
         if not intent:
@@ -1620,7 +1819,14 @@ def run_implementation(run, token, files, order=None):
             run.application_id,
             "implementation",
             IMPLEMENTATION_INSTRUCTIONS,
-            f"Approved changes:\n{approved_summary(run.plan)}",
+            "\n\n".join(
+                part
+                for part in (
+                    f"Approved changes:\n{approved_summary(run.plan)}",
+                    reference_block(run.code_snapshot, references),
+                )
+                if part
+            ),
             numbered,
             receipt,
         )
@@ -1642,6 +1848,7 @@ def run_implementation(run, token, files, order=None):
         started,
         output={
             "notes": str(payload.get("notes") or "")[:1000],
+            "references": [item["path"] for item in references],
             "files": [
                 {
                     "path": change["path"],
@@ -1842,6 +2049,24 @@ def run_tests_agent(run, changes, token):
                 "repository's own layout.",
                 phase="tests",
             )
+    # Tests that already cover the changed code: the test author may update
+    # them where the approved change makes an assertion wrong. Like a derived
+    # path, each exists here only because of the changed code, so review drops
+    # its update if the code it covers is rejected.
+    covers = covering_tests(
+        run.code_snapshot if run.code_snapshot_id else None,
+        [change["path"] for change in changes],
+    )
+    covering = [path for path in covers if path not in wanted][:MAX_FILES]
+    if covering:
+        note(
+            run,
+            "Test author: existing tests cover the changed code and may be updated "
+            f"where the change makes them wrong: {', '.join(covering)}.",
+            phase="tests",
+        )
+    for_changed_code = (set(wanted) if chosen_here else set()) | set(covering)
+    wanted = (wanted + covering)[:MAX_FILES]
     if not token:
         # The offline path reads the same snapshot the other agents did.
         existing = snapshot_targets(run, wanted) if wanted else []
@@ -1898,7 +2123,7 @@ def run_tests_agent(run, changes, token):
             f"Approved changes:\n{approved_summary(run.plan)}\n\n"
             f"{framework_line}\n\n"
             f"The files as they will be:\n{finished}",
-            numbered_files(existing),
+            test_entries(existing, covering),
             receipt,
         )
         payload = parse_json(answer, "Test author")
@@ -1940,8 +2165,22 @@ def run_tests_agent(run, changes, token):
         level="result",
     )
     for change in written:
-        change["test_for_changed_code"] = chosen_here
+        change["test_for_changed_code"] = change["path"] in for_changed_code
+        change["covers"] = covers.get(change["path"], [])
     return written
+
+
+def test_entries(existing, covering):
+    """The test author's numbered files, with existing covering tests labelled."""
+    entries = numbered_files(existing)
+    for entry in entries:
+        if entry["title"] in covering:
+            entry["excerpt"] = (
+                "EXISTING TEST covering the changed code. Update only what the "
+                "approved change deliberately makes wrong; leave everything else as "
+                "it is, or leave the file out.\n" + entry["excerpt"]
+            )
+    return entries
 
 
 def run_review(run, changes, order):
@@ -2106,7 +2345,9 @@ def orphaned_tests(kept, rejected):
         path = change["path"]
         if not change.get("test_for_changed_code"):
             continue
-        if test_subject(path) in rejected_subjects:
+        if test_subject(path) in rejected_subjects or set(change.get("covers") or []) & set(
+            rejected
+        ):
             orphaned.append((path, "it tests a file the review rejected."))
         elif not source_left:
             orphaned.append((path, "it was written for changed code, and none is left."))
@@ -2124,23 +2365,51 @@ def collect_changes(payload, files):
     from .github_write import MAX_FILE_BYTES
 
     by_number = {str(index): found for index, found in enumerate(files, start=1)}
-    changes = []
-    for entry in (payload.get("files") or [])[: len(files)]:
+    changes, dropped = [], []
+    entries = payload.get("files") or []
+    for entry in entries[: len(files)]:
         if not isinstance(entry, dict):
+            dropped.append("an entry that is not an object")
             continue
         found = by_number.get(str(entry.get("file")))
         content = entry.get("content")
-        if found is None or not isinstance(content, str) or not content.strip():
+        if found is None:
+            dropped.append(
+                f"file {entry.get('file')!r} is not one of the {len(files)} shown "
+                f"(keys: {', '.join(sorted(map(str, entry)))[:80]})"
+            )
+            continue
+        if not isinstance(content, str) or not content.strip():
+            dropped.append(f"{found['path']}: no content")
             continue
         if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+            dropped.append(f"{found['path']}: larger than {MAX_FILE_BYTES} bytes")
             continue
         if content == found["text"]:
             # Returned unchanged: committing it would put an empty diff in front
             # of a reviewer and claim work that did not happen.
+            dropped.append(f"{found['path']}: returned unchanged")
             continue
         changes.append({"path": found["path"], "content": content, "sha": found["sha"]})
     if not changes:
-        raise ValidationError("The implementation returned no usable file changes.")
+        # Say why. This used to be one fixed sentence, which threw away the
+        # model's own account: asked to leave a file out and explain in `notes`
+        # when a change cannot be made, it did exactly that, and the run said
+        # only "no usable file changes".
+        notes = str(payload.get("notes") or "").strip()
+        message = "The implementation returned no usable file changes."
+        if notes:
+            message += f" It said: {notes[:700]}"
+        elif not entries:
+            message += " Its answer had no files in it and gave no reason."
+        raise UnusableAnswer(
+            message,
+            sample=(
+                f"{len(entries)} file entr{'y' if len(entries) == 1 else 'ies'} returned"
+                + (f"; dropped: {'; '.join(dropped)[:900]}" if dropped else "")
+                + (f"; notes: {notes[:600]}" if notes else "")
+            ),
+        )
     return changes
 
 
