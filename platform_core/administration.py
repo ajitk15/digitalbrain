@@ -205,7 +205,7 @@ def application_status(request, pk):
 @login_required
 @require_POST
 def reset_organization(request, pk):
-    """Empty one organization between demonstrations.
+    """Clear one organization's graphs and runs between demonstrations.
 
     POST only and nothing to GET: there is no page for this, only a panel on the
     platform console that already shows what a reset would remove. A screen of
@@ -220,11 +220,14 @@ def reset_organization(request, pk):
     except ValidationError as error:
         messages.error(request, " ".join(error.messages))
         return redirect("platform-console")
-    total = sum(removed.values())
+    runs = removed.get("FactoryRun", 0)
+    repositories = removed.get("CodeRepository", 0)
+    versions = removed.get("GraphRevision", 0)
     messages.success(
         request,
-        f"{organization.name} was reset: {total} record(s) removed across "
-        f"{len(removed)} kind(s). The organization, its members and every user "
-        "account are untouched.",
+        f"{organization.name} was reset: {runs} run(s), {repositories} code "
+        f"repositor{'y' if repositories == 1 else 'ies'} and {versions} graph "
+        "version(s) removed. Applications, connectors, credentials, sources, "
+        "settings and people are untouched.",
     )
     return redirect("platform-console")

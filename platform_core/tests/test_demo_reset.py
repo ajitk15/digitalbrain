@@ -1,8 +1,11 @@
-"""Emptying an organization between demonstrations.
+"""Clearing an organization's work between demonstrations.
 
-Nothing else in this platform deletes an application, so most of what these
-pin is the fence around the one thing that does: who may, where it is offered
-at all, what has to be typed, and what survives regardless.
+A reset removes exactly what a demonstration re-creates on screen - the
+knowledge graph, the code graph and Code Factory runs - and keeps what it takes
+time to set up: applications, connectors, credentials, sources, settings and
+people. It used to delete the applications too, which meant rebuilding every
+connector before every telling. These pin both halves, and the fence around it:
+who may, where it is offered at all, and what has to be typed.
 """
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -11,16 +14,25 @@ from django.urls import reverse
 
 from platform_core import demo_reset
 from platform_core.models import (
+    AIConfiguration,
     Application,
     ApplicationGrant,
     AuditEvent,
+    ChangePlan,
+    ChatConversation,
+    CodeRepository,
+    CodeSnapshot,
+    Connector,
     Document,
     FactoryRun,
+    GraphRevision,
     KnowledgeEntry,
+    KnowledgeGraph,
     Organization,
     OrganizationMember,
     Portfolio,
     Product,
+    RunEvent,
     User,
 )
 
@@ -29,6 +41,49 @@ SETTINGS = dict(
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
     ALLOW_DEMO_RESET=True,
 )
+
+
+def fill(app, user):
+    """The work a demonstration leaves behind, and the setup it runs on."""
+    Connector.objects.create(application=app, created_by=user, kind="jira", name="Jira")
+    AIConfiguration.objects.create(
+        application=app,
+        purpose="chat",
+        provider="claude",
+        model="claude-sonnet-5",
+        configured_by=user,
+        input_rate=1,
+        output_rate=5,
+    )
+    KnowledgeEntry.objects.create(
+        application=app, author=user, title="A source", content="x", digest="d"
+    )
+    Document.objects.create(application=app, uploaded_by=user, name="a.md", size=1, sha256="s")
+    KnowledgeGraph.objects.create(application=app, status="ready")
+    GraphRevision.objects.create(application=app, number=1, fingerprint="f")
+    repository = CodeRepository.objects.create(
+        application=app,
+        added_by=user,
+        external_id="acme/widgets",
+        name="acme/widgets",
+        source_url="https://github.com/acme/widgets",
+    )
+    snapshot = repository.snapshots.create(number=1, commit_sha="c" * 40)
+    plan = ChangePlan.objects.create(
+        application=app, author=user, title="p", proposal="p", validation="v", digest="d"
+    )
+    run = FactoryRun.objects.create(
+        application=app,
+        requested_by=user,
+        number=1,
+        ticket_title="A ticket",
+        plan=plan,
+        code_snapshot=snapshot,
+    )
+    RunEvent.objects.create(run=run, sequence=1, message="Started.")
+    return ChatConversation.objects.create(
+        application=app, user=user, title="Asked about it", graph_version=1
+    )
 
 
 @override_settings(**SETTINGS)
@@ -43,15 +98,7 @@ class DemoResetTests(TestCase):
         product = Product.objects.create(portfolio=portfolio, name="Care Coordination")
         self.app = Application.objects.create(product=product, name="CarePath")
         ApplicationGrant.objects.create(application=self.app, user=self.member, role="owner")
-        KnowledgeEntry.objects.create(
-            application=self.app, author=self.member, title="A source", content="x", digest="d"
-        )
-        Document.objects.create(
-            application=self.app, uploaded_by=self.member, name="a.md", size=1, sha256="s"
-        )
-        FactoryRun.objects.create(
-            application=self.app, requested_by=self.member, number=1, ticket_title="A ticket"
-        )
+        self.conversation = fill(self.app, self.member)
         AuditEvent.objects.create(
             actor=self.member,
             organization=self.org,
@@ -60,28 +107,51 @@ class DemoResetTests(TestCase):
         )
         self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
 
-    # ---- what it removes, and what it does not ----
+    # ---- what it removes ----
 
-    def test_it_empties_the_hierarchy_and_everything_under_it(self):
+    def test_it_removes_the_knowledge_graph_the_code_graph_and_runs(self):
         demo_reset.reset(self.admin, self.org, "ACME")
-        self.assertEqual(Application.objects.count(), 0)
-        self.assertEqual(Product.objects.count(), 0)
-        self.assertEqual(Portfolio.objects.count(), 0)
-        for model in (KnowledgeEntry, Document, FactoryRun):
+        for model in (
+            FactoryRun,
+            RunEvent,
+            ChangePlan,
+            CodeRepository,
+            CodeSnapshot,
+            KnowledgeGraph,
+            GraphRevision,
+        ):
             with self.subTest(model=model.__name__):
                 self.assertEqual(model.objects.count(), 0)
 
-    def test_the_organization_its_people_and_their_accounts_survive(self):
-        """What a demonstration fills goes; who gives it does not."""
+    # ---- what it keeps ----
+
+    def test_the_setup_a_demonstration_runs_on_is_kept(self):
+        """Connectors above all: rebuilding them before every telling was the cost."""
+        demo_reset.reset(self.admin, self.org, "ACME")
+        for model in (
+            Application,
+            Product,
+            Portfolio,
+            ApplicationGrant,
+            Connector,
+            AIConfiguration,
+            KnowledgeEntry,
+            Document,
+        ):
+            with self.subTest(model=model.__name__):
+                self.assertEqual(model.objects.count(), 1)
+
+    def test_chat_is_kept_and_unpinned_from_a_removed_graph_version(self):
+        demo_reset.reset(self.admin, self.org, "ACME")
+        self.conversation.refresh_from_db()
+        self.assertIsNone(self.conversation.graph_version)
+
+    def test_the_organization_its_people_and_the_audit_log_survive(self):
         demo_reset.reset(self.admin, self.org, "ACME")
         self.assertTrue(Organization.objects.filter(pk=self.org.pk).exists())
         self.assertEqual(OrganizationMember.objects.filter(organization=self.org).count(), 2)
         self.assertEqual(User.objects.count(), 2)
-
-    def test_audit_rows_naming_a_removed_application_go_with_it(self):
-        """A reference nobody can follow is worse than no reference."""
-        demo_reset.reset(self.admin, self.org, "ACME")
-        self.assertFalse(AuditEvent.objects.filter(resource_id=str(self.app.pk)).exists())
+        self.assertTrue(AuditEvent.objects.filter(resource_id=str(self.app.pk)).exists())
         # And the reset itself is recorded.
         self.assertTrue(AuditEvent.objects.filter(action="organization.reset").exists())
 
@@ -90,8 +160,11 @@ class DemoResetTests(TestCase):
         portfolio = Portfolio.objects.create(organization=other, name="Theirs")
         product = Product.objects.create(portfolio=portfolio, name="Theirs")
         kept = Application.objects.create(product=product, name="Keep me")
+        fill(kept, self.member)
         demo_reset.reset(self.admin, self.org, "ACME")
-        self.assertTrue(Application.objects.filter(pk=kept.pk).exists())
+        self.assertTrue(FactoryRun.objects.filter(application=kept).exists())
+        self.assertTrue(CodeRepository.objects.filter(application=kept).exists())
+        self.assertTrue(GraphRevision.objects.filter(application=kept).exists())
 
     # ---- the fence ----
 
@@ -100,18 +173,18 @@ class DemoResetTests(TestCase):
             with self.subTest(typed=typed):
                 with self.assertRaises(ValidationError):
                     demo_reset.reset(self.admin, self.org, typed)
-        self.assertEqual(Application.objects.count(), 1)
+        self.assertEqual(FactoryRun.objects.count(), 1)
 
     def test_only_a_platform_administrator_may(self):
         with self.assertRaises(PermissionDenied):
             demo_reset.reset(self.member, self.org, "ACME")
-        self.assertEqual(Application.objects.count(), 1)
+        self.assertEqual(FactoryRun.objects.count(), 1)
 
     @override_settings(ALLOW_DEMO_RESET=False)
     def test_it_is_refused_where_it_is_not_enabled(self):
         with self.assertRaises(PermissionDenied):
             demo_reset.reset(self.admin, self.org, "ACME")
-        self.assertEqual(Application.objects.count(), 1)
+        self.assertEqual(FactoryRun.objects.count(), 1)
 
     @override_settings(ALLOW_DEMO_RESET=False)
     def test_the_console_does_not_offer_it_where_it_is_not_enabled(self):
@@ -122,23 +195,26 @@ class DemoResetTests(TestCase):
         page = self.client.get(reverse("platform-console"))
         self.assertContains(page, "Reset for a demonstration")
         self.assertContains(page, "There is no undo")
-        self.assertContains(page, "1 applications")
+        self.assertContains(page, "1 runs")
+        self.assertContains(page, "1 code repositories")
+        self.assertContains(page, "connectors")
 
     # ---- through the screen ----
 
-    def test_the_form_empties_it_and_says_what_it_did(self):
+    def test_the_form_clears_it_and_says_what_it_did(self):
         response = self.client.post(
             reverse("organization-reset", args=[self.org.pk]), {"confirm": "ACME"}, follow=True
         )
-        self.assertContains(response, "was reset")
-        self.assertEqual(Application.objects.count(), 0)
+        self.assertContains(response, "was reset: 1 run(s), 1 code repository and 1 graph")
+        self.assertEqual(FactoryRun.objects.count(), 0)
+        self.assertEqual(Connector.objects.count(), 1)
 
     def test_a_mistyped_name_changes_nothing_and_says_so(self):
         response = self.client.post(
             reverse("organization-reset", args=[self.org.pk]), {"confirm": "acme"}, follow=True
         )
         self.assertContains(response, "Type the organization&#x27;s name exactly")
-        self.assertEqual(Application.objects.count(), 1)
+        self.assertEqual(FactoryRun.objects.count(), 1)
 
     def test_it_cannot_be_reached_by_following_a_link(self):
         """POST only: there is no page to arrive at by accident."""
