@@ -114,6 +114,14 @@ def header(pairs):
     return "\n".join(lines)
 
 
+def incident_header(pairs):
+    """Keep provider text on one line so it cannot masquerade as another field."""
+    return header(
+        (label, " ".join(value.split())[:2000] if value else "")
+        for label, value in pairs
+    )
+
+
 def text(value):
     """A string, or "" for whatever else the provider put in that field.
 
@@ -344,6 +352,17 @@ class ServiceNowForm(forms.Form):
         label="Encoded query",
         help_text="Optional sysparm_query, for example active=true^priority<=2",
     )
+    assignment_groups = forms.CharField(
+        max_length=1000,
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 3}),
+        label="Incident assignment groups",
+        help_text=(
+            "For the incident table, enter one group name per line or separate names with commas. "
+            "Only incidents assigned to these groups will be imported. Leave blank to keep "
+            "the existing all-groups behavior."
+        ),
+    )
     title_field = forms.RegexField(
         regex=r"^[a-z0-9_]+$", max_length=80, initial="short_description", label="Title field"
     )
@@ -353,6 +372,36 @@ class ServiceNowForm(forms.Form):
 
     def clean_base_url(self):
         return https_base(self.cleaned_data["base_url"])
+
+    def clean_assignment_groups(self):
+        value = self.cleaned_data["assignment_groups"]
+        groups = parse_assignment_groups(value)
+        if groups and self.cleaned_data.get("table") != "incident":
+            raise forms.ValidationError("Assignment groups can only filter the incident table.")
+        return "\n".join(groups)
+
+
+def parse_assignment_groups(value):
+    """Normalize group names before embedding them in a ServiceNow IN clause."""
+    if not isinstance(value, str):
+        raise forms.ValidationError("Enter group names as text.")
+    groups = []
+    seen = set()
+    for raw in value.replace("\r", "\n").replace(",", "\n").splitlines():
+        name = raw.strip()
+        if not name:
+            continue
+        if len(name) > 100 or any(char in name for char in "^@=<>!"):
+            raise forms.ValidationError(
+                "Group names must be under 100 characters and cannot contain query operators."
+            )
+        key = name.casefold()
+        if key not in seen:
+            groups.append(name)
+            seen.add(key)
+        if len(groups) > 10:
+            raise forms.ValidationError("Enter at most 10 assignment groups.")
+    return groups
 
 
 def servicenow_token(config, secret):
@@ -396,15 +445,31 @@ def servicenow_records(config, secret):
     headers["Accept"] = "application/json"
     title_field = config.get("title_field") or "short_description"
     body_field = config.get("body_field") or "description"
+    table = config["table"]
+    groups = parse_assignment_groups(config.get("assignment_groups") or "")
+    if groups and table != "incident":
+        raise ValidationError("Assignment groups can only filter the incident table.")
+    fields = ["sys_id", "number", title_field, body_field]
+    if table == "incident":
+        fields.extend(
+            [
+                "cmdb_ci", "business_service", "environment", "impact",
+                "assignment_group", "priority", "state", "opened_at",
+                "resolved_at", "close_code", "close_notes", "problem_id",
+                "caused_by_change",
+            ]
+        )
+    encoded_query = config.get("query") or "ORDERBYDESCsys_updated_on"
+    if groups:
+        encoded_query = f"assignment_group.nameIN{','.join(groups)}^{encoded_query}"
     query = urlencode(
         {
             "sysparm_limit": MAX_RECORDS,
-            "sysparm_query": config.get("query") or "ORDERBYDESCsys_updated_on",
-            "sysparm_fields": f"sys_id,number,{title_field},{body_field}",
+            "sysparm_query": encoded_query,
+            "sysparm_fields": ",".join(dict.fromkeys(fields)),
             "sysparm_display_value": "true",
         }
     )
-    table = config["table"]
     payload = api_json(
         f"{base}/api/now/table/{quote(table)}?{query}", headers, label="ServiceNow"
     )
@@ -412,15 +477,47 @@ def servicenow_records(config, secret):
     if not isinstance(rows, list):
         raise ValidationError("ServiceNow returned an unexpected record list.")
     records = []
+    allowed_groups = {group.casefold() for group in groups}
     for row in rows:
         if not isinstance(row, dict) or not isinstance(row.get("sys_id"), str):
             raise ValidationError("ServiceNow returned an unexpected record.")
+        if allowed_groups:
+            raw_group = row.get("assignment_group")
+            group = (
+                text(raw_group.get("display_value") or raw_group.get("name"))
+                if isinstance(raw_group, dict)
+                else text(raw_group)
+            )
+            if group.strip().casefold() not in allowed_groups:
+                continue
         number = text(row.get("number")) or row["sys_id"]
+        body = text(row.get(body_field))
+        if table == "incident":
+            state = incident_header(
+                [
+                    ("Type", "Incident"),
+                    ("Number", number),
+                    ("State", named(row.get("state"))),
+                    ("Priority", named(row.get("priority"))),
+                    ("Impact", named(row.get("impact"))),
+                    ("Service", named(row.get("business_service"))),
+                    ("CI", named(row.get("cmdb_ci"))),
+                    ("Environment", named(row.get("environment"))),
+                    ("Assignment group", named(row.get("assignment_group"))),
+                    ("Opened", text(row.get("opened_at"))),
+                    ("Resolved", text(row.get("resolved_at"))),
+                    ("Close code", named(row.get("close_code"))),
+                    ("Close notes", text(row.get("close_notes"))),
+                    ("Problem", named(row.get("problem_id"))),
+                    ("Caused by change", named(row.get("caused_by_change"))),
+                ]
+            )
+            body = f"{state}\n\n{body}".strip()
         records.append(
             Record(
                 external_id=row["sys_id"],
                 title=(text(row.get(title_field))[:200] or number),
-                body=text(row.get(body_field)),
+                body=body,
                 url=f"{base}/nav_to.do?uri={quote(table)}.do%3Fsys_id%3D{quote(row['sys_id'])}",
             )
         )

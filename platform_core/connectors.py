@@ -122,7 +122,18 @@ def sync(user, connector_id, app_id):
             add_knowledge(user, app_id, record.title, content, source=record.url)
             count += 1
         pruned = prune(locked, app, kind, records)
-        finish(locked, "ok", count, started, "")
+        empty = locked.kind == "servicenow" and not records
+        finish(
+            locked,
+            "empty" if empty else "ok",
+            count,
+            started,
+            (
+                "ServiceNow returned no records. Check the instance, account read access, "
+                "table and filters."
+                if empty else ""
+            ),
+        )
         audit(
             user,
             "connector.synced",
@@ -155,7 +166,9 @@ def prune(connector, app, kind, records):
     Retiring is `active=False`, the same supersede the loop above performs. The
     rows stay for plan hashes and audit evidence; nothing is deleted.
     """
-    if not connector.prune_missing or len(records) >= MAX_RECORDS:
+    # An empty response can also mean that provider permissions changed. Never
+    # retire every imported source on that ambiguous signal.
+    if not records or not connector.prune_missing or len(records) >= MAX_RECORDS:
         return 0
     try:
         namespace = kind.namespace(connector.config)
@@ -180,8 +193,8 @@ def finish(connector, status, count, started, error):
     Connector.objects.filter(pk=connector.pk).update(
         last_status=status,
         last_error=error[:500],
-        last_count=count if status == "ok" else connector.last_count,
-        last_synced_at=timezone.now() if status == "ok" else connector.last_synced_at,
+        last_count=count if status in {"ok", "empty"} else connector.last_count,
+        last_synced_at=timezone.now() if status in {"ok", "empty"} else connector.last_synced_at,
         # Always, on both paths. The schedule counts from the attempt, so a
         # connector whose instance is down waits its interval rather than being
         # retried on every tick of the lane.
@@ -205,12 +218,16 @@ def connectors(request, pk):
             except ValidationError as failure:
                 messages.error(request, " ".join(failure.messages))
             else:
-                messages.success(
-                    request,
-                    f"Imported {count} new or updated record(s) from {connector.name}."
-                    if count
-                    else f"{connector.name} had nothing new to import.",
-                )
+                connector.refresh_from_db(fields=["last_status", "last_error"])
+                if connector.last_status == "empty":
+                    messages.warning(request, connector.last_error)
+                else:
+                    messages.success(
+                        request,
+                        f"Imported {count} new or updated record(s) from {connector.name}."
+                        if count
+                        else f"{connector.name} had nothing new to import.",
+                    )
         elif action in {"enable", "disable"}:
             Connector.objects.filter(pk=connector.pk).update(enabled=action == "enable")
             audit(

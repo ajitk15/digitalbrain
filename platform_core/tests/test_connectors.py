@@ -8,6 +8,7 @@ make the server request whatever it can reach.
 
 import json
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -83,6 +84,29 @@ class InstanceUrlTests(SimpleTestCase):
         for bad in ("incident;drop", "../secret", "Incident", "incident table"):
             with self.subTest(table=bad):
                 self.assertFalse(ServiceNowForm({**base, "table": bad}).is_valid())
+
+    def test_servicenow_group_names_are_normalized_and_incident_only(self):
+        base = {
+            "base_url": "https://acme.service-now.com",
+            "auth": "basic",
+            "identity": "svc",
+            "table": "incident",
+            "title_field": "short_description",
+            "body_field": "description",
+        }
+        form = ServiceNowForm(
+            {**base, "assignment_groups": "App Support, Database Ops\napp support"}
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["assignment_groups"], "App Support\nDatabase Ops")
+        self.assertFalse(
+            ServiceNowForm(
+                {**base, "table": "problem", "assignment_groups": "App Support"}
+            ).is_valid()
+        )
+        self.assertFalse(
+            ServiceNowForm({**base, "assignment_groups": "App Support^NQactive=true"}).is_valid()
+        )
 
 
 class AdapterMappingTests(SimpleTestCase):
@@ -202,6 +226,34 @@ class AdapterMappingTests(SimpleTestCase):
         self.assertEqual(records[0].title, "Node down")
         self.assertIn("NODE1 is unreachable.", records[0].body)
         self.assertIn("abc123", records[0].url)
+
+    def test_servicenow_filters_incidents_by_configured_groups(self):
+        config = {
+            "base_url": "https://acme.service-now.com",
+            "auth": "basic",
+            "identity": "svc",
+            "table": "incident",
+            "query": "active=true^ORDERBYDESCsys_updated_on",
+            "assignment_groups": "App Support\nDatabase Ops",
+        }
+        rows = [
+            {"sys_id": "1", "assignment_group": "App Support"},
+            {"sys_id": "2", "assignment_group": "Other Team"},
+            {"sys_id": "3", "assignment_group": {"display_value": "database ops", "value": "id"}},
+            {"sys_id": "4"},
+        ]
+        with patch("platform_core.connector_kinds.api_json", return_value={"result": rows}) as api:
+            records = servicenow_records(config, "password")
+        params = parse_qs(urlsplit(api.call_args.args[0]).query)
+        self.assertEqual(
+            params["sysparm_query"],
+            [
+                "assignment_group.nameINApp Support,Database Ops"
+                "^active=true^ORDERBYDESCsys_updated_on"
+            ],
+        )
+        self.assertIn("assignment_group", params["sysparm_fields"][0])
+        self.assertEqual([record.external_id for record in records], ["1", "3"])
 
     def test_servicenow_oauth_exchanges_the_secret_for_a_token(self):
         exchanged = {}
@@ -346,6 +398,41 @@ class ConnectorManagementTests(TestCase):
         self.assertEqual(connector.last_count, 1)
         self.assertIsNotNone(connector.last_synced_at)
 
+    def test_empty_servicenow_result_is_visible_and_cannot_prune_knowledge(self):
+        connector = Connector.objects.create(
+            application=self.app,
+            kind="servicenow",
+            name="Incidents",
+            config={
+                "base_url": "https://acme.service-now.com",
+                "auth": "basic",
+                "identity": "svc",
+                "table": "incident",
+                "assignment_groups": "Database",
+            },
+            prune_missing=True,
+        )
+        existing = add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Earlier incident",
+            "Body",
+            source=(
+                "https://acme.service-now.com/nav_to.do?uri=incident.do%3Fsys_id%3Dold"
+            ),
+        )
+        with patch("platform_core.connectors.credential", return_value="password"):
+            with patch("platform_core.connector_kinds.api_json", return_value={"result": []}):
+                response = self.client.post(
+                    self.url, {"action": "sync", "connector": connector.pk}, follow=True
+                )
+        connector.refresh_from_db()
+        self.assertEqual(connector.last_status, "empty")
+        self.assertEqual(connector.last_count, 0)
+        self.assertIn("no records", connector.last_error)
+        self.assertContains(response, "No records")
+        self.assertTrue(KnowledgeEntry.objects.get(pk=existing.pk).active)
+
     def test_the_form_saves_a_connector(self):
         """Every existing test built rows through the ORM, so nothing exercised
         the form - and `full_clean` rejected every one of them, for every kind,
@@ -366,6 +453,24 @@ class ConnectorManagementTests(TestCase):
         self.assertEqual(saved.config["base_url"], "https://team.atlassian.net")
         self.assertEqual(saved.config["account_email"], "ops@example.com")
         self.assertIsNone(saved.last_synced_at)
+
+    def test_servicenow_form_saves_assignment_groups(self):
+        response = self.client.post(
+            reverse("connector-new", args=[self.app.pk]) + "?kind=servicenow",
+            {
+                "name": "Care incidents",
+                "base_url": "https://acme.service-now.com",
+                "auth": "basic",
+                "identity": "svc",
+                "table": "incident",
+                "title_field": "short_description",
+                "body_field": "description",
+                "assignment_groups": "App Support, Database Ops",
+            },
+        )
+        self.assertRedirects(response, self.url)
+        saved = Connector.objects.get(application=self.app, name="Care incidents")
+        self.assertEqual(saved.config["assignment_groups"], "App Support\nDatabase Ops")
 
     def test_the_form_edits_a_connector_in_place(self):
         connector = self.make()

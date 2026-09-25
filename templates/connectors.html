@@ -8,7 +8,7 @@
 {% for item in connectors %}<tr>
 <td><div class="row-lead">{% if item.kind %}{% icon item.kind.icon %}{% endif %}<div><strong>{{ item.row.name }}</strong><small>{{ item.row.get_kind_display }}</small></div></div></td>
 <td class="mono">{{ item.target|default:"—" }}</td>
-<td>{% if not item.row.enabled %}<span class="pill">Disabled</span>{% elif item.row.last_status == 'failed' %}<span class="pill status-failed" title="{{ item.row.last_error }}">Failed</span>{% elif not item.credential and item.kind.credential_required %}<span class="pill status-queued">No credential</span>{% elif item.row.last_status == 'ok' %}<span class="pill status-ready">Ready</span>{% else %}<span class="pill">Never imported</span>{% endif %}</td>
+<td>{% if not item.row.enabled %}<span class="pill">Disabled</span>{% elif item.row.last_status == 'failed' %}<span class="pill status-failed" title="{{ item.row.last_error }}">Failed</span>{% elif item.row.last_status == 'empty' %}<span class="pill status-queued" title="{{ item.row.last_error }}">No records</span>{% elif not item.credential and item.kind.credential_required %}<span class="pill status-queued">No credential</span>{% elif item.row.last_status == 'ok' %}<span class="pill status-ready">Ready</span>{% else %}<span class="pill">Never imported</span>{% endif %}</td>
 <td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}{% if item.row.sync_interval_minutes %}<small>{{ item.schedule }}</small>{% endif %}</td>
 <td>{{ item.row.last_count }}</td>
 <td><div class="actions">
@@ -17,7 +17,7 @@
 <form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="{% if item.row.enabled %}disable{% else %}enable{% endif %}" class="link-button">{% icon "toggle" 12 %}{% if item.row.enabled %}Disable{% else %}Enable{% endif %}</button></form>
 <form method="post" class="inline-form" data-confirm="Remove {{ item.row.name }}? Knowledge it already imported is kept.">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="delete" class="link-button">{% icon "trash" 12 %}Remove</button></form>
 </div></td></tr>
-{% if item.row.last_status == 'failed' and item.row.last_error %}<tr><td colspan="6"><p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ item.row.last_error }}</span></p></td></tr>{% endif %}
+{% if item.row.last_status == 'failed' and item.row.last_error %}<tr><td colspan="6"><p class="notice notice-error" role="alert">{% icon "error" %}<span>{{ item.row.last_error }}</span></p></td></tr>{% elif item.row.last_status == 'empty' and item.row.last_error %}<tr><td colspan="6"><p class="notice notice-warning" role="status">{% icon "warning" %}<span>{{ item.row.last_error }}</span></p></td></tr>{% endif %}
 {% endfor %}
 </tbody></table></div>
 {% else %}
