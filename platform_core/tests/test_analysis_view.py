@@ -5,7 +5,7 @@ the same. And a repository whose code is in a language Code Graph does not parse
 was reasoned about without its structure, with nothing on the run to say so.
 """
 
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from platform_core.code_factory import language_gap
@@ -59,6 +59,9 @@ class AnalysisViewTests(TestCase):
         self.assertLess(stage.index("analysis-cards"), stage.index("Show full log"))
         self.assertIn("Gap analysis found 2 item(s)", stage)
 
+    # As CI runs it: no host login, so the missing credential is a pre-check
+    # problem and the problems list is on the page to be read.
+    @override_settings(CLAUDE_USE_HOST_LOGIN=False)
     def test_problems_from_later_stages_stay_out_of_analysis(self):
         from platform_core.code_factory import note
 
@@ -66,8 +69,17 @@ class AnalysisViewTests(TestCase):
         note(run, "Implementation requested by owner.", level="check")
         note(run, "Change review failed. Later-stage trouble.", phase="review", level="problem")
         stage = self.page(run).split('id="stage-2"')[1].split("</details>\n\n")[0]
-        problems = stage.split("analysis-problems")[1] if "analysis-problems" in stage else ""
+        # Only the problems list itself: the full log below it rightly carries
+        # every line, later stages included. Reading past the list passed
+        # locally only because no pre-check problem there made the list appear.
+        problems = (
+            stage.split('class="analysis-problems"')[1].split("</ul>")[0]
+            if 'class="analysis-problems"' in stage
+            else ""
+        )
         self.assertNotIn("Later-stage trouble", problems)
+        # The same line is still in the full log, where it belongs.
+        self.assertIn("Later-stage trouble", stage.split('class="analysis-log"')[1])
 
     def test_code_in_an_unparsed_language_is_a_failed_pre_check(self):
         run = self.run_pipeline()
