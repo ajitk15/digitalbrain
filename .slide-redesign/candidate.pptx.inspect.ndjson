@@ -1,0 +1,123 @@
+{"kind":"deck","id":"pr/hf7ug0","name":"Deck"}
+{"kind":"layout","layoutId":"336523cd-5d5a-4803-ab25-74b7f905fb88","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"027966d6-ee8d-40e6-b899-7fab3b2af7a9","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/7b2p6j","slide":1,"title":"Digital Brain","textShapes":98}
+{"kind":"textbox","id":"sh/n69snyh8","slide":1,"name":"Digital Brain","text":"Digital Brain","textPreview":"Digital Brain","textChars":13,"textLines":1,"bbox":[40,24,800,48]}
+{"kind":"textbox","id":"sh/o7itg3it","slide":1,"name":"ARCHITECTURE","text":"ARCHITECTURE","textPreview":"ARCHITECTURE","textChars":12,"textLines":1,"bbox":[40,83,220,21]}
+{"kind":"shape","id":"sh/98rap8ze","slide":1,"bbox":[40,111,1200,0]}
+{"kind":"textbox","id":"sh/e1gba90b","slide":1,"name":"Connect","text":"Connect","textPreview":"Connect","textChars":7,"textLines":1,"bbox":[40,123,150,27]}
+{"kind":"textbox","id":"sh/z2psjehw","slide":1,"name":"pluggable connectors","text":"pluggable connectors","textPreview":"pluggable connectors","textChars":20,"textLines":1,"bbox":[40,151,160,19]}
+{"kind":"textbox","id":"sh/14raloz2","slide":1,"name":"Upload & links","text":"Upload & links","textPreview":"Upload & links","textChars":14,"textLines":1,"bbox":[68,182,143,23]}
+{"kind":"textbox","id":"sh/rypsfeh0","slide":1,"name":"SharePoint OneDrive","text":"SharePoint OneDrive","textPreview":"SharePoint OneDrive","textChars":19,"textLines":1,"bbox":[68,209,143,23]}
+{"kind":"textbox","id":"sh/uhsru14f","slide":1,"name":"GitHub","text":"GitHub","textPreview":"GitHub","textChars":6,"textLines":1,"bbox":[68,236,143,23]}
+{"kind":"textbox","id":"sh/gja9wbml","slide":1,"name":"Jira","text":"Jira","textPreview":"Jira","textChars":4,"textLines":1,"bbox":[68,263,143,23]}
+{"kind":"textbox","id":"sh/i5cry14b","slide":1,"name":"ServiceNow","text":"ServiceNow","textPreview":"ServiceNow","textChars":10,"textLines":1,"bbox":[68,290,143,23]}
+{"kind":"textbox","id":"sh/47u90bmh","slide":1,"name":"Add more","text":"Add more","textPreview":"Add more","textChars":8,"textLines":1,"bbox":[68,317,143,23]}
+{"kind":"textbox","id":"sh/zah8vm5s","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[212,121,26,32]}
+{"kind":"textbox","id":"sh/y987mh47","slide":1,"name":"Ingest","text":"Ingest","textPreview":"Ingest","textChars":6,"textLines":1,"bbox":[244,123,160,27]}
+{"kind":"textbox","id":"sh/25gbapov","slide":1,"name":"safe & traceable","text":"safe & traceable","textPreview":"safe & traceable","textChars":16,"textLines":1,"bbox":[244,151,180,19]}
+{"kind":"textbox","id":"sh/n6pc3u5g","slide":1,"name":"Secure upload","text":"Secure upload","textPreview":"Secure upload","textChars":13,"textLines":1,"bbox":[244,180,180,21]}
+{"kind":"textbox","id":"sh/o7ytcz61","slide":1,"name":"held privately","text":"held privately","textPreview":"held privately","textChars":14,"textLines":1,"bbox":[244,201,180,15]}
+{"kind":"textbox","id":"sh/p87u5kn6","slide":1,"name":"↓","text":"↓","textPreview":"↓","textChars":1,"textLines":1,"bbox":[418,208,17,20]}
+{"kind":"textbox","id":"sh/e1wb65oj","slide":1,"name":"Security scan","text":"Security scan","textPreview":"Security scan","textChars":13,"textLines":1,"bbox":[244,223,180,21]}
+{"kind":"textbox","id":"sh/f25cza54","slide":1,"name":"unsafe files blocked","text":"unsafe files blocked","textPreview":"unsafe files blocked","textChars":20,"textLines":1,"bbox":[244,244,180,15]}
+{"kind":"textbox","id":"sh/03et8f6p","slide":1,"name":"↓","text":"↓","textPreview":"↓","textChars":1,"textLines":1,"bbox":[418,251,17,20]}
+{"kind":"textbox","id":"sh/147u1kna","slide":1,"name":"To Markdown","text":"To Markdown","textPreview":"To Markdown","textChars":11,"textLines":1,"bbox":[244,266,180,21]}
+{"kind":"textbox","id":"sh/qdwb25on","slide":1,"name":"converted offline","text":"converted offline","textPreview":"converted offline","textChars":17,"textLines":1,"bbox":[244,287,180,15]}
+{"kind":"textbox","id":"sh/ry5sva58","slide":1,"name":"↓","text":"↓","textPreview":"↓","textChars":1,"textLines":1,"bbox":[418,294,17,20]}
+{"kind":"textbox","id":"sh/t4v6xsb2","slide":1,"name":"Knowledge","text":"Knowledge","textPreview":"Knowledge","textChars":9,"textLines":1,"bbox":[244,309,180,21]}
+{"kind":"textbox","id":"sh/83m5o7uh","slide":1,"name":"version controlled","text":"version controlled","textPreview":"version controlled","textChars":18,"textLines":1,"bbox":[244,330,180,15]}
+{"kind":"textbox","id":"sh/72dov2tw","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[442,121,26,32]}
+{"kind":"textbox","id":"sh/614nmxcb","slide":1,"name":"Know & Act","text":"Know & Act","textPreview":"Know & Act","textChars":10,"textLines":1,"bbox":[486,123,205,27]}
+{"kind":"textbox","id":"sh/l0vmtsbq","slide":1,"name":"sealed per application","text":"sealed per application","textPreview":"sealed per application","textChars":22,"textLines":1,"bbox":[702,127,235,23]}
+{"kind":"textbox","id":"sh/kz25knu5","slide":1,"name":"CODE FACTORY","text":"CODE FACTORY","textPreview":"CODE FACTORY","textChars":12,"textLines":1,"bbox":[486,167,150,20]}
+{"kind":"textbox","id":"sh/jet4rit0","slide":1,"name":"USES","text":"USES","textPreview":"USES","textChars":4,"textLines":1,"bbox":[486,191,44,20]}
+{"kind":"textbox","id":"sh/ydknidcf","slide":1,"name":"Project docs\nknowledge graph","text":"Project docs\nknowledge graph","textPreview":"Project docs | knowledge graph","textChars":28,"textLines":2,"bbox":[539,188,193,32]}
+{"kind":"textbox","id":"sh/xcbmp8bu","slide":1,"name":"Code\ncode graph","text":"Code\ncode graph","textPreview":"Code | code graph","textChars":15,"textLines":2,"bbox":[773,188,153,32]}
+{"kind":"textbox","id":"sh/wb25gnu9","slide":1,"name":"Bug\nfrom ticket","text":"Bug\nfrom ticket","textPreview":"Bug | from ticket","textChars":15,"textLines":2,"bbox":[1051,188,160,32]}
+{"kind":"textbox","id":"sh/c3a50nqt","slide":1,"name":"RUNS","text":"RUNS","textPreview":"RUNS","textChars":4,"textLines":1,"bbox":[486,224,48,16]}
+{"kind":"textbox","id":"sh/d4jm9s7e","slide":1,"name":"Pre-checks","text":"Pre-checks","textPreview":"Pre-checks","textChars":10,"textLines":1,"bbox":[486,242,95.71,31]}
+{"kind":"textbox","id":"sh/q1snyd83","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[581.71,242,14,31]}
+{"kind":"textbox","id":"sh/b2147ipo","slide":1,"name":"Analysis","text":"Analysis","textPreview":"Analysis","textChars":8,"textLines":1,"bbox":[595.71,242,95.71,31]}
+{"kind":"textbox","id":"sh/0ru547q5","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[691.43,242,14,31]}
+{"kind":"textbox","id":"sh/ls3mds7q","slide":1,"name":"Approve gaps","text":"Approve gaps","textPreview":"Approve gaps","textChars":12,"textLines":1,"bbox":[705.43,242,95.71,31]}
+{"kind":"textbox","id":"sh/y5sn2x8z","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[801.14,242,14,31]}
+{"kind":"textbox","id":"sh/z6l4b2pk","slide":1,"name":"Agents","text":"Agents","textPreview":"Agents","textChars":6,"textLines":1,"bbox":[815.14,242,95.71,31]}
+{"kind":"textbox","id":"sh/gbq5s3q1","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[910.86,242,14,31]}
+{"kind":"textbox","id":"sh/1wzm1876","slide":1,"name":"Pull request","text":"Pull request","textPreview":"Pull request","textChars":12,"textLines":1,"bbox":[924.86,242,95.71,31]}
+{"kind":"textbox","id":"sh/jqp87694","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[1020.57,242,14,31]}
+{"kind":"textbox","id":"sh/ipg7y1sj","slide":1,"name":"Tests","text":"Tests","textPreview":"Tests","textChars":5,"textLines":1,"bbox":[1034.57,242,95.71,31]}
+{"kind":"textbox","id":"sh/5s7q9gru","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[1130.29,242,14,31]}
+{"kind":"textbox","id":"sh/4ryp0ba9","slide":1,"name":"Re-sync","text":"Re-sync","textPreview":"Re-sync","textChars":7,"textLines":1,"bbox":[1144.29,242,95.71,31]}
+{"kind":"textbox","id":"sh/alw7u1s7","slide":1,"name":"SERVICEOPS","text":"SERVICEOPS","textPreview":"SERVICEOPS","textChars":10,"textLines":1,"bbox":[486,286,150,20]}
+{"kind":"textbox","id":"sh/honq5wry","slide":1,"name":"USES","text":"USES","textPreview":"USES","textChars":4,"textLines":1,"bbox":[486,309,44,20]}
+{"kind":"textbox","id":"sh/wnepwrad","slide":1,"name":"Knowledge\napp graph","text":"Knowledge\napp graph","textPreview":"Knowledge | app graph","textChars":19,"textLines":2,"bbox":[539,306,145,32]}
+{"kind":"textbox","id":"sh/ny58zm9w","slide":1,"name":"History\npast incidents","text":"History\npast incidents","textPreview":"History | past incidents","textChars":22,"textLines":2,"bbox":[713,306,150,32]}
+{"kind":"textbox","id":"sh/mxc7qhsb","slide":1,"name":"Changes\nsame CI","text":"Changes\nsame CI","textPreview":"Changes | same CI","textChars":15,"textLines":2,"bbox":[898,306,146,32]}
+{"kind":"textbox","id":"sh/qtcrihc3","slide":1,"name":"Incident\nnew ticket","text":"Incident\nnew ticket","textPreview":"Incident | new ticket","textChars":19,"textLines":2,"bbox":[1084,306,150,32]}
+{"kind":"textbox","id":"sh/bul8bmdo","slide":1,"name":"RUNS","text":"RUNS","textPreview":"RUNS","textChars":4,"textLines":1,"bbox":[486,341,46,16]}
+{"kind":"textbox","id":"sh/cvu9kru9","slide":1,"name":"Evidence","text":"Evidence","textPreview":"Evidence","textChars":8,"textLines":1,"bbox":[486,359,139.6,31]}
+{"kind":"textbox","id":"sh/dw3qdwvu","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[625.6,359,14,31]}
+{"kind":"textbox","id":"sh/yxcrm1cz","slide":1,"name":"Redact","text":"Redact","textPreview":"Redact","textChars":6,"textLines":1,"bbox":[639.6,359,139.6,31]}
+{"kind":"textbox","id":"sh/zy58fmdk","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[779.2,359,14,31]}
+{"kind":"textbox","id":"sh/0je9oru5","slide":1,"name":"Hypotheses","text":"Hypotheses","textPreview":"Hypotheses","textChars":10,"textLines":1,"bbox":[793.2,359,139.6,31]}
+{"kind":"textbox","id":"sh/lknqhwbq","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[932.8,359,14,31]}
+{"kind":"textbox","id":"sh/mlwrq1cb","slide":1,"name":"Verify & score","text":"Verify & score","textPreview":"Verify & score","textChars":14,"textLines":1,"bbox":[946.8,359,139.6,31]}
+{"kind":"textbox","id":"sh/nm58j6tw","slide":1,"name":"→","text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[1086.4,359,14,31]}
+{"kind":"textbox","id":"sh/hsr254ja","slide":1,"name":"Responder decides","text":"Responder decides","textPreview":"Responder decides","textChars":17,"textLines":1,"bbox":[1100.4,359,139.6,31]}
+{"kind":"textbox","id":"sh/vq9k3u14","slide":1,"name":"results update the knowledge","text":"results update the knowledge","textPreview":"results update the knowledge","textChars":28,"textLines":1,"bbox":[486,394,754,17]}
+{"kind":"shape","id":"sh/up03up0j","slide":1,"bbox":[425,333,44,0]}
+{"kind":"shape","id":"sh/5wb294z6","slide":1,"bbox":[469,333,0,70]}
+{"kind":"shape","id":"sh/4v2l0zil","slide":1,"bbox":[469,403,550,0]}
+{"kind":"shape","id":"sh/3utk7u1g","slide":1,"bbox":[1249,258,0,145]}
+{"kind":"shape","id":"sh/it03y90v","slide":1,"bbox":[1240,258,9,0]}
+{"kind":"shape","id":"sh/dkb2dozi","slide":1,"bbox":[1240,375,9,0]}
+{"kind":"shape","id":"sh/sz2l4jix","slide":1,"bbox":[1240,403,9,0]}
+{"kind":"textbox","id":"sh/0byl4nux","slide":1,"name":"←","text":"←","textPreview":"←","textChars":1,"textLines":1,"bbox":[422,323,20,20]}
+{"kind":"textbox","id":"sh/1c7mdsvi","slide":1,"name":"FORMATS","text":"FORMATS","textPreview":"FORMATS","textChars":7,"textLines":1,"bbox":[40,359,86,19]}
+{"kind":"textbox","id":"sh/e9w32xwr","slide":1,"name":"PDF · Word · Excel · PowerPoint · Outlook ·\nHTML ·","text":"PDF · Word · Excel · PowerPoint · Outlook ·\nHTML · CSV · JSON · XML · Text","textPreview":"PDF · Word · Excel · PowerPoint · Outlook · | HTML · CSV · JSON · XML · Text","textChars":74,"textLines":2,"bbox":[40,380,397,33]}
+{"kind":"shape","id":"sh/za54b2dc","slide":1,"bbox":[40,425,1200,0]}
+{"kind":"textbox","id":"sh/d8nm9svm","slide":1,"name":"Access","text":"Access","textPreview":"Access","textChars":6,"textLines":1,"bbox":[65,431,57,21]}
+{"kind":"textbox","id":"sh/qlw3ydwv","slide":1,"name":"Chat · REST API · MCP","text":"Chat · REST API · MCP","textPreview":"Chat · REST API · MCP","textChars":21,"textLines":1,"bbox":[126,431,184,21]}
+{"kind":"textbox","id":"sh/rm547idg","slide":1,"name":"for people and any AI tool","text":"for people and any AI tool","textPreview":"for people and any AI tool","textChars":26,"textLines":1,"bbox":[320,431,264,21]}
+{"kind":"textbox","id":"sh/4jelw3ep","slide":1,"name":"OpenAI or Claude","text":"OpenAI or Claude","textPreview":"OpenAI or Claude","textChars":16,"textLines":1,"bbox":[1090,431,150,21]}
+{"kind":"shape","id":"sh/pknm58va","slide":1,"bbox":[40,460,1200,0]}
+{"kind":"textbox","id":"sh/7el4fyxc","slide":1,"name":"KEY FEATURES","text":"KEY FEATURES","textPreview":"KEY FEATURES","textChars":12,"textLines":1,"bbox":[40,473,280,22]}
+{"kind":"textbox","id":"sh/6dcn6tgr","slide":1,"text":"Organizations:  portfolio → product → application, access per app","textPreview":"Organizations:  portfolio → product → application, access per app","textChars":65,"textLines":1,"bbox":[40,502,548,21]}
+{"kind":"textbox","id":"sh/tg3mh8f2","slide":1,"text":"Graph management:  source → graph → quality check → publish","textPreview":"Graph management:  source → graph → quality check → publish","textChars":59,"textLines":1,"bbox":[40,524,548,21]}
+{"kind":"textbox","id":"sh/sfu583yh","slide":1,"text":"Code Factory:  ticket → plan → approval → draft PR → Re-sync Knowledge","textPreview":"Code Factory:  ticket → plan → approval → draft PR → Re-sync Knowledge","textChars":70,"textLines":1,"bbox":[40,546,548,21]}
+{"kind":"textbox","id":"sh/fil4jix8","slide":1,"text":"ServiceOps:  incidents open with past fixes and recent changes","textPreview":"ServiceOps:  incidents open with past fixes and recent changes","textChars":62,"textLines":1,"bbox":[40,568,548,21]}
+{"kind":"textbox","id":"sh/uhcnadgn","slide":1,"text":"Guided onboarding:  Onboarding checklist per application","textPreview":"Guided onboarding:  Onboarding checklist per application","textChars":56,"textLines":1,"bbox":[40,590,548,21]}
+{"kind":"textbox","id":"sh/hkn6lsfe","slide":1,"text":"Usage tracking:  AI cost per call, per application","textPreview":"Usage tracking:  AI cost per call, per application","textChars":50,"textLines":1,"bbox":[40,612,548,21]}
+{"kind":"textbox","id":"sh/gje5cnyt","slide":1,"text":"Connectors:  Jira, ServiceNow and GitHub synced on a schedule","textPreview":"Connectors:  Jira, ServiceNow and GitHub synced on a schedule","textChars":61,"textLines":1,"bbox":[40,634,548,21]}
+{"kind":"textbox","id":"sh/3m5onixk","slide":1,"name":"KEY DIFFERENTIATORS","text":"KEY DIFFERENTIATORS","textPreview":"KEY DIFFERENTIATORS","textChars":19,"textLines":1,"bbox":[625,473,615,22]}
+{"kind":"textbox","id":"sh/2lwnexgz","slide":1,"name":"Answers that prove themselves","text":"Answers that prove themselves","textPreview":"Answers that prove themselves","textChars":29,"textLines":1,"bbox":[625,502,293,20]}
+{"kind":"textbox","id":"sh/bu9wneho","slide":1,"name":"Every answer is traceable to a verified source.","text":"Every answer is traceable to a verified source.","textPreview":"Every answer is traceable to a verified source.","textChars":47,"textLines":1,"bbox":[625,522,293,30]}
+{"kind":"textbox","id":"sh/qt0fetgj","slide":1,"name":"One brain for build and run","text":"One brain for build and run","textPreview":"One brain for build and run","textChars":27,"textLines":1,"bbox":[625,553,293,20]}
+{"kind":"textbox","id":"sh/dgrepozu","slide":1,"name":"Every resolved incident strengthens the next respo","text":"Every resolved incident strengthens the next response.","textPreview":"Every resolved incident strengthens the next response.","textChars":54,"textLines":1,"bbox":[625,573,293,30]}
+{"kind":"textbox","id":"sh/cvixgjy9","slide":1,"name":"Knowledge released like software","text":"Knowledge released like software","textPreview":"Knowledge released like software","textChars":32,"textLines":1,"bbox":[625,604,293,20]}
+{"kind":"textbox","id":"sh/3qpwjehs","slide":1,"name":"All knowledge is reviewed and approved before use.","text":"All knowledge is reviewed and approved before use.","textPreview":"All knowledge is reviewed and approved before use.","textChars":50,"textLines":1,"bbox":[625,624,293,30]}
+{"kind":"textbox","id":"sh/2pgfa9g7","slide":1,"name":"Always up to date","text":"Always up to date","textPreview":"Always up to date","textChars":17,"textLines":1,"bbox":[947,502,293,20]}
+{"kind":"textbox","id":"sh/psrelozy","slide":1,"name":"Sources and knowledge refresh after major changes,","text":"Sources and knowledge refresh after major changes, like a bug fix.","textPreview":"Sources and knowledge refresh after major changes, like a bug fix.","textChars":66,"textLines":1,"bbox":[947,522,293,30]}
+{"kind":"textbox","id":"sh/oryxcjyd","slide":1,"name":"Requirements and code in one graph","text":"Requirements and code in one graph","textPreview":"Requirements and code in one graph","textChars":34,"textLines":1,"bbox":[947,553,293,20]}
+{"kind":"textbox","id":"sh/fmpwfuhw","slide":1,"name":"Every change is linked to its requirement and code","text":"Every change is linked to its requirement and code.","textPreview":"Every change is linked to its requirement and code.","textChars":51,"textLines":1,"bbox":[947,573,293,30]}
+{"kind":"textbox","id":"sh/ulgv69gb","slide":1,"name":"Bring your own model","text":"Bring your own model","textPreview":"Bring your own model","textChars":20,"textLines":1,"bbox":[947,604,293,20]}
+{"kind":"textbox","id":"sh/krutgvet","slide":1,"name":"Trusted knowledge is accessible from any AI tool.","text":"Trusted knowledge is accessible from any AI tool.","textPreview":"Trusted knowledge is accessible from any AI tool.","textChars":49,"textLines":1,"bbox":[947,624,293,30]}
+{"kind":"shape","id":"sh/5s3up0fe","slide":1,"bbox":[40,668,1200,0]}
+{"kind":"textbox","id":"sh/i5cbe5w3","slide":1,"name":"TECH STACK","text":"TECH STACK","textPreview":"TECH STACK","textChars":10,"textLines":1,"bbox":[40,682,105,17]}
+{"kind":"textbox","id":"sh/j6lcnaxo","slide":1,"name":"CORE","text":"CORE","textPreview":"CORE","textChars":4,"textLines":1,"bbox":[162,682,42,17]}
+{"kind":"textbox","id":"sh/svetkfe5","slide":1,"name":"Python · Django · PostgreSQL","text":"Python · Django · PostgreSQL","textPreview":"Python · Django · PostgreSQL","textChars":28,"textLines":1,"bbox":[205,680,223,22]}
+{"kind":"textbox","id":"sh/twnutkfq","slide":1,"name":"AI & GRAPH","text":"AI & GRAPH","textPreview":"AI & GRAPH","textChars":10,"textLines":1,"bbox":[437,682,74,17]}
+{"kind":"textbox","id":"sh/6twbi5wz","slide":1,"name":"OpenAI Agents SDK · Claude Agent SDK · Graphify","text":"OpenAI Agents SDK · Claude Agent SDK · Graphify","textPreview":"OpenAI Agents SDK · Claude Agent SDK · Graphify","textChars":47,"textLines":1,"bbox":[518,680,391,22]}
+{"kind":"textbox","id":"sh/7u5craxk","slide":1,"name":"SUPPORTING","text":"SUPPORTING","textPreview":"SUPPORTING","textChars":10,"textLines":1,"bbox":[934,682,80,17]}
+{"kind":"textbox","id":"sh/8zat8by1","slide":1,"name":"MarkItDown · MCP · Docker","text":"MarkItDown · MCP · Docker","textPreview":"MarkItDown · MCP · Docker","textChars":25,"textLines":1,"bbox":[1018,680,222,22]}
+{"kind":"image","id":"im/l07yp4vi","slide":1,"name":"","bbox":[40,184,19,19]}
+{"kind":"image","id":"im/jut0zydw","slide":1,"name":"","bbox":[40,211,19,19]}
+{"kind":"image","id":"im/wf6pkb2l","slide":1,"name":"","bbox":[40,238,19,19]}
+{"kind":"image","id":"im/ado7i1kf","slide":1,"name":"","bbox":[40,265,19,19]}
+{"kind":"image","id":"im/ob6pgr29","slide":1,"name":"","bbox":[40,292,19,19]}
+{"kind":"image","id":"im/2p47e1kj","slide":1,"name":"","bbox":[40,319,19,19]}
+{"kind":"image","id":"im/87m5wnqp","slide":1,"name":"","bbox":[722,223,14,14]}
+{"kind":"image","id":"im/jq50fehg","slide":1,"name":"","bbox":[1187,337,14,14]}
+{"kind":"image","id":"im/fatcnutk","slide":1,"name":"","bbox":[40,434,16,16]}
+{"kind":"notes","id":"nt/7b2p6j","slide":1,"text":""}

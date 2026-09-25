@@ -12,6 +12,8 @@ htmlcov/
 config/local.toml
 staticfiles/
 *.log
+node_modules/
+~$*.pptx
 
 
 # Seeded design canvases: generated from the .dc.html sources beside them by the

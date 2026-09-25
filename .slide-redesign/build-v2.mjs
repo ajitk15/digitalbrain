@@ -1,0 +1,113 @@
+import fs from 'node:fs/promises';
+import {Presentation,PresentationFile,FileBlob} from '@oai/artifact-tool';
+import {finalizePresentation} from 'file:///C:/Users/ajitk/.codex/plugins/cache/openai-primary-runtime/presentations/26.915.20218/skills/presentations/container_tools/artifact_tool_utils.mjs';
+const root='C:/Workspace/digitalbrian';
+const dir=root+'/.slide-redesign';
+const skill='C:/Users/ajitk/.codex/plugins/cache/openai-primary-runtime/presentations/26.915.20218/skills/presentations';
+const p=Presentation.create({slideSize:{width:1280,height:720}});
+const s=p.slides.add(); s.background.fill='#FFFFFF';
+const C={navy:'#132D46',teal:'#087F83',ink:'#283D50',muted:'#607180',light:'#EDF5F6',line:'#D2DFE5',blue:'#EAF0F6'};
+function txt(t,x,y,w,h,size=14,color=C.ink,bold=false,align='left',fill='none'){
+ const a=s.shapes.add({geometry:'textbox',name:t.slice(0,50),position:{left:x,top:y,width:w,height:h},fill,line:{fill:'none',width:0}});
+ a.text=t; a.text.style={typeface:'Arial',fontSize:size,color,bold,alignment:align,verticalAlignment:'middle',autoFit:'none',wrap:'square',insets:{left:0,right:0,top:0,bottom:0}}; return a;
+}
+function line(x,y,w,color=C.line){s.shapes.add({geometry:'line',position:{left:x,top:y,width:w,height:0},fill:'none',line:{fill:color,width:1}});}
+async function icon(n,x,y,size=20){s.images.add({blob:new Uint8Array(await fs.readFile(dir+'/image'+n+'.png')),contentType:'image/png',position:{left:x,top:y,width:size,height:size},fit:'contain'});}
+txt('Digital Brain',36,22,820,49,38,C.navy,true);
+txt('ARCHITECTURE',36,88,280,22,14,C.teal,true);
+// All boxes are editable architecture nodes or application boundaries.
+function box(x,y,w,h,fill=C.light,stroke=C.line){return s.shapes.add({geometry:'rect',position:{left:x,top:y,width:w,height:h},fill,line:{fill:stroke,width:1}});}
+function seg(x1,y1,x2,y2,color=C.teal){s.shapes.add({geometry:'line',position:{left:Math.min(x1,x2),top:Math.min(y1,y2),width:Math.abs(x2-x1),height:Math.abs(y2-y1)},fill:'none',line:{fill:color,width:1.6}});}
+function right(x,y,w=17){txt('→',x,y-12,w,24,19,C.teal,true,'center');}
+function down(x,y){txt('↓',x-10,y,20,27,22,C.teal,true,'center');}
+txt('Connect',36,154,106,26,18,C.navy,true);
+txt('pluggable\nconnectors',36,181,100,32,12,C.muted);
+const cons=['Upload & links','SharePoint\nOneDrive','GitHub','Jira','ServiceNow','Add more'];
+for(let i=0;i<6;i++){
+ const x=153+i*116;
+ box(x,129,105,79,'#FFFFFF'); await icon(i+1,x+41,139,24);
+ txt(cons[i],x+4,170,97,29,12.3,C.navy,true,'center');
+ seg(x+52.5,208,x+52.5,218);
+}
+seg(205.5,218,785.5,218); seg(233,218,233,224);down(233,220);
+txt('Ingest',36,256,106,26,18,C.navy,true);
+txt('safe &\ntraceable',36,285,108,31,12,C.muted);
+const ingest=[['Secure upload','held privately'],['Security scan','unsafe files blocked'],['To Markdown','converted offline'],['Knowledge','version controlled']];
+ingest.forEach(([a,b],i)=>{
+ const x=153+i*179;
+ box(x,248,160,62,i===3?C.navy:C.blue,i===3?C.navy:C.line);
+ txt(a,x+5,257,150,23,15,i===3?'#FFFFFF':C.navy,true,'center');
+ txt(b,x+5,282,150,18,12,i===3?'#D8E7ED':C.muted,false,'center');
+ if(i<3)right(x+160,279,19);
+});
+// Connector collection enters the secure upload step.
+
+txt('FORMATS',153,319,75,17,10,C.teal,true);
+txt('PDF · Word · Excel · PowerPoint · Outlook · HTML · CSV · JSON · XML · Text',227,319,624,17,10.5,C.muted);
+txt('Know &\nAct',36,425,107,50,18,C.navy,true);
+txt('sealed per\napplication',36,479,106,32,12,C.muted);
+// Shared knowledge feeds both bounded application workflows.
+seg(770,310,770,343); seg(140,343,770,343);seg(140,343,140,510);
+right(139,388,15);right(139,510,15);
+function lane(y,name,inputs,steps,teal){
+ const color=teal?C.teal:C.navy;
+ box(153,y,698,111,'#FFFFFF',C.line);
+ txt(name,165,y+7,166,20,13,color,true);
+ txt('USES',165,y+33,40,17,10,C.muted,true);
+ const iw=(629-14*(inputs.length-1))/inputs.length;
+ inputs.forEach(([a,b],i)=>{const xx=212+i*(iw+14);txt(a,xx,y+27,iw,19,12.7,C.ink,true);txt(b,xx,y+45,iw,16,11.5,C.muted);});
+ txt('RUNS',165,y+77,40,17,10,C.muted,true);
+ const sw=(629-13*(steps.length-1))/steps.length;
+ steps.forEach((a,i)=>{const xx=212+i*(sw+13);box(xx,y+70,sw,35,teal?C.light:C.blue,'none');txt(a,xx+2,y+73,sw-4,31,12.7,color,true,'center');if(i<steps.length-1)right(xx+sw,y+85,13);});
+}
+lane(355,'CODE FACTORY',[['Project docs','knowledge graph'],['Code','code graph'],['Bug','from ticket']],['Pre-checks','Analysis','Approve gaps','Agents','Pull request','Tests','Re-sync'],false);
+lane(477,'SERVICEOPS',[['Knowledge','app graph'],['History','past incidents'],['Changes','same CI'],['Incident','new ticket']],['Evidence','Redact','Hypotheses','Verify & score','Responder decides'],true);
+// Shared return path routes outside the application boundaries.
+seg(851,440,875,440);seg(851,562,875,562);seg(875,279,875,562);seg(850,279,875,279);txt('←',847,266,20,26,20,C.teal,true);
+txt('results update the knowledge',576,591,275,19,11.5,C.teal,false,'right');
+await icon(7,404,411,12);await icon(7,781,533,12);
+await icon(8,155,624,19);
+txt('Access',183,622,57,24,13,C.teal,true);
+txt('Chat · REST API · MCP',246,622,195,24,13,C.navy,true);
+txt('for people and any AI tool',450,622,240,24,12,C.muted);
+txt('OpenAI or Claude',36,623,111,24,11,C.muted);
+line(153,615,698);line(153,651,698);
+txt('KEY FEATURES',914,88,330,22,14,C.teal,true);
+const features=[
+ ['Organizations:','portfolio → product → application, access per app'],
+ ['Graph management:','source → graph → quality check → publish'],
+ ['Code Factory:','ticket → plan → approval → draft PR → Re-sync Knowledge'],
+ ['ServiceOps:','incidents open with past fixes and recent changes'],
+ ['Guided onboarding:','Onboarding checklist per application'],
+ ['Usage tracking:','AI cost per call, per application'],
+ ['Connectors:','Jira, ServiceNow and GitHub synced on a schedule']];
+features.forEach(([a,b],i)=>{const t=txt('',914,123+i*33,330,32,11.6,C.ink);t.text=[[{run:a+'  ',textStyle:{bold:true,color:C.navy}},{run:b}]];});
+line(914,362,330);
+txt('KEY DIFFERENTIATORS',914,373,330,22,14,C.teal,true);
+const diff=[
+ ['Answers that prove themselves','Every answer is traceable to a verified source.'],
+ ['One brain for build and run','Every resolved incident strengthens the next response.'],
+ ['Knowledge released like software','All knowledge is reviewed and approved before use.'],
+ ['Always up to date','Sources and knowledge refresh after major changes, like a bug fix.'],
+ ['Requirements and code in one graph','Every change is linked to its requirement and code.'],
+ ['Bring your own model','Trusted knowledge is accessible from any AI tool.']];
+diff.forEach(([a,b],i)=>{const yy=397+i*44;txt(a,914,yy,330,18,12.2,C.navy,true);txt(b,914,yy+18,330,25,11.2,C.muted);});
+line(36,669,1208);
+txt('TECH STACK',36,682,105,17,10.5,C.teal,true);
+txt('CORE',162,682,42,17,9.5,C.muted,true);
+txt('Python · Django · PostgreSQL',205,680,223,22,11.5,C.navy);
+txt('AI & GRAPH',437,682,74,17,9.5,C.muted,true);
+txt('OpenAI Agents SDK · Claude Agent SDK · Graphify',518,680,391,22,11.5,C.navy);
+txt('SUPPORTING',934,682,80,17,9.5,C.muted,true);
+txt('MarkItDown · MCP · Docker',1018,680,222,22,11.5,C.navy);
+
+const orig=await PresentationFile.importPptx(await FileBlob.load('C:/Users/ajitk/Downloads/Digital-Brain-Leadership-Slide-v3.pptx'));
+if(orig.slides.items[0].speakerNotes?.textFrame?.text) s.speakerNotes.textFrame.setText(orig.slides.items[0].speakerNotes.textFrame.text);
+await(await PresentationFile.exportPptx(p)).save(dir+'/candidate-v2.pptx');
+const preview=await p.export({slide:s,format:'png',scale:1.5});
+await fs.writeFile(dir+'/preview-v2.png',new Uint8Array(await preview.arrayBuffer()));
+await fs.writeFile(dir+'/layout-v2.json',await(await s.export({format:'layout'})).text());
+console.log('Draft and preview created');
+if(process.argv.includes('--finalize')){
+console.log(await finalizePresentation({workspaceDir:root,candidatePath:dir+'/candidate-v2.pptx',finalPath:root+'/outputs/leadership-slide/Digital-Brain-Leadership-Redesigned-v2.pptx',pythonExecutable:'C:/Users/ajitk/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/python.exe',integrityValidatorPath:skill+'/container_tools/inspect_presentation_package_integrity.py',layoutValidatorPath:skill+'/container_tools/inspect_presentation_layout_geometry.py',layoutArgs:['--expected-slide-size-emu','12192000,6858000','--validate-bullet-geometry','--validate-heading-fit'],explicitTotalSlideCount:1,requiredNativeTableOwnerSlides:[],requiredNativeChartOwnerSlides:[],fontPolicy:{basis:'design',families:['Arial']},verifyArtifactToolImport:true,receiptPath:dir+'/validation-v2.json'}));
+}

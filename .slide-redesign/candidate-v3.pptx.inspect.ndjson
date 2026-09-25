@@ -1,0 +1,187 @@
+{"kind":"deck","id":"pr/pwtrdj","name":"Deck"}
+{"kind":"layout","layoutId":"563d17a1-a6f1-43e0-81c6-fa39255cab09","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"7e8b7e36-6f21-4d2f-b49e-12a0242b6f8f","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/bh7ps9","slide":1,"title":"Digital Brain","textShapes":89}
+{"kind":"textbox","id":"sh/pw7ihkvi","slide":1,"name":"Digital Brain","text":"Digital Brain","textPreview":"Digital Brain","textChars":13,"textLines":1,"bbox":[36,22,820,49]}
+{"kind":"textbox","id":"sh/2twz6pwr","slide":1,"name":"ARCHITECTURE","text":"ARCHITECTURE","textPreview":"ARCHITECTURE","textChars":12,"textLines":1,"bbox":[36,88,280,22]}
+{"kind":"textbox","id":"sh/3u50fudc","slide":1,"name":"Connect","text":"Connect","textPreview":"Connect","textChars":7,"textLines":1,"bbox":[36,154,106,26]}
+{"kind":"textbox","id":"sh/greh4fel","slide":1,"name":"pluggable\nconnectors","text":"pluggable\nconnectors","textPreview":"pluggable | connectors","textChars":20,"textLines":2,"bbox":[36,181,100,32]}
+{"kind":"shape","id":"sh/1snidkv6","slide":1,"bbox":[153,129,105,79]}
+{"kind":"textbox","id":"sh/fq50bax0","slide":1,"name":"Upload & links","text":"Upload & links","textPreview":"Upload & links","textChars":14,"textLines":1,"bbox":[157,170,97,29]}
+{"kind":"shape","id":"sh/sneh0fep","slide":1,"bbox":[205.5,208,0,14]}
+{"kind":"shape","id":"sh/toni90fa","slide":1,"bbox":[269,129,105,79]}
+{"kind":"textbox","id":"sh/on2xsvet","slide":1,"name":"SharePoint\nOneDrive","text":"SharePoint\nOneDrive","textPreview":"SharePoint | OneDrive","textChars":19,"textLines":2,"bbox":[273,170,97,29]}
+{"kind":"shape","id":"sh/nmtwzqx8","slide":1,"bbox":[321.5,208,0,14]}
+{"kind":"shape","id":"sh/2lkfqlwn","slide":1,"bbox":[385,129,105,79]}
+{"kind":"textbox","id":"sh/0jixobeh","slide":1,"name":"GitHub","text":"GitHub","textPreview":"GitHub","textChars":6,"textLines":1,"bbox":[389,170,97,29]}
+{"kind":"shape","id":"sh/fi9wv6xw","slide":1,"bbox":[437.5,208,0,14]}
+{"kind":"shape","id":"sh/eh0fm1wr","slide":1,"bbox":[501,129,105,79]}
+{"kind":"textbox","id":"sh/svixkbel","slide":1,"name":"Jira","text":"Jira","textPreview":"Jira","textChars":4,"textLines":1,"bbox":[505,170,97,29]}
+{"kind":"shape","id":"sh/4bm5wvqt","slide":1,"bbox":[553.5,208,0,14]}
+{"kind":"shape","id":"sh/5cf6p0ry","slide":1,"bbox":[617,129,105,79]}
+{"kind":"textbox","id":"sh/3adona98","slide":1,"name":"ServiceNow","text":"ServiceNow","textPreview":"ServiceNow","textChars":10,"textLines":1,"bbox":[621,170,97,29]}
+{"kind":"shape","id":"sh/g7m5svah","slide":1,"bbox":[669.5,208,0,14]}
+{"kind":"shape","id":"sh/h8v6l0r2","slide":1,"bbox":[733,129,105,79]}
+{"kind":"textbox","id":"sh/vmdojq9w","slide":1,"name":"Add more","text":"Add more","textPreview":"Add more","textChars":8,"textLines":1,"bbox":[737,170,97,29]}
+{"kind":"shape","id":"sh/036p4fql","slide":1,"bbox":[785.5,208,0,14]}
+{"kind":"shape","id":"sh/14z6xkr6","slide":1,"bbox":[205.5,222,580,0]}
+{"kind":"textbox","id":"sh/by18neto","slide":1,"name":"Ingest","text":"Ingest","textPreview":"Ingest","textChars":6,"textLines":1,"bbox":[36,256,106,26]}
+{"kind":"textbox","id":"sh/axsruts3","slide":1,"name":"safe &\ntraceable","text":"safe &\ntraceable","textPreview":"safe & | traceable","textChars":16,"textLines":2,"bbox":[36,285,108,31]}
+{"kind":"shape","id":"sh/x0japobe","slide":1,"bbox":[153,248,160,62]}
+{"kind":"textbox","id":"sh/wza9wjat","slide":1,"name":"Secure upload","text":"Secure upload","textPreview":"Secure upload","textChars":13,"textLines":1,"bbox":[158,257,150,23]}
+{"kind":"textbox","id":"sh/j21srytk","slide":1,"name":"held privately","text":"held privately","textPreview":"held privately","textChars":14,"textLines":1,"bbox":[158,282,150,18]}
+{"kind":"shape","id":"sh/y1srytsz","slide":1,"bbox":[332,248,160,62]}
+{"kind":"textbox","id":"sh/l43at8bq","slide":1,"name":"Security scan","text":"Security scan","textPreview":"Security scan","textChars":13,"textLines":1,"bbox":[337,257,150,23]}
+{"kind":"textbox","id":"sh/k3u903a5","slide":1,"name":"unsafe files blocked","text":"unsafe files blocked","textPreview":"unsafe files blocked","textChars":20,"textLines":1,"bbox":[337,282,150,18]}
+{"kind":"shape","id":"sh/f6h8futg","slide":1,"bbox":[511,248,160,62]}
+{"kind":"textbox","id":"sh/e58rm9cv","slide":1,"name":"To Markdown","text":"To Markdown","textPreview":"To Markdown","textChars":11,"textLines":1,"bbox":[516,257,150,23]}
+{"kind":"textbox","id":"sh/6pcr29kr","slide":1,"name":"converted offline","text":"converted offline","textPreview":"converted offline","textChars":17,"textLines":1,"bbox":[516,282,150,18]}
+{"kind":"shape","id":"sh/rqlsve1c","slide":1,"bbox":[690,248,160,62]}
+{"kind":"textbox","id":"sh/sru94z2h","slide":1,"name":"Knowledge","text":"Knowledge","textPreview":"Knowledge","textChars":9,"textLines":1,"bbox":[695,257,150,23]}
+{"kind":"textbox","id":"sh/tc3ax4j2","slide":1,"name":"version controlled","text":"version controlled","textPreview":"version controlled","textChars":18,"textLines":1,"bbox":[695,282,150,18]}
+{"kind":"shape","id":"sh/edcr69kn","slide":1,"bbox":[232.95,221.95,0.1,0.1]}
+{"kind":"shape","id":"sh/felsze18","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/gfu98jit","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/1gna1oje","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/2hwrat0z","slide":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/3i5s3y14","slide":1,"name":"FORMATS","text":"FORMATS","textPreview":"FORMATS","textChars":7,"textLines":1,"bbox":[153,317,75,17]}
+{"kind":"textbox","id":"sh/xc7u9s3m","slide":1,"name":"PDF · Word · Excel · PowerPoint · Outlook · HTML ·","text":"PDF · Word · Excel · PowerPoint · Outlook · HTML · CSV · JSON · XML · Text","textPreview":"PDF · Word · Excel · PowerPoint · Outlook · HTML · CSV · JSON · XML · Text","textChars":74,"textLines":1,"bbox":[227,317,624,17]}
+{"kind":"textbox","id":"sh/cbyt0nm1","slide":1,"name":"Know &\nAct","text":"Know &\nAct","textPreview":"Know & | Act","textChars":10,"textLines":2,"bbox":[36,425,107,50]}
+{"kind":"textbox","id":"sh/bapc7ilg","slide":1,"name":"sealed per\napplication","text":"sealed per\napplication","textPreview":"sealed per | application","textChars":22,"textLines":2,"bbox":[36,479,106,32]}
+{"kind":"shape","id":"sh/a9gbyd4v","slide":1,"bbox":[770,310,0,31]}
+{"kind":"shape","id":"sh/lgruds3i","slide":1,"bbox":[140,341,630,0]}
+{"kind":"shape","id":"sh/kfyd4n2x","slide":1,"bbox":[140,341,0,191]}
+{"kind":"shape","id":"sh/zepcb2lc","slide":1,"bbox":[153,351,698,124]}
+{"kind":"textbox","id":"sh/ydgv2xk7","slide":1,"name":"CODE FACTORY","text":"CODE FACTORY","textPreview":"CODE FACTORY","textChars":12,"textLines":1,"bbox":[165,355,240,21]}
+{"kind":"textbox","id":"sh/94ruhc3u","slide":1,"name":"USES","text":"USES","textPreview":"USES","textChars":4,"textLines":1,"bbox":[165,378,42,17]}
+{"kind":"shape","id":"sh/83id8729","slide":1,"bbox":[212,378,200.33,43]}
+{"kind":"textbox","id":"sh/sza50feh","slide":1,"name":"Project docs","text":"Project docs","textPreview":"Project docs","textChars":12,"textLines":1,"bbox":[217,380,190.33,21]}
+{"kind":"textbox","id":"sh/tkj6tkf2","slide":1,"name":"knowledge graph","text":"knowledge graph","textPreview":"knowledge graph","textChars":15,"textLines":1,"bbox":[217,401,190.33,17]}
+{"kind":"shape","id":"sh/6xsny5wb","slide":1,"bbox":[426.33,378,200.33,43]}
+{"kind":"textbox","id":"sh/ry1oraxw","slide":1,"name":"Code","text":"Code","textPreview":"Code","textChars":4,"textLines":1,"bbox":[431.33,380,190.33,21]}
+{"kind":"textbox","id":"sh/gna54fet","slide":1,"name":"code graph","text":"code graph","textPreview":"code graph","textChars":10,"textLines":1,"bbox":[431.33,401,190.33,17]}
+{"kind":"shape","id":"sh/1o36xkfy","slide":1,"bbox":[640.67,378,200.33,43]}
+{"kind":"textbox","id":"sh/elsn2pwn","slide":1,"name":"Bug","text":"Bug","textPreview":"Bug","textChars":3,"textLines":1,"bbox":[645.67,380,190.33,21]}
+{"kind":"textbox","id":"sh/fm1ovax8","slide":1,"name":"from ticket","text":"from ticket","textPreview":"from ticket","textChars":11,"textLines":1,"bbox":[645.67,401,190.33,17]}
+{"kind":"textbox","id":"sh/wrq5sve9","slide":1,"name":"RUNS","text":"RUNS","textPreview":"RUNS","textChars":4,"textLines":1,"bbox":[165,447,42,17]}
+{"kind":"shape","id":"sh/hszml0fu","slide":1,"bbox":[212,440,74.43,31]}
+{"kind":"textbox","id":"sh/zm58ryhc","slide":1,"name":"Pre-checks","text":"Pre-checks","textPreview":"Pre-checks","textChars":10,"textLines":1,"bbox":[214,441,70.43,29]}
+{"kind":"shape","id":"sh/ylwrytgr","slide":1,"bbox":[304.43,440,74.43,31]}
+{"kind":"textbox","id":"sh/lo7qt8zi","slide":1,"name":"Analysis","text":"Analysis","textPreview":"Analysis","textChars":8,"textLines":1,"bbox":[306.43,441,70.43,29]}
+{"kind":"shape","id":"sh/kne903yx","slide":1,"bbox":[396.86,440,74.43,31]}
+{"kind":"textbox","id":"sh/bi58nehg","slide":1,"name":"Approve gaps","text":"Approve gaps","textPreview":"Approve gaps","textChars":12,"textLines":1,"bbox":[398.86,441,70.43,29]}
+{"kind":"shape","id":"sh/ahw7u9gv","slide":1,"bbox":[489.29,440,74.43,31]}
+{"kind":"textbox","id":"sh/xknqpoz6","slide":1,"name":"Agents","text":"Agents","textPreview":"Agents","textChars":6,"textLines":1,"bbox":[491.29,441,70.43,29]}
+{"kind":"shape","id":"sh/cje9wjy1","slide":1,"bbox":[581.71,440,74.43,31]}
+{"kind":"textbox","id":"sh/3el8jeh4","slide":1,"name":"Pull request","text":"Pull request","textPreview":"Pull request","textChars":12,"textLines":1,"bbox":[583.71,441,70.43,29]}
+{"kind":"shape","id":"sh/2tc7q9gj","slide":1,"bbox":[674.14,440,74.43,31]}
+{"kind":"textbox","id":"sh/uxgr69of","slide":1,"name":"Tests","text":"Tests","textPreview":"Tests","textChars":5,"textLines":1,"bbox":[676.14,441,70.43,29]}
+{"kind":"shape","id":"sh/fyp8zep0","slide":1,"bbox":[766.57,440,74.43,31]}
+{"kind":"textbox","id":"sh/gzy98j6l","slide":1,"name":"Re-sync","text":"Re-sync","textPreview":"Re-sync","textChars":7,"textLines":1,"bbox":[768.57,441,70.43,29]}
+{"kind":"shape","id":"sh/h07q1o76","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/6twr29oj","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/7up8vup4","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/svy94z6p","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/tw7qx47u","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/qp0reton","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/bq987yp8","slide":1,"bbox":[312.17,421,0,9]}
+{"kind":"shape","id":"sh/lwv2twvm","slide":1,"bbox":[526.5,421,0,9]}
+{"kind":"shape","id":"sh/kvmlkru1","slide":1,"bbox":[740.83,421,0,9]}
+{"kind":"shape","id":"sh/zudkrmdg","slide":1,"bbox":[249.21,430,491.62,0]}
+{"kind":"shape","id":"sh/y943ihcb","slide":1,"bbox":[249.16,429.95,0.1,0.1]}
+{"kind":"shape","id":"sh/x8v2pcvq","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/c7m1g7u5","slide":1,"bbox":[139.95,399.95,0.1,0.1]}
+{"kind":"shape","id":"sh/b6dkn2dk","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/a5kjehcz","slide":1,"bbox":[153,483,698,124]}
+{"kind":"textbox","id":"sh/h4f21gvu","slide":1,"name":"SERVICEOPS","text":"SERVICEOPS","textPreview":"SERVICEOPS","textChars":10,"textLines":1,"bbox":[165,487,240,21]}
+{"kind":"textbox","id":"sh/w36lsbu9","slide":1,"name":"USES","text":"USES","textPreview":"USES","textChars":4,"textLines":1,"bbox":[165,510,42,17]}
+{"kind":"shape","id":"sh/dojq9kve","slide":1,"bbox":[212,510,146.75,43]}
+{"kind":"textbox","id":"sh/snap0fu9","slide":1,"name":"Knowledge","text":"Knowledge","textPreview":"Knowledge","textChars":9,"textLines":1,"bbox":[217,512,136.75,21]}
+{"kind":"textbox","id":"sh/rm187ado","slide":1,"name":"app graph","text":"app graph","textPreview":"app graph","textChars":9,"textLines":1,"bbox":[217,533,136.75,17]}
+{"kind":"shape","id":"sh/qls7y5c3","slide":1,"bbox":[372.75,510,146.75,43]}
+{"kind":"textbox","id":"sh/5kjq50vi","slide":1,"name":"History","text":"History","textPreview":"History","textChars":7,"textLines":1,"bbox":[377.75,512,136.75,21]}
+{"kind":"textbox","id":"sh/4jqpwvux","slide":1,"name":"past incidents","text":"past incidents","textPreview":"past incidents","textChars":14,"textLines":1,"bbox":[377.75,533,136.75,17]}
+{"kind":"shape","id":"sh/3ih83qdc","slide":1,"bbox":[533.5,510,146.75,43]}
+{"kind":"textbox","id":"sh/ix87u5cr","slide":1,"name":"Changes","text":"Changes","textPreview":"Changes","textChars":7,"textLines":1,"bbox":[538.5,512,136.75,21]}
+{"kind":"textbox","id":"sh/hwzq10v6","slide":1,"name":"same CI","text":"same CI","textPreview":"same CI","textChars":7,"textLines":1,"bbox":[538.5,533,136.75,17]}
+{"kind":"shape","id":"sh/gvqpsvu1","slide":1,"bbox":[694.25,510,146.75,43]}
+{"kind":"textbox","id":"sh/mp4vmxon","slide":1,"name":"Incident","text":"Incident","textPreview":"Incident","textChars":8,"textLines":1,"bbox":[699.25,512,136.75,21]}
+{"kind":"textbox","id":"sh/7qdwf2ps","slide":1,"name":"new ticket","text":"new ticket","textPreview":"new ticket","textChars":10,"textLines":1,"bbox":[699.25,533,136.75,17]}
+{"kind":"textbox","id":"sh/8rmdo76d","slide":1,"name":"RUNS","text":"RUNS","textPreview":"RUNS","textChars":4,"textLines":1,"bbox":[165,579,42,17]}
+{"kind":"shape","id":"sh/9svehc7y","slide":1,"bbox":[212,572,111.4,31]}
+{"kind":"textbox","id":"sh/ylkvixob","slide":1,"name":"Evidence","text":"Evidence","textPreview":"Evidence","textChars":8,"textLines":1,"bbox":[214,573,107.4,29]}
+{"kind":"shape","id":"sh/zmtwb2pw","slide":1,"bbox":[341.4,572,111.4,31]}
+{"kind":"textbox","id":"sh/kn2dkn6h","slide":1,"name":"Redact","text":"Redact","textPreview":"Redact","textChars":6,"textLines":1,"bbox":[343.4,573,107.4,29]}
+{"kind":"shape","id":"sh/loveds72","slide":1,"bbox":[470.8,572,111.4,31]}
+{"kind":"textbox","id":"sh/ahkvedof","slide":1,"name":"Hypotheses","text":"Hypotheses","textPreview":"Hypotheses","textChars":10,"textLines":1,"bbox":[472.8,573,107.4,29]}
+{"kind":"shape","id":"sh/bitw7ip0","slide":1,"bbox":[600.2,572,111.4,31]}
+{"kind":"textbox","id":"sh/f2psfe5s","slide":1,"name":"Verify & score","text":"Verify & score","textPreview":"Verify & score","textChars":14,"textLines":1,"bbox":[602.2,573,107.4,29]}
+{"kind":"shape","id":"sh/e1gbm947","slide":1,"bbox":[729.6,572,111.4,31]}
+{"kind":"textbox","id":"sh/1orahoni","slide":1,"name":"Responder decides","text":"Responder decides","textPreview":"Responder decides","textChars":17,"textLines":1,"bbox":[731.6,573,107.4,29]}
+{"kind":"shape","id":"sh/0nytojmx","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/nq9cjy5o","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/2p0bqt43","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/psrulonu","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/oritsjm9","slide":1,"bbox":[285.38,553,0,9]}
+{"kind":"shape","id":"sh/ju5s7u5k","slide":1,"bbox":[446.13,553,0,9]}
+{"kind":"shape","id":"sh/itwbep4z","slide":1,"bbox":[606.87,553,0,9]}
+{"kind":"shape","id":"sh/8zupov2x","slide":1,"bbox":[767.62,553,0,9]}
+{"kind":"shape","id":"sh/903qh032","slide":1,"bbox":[267.7,562,499.93,0]}
+{"kind":"shape","id":"sh/mds7mlkr","slide":1,"bbox":[267.65,561.95,0.1,0.1]}
+{"kind":"shape","id":"sh/7yl8fqlc","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/kbapkv2l","slide":1,"bbox":[139.95,531.95,0.1,0.1]}
+{"kind":"shape","id":"sh/lcjqdg36","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/y9s7ilkf","slide":1,"bbox":[874.95,455.45,0.1,0.1]}
+{"kind":"shape","id":"sh/za18bql0","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/47e9gf2p","slide":1,"bbox":[874.95,587.45,0.1,0.1]}
+{"kind":"shape","id":"sh/58nqpk3a","slide":1,"bbox":[0,0,0,0]}
+{"kind":"shape","id":"sh/1cfmhcjm","slide":1,"bbox":[875,279,0,308.5]}
+{"kind":"shape","id":"sh/0b6587ih","slide":1,"bbox":[874.95,278.95,0.1,0.1]}
+{"kind":"shape","id":"sh/fax4f21w","slide":1,"bbox":[0,0,0,0]}
+{"kind":"textbox","id":"sh/e9on6x0b","slide":1,"name":"results update the knowledge","text":"results update the knowledge","textPreview":"results update the knowledge","textChars":28,"textLines":1,"bbox":[577,609,274,18]}
+{"kind":"textbox","id":"sh/2donah07","slide":1,"name":"Access","text":"Access","textPreview":"Access","textChars":6,"textLines":1,"bbox":[183,632,57,24]}
+{"kind":"textbox","id":"sh/x4z6pwju","slide":1,"name":"Chat · REST API · MCP","text":"Chat · REST API · MCP","textPreview":"Chat · REST API · MCP","textChars":21,"textLines":1,"bbox":[246,632,195,24]}
+{"kind":"textbox","id":"sh/cjq5grip","slide":1,"name":"for people and any AI tool","text":"for people and any AI tool","textPreview":"for people and any AI tool","textChars":26,"textLines":1,"bbox":[450,632,240,24]}
+{"kind":"textbox","id":"sh/ad0bupcv","slide":1,"name":"OpenAI or Claude","text":"OpenAI or Claude","textPreview":"OpenAI or Claude","textChars":16,"textLines":1,"bbox":[36,633,111,24]}
+{"kind":"shape","id":"sh/ve9snudg","slide":1,"bbox":[153,630,698,0]}
+{"kind":"shape","id":"sh/wfitwzul","slide":1,"bbox":[153,658,698,0]}
+{"kind":"textbox","id":"sh/xgrup4v6","slide":1,"name":"KEY FEATURES","text":"KEY FEATURES","textPreview":"KEY FEATURES","textChars":12,"textLines":1,"bbox":[914,88,330,22]}
+{"kind":"textbox","id":"sh/ih0by9cr","slide":1,"text":"Organizations:  portfolio → product → application, access per app","textPreview":"Organizations:  portfolio → product → application, access per app","textChars":65,"textLines":1,"bbox":[914,123,330,32]}
+{"kind":"textbox","id":"sh/jitcredc","slide":1,"text":"Graph management:  source → graph → quality check → publish","textPreview":"Graph management:  source → graph → quality check → publish","textChars":59,"textLines":1,"bbox":[914,156,330,32]}
+{"kind":"textbox","id":"sh/k32t0jux","slide":1,"text":"Code Factory:  ticket → plan → approval → draft PR → Re-sync Knowledge","textPreview":"Code Factory:  ticket → plan → approval → draft PR → Re-sync Knowledge","textChars":70,"textLines":1,"bbox":[914,189,330,32]}
+{"kind":"textbox","id":"sh/54butovi","slide":1,"text":"ServiceOps:  incidents open with past fixes and recent changes","textPreview":"ServiceOps:  incidents open with past fixes and recent changes","textChars":62,"textLines":1,"bbox":[914,222,330,32]}
+{"kind":"textbox","id":"sh/65kb29c3","slide":1,"text":"Guided onboarding:  Onboarding checklist per application","textPreview":"Guided onboarding:  Onboarding checklist per application","textChars":56,"textLines":1,"bbox":[914,255,330,32]}
+{"kind":"textbox","id":"sh/76tcved8","slide":1,"text":"Usage tracking:  AI cost per call, per application","textPreview":"Usage tracking:  AI cost per call, per application","textChars":50,"textLines":1,"bbox":[914,288,330,32]}
+{"kind":"textbox","id":"sh/3adsje9g","slide":1,"text":"Connectors:  Jira, ServiceNow and GitHub synced on a schedule","textPreview":"Connectors:  Jira, ServiceNow and GitHub synced on a schedule","textChars":61,"textLines":1,"bbox":[914,321,330,32]}
+{"kind":"shape","id":"sh/294bqtsv","slide":1,"bbox":[914,362,330,0]}
+{"kind":"textbox","id":"sh/pcvalorm","slide":1,"name":"KEY DIFFERENTIATORS","text":"KEY DIFFERENTIATORS","textPreview":"KEY DIFFERENTIATORS","textChars":19,"textLines":1,"bbox":[914,373,330,22]}
+{"kind":"textbox","id":"sh/obmtsja1","slide":1,"name":"Answers that prove themselves","text":"Answers that prove themselves","textPreview":"Answers that prove themselves","textChars":29,"textLines":1,"bbox":[914,397,330,18]}
+{"kind":"textbox","id":"sh/f6tsfetk","slide":1,"name":"Every answer is traceable to a verified source.","text":"Every answer is traceable to a verified source.","textPreview":"Every answer is traceable to a verified source.","textChars":47,"textLines":1,"bbox":[914,415,330,25]}
+{"kind":"textbox","id":"sh/u5krm9sz","slide":1,"name":"One brain for build and run","text":"One brain for build and run","textPreview":"One brain for build and run","textChars":27,"textLines":1,"bbox":[914,441,330,18]}
+{"kind":"textbox","id":"sh/18bahoba","slide":1,"name":"Every resolved incident strengthens the next respo","text":"Every resolved incident strengthens the next response.","textPreview":"Every resolved incident strengthens the next response.","textChars":54,"textLines":1,"bbox":[914,459,330,25]}
+{"kind":"textbox","id":"sh/g729oja5","slide":1,"name":"Knowledge released like software","text":"Knowledge released like software","textPreview":"Knowledge released like software","textChars":32,"textLines":1,"bbox":[914,485,330,18]}
+{"kind":"textbox","id":"sh/7itsbut8","slide":1,"name":"All knowledge is reviewed and approved before use.","text":"All knowledge is reviewed and approved before use.","textPreview":"All knowledge is reviewed and approved before use.","textChars":50,"textLines":1,"bbox":[914,503,330,25]}
+{"kind":"textbox","id":"sh/6h0ri9sn","slide":1,"name":"Always up to date","text":"Always up to date","textPreview":"Always up to date","textChars":17,"textLines":1,"bbox":[914,529,330,18]}
+{"kind":"textbox","id":"sh/wnypcvql","slide":1,"name":"Sources and knowledge refresh after major changes,","text":"Sources and knowledge refresh after major changes, like a bug fix.","textPreview":"Sources and knowledge refresh after major changes, like a bug fix.","textChars":66,"textLines":1,"bbox":[914,547,330,25]}
+{"kind":"textbox","id":"sh/xo7ql0r6","slide":1,"name":"Requirements and code in one graph","text":"Requirements and code in one graph","textPreview":"Requirements and code in one graph","textChars":34,"textLines":1,"bbox":[914,573,330,18]}
+{"kind":"textbox","id":"sh/alg7a58f","slide":1,"name":"Every change is linked to its requirement and code","text":"Every change is linked to its requirement and code.","textPreview":"Every change is linked to its requirement and code.","textChars":51,"textLines":1,"bbox":[914,591,330,25]}
+{"kind":"textbox","id":"sh/vmp8ja90","slide":1,"name":"Bring your own model","text":"Bring your own model","textPreview":"Bring your own model","textChars":20,"textLines":1,"bbox":[914,617,330,18]}
+{"kind":"textbox","id":"sh/kbipgfqx","slide":1,"name":"Trusted knowledge is accessible from any AI tool.","text":"Trusted knowledge is accessible from any AI tool.","textPreview":"Trusted knowledge is accessible from any AI tool.","textChars":49,"textLines":1,"bbox":[914,635,330,25]}
+{"kind":"shape","id":"sh/5crqpk72","slide":1,"bbox":[36,669,1208,0]}
+{"kind":"textbox","id":"sh/ipg7e58r","slide":1,"name":"TECH STACK","text":"TECH STACK","textPreview":"TECH STACK","textChars":10,"textLines":1,"bbox":[36,682,105,17]}
+{"kind":"textbox","id":"sh/ja98na9c","slide":1,"name":"CORE","text":"CORE","textPreview":"CORE","textChars":4,"textLines":1,"bbox":[162,682,42,17]}
+{"kind":"textbox","id":"sh/0fepkbqd","slide":1,"name":"Python · Django · PostgreSQL","text":"Python · Django · PostgreSQL","textPreview":"Python · Django · PostgreSQL","textChars":28,"textLines":1,"bbox":[205,680,223,22]}
+{"kind":"textbox","id":"sh/lgn6dgry","slide":1,"name":"AI & GRAPH","text":"AI & GRAPH","textPreview":"AI & GRAPH","textChars":10,"textLines":1,"bbox":[437,682,74,17]}
+{"kind":"textbox","id":"sh/p03mlc7q","slide":1,"name":"OpenAI Agents SDK · Claude Agent SDK · Graphify","text":"OpenAI Agents SDK · Claude Agent SDK · Graphify","textPreview":"OpenAI Agents SDK · Claude Agent SDK · Graphify","textChars":47,"textLines":1,"bbox":[518,680,391,22]}
+{"kind":"textbox","id":"sh/ozu5c765","slide":1,"name":"SUPPORTING","text":"SUPPORTING","textPreview":"SUPPORTING","textChars":10,"textLines":1,"bbox":[934,682,80,17]}
+{"kind":"textbox","id":"sh/3y14jmpk","slide":1,"name":"MarkItDown · MCP · Docker","text":"MarkItDown · MCP · Docker","textPreview":"MarkItDown · MCP · Docker","textChars":25,"textLines":1,"bbox":[1018,680,222,22]}
+{"kind":"image","id":"im/b69wzudw","slide":1,"name":"","bbox":[194,139,24,24]}
+{"kind":"image","id":"im/mxwjy9s3","slide":1,"name":"","bbox":[310,139,24,24]}
+{"kind":"image","id":"im/a1wj29sf","slide":1,"name":"","bbox":[426,139,24,24]}
+{"kind":"image","id":"im/y5gj6tsb","slide":1,"name":"","bbox":[542,139,24,24]}
+{"kind":"image","id":"im/hwri5o7u","slide":1,"name":"","bbox":[658,139,24,24]}
+{"kind":"image","id":"im/t87i1o7y","slide":1,"name":"","bbox":[774,139,24,24]}
+{"kind":"image","id":"im/cbm9cbe1","slide":1,"name":"","bbox":[309,355,14,14]}
+{"kind":"image","id":"im/xcva5gfm","slide":1,"name":"","bbox":[282,487,14,14]}
+{"kind":"image","id":"im/ap4ralwb","slide":1,"name":"","bbox":[155,635,18,18]}
+{"kind":"notes","id":"nt/bh7ps9","slide":1,"text":""}
