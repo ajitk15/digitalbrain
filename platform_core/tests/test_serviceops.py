@@ -289,6 +289,22 @@ class ServiceOpsViewTests(TestCase):
         self.assertEqual([row["entry"].pk for row in response.context["precedents"]], [prior.pk])
         self.assertContains(response, "a match is a lead, not a cause")
 
+    def test_only_an_owner_is_sent_to_the_owner_only_connectors_screen(self):
+        connectors = reverse("connectors", args=[self.app.pk])
+        self.assertContains(self.client.get(self.url), connectors)
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        page = self.client.get(self.url)
+        self.assertNotContains(page, connectors)
+        self.assertContains(page, "Ask an application owner to import incidents")
+        # Nor told to use a button a viewer does not have.
+        self.assertNotContains(page, "<em>Add incident</em>")
+
+    def test_the_menu_stays_on_serviceops_on_its_subpages(self):
+        page = self.client.get(reverse("serviceops-runs", args=[self.app.pk]))
+        # The application menu's ServiceOps entry, not the Incidents tab (which
+        # shares its address and is rightly not current on the runs list).
+        self.assertContains(page, f'href="{self.url}" aria-current="page"')
+
     def test_foreign_and_revoked_access_are_not_disclosed(self):
         current = self.incident("Queue timeout")
         ApplicationGrant.objects.create(application=self.other, user=self.owner, role="owner")
@@ -579,9 +595,7 @@ class ServiceOpsViewTests(TestCase):
         current = self.open_incident(
             "FHIR bulk export 504 gateway timeout", "Clinic C patient panel export fails."
         )
-        self.open_incident(
-            "Clinic C export 504 gateway timeout", "Patient panel export times out."
-        )
+        self.open_incident("Clinic C export 504 gateway timeout", "Patient panel export times out.")
         with patch("platform_core.graph_ai.graph_citations", return_value=[]):
             pack, _ = evidence_pack(self.app, current)
         self.assertEqual(

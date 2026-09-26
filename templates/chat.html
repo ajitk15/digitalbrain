@@ -32,7 +32,7 @@
 {% for message in message_page %}{% include "_chat_message.html" %}{% empty %}<div class="chat-empty"><h2>What would you like to understand?</h2><p>Ask about your documents, explore a topic, then ask follow-up questions here.</p><p class="muted">Each conversation stays with you in {{ application.name }}.</p></div>{% endfor %}
 {% if message_page.has_next %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ message_page.next_page_number }}">Newer messages</a>{% endif %}
 </div>
-<form method="post" class="chat-composer" id="chat-composer">{% csrf_token %}
+<form method="post" class="chat-composer" id="chat-composer">{% csrf_token %}<input type="hidden" name="submission" value="{{ submission }}">
 {% if conversation %}<input type="hidden" name="conversation" value="{{ conversation.pk }}">{% endif %}
 {{ form.non_field_errors }}{{ form.question.errors }}<label for="id_question">Message</label>{{ form.question }}
 <div class="composer-actions"><small>{% if ai_enabled or graph_ai_enabled %}AI answers send your question, recent conversation and relevant sources to the selected provider; usage costs are recorded.{% else %}Source search is available. An application owner can enable AI answers in AI settings.{% endif %} Enter to send · Shift+Enter for a new line.</small><button class="button" type="submit" id="chat-send">Send</button></div>

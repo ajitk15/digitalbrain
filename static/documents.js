@@ -53,6 +53,9 @@ function liveKeys(root) {
   );
 }
 
+// What one refresh found: "pending" (keep going), "done", or "failed" (the
+// page could not be fetched - a dropped connection, a restarting server, or a
+// session that expired and redirected to sign-in).
 async function refreshLive() {
   let fresh;
   try {
@@ -61,31 +64,80 @@ async function refreshLive() {
       headers: { Accept: "text/html" },
       redirect: "error",
     });
-    if (!response.ok) return false;
+    if (!response.ok) return "failed";
     fresh = new DOMParser().parseFromString(await response.text(), "text/html");
   } catch {
-    return false;
+    return "failed";
   }
   const incoming = liveKeys(fresh);
+  let waiting = false;
   liveKeys(document).forEach((node, key) => {
     const replacement = incoming.get(key);
+    if (!replacement) return;
     // A row the reader is working in (a focused Retry, a half-written review
-    // note, gaps they have unticked) waits until they are done with it.
-    if (!replacement || node.contains(document.activeElement) || dirty(node)) return;
-    const incoming = document.importNode(replacement, true);
-    keepDisclosures(node, incoming);
-    if (incoming.outerHTML !== node.outerHTML) node.replaceWith(incoming);
+    // note, gaps they have unticked) waits until they are done with it - and
+    // polling waits with it, or a run that finished meanwhile would leave the
+    // row showing its old state for good.
+    if (node.contains(document.activeElement) || dirty(node)) {
+      if (replacement.outerHTML !== node.outerHTML) waiting = true;
+      return;
+    }
+    const imported = document.importNode(replacement, true);
+    keepDisclosures(node, imported);
+    if (imported.outerHTML !== node.outerHTML) node.replaceWith(imported);
   });
   localTimes(document);
-  return fresh.querySelector("[data-live-pending]") !== null;
+  return fresh.querySelector("[data-live-pending]") !== null || waiting ? "pending" : "done";
 }
 
+// Said once, in one place, while updates cannot be fetched; gone when they can.
+function liveStatus(text) {
+  let note = document.getElementById("live-status");
+  if (!text) {
+    if (note) note.remove();
+    return;
+  }
+  if (!note) {
+    note = document.createElement("p");
+    note.id = "live-status";
+    note.className = "live-status";
+    note.setAttribute("role", "status");
+    document.body.append(note);
+  }
+  note.textContent = text;
+}
+
+// Failures in a row before giving up and saying so. With backoff doubling from
+// the normal interval to a 30 second ceiling, that is about two minutes.
+const LIVE_ATTEMPTS = 8;
+
 if (document.querySelector("[data-live-pending]")) {
+  let failures = 0;
+  let lastGood = new Date();
   const tick = async () => {
     // An open dialog (a gap's evidence, say) is reading; wait until it closes.
     const paused = document.hidden || document.querySelector("dialog[open]");
-    const more = paused ? true : await refreshLive();
-    if (more) window.setTimeout(tick, LIVE_INTERVAL);
+    const result = paused ? "pending" : await refreshLive();
+    if (result === "failed") {
+      failures += 1;
+      const since = lastGood.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      if (failures >= LIVE_ATTEMPTS) {
+        liveStatus(
+          `Updates stopped: this page could not reach the server (last updated ${since}). ` +
+            "The work carries on. Reload the page to see where it is."
+        );
+        return;
+      }
+      liveStatus(`Connection interrupted - retrying. Last updated ${since}.`);
+      window.setTimeout(tick, Math.min(30000, LIVE_INTERVAL * 2 ** failures));
+      return;
+    }
+    if (!paused) {
+      failures = 0;
+      lastGood = new Date();
+      liveStatus("");
+    }
+    if (result === "pending") window.setTimeout(tick, LIVE_INTERVAL);
   };
   window.setTimeout(tick, LIVE_INTERVAL);
 }

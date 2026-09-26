@@ -21,7 +21,7 @@
 </tr>{% endfor %}
 </tbody></table></div>
 {% else %}<p class="muted">No incident matches this filter. <a href="?">Show all</a></p>{% endif %}
-<p class="muted table-note">The most recent 100 imported incidents. To add or refresh them, <a href="{% url 'connectors' application.pk %}">import from a connector</a>.</p>
-{% else %}<div class="empty card"><h3>No incidents yet</h3><p>Incidents come from ServiceNow or Jira. <a href="{% url 'connectors' application.pk %}">Set up or run a connector</a>, then press Import — or add one by hand with <em>Add incident</em>.</p></div>{% endif %}
+<p class="muted table-note">The most recent 100 imported incidents. {% if grant.role == 'owner' %}To add or refresh them, <a href="{% url 'connectors' application.pk %}">import from a connector</a>.{% else %}An application owner imports and refreshes them from a connector.{% endif %}</p>
+{% else %}<div class="empty card"><h3>No incidents yet</h3><p>Incidents come from ServiceNow or Jira. {% if grant.role == 'owner' %}<a href="{% url 'connectors' application.pk %}">Set up or run a connector</a>, then press Import — or add one by hand with <em>Add incident</em>.{% elif grant.role == 'viewer' %}Ask an application owner to import incidents from a connector.{% else %}Ask an application owner to import them from a connector, or add one by hand with <em>Add incident</em>.{% endif %}</p></div>{% endif %}
 </section>
 {% endblock %}

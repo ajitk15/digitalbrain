@@ -3203,6 +3203,9 @@
   .guide-terms dd { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--t-13); }
   .guide-list { padding-left: var(--s-4); color: var(--c-ink-2); font-size: var(--t-13); }
 
+  /* Live progress that cannot reach the server says so, pinned where it is seen. */
+  .live-status { position: fixed; right: var(--s-4); bottom: var(--s-4); z-index: 50; max-width: 420px; margin: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-warn-line); border-radius: var(--r-md); background: var(--c-warn-bg); color: var(--c-warn); font-size: var(--t-13); box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); }
+
   /* What an application is for, as cards on the create form, and the same
      cards for onboarding's connector choice. The approval box belongs to
      Engineering; with Operations picked it is hidden by CSS alone, so the form

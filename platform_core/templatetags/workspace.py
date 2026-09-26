@@ -123,7 +123,19 @@ def application_menu(context):
             "code",
             {"plans", "plan-detail", "runs", "run-detail", "onboarding"},
         ),
-        ("ServiceOps", "serviceops", "service_ops", "warning", {"serviceops"}),
+        (
+            "ServiceOps",
+            "serviceops",
+            "service_ops",
+            "warning",
+            {
+                "serviceops",
+                "serviceops-runs",
+                "serviceops-run",
+                "serviceops-guide",
+                "serviceops-incident-new",
+            },
+        ),
         ("Chat", "chat", "chat", "chat", {"chat"}),
     ]
     items = [

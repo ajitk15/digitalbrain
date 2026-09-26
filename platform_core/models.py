@@ -789,6 +789,11 @@ class ChatMessage(models.Model):
     # Both halves of one exchange are written in the same transaction, so
     # created_at cannot order them; an explicit sequence can.
     sequence = models.PositiveIntegerField()
+    #: The composer's one-time key, on the question. A browser that lost the
+    #: response to a send cannot know whether it was saved; it posts again with
+    #: the same key, and a key already here means "already asked", answered by
+    #: showing that conversation rather than asking - and paying - twice.
+    submission = models.CharField(max_length=36, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
 
@@ -799,7 +804,10 @@ class ChatMessage(models.Model):
                 fields=["conversation", "sequence"], name="unique_conversation_sequence"
             )
         ]
-        indexes = [models.Index(fields=["conversation", "sequence"])]
+        indexes = [
+            models.Index(fields=["conversation", "sequence"]),
+            models.Index(fields=["application", "user", "submission"]),
+        ]
 
 
 class ApiToken(models.Model):

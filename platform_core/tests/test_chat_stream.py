@@ -120,9 +120,69 @@ class ChatStreamViewTests(TestCase):
         self.assertEqual(payload["message"], str(placeholder.pk))
         self.assertIn("stream", payload)
         # The user's question is durable even if the browser disappears now.
-        self.assertEqual(
-            ChatMessage.objects.get(role="user").body, "Refund deadline?"
+        self.assertEqual(ChatMessage.objects.get(role="user").body, "Refund deadline?")
+
+    KEY = "6b1f8a3e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
+
+    def test_a_repeated_send_is_shown_rather_than_asked_again(self):
+        """A browser that lost the response cannot know the send was saved. The
+        same key again - streamed or as the plain fallback post - must land on
+        the saved conversation, not a second question and a second bill."""
+        first = self.client.post(
+            self.url,
+            {"question": "Refund deadline?", "mode": "ai", "submission": self.KEY},
+            headers={"X-Digital-Brain-Stream": "1"},
         )
+        self.assertEqual(first.status_code, 201)
+        conversation = first.json()["conversation"]
+        again = self.client.post(
+            self.url,
+            {"question": "Refund deadline?", "mode": "ai", "submission": self.KEY},
+            headers={"X-Digital-Brain-Stream": "1"},
+        )
+        self.assertEqual(again.status_code, 409)
+        self.assertIn(conversation, again.json()["redirect"])
+        fallback = self.client.post(
+            self.url, {"question": "Refund deadline?", "mode": "ai", "submission": self.KEY}
+        )
+        self.assertRedirects(
+            fallback, f"{self.url}?conversation={conversation}", fetch_redirect_response=False
+        )
+        self.assertEqual(ChatMessage.objects.count(), 2)
+
+    def test_the_no_javascript_path_is_idempotent_too(self):
+        for _ in range(2):
+            self.client.post(
+                self.url,
+                {"question": "Refund deadline?", "mode": "search", "submission": self.KEY},
+            )
+        self.assertEqual(ChatMessage.objects.filter(role="user").count(), 1)
+
+    def test_a_malformed_key_is_no_key_and_each_send_counts(self):
+        for _ in range(2):
+            self.client.post(
+                self.url, {"question": "Refund deadline?", "mode": "search", "submission": "x"}
+            )
+        self.assertEqual(ChatMessage.objects.filter(role="user").count(), 2)
+
+    def test_another_users_key_is_not_theirs_to_replay(self):
+        self.client.post(
+            self.url, {"question": "Refund deadline?", "mode": "search", "submission": self.KEY}
+        )
+        from platform_core.models import ApplicationGrant
+
+        ApplicationGrant.objects.filter(application=self.app, user=self.viewer).update(
+            role="contributor"
+        )
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.client.post(
+            self.url, {"question": "Refund deadline?", "mode": "search", "submission": self.KEY}
+        )
+        self.assertEqual(ChatMessage.objects.filter(role="user").count(), 2)
+
+    def test_the_composer_carries_a_fresh_key(self):
+        page = self.client.get(self.url).content.decode()
+        self.assertRegex(page, r'name="submission" value="[0-9a-f-]{36}"')
 
     def test_search_conversations_never_take_the_streaming_path(self):
         response = self.client.post(

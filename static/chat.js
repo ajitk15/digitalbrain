@@ -210,15 +210,24 @@
         },
         body: formData(question),
       });
+      if (response.status === 409) {
+        // This exact send was already saved: show it rather than ask again.
+        const duplicate = await response.json();
+        location.assign(duplicate.redirect);
+        return;
+      }
       if (!response.ok) throw new Error("start failed");
       payload = await response.json();
     } catch {
-      // Fall back to the plain form post rather than losing the question.
+      // Fall back to the plain form post rather than losing the question. It
+      // carries the same submission key, so if the first request was saved
+      // after all, the server shows that conversation instead of asking twice.
       input.value = question;
       setBusy(false);
       form.submit();
       return;
     }
+    renewSubmission();
     const hidden = form.querySelector("[name=conversation]");
     if (!hidden) {
       const field = document.createElement("input");
@@ -238,7 +247,34 @@
     const hidden = form.querySelector("[name=conversation]");
     if (hidden) data.append("conversation", hidden.value);
     if (modeSelect) data.append("mode", modeSelect.value);
+    // Everything else the form would post, including controls that belong to it
+    // from elsewhere on the page through form="chat-composer" - the graph
+    // version picker for a new conversation is one. Building this list by hand
+    // is how that one was once left out, and every answer quietly came from
+    // the published graph instead of the version the reader chose.
+    const taken = new Set(["csrfmiddlewaretoken", "question", "conversation", "mode"]);
+    for (const element of form.elements) {
+      if (!element.name || taken.has(element.name) || element.disabled) continue;
+      if ((element.type === "checkbox" || element.type === "radio") && !element.checked) continue;
+      data.append(element.name, element.value);
+    }
     return data;
+  }
+
+  // A new one-time key for the next send, once this one is safely started.
+  function renewSubmission() {
+    const field = form.querySelector("[name=submission]");
+    if (!field) return;
+    if (crypto.randomUUID) {
+      field.value = crypto.randomUUID();
+      return;
+    }
+    // randomUUID needs a secure context; plain HTTP to a named host is not one.
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+    const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    field.value = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
   input.addEventListener("keydown", (event) => {

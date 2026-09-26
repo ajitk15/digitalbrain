@@ -236,7 +236,9 @@ def next_sequence(conversation):
     return 0 if last is None else last + 1
 
 
-def record_exchange(app, user, conversation, question, answer, citations, mode, status="complete"):
+def record_exchange(
+    app, user, conversation, question, answer, citations, mode, status="complete", submission=""
+):
     """Persist one question and its answer as two ordered messages."""
     sequence = next_sequence(conversation)
     ask = ChatMessage.objects.create(
@@ -248,6 +250,7 @@ def record_exchange(app, user, conversation, question, answer, citations, mode, 
         body=question,
         mode=mode,
         sequence=sequence,
+        submission=submission,
     )
     reply = ChatMessage.objects.create(
         application=app,
@@ -445,7 +448,9 @@ def lexical_citations(app, question):
     ]
 
 
-def answer_question(user, app, conversation, question, mode, graph_version=None, trim_from=None):
+def answer_question(
+    user, app, conversation, question, mode, graph_version=None, trim_from=None, submission=""
+):
     """Produce and persist one exchange synchronously.
 
     This is the no-JavaScript path, and the fallback whenever streaming is
@@ -489,7 +494,9 @@ def answer_question(user, app, conversation, question, mode, graph_version=None,
                 mode=mode,
                 graph_version=graph_version,
             )
-        _, reply = record_exchange(app, user, conversation, question, answer, citations, mode)
+        _, reply = record_exchange(
+            app, user, conversation, question, answer, citations, mode, submission=submission
+        )
         conversation.save(update_fields=["updated_at"])
         audit(user, "chat.answered", reply.pk, app.product.portfolio.organization)
     if first_exchange:
@@ -548,6 +555,28 @@ def chat(request, pk):
             form.add_error(None, unavailable_reason(mode))
         else:
             question = form.cleaned_data["question"]
+            submission = submission_key(request)
+            already = (
+                ChatMessage.objects.filter(
+                    application=app, user=request.user, role="user", submission=submission
+                )
+                .select_related("conversation")
+                .first()
+                if submission
+                else None
+            )
+            if already is not None:
+                # The same send, again: a browser that lost the first response
+                # cannot tell whether it was saved. Show what was saved; never
+                # ask - and pay for - the same question twice.
+                destination = (
+                    f"{reverse('chat', args=[pk])}?conversation={already.conversation_id}"
+                )
+                if wants_stream(request):
+                    return JsonResponse(
+                        {"duplicate": True, "redirect": destination}, status=409
+                    )
+                return redirect(destination)
             if mode in {"ai", "graph"} and wants_stream(request):
                 # Streaming path: persist the exchange now and let the browser
                 # open the event stream. The synchronous branch below stays the
@@ -559,6 +588,7 @@ def chat(request, pk):
                     question,
                     mode,
                     graph_version=new_graph_version(request, app.pk, graph_ai_enabled),
+                    submission=submission,
                 )
                 audit(
                     request.user,
@@ -588,6 +618,7 @@ def chat(request, pk):
                         if conversation
                         else new_graph_version(request, app.pk, graph_ai_enabled)
                     ),
+                    submission=submission,
                 )
                 return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
             except (ValidationError, ImproperlyConfigured) as error:
@@ -624,8 +655,19 @@ def chat(request, pk):
             "published_graph": published_graph,
             "published_changed": published_changed,
             "published_total": published_total,
+            # A fresh key per rendered composer; chat.js makes a new one after
+            # each send it completes without reloading the page.
+            "submission": uuid.uuid4(),
         },
     )
+
+
+def submission_key(request):
+    """The composer's one-time key, if it is one. Anything else is no key."""
+    try:
+        return str(uuid.UUID(request.POST.get("submission", "")))
+    except ValueError:
+        return ""
 
 
 def resend(request, pk, app, conversation, question, trim_from=None):
@@ -646,7 +688,7 @@ def resend(request, pk, app, conversation, question, trim_from=None):
     return redirect(destination)
 
 
-def start_answer(app, user, conversation, question, mode, graph_version=None):
+def start_answer(app, user, conversation, question, mode, graph_version=None, submission=""):
     """Persist the question and an empty assistant row, then hand back the placeholder.
 
     Written before the provider is contacted so the transcript has somewhere to
@@ -673,6 +715,7 @@ def start_answer(app, user, conversation, question, mode, graph_version=None):
             body=question,
             mode=mode,
             sequence=sequence,
+            submission=submission,
         )
         placeholder = ChatMessage.objects.create(
             application=app,
