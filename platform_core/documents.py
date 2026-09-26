@@ -14,6 +14,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .fetching import FetchError
@@ -31,15 +32,153 @@ class MultipleFileInput(forms.ClearableFileInput):
 
 class MultipleFileField(forms.FileField):
     widget = MultipleFileInput
+    max_count = 20
 
     def clean(self, data, initial=None):
         values = data if isinstance(data, (list, tuple)) else [data]
-        if len(values) > 20:
-            raise forms.ValidationError("Upload up to 20 documents at a time.")
+        if len(values) > self.max_count:
+            raise forms.ValidationError(f"Upload up to {self.max_count} documents at a time.")
         uploads = [super(MultipleFileField, self).clean(value, initial) for value in values]
         if sum(upload.size for upload in uploads) > MAX_BYTES:
             raise forms.ValidationError("Keep the combined upload size within 20 MB.")
         return uploads
+
+
+#: How many files one folder upload may carry. The 20 MB total still applies.
+MAX_FOLDER_FILES = 200
+
+#: What a folder picker sends along with the documents and nobody meant to add.
+SKIPPED_NAMES = {"thumbs.db", "desktop.ini", ".ds_store"}
+
+
+class FolderField(MultipleFileField):
+    max_count = MAX_FOLDER_FILES
+    widget = MultipleFileInput(
+        attrs={"webkitdirectory": True, "directory": True, "data-folder-input": True}
+    )
+
+
+class FolderForm(forms.Form):
+    """A whole folder, subfolders included, chosen with the browser's own picker.
+
+    The folder is picked on the reader's machine and its files are uploaded, so
+    this server never reads a path anybody typed - a typed path would be read
+    from the server's disk, where it could name anything the process can open.
+    """
+
+    folder = FolderField(
+        label="Choose a folder",
+        help_text=f"Every file in it and its subfolders, up to {MAX_FOLDER_FILES} files and "
+        "20 MB in total.",
+    )
+    #: Each file's path inside the folder, as JSON, in the order the files are
+    #: sent. Django keeps only a file's own name, so documents.js sends these
+    #: beside it; without JavaScript every file keeps its bare name.
+    paths = forms.CharField(required=False, widget=forms.HiddenInput)
+
+
+def folder_names(uploads, raw_paths):
+    """(folder name, [(upload, relative name)]) for a folder upload.
+
+    A path is only ever a label: it is split, stripped of empty and `.` parts,
+    refused if it climbs (`..`) or does not end in the file it came with, and
+    then used as the document's name. Nothing is read or written at it.
+    Hidden files and folders, and the clutter an OS leaves behind, are dropped.
+    """
+    try:
+        paths = json.loads(raw_paths) if raw_paths else []
+    except ValueError:
+        paths = []
+    if not isinstance(paths, list) or len(paths) != len(uploads):
+        paths = [""] * len(uploads)
+    split = []
+    for upload, path in zip(uploads, paths, strict=True):
+        own = Path(upload.name.replace("\\", "/")).name
+        parts = [part for part in str(path).replace("\\", "/").split("/") if part not in ("", ".")]
+        if not parts or ".." in parts or parts[-1] != own:
+            parts = [own]
+        split.append((upload, parts))
+    tops = {parts[0] for _, parts in split if len(parts) > 1}
+    shared = len(tops) == 1 and all(len(parts) > 1 for _, parts in split)
+    top = tops.pop() if shared else "Uploaded folder"
+    named = []
+    for upload, parts in split:
+        inside = parts[1:] if shared else parts
+        if any(part.startswith(".") for part in inside) or inside[-1].lower() in SKIPPED_NAMES:
+            continue
+        name = "/".join(inside)
+        named.append((upload, name if len(name) <= 200 else name[-200:]))
+    return top[:240], named
+
+
+def digest_of_upload(upload):
+    digest = hashlib.sha256()
+    for chunk in upload.chunks():
+        digest.update(chunk)
+    return digest.hexdigest()
+
+
+def remove_document(app, document):
+    """What deleting one document does: its file, its knowledge, then the row."""
+    document_path(app, document.pk).unlink(missing_ok=True)
+    KnowledgeEntry.objects.filter(document=document).delete()
+    Document.objects.filter(pk=document.pk).update(status="deleted", conversion_error="")
+
+
+def store_folder(actor, application_id, uploads, raw_paths):
+    """Upload a folder as one source. Returns (source, added, replaced, unchanged).
+
+    Uploading the same folder again adds to the same source, the way importing
+    the same link twice does: a file identical to the one already there is
+    skipped, and a file whose content changed replaces it.
+    """
+    app, grant = application_for(actor, application_id)
+    if grant.role not in {ApplicationGrant.Role.OWNER, ApplicationGrant.Role.CONTRIBUTOR}:
+        raise PermissionDenied
+    if not intake_enabled() or not feature_enabled("document_uploads", app):
+        raise PermissionDenied("Production document intake requires private storage integration.")
+    top, named = folder_names(uploads, raw_paths)
+    if not named:
+        raise forms.ValidationError("That folder has no files to upload.")
+    source, created = KnowledgeSource.objects.get_or_create(
+        application=app,
+        url=f"folder:{top}",
+        defaults={
+            "added_by": actor,
+            "provider": "folder",
+            "name": top,
+            "status": KnowledgeSource.Status.UPLOADED,
+        },
+    )
+    if created:
+        audit(actor, "source.registered", source.pk, app.product.portfolio.organization)
+    added = replaced = unchanged = 0
+    for upload, name in named:
+        digest = digest_of_upload(upload)
+        existing = list(
+            Document.objects.filter(source=source, name=name).exclude(status="deleted")
+        )
+        if any(document.sha256 == digest for document in existing):
+            unchanged += 1
+            continue
+        store_document(actor, application_id, upload, name=name, source=source, origin="folder")
+        for document in existing:
+            remove_document(app, document)
+            replaced += 1
+        added += 1
+    KnowledgeSource.objects.filter(pk=source.pk).update(
+        status=KnowledgeSource.Status.UPLOADED,
+        drift_summary="",
+        last_synced_at=timezone.now(),
+    )
+    audit(
+        actor,
+        "source.folder_uploaded",
+        source.pk,
+        app.product.portfolio.organization,
+        details={"added": added, "replaced": replaced, "unchanged": unchanged},
+    )
+    return source, added, replaced, unchanged
 
 
 class LinkForm(forms.Form):
@@ -94,7 +233,7 @@ def intake_enabled():
     return scanning_ready()
 
 
-def store_document(actor, application_id, upload):
+def store_document(actor, application_id, upload, *, name=None, source=None, origin="upload"):
     app, grant = application_for(actor, application_id)
     if grant.role not in {ApplicationGrant.Role.OWNER, ApplicationGrant.Role.CONTRIBUTOR}:
         raise PermissionDenied
@@ -126,7 +265,9 @@ def store_document(actor, application_id, upload):
                 id=document_id,
                 application=app,
                 uploaded_by=actor,
-                name=Path(upload.name.replace("\\", "/")).name[:200],
+                name=(name or Path(upload.name.replace("\\", "/")).name)[:200],
+                source=source,
+                origin=origin,
                 size=size,
                 sha256=digest.hexdigest(),
                 status=(
@@ -170,7 +311,9 @@ def documents(request, pk):
     if request.method == "POST":
         # The forms live on their own page now, so a submission that failed is
         # shown there - re-rendering the list would hide the error it carries.
-        return render_source_add(request, app, grant, form, link_form)
+        return render_source_add(
+            request, app, grant, form, link_form, getattr(request, "folder_form", None)
+        )
     return render(
         request,
         "documents.html",
@@ -209,14 +352,29 @@ def source_add(request, pk):
     response, form, link_form = intake(request, pk, can_upload)
     if response is not None:
         return response
-    return render_source_add(request, app, grant, form, link_form)
+    return render_source_add(
+        request, app, grant, form, link_form, getattr(request, "folder_form", None)
+    )
 
 
-def render_source_add(request, app, grant, form, link_form):
+def render_source_add(request, app, grant, form, link_form, folder_form=None):
+    from .link_sources import sharepoint_available
+
+    # Where the popup was opened from, so its forms return there. Only a name
+    # `return_route` accepts ever reaches the page.
+    wanted = request.POST.get("next") or request.GET.get("next")
     return render(
         request,
         "source_add.html",
-        {"application": app, "grant": grant, "form": form, "link_form": link_form},
+        {
+            "application": app,
+            "grant": grant,
+            "form": form,
+            "link_form": link_form,
+            "folder_form": folder_form or FolderForm(),
+            "next": wanted if wanted in RETURN_ROUTES else "",
+            "sharepoint_ready": sharepoint_available(app),
+        },
     )
 
 
@@ -246,6 +404,34 @@ def intake(request, pk, can_upload):
                 for note in notes:
                     messages.warning(request, note)
                 return redirect(return_route(request), pk=pk), form, link_form
+    elif request.method == "POST" and request.POST.get("action") == "folder":
+        if not can_upload:
+            raise PermissionDenied
+        form = DocumentForm()
+        folder_form = FolderForm(request.POST, request.FILES)
+        if folder_form.is_valid():
+            try:
+                source, added, replaced, unchanged = store_folder(
+                    request.user,
+                    pk,
+                    folder_form.cleaned_data["folder"],
+                    folder_form.cleaned_data["paths"],
+                )
+            except (forms.ValidationError, OSError) as failure:
+                folder_form.add_error(
+                    "folder",
+                    " ".join(getattr(failure, "messages", []))
+                    or "A file could not be stored. Anything already uploaded is listed.",
+                )
+            else:
+                parts = [f"{added} document(s) uploaded from {source.name}"]
+                if replaced:
+                    parts.append(f"{replaced} replaced a changed file")
+                if unchanged:
+                    parts.append(f"{unchanged} unchanged and skipped")
+                messages.success(request, "; ".join(parts) + ".")
+                return redirect(return_route(request), pk=pk), form, link_form
+        request.folder_form = folder_form
     elif request.method == "POST":
         if not can_upload:
             raise PermissionDenied

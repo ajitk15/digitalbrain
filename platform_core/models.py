@@ -211,6 +211,10 @@ class KnowledgeSource(models.Model):
         STALE = "stale", "Out of sync"
         UNKNOWN = "unknown", "Not checked yet"
         UNREACHABLE = "unreachable", "Could not be checked"
+        #: A folder someone uploaded from their own machine. There is no origin
+        #: this server can reach, so it is never checked; uploading the folder
+        #: again is how it is brought up to date.
+        UPLOADED = "uploaded", "Uploaded"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(
@@ -292,6 +296,7 @@ class Document(models.Model):
             ("link", "Link"),
             ("github", "GitHub"),
             ("sharepoint", "SharePoint"),
+            ("folder", "Folder"),
         ],
     )
     source_url = models.CharField(max_length=2000, blank=True)

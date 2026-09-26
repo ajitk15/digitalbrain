@@ -224,11 +224,14 @@ def reset_organization(request, pk):
     repositories = removed.get("CodeRepository", 0)
     versions = removed.get("GraphRevision", 0)
     imports = removed.get("KnowledgeEntry imported", 0)
+    sources = removed.get("KnowledgeSource", 0)
+    documents = removed.get("Document from sources", 0)
     messages.success(
         request,
         f"{organization.name} was reset: {runs} run(s), {repositories} code "
         f"repositor{'y' if repositories == 1 else 'ies'}, {versions} graph "
-        f"version(s) and {imports} imported record(s) removed. Applications, "
-        "connectors, credentials, uploaded sources, settings and people are untouched.",
+        f"version(s), {imports} imported record(s) and {sources} link source(s) "
+        f"with {documents} document(s) removed. Applications, connectors, "
+        "credentials, uploaded documents, settings and people are untouched.",
     )
     return redirect("platform-console")

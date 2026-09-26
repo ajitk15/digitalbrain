@@ -110,3 +110,16 @@ if (document.querySelector("[data-document-pending]")) {
     if (!busy && !document.hidden) window.location.reload();
   }, 5000);
 }
+
+// A folder upload's subfolders. Django keeps only a file's own name, so each
+// file's path inside the folder travels beside it, in the order the files are
+// sent. Without this the folder still uploads; every file keeps its bare name.
+document.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-folder-input]");
+  if (!input || !input.form) return;
+  const paths = input.form.querySelector("input[name=paths]");
+  if (!paths) return;
+  paths.value = JSON.stringify(
+    Array.from(input.files, (file) => file.webkitRelativePath || file.name)
+  );
+});

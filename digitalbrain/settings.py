@@ -158,6 +158,10 @@ if CONFIG.get("trust_proxy", False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 22 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+# Django refuses a request with more than 100 files before any form sees it. A
+# folder upload may carry up to documents.MAX_FOLDER_FILES; the forms enforce
+# their own, smaller caps.
+DATA_UPLOAD_MAX_NUMBER_FILES = 210
 FILE_UPLOAD_PERMISSIONS = 0o600
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o700
 STATIC_URL = "/static/"

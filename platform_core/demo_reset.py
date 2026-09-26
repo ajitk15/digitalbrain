@@ -29,8 +29,13 @@ things a demonstration re-creates on screen:
   connectors themselves stay, configured, with their last-import status
   cleared. A scheduled connector's interval restarts from the reset rather
   than finding itself long overdue and importing on the next worker tick -
-  the same trap the graph fell into. Uploaded documents and links are sources
-  somebody chose, not imports, and stay.
+  the same trap the graph fell into;
+* **link sources** - a GitHub folder or SharePoint library pasted into
+  Knowledge, with every document it brought in, their stored files and the
+  knowledge read from them, so pasting the link is a step again. A source is
+  an address, not a set-up connection: there is nothing to keep but the
+  address itself. Documents somebody uploaded by hand are not an import and
+  stay.
 
 Everything else is kept as it is, including chat history (a conversation pinned
 to a removed graph version is unpinned, not deleted), spend records and the
@@ -53,6 +58,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from .connector_kinds import kind_for
+from .documents import document_path
 from .graphs import fingerprint
 from .models import (
     Application,
@@ -63,11 +69,13 @@ from .models import (
     CodeRepository,
     CodeSnapshot,
     Connector,
+    Document,
     FactoryRun,
     GraphRevision,
     IncidentProfile,
     KnowledgeEntry,
     KnowledgeGraph,
+    KnowledgeSource,
     PlanItem,
     ProposedChange,
     RunEvent,
@@ -157,6 +165,7 @@ def summary(organization):
             counts[label] = model.objects.filter(**{lookup: ids}).count()
     if ids:
         counts["imported records"] = imported(ids).filter(active=True).count()
+        counts["link sources"] = KnowledgeSource.objects.filter(application_id__in=ids).count()
     return counts
 
 
@@ -187,6 +196,23 @@ def reset(user, organization, typed_name):
     count, _ = entries.delete()
     if count:
         removed["KnowledgeEntry imported"] = count
+    sources = KnowledgeSource.objects.filter(application_id__in=ids)
+    brought = Document.objects.filter(source__in=sources).select_related("application")
+    for document in brought:
+        # The original bytes first, as deleting a document does: a row removed
+        # with its file left behind is storage nothing can find again.
+        document_path(document.application, document.pk).unlink(missing_ok=True)
+    read = KnowledgeEntry.objects.filter(document__in=brought)
+    IncidentProfile.objects.filter(entry__in=read).delete()
+    count, _ = read.delete()
+    if count:
+        removed["KnowledgeEntry from sources"] = count
+    count, _ = brought.delete()
+    if count:
+        removed["Document from sources"] = count
+    count, _ = sources.delete()
+    if count:
+        removed["KnowledgeSource"] = count
     # The connector reads as never imported, and its schedule counts from now.
     Connector.objects.filter(application_id__in=ids).update(
         last_synced_at=None,

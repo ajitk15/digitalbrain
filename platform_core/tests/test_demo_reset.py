@@ -178,6 +178,52 @@ class DemoResetTests(TestCase):
         demo_reset.reset(self.admin, self.org, "ACME")
         self.assertIsNone(due_connector())
 
+    def test_a_link_source_goes_with_its_documents_files_and_knowledge(self):
+        """Pasting the link is a step in the demonstration, so it has to be undone."""
+        import tempfile
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from platform_core.models import KnowledgeSource
+
+        source = KnowledgeSource.objects.create(
+            application=self.app,
+            added_by=self.member,
+            url="https://github.com/ajitk15/carepathdocs/tree/main",
+            name="ajitk15/carepathdocs",
+        )
+        document = Document.objects.create(
+            application=self.app,
+            uploaded_by=self.member,
+            name="runbook.md",
+            size=1,
+            sha256="r",
+            source=source,
+        )
+        KnowledgeEntry.objects.create(
+            application=self.app,
+            author=self.member,
+            document=document,
+            title="Runbook",
+            content="x",
+            digest="r",
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            stored = Path(folder, f"{document.pk}.quarantine")
+            stored.write_bytes(b"x")
+            with patch(
+                "platform_core.demo_reset.document_path",
+                lambda app, pk: Path(folder, f"{pk}.quarantine"),
+            ):
+                self.assertEqual(demo_reset.summary(self.org)["link sources"], 1)
+                demo_reset.reset(self.admin, self.org, "ACME")
+            self.assertFalse(stored.exists())
+        self.assertFalse(KnowledgeSource.objects.exists())
+        self.assertFalse(Document.objects.filter(pk=document.pk).exists())
+        self.assertFalse(KnowledgeEntry.objects.filter(title="Runbook").exists())
+        # The hand-uploaded document in fill() is not a link import.
+        self.assertTrue(Document.objects.filter(name="a.md").exists())
+
     def test_an_uploaded_or_hand_added_source_is_not_an_import(self):
         demo_reset.reset(self.admin, self.org, "ACME")
         self.assertTrue(KnowledgeEntry.objects.filter(title="A source").exists())
@@ -274,7 +320,8 @@ class DemoResetTests(TestCase):
         )
         self.assertContains(
             response,
-            "was reset: 1 run(s), 1 code repository, 1 graph version(s) and 2 imported record(s)",
+            "was reset: 1 run(s), 1 code repository, 1 graph version(s), 2 imported "
+            "record(s) and 0 link source(s) with 0 document(s) removed",
         )
         self.assertEqual(FactoryRun.objects.count(), 0)
         self.assertEqual(Connector.objects.count(), 1)

@@ -146,6 +146,8 @@ def process_next_source():
     due = timezone.now() - timedelta(minutes=CHECK_INTERVAL_MINUTES)
     source = (
         KnowledgeSource.objects.filter(application__active=True)
+        # A folder came from someone's machine; there is nothing here to ask.
+        .exclude(provider="folder")
         .filter(models_q_unchecked_or_due(due))
         .select_related("application__product__portfolio__organization")
         .order_by("last_checked_at")
@@ -197,6 +199,11 @@ def resync(user, app_id, source_id):
     source = KnowledgeSource.objects.filter(pk=source_id, application=app).first()
     if source is None:
         raise ValidationError("That source no longer exists.")
+    if source.provider == "folder":
+        raise ValidationError(
+            "A folder upload has no origin this server can read. Upload the folder again "
+            "to bring it up to date."
+        )
 
     notes = []
     created = submit(user, app_id, source.url, notes, source=source)

@@ -149,10 +149,29 @@ class LinkViewTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
 
-    def test_the_rail_offers_the_paste_box(self):
+    def test_the_rail_opens_the_same_add_a_source_popup_as_sources(self):
+        """One way in on both screens: files, a folder and a link, with one set of rules."""
         response = self.client.get(reverse("graph", args=[self.app.pk]))
-        self.assertContains(response, 'name="url"')
-        self.assertContains(response, 'value="link"')
+        popup = reverse("source-add", args=[self.app.pk]) + "?next=graph"
+        self.assertContains(response, f'href="{popup}" data-modal')
+        self.assertNotContains(response, 'name="url"')
+        page = self.client.get(popup)
+        self.assertContains(page, 'name="url"')
+        self.assertContains(page, 'value="folder"')
+        self.assertContains(page, '<input type="hidden" name="next" value="graph">', count=3)
+
+    def test_a_link_added_from_the_graph_returns_to_the_graph(self):
+        response = self.client.post(
+            reverse("source-add", args=[self.app.pk]),
+            {"action": "link", "url": "https://example.com/guide", "next": "graph"},
+        )
+        self.assertRedirects(
+            response, reverse("graph", args=[self.app.pk]), fetch_redirect_response=False
+        )
+
+    def test_next_is_only_ever_a_known_screen(self):
+        page = self.client.get(reverse("source-add", args=[self.app.pk]) + "?next=//evil.example")
+        self.assertNotContains(page, 'name="next"')
 
     def test_posting_a_link_queues_it_and_reports_back(self):
         response = self.client.post(

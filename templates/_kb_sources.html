@@ -1,16 +1,6 @@
-{% load workspace %}
+{% load workspace icons %}
 {% if can_upload %}
-<form method="post" enctype="multipart/form-data" action="{% url 'documents' application.pk %}" class="rail-upload">{% csrf_token %}<input type="hidden" name="next" value="graph">
-<label class="upload-drop" for="rail-file"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 9 5-5 5 5"/><path d="M12 4v12"/></svg><span>Upload file</span><input type="file" name="file" id="rail-file" multiple></label>
-<button class="button rail-add" type="submit"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>Add to knowledge</button>
-</form>
-
-<form method="post" action="{% url 'documents' application.pk %}" class="rail-link-form">{% csrf_token %}<input type="hidden" name="action" value="link"><input type="hidden" name="next" value="graph">
-<label for="rail-url"><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg><span>Add from a link</span></label>
-<div class="rail-url-row"><input type="url" name="url" id="rail-url" maxlength="2000" placeholder="Paste a link…" value="{{ link_form.url.value|default:'' }}"><button class="button" type="submit" aria-label="Import link"><svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="m12 5 7 7-7 7"/></svg></button></div>
-{{ link_form.url.errors }}
-<small class="muted">A web page or document becomes one source. A GitHub repository takes its README; a <code>/tree/</code> link takes the docs under it. SharePoint and OneDrive links import the file or folder they point at.{% if sharepoint_ready %} <strong>SharePoint imports run as this application, not as you, so they can reach any site the registered app may read.</strong>{% endif %}</small>
-</form>
+{# The same popup the Sources tab opens, so the three ways in - files, a folder, a link - are offered in one place with one set of rules. Without JavaScript it is a link to that page. #}<a class="button rail-add" href="{% url 'source-add' application.pk %}?next=graph" data-modal>{% icon "upload" %}Add a source</a>
 {% else %}<p class="muted rail-note">You have view-only access to sources in this application.</p>{% endif %}
 
 
