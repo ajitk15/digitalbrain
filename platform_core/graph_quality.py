@@ -129,18 +129,18 @@ def document_share(data):
     return rows
 
 
-def themes(nodes, edges):
-    """What the graph is about, as clusters of densely linked nodes.
+def communities(nodes, edges):
+    """Leiden communities from Graphify, largest first: (graph, [(label, members)]).
 
-    Leiden community detection from Graphify (`graphify.cluster`), over the
-    relationships already stored - no model, no provider, the same on every
-    render. Each theme is named after its most-connected node, which is
-    Graphify's own LLM-free labelling, so a name is always a real node label
-    and never an invented summary. Cohesion is the share of possible links
-    inside the theme that exist; it describes the structure, not correctness.
+    One partition for every place that shows themes - the Quality table and the
+    canvas - so a theme is the same set of nodes, in the same position, on both.
+    Graphify seeds its partitioner, so the answer is the same on every render.
+    Each theme is named after its most-connected node, which is Graphify's own
+    LLM-free labelling, so a name is always a real node label and never an
+    invented summary. Clusters under `MIN_THEME` are stray pairs, not themes.
     """
     import networkx as nx
-    from graphify.cluster import cluster, cohesion_score, label_communities_by_hub
+    from graphify.cluster import cluster, label_communities_by_hub
 
     graph = nx.Graph()
     for node in nodes:
@@ -150,23 +150,53 @@ def themes(nodes, edges):
         if left in graph and right in graph and left != right:
             graph.add_edge(left, right)
     if not graph.number_of_edges():
-        return {"count": 0, "rows": []}
+        return graph, []
     found = {key: members for key, members in cluster(graph).items() if len(members) >= MIN_THEME}
     labels = label_communities_by_hub(graph, found)
+    ordered = [(labels[key][:80], members) for key, members in found.items()]
+    ordered.sort(key=lambda pair: (-len(pair[1]), pair[0]))
+    return graph, ordered
+
+
+def themes(nodes, edges):
+    """What the graph is about, as clusters of densely linked nodes.
+
+    Cohesion is the share of possible links inside the theme that exist; it
+    describes the structure, not correctness.
+    """
+    from graphify.cluster import cohesion_score
+
+    graph, found = communities(nodes, edges)
     owner = {node["id"]: node.get("knowledge_id") for node in nodes}
     total = graph.number_of_nodes()
     rows = [
         {
-            "label": labels[key][:80],
+            "rank": rank,
+            "label": label,
             "nodes": len(members),
             "percent": _percent(len(members), total),
             "documents": len({owner[m] for m in members if owner.get(m)}),
             "cohesion": round(100 * cohesion_score(graph, members)),
         }
-        for key, members in found.items()
+        for rank, (label, members) in enumerate(found, start=1)
     ]
-    rows.sort(key=lambda row: (-row["nodes"], row["label"]))
     return {"count": len(rows), "rows": rows[:THEMES_SHOWN]}
+
+
+def node_themes(data):
+    """Each node's theme, for the canvas to colour, filter and group by.
+
+    `membership` maps a node id to its theme's position in `themes`; a node in
+    no theme is absent. The canvas colours the first `THEMES_SHOWN` - the same
+    ones the Quality table lists - and folds the rest into "Other".
+    """
+    _, found = communities(data.get("nodes", []), data.get("edges", []))
+    return {
+        "themes": [{"label": label, "nodes": len(members)} for label, members in found],
+        "membership": {
+            member: index for index, (_, members) in enumerate(found) for member in members
+        },
+    }
 
 
 def health_report(data, quality):

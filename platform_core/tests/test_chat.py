@@ -13,7 +13,7 @@ from platform_core.models import (
     ChatMessage,
     ChatRetention,
 )
-from platform_core.templatetags.chat_text import chat_text, source_chips
+from platform_core.templatetags.chat_text import chat_text, source_chips, source_groups
 from platform_core.workbench import (
     add_knowledge,
     conversation_context,
@@ -63,7 +63,7 @@ class ConversationTests(TestCase):
         self.assertContains(response, "thirty days")
         # Sources are listed under the answer, with the quoted passage one click away.
         self.assertContains(response, 'class="message-sources"')
-        self.assertContains(response, "<h4>Sources</h4>", html=False)
+        self.assertContains(response, '<h4>Sources <span class="source-count">1</span></h4>')
         self.assertContains(response, "Refund policy")
         self.assertNotContains(response, 'class="evidence" open')
         self.assertNotContains(self.client.get(self.url, {"new": "1"}), 'name="conversation"')
@@ -420,3 +420,51 @@ class ConversationLifecycleTests(TestCase):
         )
         conversation.refresh_from_db()
         self.assertEqual(conversation.graph_version, 1)
+
+
+class ConversationalAnswerTests(SimpleTestCase):
+    """An answer reads as a message: citations as badges, cited sources first."""
+
+    def test_citation_markers_become_badges_that_are_not_links(self):
+        result = str(chat_text("A gap [4][1], and two more [2, 3]."))
+        for number in ("4", "1", "2", "3"):
+            self.assertIn(f'<sup class="cite" data-cite="{number}">', result)
+        self.assertNotIn("[4]", result)
+        self.assertNotIn("href=", result)
+
+    def test_a_bracketed_number_in_code_is_code(self):
+        result = str(chat_text("Use `items[1]` here.\n\n```\nrows[2]\n```"))
+        self.assertIn("<code>items[1]</code>", result)
+        self.assertIn("rows[2]", result)
+        self.assertNotIn('class="cite"', result)
+
+    def test_badges_are_built_from_escaped_text(self):
+        result = str(chat_text('<b>x</b> [1] "q"'))
+        self.assertIn("&lt;b&gt;", result)
+        self.assertIn('data-cite="1"', result)
+
+    def test_the_sources_an_answer_cites_come_first_and_the_rest_are_marked(self):
+        rows = [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}, {"id": "c", "title": "C"}]
+        groups = source_groups(rows, "Only C matters [3].")
+        self.assertEqual([chip["title"] for chip in groups["cited"]], ["C"])
+        self.assertEqual([chip["title"] for chip in groups["more"]], ["A", "B"])
+
+    def test_an_answer_with_no_markers_cites_everything_it_was_given(self):
+        rows = [{"id": "a", "title": "A"}, {"id": "b", "title": "B"}]
+        self.assertEqual(len(source_groups(rows, "An excerpt with no markers.")["cited"]), 2)
+
+
+class TemplateCommentTests(SimpleTestCase):
+    def test_no_short_comment_spans_lines(self):
+        """`{# #}` is one line only; across lines it renders as page text.
+
+        One did, inside every question in the chat.
+        """
+        from pathlib import Path
+
+        from django.conf import settings
+
+        for template in Path(settings.BASE_DIR, "templates").rglob("*.html"):
+            for number, line in enumerate(template.read_text(encoding="utf-8").splitlines(), 1):
+                with self.subTest(template=template.name, line=number):
+                    self.assertFalse("{#" in line and "#}" not in line.split("{#", 1)[1])

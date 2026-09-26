@@ -62,6 +62,40 @@
   };
   let theme = "dark";
   let COLORS = PALETTES[theme];
+
+  // Themes are Graphify's Leiden communities, computed on the server - the same
+  // partition the Quality table lists, in the same order. Six colours in a fixed
+  // order, validated per canvas for colour-blind separation; every theme past the
+  // sixth folds into "Other" rather than being given a generated hue. On the
+  // light canvas three of them sit under 3:1, so the legend names every one.
+  const THEME_PALETTES = {
+    dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"],
+    light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
+  };
+  const themesRaw = document.getElementById("knowledge-graph-themes");
+  const clusters = themesRaw ? JSON.parse(themesRaw.textContent) : null;
+  const themeCount = clusters ? clusters.themes.length : 0;
+  const OTHER = -1;
+  const themeOf = (id) => {
+    const index = clusters ? clusters.membership[id] : undefined;
+    return index === undefined || index >= THEME_PALETTES.dark.length ? OTHER : index;
+  };
+  const colourSelect = document.getElementById("graph-colour");
+  let colourBy = themeCount ? "theme" : "kind";
+  try {
+    if (themeCount && localStorage.getItem("digital-brain.knowledge.colour") === "kind") {
+      colourBy = "kind";
+    }
+  } catch (failure) {
+    /* no stored preference is the normal case */
+  }
+  const colourOf = (id) => {
+    if (colourBy === "theme") {
+      const index = themeOf(id);
+      return index === OTHER ? COLORS.section : THEME_PALETTES[theme][index];
+    }
+    return COLORS[nodes.get(id).kind] || COLORS.section;
+  };
   const KINDS = ["document", "record", "value", "section", "entity"];
   const START_NODES = 120;
   const MAX_NODES = 400;
@@ -84,6 +118,7 @@
   const busiest = Math.max(1, ...degree.values());
 
   const hidden = new Set();
+  const hiddenThemes = new Set();
   let visible = new Set();
   let focus = null;
   let layout = new Map();
@@ -108,9 +143,48 @@
     return `#${[0, 1, 2].map((i) => part(i).toString(16).padStart(2, "0")).join("")}`;
   };
 
-  const shown = () => [...visible].filter((id) => !hidden.has(nodes.get(id).kind));
+  const shown = () =>
+    [...visible].filter(
+      (id) => !hidden.has(nodes.get(id).kind) && !hiddenThemes.has(themeOf(id))
+    );
+
+  // Coloured by theme, the first view is the themes: the largest ones, a
+  // connected slice of each grown from its hub. Starting from the documents
+  // instead showed a screen of mostly "Other" - a real knowledge graph splits
+  // into far more themes than there are colours, and the document-first view
+  // lands in the small ones.
+  function themeOverview() {
+    const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
+    const share = Math.max(1, Math.floor(START_NODES / coloured));
+    const members = new Map();
+    graph.nodes.forEach((n) => {
+      const index = themeOf(n.id);
+      if (index === OTHER) return;
+      if (!members.has(index)) members.set(index, []);
+      members.get(index).push(n.id);
+    });
+    const picked = new Set();
+    members.forEach((ids) => {
+      const inTheme = new Set(ids);
+      const hub = ids.reduce((best, id) => (degree.get(id) > degree.get(best) ? id : best));
+      const got = new Set([hub]);
+      const queue = [hub];
+      while (queue.length && got.size < share) {
+        for (const next of neighbours.get(queue.shift())) {
+          if (got.size >= share) break;
+          if (inTheme.has(next) && !got.has(next)) {
+            got.add(next);
+            queue.push(next);
+          }
+        }
+      }
+      got.forEach((id) => picked.add(id));
+    });
+    return picked;
+  }
 
   function overview() {
+    if (colourBy === "theme") return themeOverview();
     const picked = new Set();
     const documents = graph.nodes.filter((n) => n.kind === "document");
     documents.forEach((d) => picked.add(d.id));
@@ -152,9 +226,19 @@
     return added;
   }
 
+  // A node with nowhere to start from starts in its theme's sector, so the
+  // themes open as separate regions instead of untangling from one knot.
+  function home(id) {
+    const index = colourBy === "theme" ? themeOf(id) : OTHER;
+    if (index === OTHER) return { x: WIDTH / 2, y: HEIGHT / 2 };
+    const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
+    const angle = (index / coloured) * Math.PI * 2 - Math.PI / 2;
+    return { x: WIDTH / 2 + Math.cos(angle) * 190, y: HEIGHT / 2 + Math.sin(angle) * 150 };
+  }
+
   function seed(id, near) {
     const angle = Math.random() * Math.PI * 2;
-    const base = near || { x: WIDTH / 2, y: HEIGHT / 2 };
+    const base = near || home(id);
     layout.set(id, {
       x: base.x + Math.cos(angle) * 60,
       y: base.y + Math.sin(angle) * 60,
@@ -179,7 +263,28 @@
     const active = edges.filter((e) => index.has(e.source) && index.has(e.target));
     const centreX = WIDTH / 2;
     const centreY = HEIGHT / 2;
+    // Each node leans towards the middle of its theme, so a theme reads as a
+    // region of the canvas rather than only as a colour. Gentle next to the
+    // springs: it groups, it does not override what the edges say.
+    const groups = themeCount ? ids.map((id) => themeOf(id)) : null;
     for (let step = 0; step < steps; step += 1) {
+      if (groups) {
+        const sums = new Map();
+        live.forEach((p, i) => {
+          if (groups[i] === OTHER) return;
+          const sum = sums.get(groups[i]) || { x: 0, y: 0, n: 0 };
+          sum.x += p.x;
+          sum.y += p.y;
+          sum.n += 1;
+          sums.set(groups[i], sum);
+        });
+        live.forEach((p, i) => {
+          const sum = sums.get(groups[i]);
+          if (!sum || sum.n < 2) return;
+          p.vx += (sum.x / sum.n - p.x) * 0.02;
+          p.vy += (sum.y / sum.n - p.y) * 0.02;
+        });
+      }
       for (let i = 0; i < live.length; i += 1) {
         for (let j = i + 1; j < live.length; j += 1) {
           const a = live[i];
@@ -291,7 +396,7 @@
           cx: point.x,
           cy: point.y,
           r: 5,
-          fill: COLORS[nodes.get(id).kind] || COLORS.section,
+          fill: colourOf(id),
           opacity: 0.8,
         })
       );
@@ -320,7 +425,9 @@
       themeButton.setAttribute("aria-label", `Switch the canvas to ${next}`);
       themeButton.setAttribute("title", `Switch the canvas to ${next}`);
       // A redraw is cheap here and the layout is untouched by it: positions
-      // live in `layout`, so the camera and the expansion survive.
+      // live in `layout`, so the camera and the expansion survive. The legend
+      // swatches carry the palette too, so they are rebuilt with it.
+      buildFilters();
       render(false);
     };
     themeButton.addEventListener("click", () => {
@@ -374,6 +481,13 @@
     kind.className = "inspector-kind";
     kind.textContent = node.kind;
     inspector.append(kind);
+
+    if (clusters && clusters.membership[id] !== undefined) {
+      const inTheme = document.createElement("p");
+      inTheme.className = "inspector-theme";
+      inTheme.textContent = `Theme: ${clusters.themes[clusters.membership[id]].label}`;
+      inspector.append(inTheme);
+    }
 
     const related = edges.filter((e) => e.source === id || e.target === id);
     const inferred = related.filter((e) => e.inferred).length;
@@ -488,8 +602,8 @@
       if (!set.has(e.source) || !set.has(e.target)) return;
       const a = layout.get(e.source);
       const b = layout.get(e.target);
-      const from = COLORS[nodes.get(e.source).kind] || COLORS.section;
-      const to = COLORS[nodes.get(e.target).kind] || COLORS.section;
+      const from = colourOf(e.source);
+      const to = colourOf(e.target);
       const line = el("line", {
         x1: a.x,
         y1: a.y,
@@ -528,7 +642,7 @@
           el("circle", {
             r: radius + 7,
             fill: "none",
-            stroke: COLORS[node.kind] || COLORS.section,
+            stroke: colourOf(id),
             "stroke-width": 1,
             opacity: 0.45,
           })
@@ -537,7 +651,7 @@
       group.append(
         el("circle", {
           r: radius,
-          fill: COLORS[node.kind] || COLORS.section,
+          fill: colourOf(id),
           stroke: id === focus ? COLORS.focusRing : "none",
           "stroke-width": id === focus ? 2 : 0,
         })
@@ -610,6 +724,7 @@
       expand(id);
     }
     hidden.delete(nodes.get(id).kind);
+    hiddenThemes.delete(themeOf(id));
     syncFilters();
     inspect(id);
     render(true);
@@ -618,34 +733,69 @@
 
   /* ---- controls ---- */
 
+  // The legend is also the filter, and it follows the colouring: coloured by
+  // theme, it lists the themes; coloured by kind, it lists the kinds.
+  function filterItem(text, colour, checked, onChange, data) {
+    const label = document.createElement("label");
+    label.className = "graph-filter";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = checked;
+    Object.assign(box.dataset, data);
+    box.addEventListener("change", () => {
+      onChange(box.checked);
+      render(true);
+    });
+    const swatch = document.createElement("span");
+    swatch.className = "graph-swatch";
+    swatch.style.background = colour;
+    const name = document.createElement("span");
+    name.textContent = text;
+    label.title = text;
+    label.append(box, swatch, name);
+    filterBox.append(label);
+  }
+
+  const toggle = (set, key) => (checked) => (checked ? set.delete(key) : set.add(key));
+
   function buildFilters() {
-    const present = KINDS.filter((kind) => graph.nodes.some((n) => n.kind === kind));
     filterBox.replaceChildren();
-    present.forEach((kind) => {
-      const label = document.createElement("label");
-      label.className = "graph-filter";
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.checked = !hidden.has(kind);
-      box.dataset.kind = kind;
-      box.addEventListener("change", () => {
-        if (box.checked) hidden.delete(kind);
-        else hidden.add(kind);
-        render(true);
-      });
-      const swatch = document.createElement("span");
-      swatch.className = "graph-swatch";
-      swatch.style.background = COLORS[kind];
-      const text = document.createElement("span");
-      text.textContent = kind === "entity" ? "AI entity" : kind;
-      label.append(box, swatch, text);
-      filterBox.append(label);
+    filterBox.classList.toggle("by-theme", colourBy === "theme");
+    if (colourBy === "theme") {
+      const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
+      for (let index = 0; index < coloured; index += 1) {
+        filterItem(
+          clusters.themes[index].label,
+          THEME_PALETTES[theme][index],
+          !hiddenThemes.has(index),
+          toggle(hiddenThemes, index),
+          { theme: String(index) }
+        );
+      }
+      if (graph.nodes.some((n) => themeOf(n.id) === OTHER)) {
+        filterItem("Other", COLORS.section, !hiddenThemes.has(OTHER), toggle(hiddenThemes, OTHER), {
+          theme: String(OTHER),
+        });
+      }
+      return;
+    }
+    KINDS.filter((kind) => graph.nodes.some((n) => n.kind === kind)).forEach((kind) => {
+      filterItem(
+        kind === "entity" ? "AI entity" : kind,
+        COLORS[kind],
+        !hidden.has(kind),
+        toggle(hidden, kind),
+        { kind }
+      );
     });
   }
 
   function syncFilters() {
     filterBox.querySelectorAll("input[data-kind]").forEach((box) => {
       box.checked = !hidden.has(box.dataset.kind);
+    });
+    filterBox.querySelectorAll("input[data-theme]").forEach((box) => {
+      box.checked = !hiddenThemes.has(Number(box.dataset.theme));
     });
   }
 
@@ -765,6 +915,7 @@
     search.value = "";
     focus = null;
     hidden.clear();
+    hiddenThemes.clear();
     layout = new Map();
     visible = overview();
     syncFilters();
@@ -785,6 +936,28 @@
     }, 60);
   };
   canvas.addEventListener("pointerup", settle);
+
+  if (colourSelect) {
+    colourSelect.value = colourBy;
+    colourSelect.addEventListener("change", () => {
+      colourBy = colourSelect.value === "kind" ? "kind" : "theme";
+      try {
+        localStorage.setItem("digital-brain.knowledge.colour", colourBy);
+      } catch (failure) {
+        /* a private window refusing storage is not a reason to fail the change */
+      }
+      // A hidden theme would stay hidden with no checkbox left to show it, and
+      // the first view depends on the colouring, so this starts over.
+      hidden.clear();
+      hiddenThemes.clear();
+      focus = null;
+      layout = new Map();
+      visible = overview();
+      buildFilters();
+      render(true);
+      fit();
+    });
+  }
 
   buildFilters();
   visible = overview();

@@ -95,6 +95,21 @@ class GraphTests(TestCase):
         self.assertEqual(payload["application_id"], str(self.app.pk))
         self.assertEqual(payload["quality"]["table_rows"], 2)
 
+    def test_the_canvas_is_given_the_graphify_themes(self):
+        self.source()
+        rebuild(self.app.pk)
+        response = self.client.get(reverse("graph", args=[self.app.pk]))
+        self.assertContains(response, 'id="knowledge-graph-themes"')
+
+    def test_a_clustering_failure_still_draws_the_graph_coloured_by_kind(self):
+        self.source()
+        rebuild(self.app.pk)
+        with patch("platform_core.graph_quality.node_themes", side_effect=RuntimeError):
+            response = self.client.get(reverse("graph", args=[self.app.pk]))
+        self.assertContains(response, 'id="graph-canvas"')
+        self.assertNotContains(response, 'id="knowledge-graph-themes"')
+        self.assertNotContains(response, 'id="graph-colour"')
+
     def test_stale_graph_is_not_exposed_after_source_removed(self):
         entry = self.source()
         rebuild(self.app.pk)

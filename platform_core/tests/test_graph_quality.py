@@ -5,6 +5,7 @@ from platform_core.graph_quality import (
     cross_document_links,
     document_share,
     health_report,
+    node_themes,
     provenance_bands,
     themes,
 )
@@ -212,6 +213,21 @@ class ThemeTests(SimpleTestCase):
         self.assertEqual(report["themes"]["count"], 2)
         self.assertEqual(report["grade"], "Good")
 
+    def test_the_canvas_gets_the_same_themes_in_the_same_order(self):
+        """Colour 1 on the graph is row 1 in the Quality table, or the legend lies."""
+        nodes, edges = self.two_topics()
+        table = themes(nodes, edges)["rows"]
+        canvas = node_themes({"nodes": nodes, "edges": edges})
+        self.assertEqual([t["label"] for t in canvas["themes"]], [r["label"] for r in table])
+        for index, row in enumerate(table):
+            members = {k for k, v in canvas["membership"].items() if v == index}
+            self.assertEqual(len(members), row["nodes"])
+            self.assertIn(row["label"], members)
+
+    def test_a_node_in_no_theme_has_no_membership(self):
+        found = node_themes({"nodes": [node("a"), node("b")], "edges": [edge("a", "b")]})
+        self.assertEqual(found, {"themes": [], "membership": {}})
+
     def test_a_clustering_failure_hides_the_themes_not_the_panel(self):
         from unittest.mock import patch
 
@@ -228,7 +244,8 @@ class ThemeTests(SimpleTestCase):
         report = health_report({"nodes": nodes, "edges": edges}, {})
         html = render_to_string("_kb_quality.html", {"health": report, "graph": {"quality": {}}})
         self.assertIn("Themes", html)
-        self.assertIn("<td>billing</td>", html)
+        self.assertIn("billing</td>", html)
+        self.assertIn('class="swatch theme-swatch theme-1"', html)
         self.assertIn("2 themes", html)
         # Nothing to cluster: no empty table, and the rest of the panel still renders.
         bare = health_report({"nodes": [node("a")], "edges": []}, {})

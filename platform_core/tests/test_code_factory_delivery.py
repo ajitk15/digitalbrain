@@ -679,6 +679,96 @@ class AgentChainTests(DeliveryGateTests):
         self.assertTrue(any("does not do it" in message for message in problems), problems)
 
 
+@override_settings(**SETTINGS)
+class PlanNamedTestTests(TestCase):
+    """The plan names a test file, so the implementation writes it too.
+
+    A live run's test author was then shown the old test file, returned the two
+    source files it was not given ahead of its tests, and the phase failed with
+    "no usable file changes". Had it answered, its test would have been a second
+    change to the same path beside the implementation's.
+    """
+
+    FILES = {
+        "src/queue.py": {"path": "src/queue.py", "text": "original", "sha": "sha1"},
+        "tests/test_queue.py": {"path": "tests/test_queue.py", "text": "old test", "sha": "sha2"},
+    }
+
+    def setUp(self):
+        DeliveryGateTests.setUp(self)
+        PlanItem.objects.filter(plan=self.plan).update(
+            targets=["src/queue.py", "tests/test_queue.py"]
+        )
+
+    def replies(self, test_author):
+        both = [{"file": str(n), "intent": "i", "checks": []} for n in (1, 2)]
+        return [
+            json.dumps({"files": both, "leftover": []}),
+            json.dumps(
+                {
+                    "files": [
+                        {"file": "1", "content": "bounded"},
+                        {"file": "2", "content": "implementation's test"},
+                    ]
+                }
+            ),
+            json.dumps(test_author),
+            json.dumps(
+                {
+                    "files": [
+                        {"file": "1", "verdict": "ok", "reason": ""},
+                        {"file": "2", "verdict": "ok", "reason": ""},
+                    ]
+                }
+            ),
+        ]
+
+    def chain(self, test_author):
+        from platform_core.models import ProposedChange
+
+        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+            with patch(
+                "platform_core.github_write.read_file",
+                side_effect=lambda repository, path, ref, token: self.FILES.get(path),
+            ):
+                with patch(
+                    "platform_core.ai.invoke_ai", side_effect=self.replies(test_author)
+                ) as invoke:
+                    prepare(self.owner, self.app.pk, self.run.pk)
+        return (
+            dict(ProposedChange.objects.filter(run=self.run).values_list("path", "content")),
+            invoke,
+        )
+
+    def test_the_test_authors_version_replaces_the_implementations(self):
+        proposed, invoke = self.chain(
+            {
+                "files": [
+                    # Not shown to it: ignored, and no longer crowds out what follows.
+                    {"file": "src/queue.py", "content": "rewritten"},
+                    {"file": "tests/test_queue.py", "content": "test author's test"},
+                ]
+            }
+        )
+        self.assertEqual(
+            proposed, {"src/queue.py": "bounded", "tests/test_queue.py": "test author's test"}
+        )
+        self.assertEqual(self.run.phases.get(name="tests").status, "ok")
+        # It was shown the test as the implementation left it, not the old file.
+        shown = invoke.call_args_list[2].args[3]
+        self.assertIn("implementation's test", json.dumps(shown))
+        self.assertNotIn("old test", json.dumps(shown))
+
+    def test_nothing_to_add_to_tests_already_written_is_not_a_failure(self):
+        proposed, _ = self.chain(
+            {"files": [{"file": "1", "content": "implementation's test"}], "notes": "Done."}
+        )
+        self.assertEqual(proposed["tests/test_queue.py"], "implementation's test")
+        self.assertEqual(self.run.phases.get(name="tests").status, "ok")
+        messages = [event.message for event in self.run.events.filter(phase="tests")]
+        self.assertTrue(any("already wrote tests/test_queue.py" in m for m in messages), messages)
+
+
 class CheckRunTests(DeliveryGateTests):
     """What the repository's own CI made of the branch.
 

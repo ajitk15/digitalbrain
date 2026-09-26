@@ -1256,13 +1256,15 @@ class Connector(models.Model):
         return self.name or self.get_kind_display()
 
 
+#: In the order AI settings lists them: the features people use every day first,
+#: then the graph's own tasks, then the small housekeeping call.
 AI_PURPOSES = [
     ("chat", "Chat conversation"),
-    ("serviceops_triage", "ServiceOps triage"),
+    ("plan_drafting", "Code Factory"),
+    ("serviceops_triage", "ServiceOps"),
     ("graph_generation", "Graph generation"),
     ("graph_retrieval", "Graph retrieval"),
     ("conversation_title", "Conversation titles"),
-    ("plan_drafting", "Code Factory drafting"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -1315,6 +1317,9 @@ class AIConfiguration(models.Model):
     enabled = models.BooleanField(default=True)
     input_rate = models.DecimalField(max_digits=12, decimal_places=6)
     output_rate = models.DecimalField(max_digits=12, decimal_places=6)
+    #: Code Factory's output-token cap, when an owner has set one. Only the
+    #: plan_drafting row uses it; empty means `code_factory.OUTPUT_LIMIT`.
+    output_limit = models.PositiveIntegerField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -9,6 +9,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import transaction
 from django.http import Http404
 from django.shortcuts import redirect, render
@@ -32,9 +33,30 @@ from .workbench import access
 class AIForm(forms.ModelForm):
     model_choice = forms.ChoiceField(choices=MODEL_CHOICES, label="Model", initial="custom")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, limit_default=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["model"].required = False
+        # Code Factory only: one output cap for all of its agents. Blank means the
+        # default, so an owner who never sets it keeps whatever the default becomes.
+        if limit_default is None:
+            del self.fields["output_limit"]
+        else:
+            from .code_factory import MAX_OUTPUT_LIMIT, MIN_OUTPUT_LIMIT
+
+            field = self.fields["output_limit"]
+            field.min_value, field.max_value = MIN_OUTPUT_LIMIT, MAX_OUTPUT_LIMIT
+            field.validators += [
+                MinValueValidator(MIN_OUTPUT_LIMIT),
+                MaxValueValidator(MAX_OUTPUT_LIMIT),
+            ]
+            field.widget.attrs.update(
+                placeholder=str(limit_default), min=MIN_OUTPUT_LIMIT, max=MAX_OUTPUT_LIMIT
+            )
+            field.help_text = (
+                f"Blank uses the default, {limit_default:,}. One cap for every Code Factory "
+                "agent, including the model's thinking. It stops a runaway reply; "
+                "you are billed only for what is written."
+            )
         if self.instance.pk:
             selected = f"{self.instance.provider}:{self.instance.model}"
             known = {value for _, group in MODEL_CHOICES for value, _ in group}
@@ -58,12 +80,21 @@ class AIForm(forms.ModelForm):
 
     class Meta:
         model = AIConfiguration
-        fields = ["model_choice", "provider", "model", "input_rate", "output_rate", "enabled"]
+        fields = [
+            "model_choice",
+            "provider",
+            "model",
+            "input_rate",
+            "output_rate",
+            "output_limit",
+            "enabled",
+        ]
         labels = {
             "model": "Custom model ID",
             "provider": "Provider for custom model",
             "input_rate": "Input price (USD / 1 million tokens)",
             "output_rate": "Output price (USD / 1 million tokens)",
+            "output_limit": "Output limit (tokens)",
         }
         help_texts = {
             "model": "Only needed for Custom. Your provider account must have access to the model.",
@@ -416,6 +447,12 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
     return answer, recorder.verified_citations()
 
 
+def code_factory_default():
+    from .code_factory import OUTPUT_LIMIT
+
+    return OUTPUT_LIMIT
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def ai_settings(request, pk):
@@ -436,6 +473,7 @@ def ai_settings(request, pk):
             request.POST if submitted else None,
             instance=config,
             prefix=purpose,
+            limit_default=code_factory_default() if purpose == "plan_drafting" else None,
             initial={"enabled": False, "input_rate": 0, "output_rate": 0, "provider": "openai"}
             if config is None
             else None,
@@ -456,6 +494,11 @@ def ai_settings(request, pk):
                         "purpose": purpose,
                         "provider": config.provider,
                         "model": config.model,
+                        **(
+                            {"output_limit": config.output_limit}
+                            if purpose == "plan_drafting"
+                            else {}
+                        ),
                     },
                 )
             messages.success(request, f"{label} settings saved.")

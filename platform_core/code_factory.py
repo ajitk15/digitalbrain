@@ -49,6 +49,7 @@ from django.utils import timezone
 
 from .models import (
     RUBRIC,
+    AIConfiguration,
     ChangePlan,
     FactoryRun,
     PlanItem,
@@ -57,28 +58,42 @@ from .models import (
 )
 from .services import audit
 
-#: Per-phase output budgets. Each is sized for what that phase actually returns,
-#: rather than one number inherited by all three.
-PHASE_TOKENS = {
-    "triage": 1024,
-    "analysis": 8192,
-    "design": 4096,
-    # Implementation returns whole files rather than a diff, so it needs room for
-    # the largest file it might rewrite. A diff would be smaller but would also
-    # need applying, and a patch that almost applies is worse than one that does
-    # not: this way the content either arrives complete or is refused.
-    "implementation": 16384,
-    # A work order is an intent and checks per file, plus the items no file can
-    # satisfy. 2048 was sized for one file: a live run with four hit it at 2145
-    # tokens and was cut off mid-sentence, so the JSON never closed.
-    "work_order": 4096,
-    # Tests are whole files like implementation, and usually longer than the
-    # change they cover.
-    "tests": 16384,
-    # A review is a verdict and a reason per file - but a rejection's reason is
-    # prose, and several files' worth ran past 2048 on a live run.
-    "review": 4096,
-}
+#: One output cap for every Code Factory agent, not a budget per agent.
+#:
+#: There used to be seven, each sized for what its phase returns, and each
+#: raised only after a live run broke it: the work order went 2048 -> 4096 and
+#: was cut off again at 5231, because a model's thinking counts against the same
+#: cap and varies from run to run. A cap is not what is billed - a reply that
+#: needs 5,000 tokens costs the same under any cap it fits in - so a tight one
+#: saves nothing and turns an ordinary answer into a failed phase, wasting
+#: everything that phase already read. What a cap is for is a runaway reply, and
+#: one generous number does that for every agent. An owner may change it on the
+#: AI settings screen.
+OUTPUT_LIMIT = 32000
+
+#: The range an owner may set it to. Below the floor an agent cannot finish even
+#: a small answer; the ceiling is a guard against a typo, and the model's own
+#: maximum still applies under it.
+MIN_OUTPUT_LIMIT = 4096
+MAX_OUTPUT_LIMIT = 64000
+
+
+def output_limit(app_id):
+    """Code Factory's output cap: the owner's setting, else `OUTPUT_LIMIT`.
+
+    Read at the moment of each call rather than when the run starts, so a cap
+    raised after a cut-off reply applies to the rerun. A stored value outside the
+    allowed range is ignored rather than trusted.
+    """
+    value = (
+        AIConfiguration.objects.filter(application_id=app_id, purpose="plan_drafting")
+        .values_list("output_limit", flat=True)
+        .first()
+    )
+    if isinstance(value, int) and MIN_OUTPUT_LIMIT <= value <= MAX_OUTPUT_LIMIT:
+        return value
+    return OUTPUT_LIMIT
+
 
 #: A run in one of these has somebody's attention on it: it is working, or it
 #: is waiting for a decision that has not been made. Starting a second run over
@@ -111,9 +126,9 @@ PHASE_TIMEOUT = 300
 #: Bounds on what an analysis may produce.
 #:
 #: These are a budget, not a preference. MAX_ITEMS entries of this size have to
-#: fit inside PHASE_TOKENS["analysis"] with room to spare, or the model runs past
-#: the cap and the JSON arrives truncated - which is exactly what a live run did:
-#: 4,773 completion tokens against a budget of 4,096, and nothing usable back.
+#: fit inside the output cap with room to spare, or the model runs past the cap
+#: and the JSON arrives truncated - which is exactly what a live run did: 4,773
+#: completion tokens against the analysis budget of 4,096, and nothing usable back.
 #: Storage caps are not instructions; the prompt has to state the same numbers,
 #: and test_code_factory pins the arithmetic.
 MAX_ITEMS = 8
@@ -459,14 +474,18 @@ def finish_phase(
     output = dict(output or {})
     if sample:
         output["sample"] = sample[:2000]
-    limit = PHASE_TOKENS.get(phase.name)
+    limit = output_limit(phase.run.application_id)
     spent = (usage or {}).get("completion_tokens") or 0
     if status == "failed" and limit and spent >= limit * 0.95:
         # The usual reason an answer "is not usable JSON" is that it stopped
-        # before it finished. Saying so points at the budget, not the model.
+        # before it finished. Saying so points at the budget, not the model -
+        # and at where to change it. The model's thinking counts against the
+        # same limit, which is why the visible reply can be much shorter.
         error = (
-            f"{error} The reply used {spent:,} output tokens against a {limit:,}-token "
-            "limit, so it was most likely cut off before it finished."
+            f"{error} The reply used {spent:,} output tokens, including the model's "
+            f"thinking, against a {limit:,}-token limit, so it was most likely cut off "
+            "before it finished. An owner can raise the output limit on "
+            "AI settings, under Code Factory."
         ).strip()
     RunPhase.objects.filter(pk=phase.pk).update(
         status=status,
@@ -527,7 +546,7 @@ def ask(user, app_id, phase_name, instructions, question, citations, receipt):
         citations,
         receipt=receipt,
         instructions=instructions,
-        max_tokens=PHASE_TOKENS[phase_name],
+        max_tokens=output_limit(app_id),
         timeout=PHASE_TIMEOUT,
     )
 
@@ -2172,6 +2191,15 @@ def run_tests_agent(run, changes, token, references=None):
             missing = absent_path(run.proposed_repository, path, run.base_branch, token)
             if missing:
                 existing.append({"path": missing, "text": "", "sha": None})
+    # A test file the implementation already changed is shown as the
+    # implementation left it, still carrying the sha it was read at. The test
+    # author then builds on that rather than on the old file, and its version
+    # replaces the implementation's instead of sitting beside it.
+    already = {change["path"]: change for change in changes}
+    existing = [
+        {**item, "text": already[item["path"]]["content"]} if item["path"] in already else item
+        for item in existing
+    ]
     if not existing:
         finish_phase(
             phase,
@@ -2206,6 +2234,7 @@ def run_tests_agent(run, changes, token, references=None):
         f"FILE {change['path']}\n{change['content'][:8000]}" for change in changes
     )[:20000]
     receipt = {}
+    payload = None
     try:
         answer = ask(
             run.requested_by,
@@ -2231,8 +2260,28 @@ def run_tests_agent(run, changes, token, references=None):
             receipt,
         )
         payload = parse_json(answer, "Test author")
-        written = collect_changes(payload, existing)
+        written = collect_changes(payload, existing, agent="test author")
     except ValidationError as failure:
+        if payload is not None and all(item["path"] in already for item in existing):
+            # It answered, and every test file it was given the implementation had
+            # already written; it had nothing to add. That is the tests being
+            # done, not missing.
+            finish_phase(
+                phase,
+                "ok",
+                started,
+                output={"files": [], "framework": framework_line, "setup": setup},
+                usage=receipt,
+            )
+            note(
+                run,
+                "Test author: the implementation already wrote "
+                + ", ".join(item["path"] for item in existing)
+                + ", and there was nothing to add.",
+                phase="tests",
+                level="result",
+            )
+            return []
         # Recorded and stepped over, not raised: see the docstring.
         finish_phase(
             phase,
@@ -2474,24 +2523,34 @@ def orphaned_tests(kept, rejected):
     return orphaned
 
 
-def collect_changes(payload, files):
+def collect_changes(payload, files, agent="implementation"):
     """The proposed new contents, matched back to the entries we showed.
 
     A change carries the blob sha it was read at, or None when the entry was a
     path that is not in the repository. That sha is what tells the two later
     steps apart: verification re-reads one and re-checks the other is still
     absent, and delivery replaces one and creates the other.
+
+    An entry names its file by the number it was shown with, or by that file's
+    exact path - models do both. Either way it must be one of the files shown:
+    a path is only ever looked up, never taken from the answer. Every entry is
+    read (up to four per file shown), not only the first as many as were shown:
+    a live test author returned the two source files it was not given, then the
+    two test files it was, and cutting the list at two threw away the only
+    entries that counted. One change per file; a repeat is ignored.
     """
     from .github_write import MAX_FILE_BYTES
 
     by_number = {str(index): found for index, found in enumerate(files, start=1)}
-    changes, dropped = [], []
+    by_path = {found["path"]: found for found in files}
+    changes, dropped, taken = [], [], set()
     entries = payload.get("files") or []
-    for entry in entries[: len(files)]:
+    for entry in entries[: len(files) * 4]:
         if not isinstance(entry, dict):
             dropped.append("an entry that is not an object")
             continue
-        found = by_number.get(str(entry.get("file")))
+        key = str(entry.get("file"))
+        found = by_number.get(key) or by_path.get(key)
         content = entry.get("content")
         if found is None:
             dropped.append(
@@ -2505,11 +2564,15 @@ def collect_changes(payload, files):
         if len(content.encode("utf-8")) > MAX_FILE_BYTES:
             dropped.append(f"{found['path']}: larger than {MAX_FILE_BYTES} bytes")
             continue
+        if found["path"] in taken:
+            dropped.append(f"{found['path']}: returned twice")
+            continue
         if content == found["text"]:
             # Returned unchanged: committing it would put an empty diff in front
             # of a reviewer and claim work that did not happen.
             dropped.append(f"{found['path']}: returned unchanged")
             continue
+        taken.add(found["path"])
         changes.append({"path": found["path"], "content": content, "sha": found["sha"]})
     if not changes:
         # Say why. This used to be one fixed sentence, which threw away the
@@ -2517,7 +2580,7 @@ def collect_changes(payload, files):
         # when a change cannot be made, it did exactly that, and the run said
         # only "no usable file changes".
         notes = str(payload.get("notes") or "").strip()
-        message = "The implementation returned no usable file changes."
+        message = f"The {agent} returned no usable file changes."
         if notes:
             message += f" It said: {notes[:700]}"
         elif not entries:
@@ -2915,7 +2978,17 @@ def prepare(user, app_id, run_id):
             for item in files
             if item["path"] not in changed and item["text"]
         ] + references
-        changes = changes + run_tests_agent(run, changes, token, references=later)
+        # By path, not appended: when the plan names a test file the
+        # implementation writes it too, and the test author's version - built on
+        # the implementation's - replaces it rather than becoming a second
+        # change to the same file.
+        written = {
+            change["path"]: change
+            for change in run_tests_agent(run, changes, token, references=later)
+        }
+        changes = [written.pop(change["path"], change) for change in changes] + list(
+            written.values()
+        )
         changes = run_review(run, changes, order, references=later)
         run_verification(run, changes, token)
     except ValidationError as failure:

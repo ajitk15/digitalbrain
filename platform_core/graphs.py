@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import re
 from datetime import timedelta
 
@@ -22,6 +23,8 @@ from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
 from .services import audit, feature_enabled
 from .workbench import access
+
+logger = logging.getLogger(__name__)
 
 MAX_NODES = 6000
 MAX_RECORDS_PER_SOURCE = 2000
@@ -378,11 +381,13 @@ def process_next_graph():
             continue
         graph = KnowledgeGraph.objects.filter(application_id=app_id).first()
         current_fingerprint = fingerprint(app_id)
-        # Failed or interrupted paid calls are not automatically repeated on every worker tick.
+        # Failed or interrupted paid calls are not automatically repeated on every worker
+        # tick. "idle" is a graph a demonstration reset cleared: it waits to be asked
+        # for, and a source change is what brings the worker back to it.
         if (
             graph
             and graph.fingerprint == current_fingerprint
-            and graph.status in {"failed", "building"}
+            and graph.status in {"failed", "building", "idle"}
         ):
             continue
         if graph is None or graph.fingerprint != current_fingerprint or graph.status != "ready":
@@ -637,6 +642,8 @@ def graph_view(request, pk):
             if selected
             else "failed"
             if active_graph and active_graph.status == "failed"
+            else "idle"
+            if active_graph and active_graph.status == "idle"
             else "building"
         )
     )
@@ -694,10 +701,19 @@ def graph_view(request, pk):
     if tab not in {"graph", "quality", "versions"}:
         tab = "graph"
     health = None
+    graph_themes = None
     if graph and current:
-        from .graph_quality import health_report
+        from .graph_quality import health_report, node_themes
 
         health = health_report(graph.data, graph.quality)
+        if tab == "graph":
+            # The canvas colours by the same Graphify themes the Quality table
+            # lists. A clustering failure falls back to colouring by kind; it is
+            # never a reason not to show the graph.
+            try:
+                graph_themes = node_themes(graph.data)
+            except Exception:
+                logger.warning("graph_themes_failed", extra={"event": "graph_themes_failed"})
     return render(
         request,
         "graph.html",
@@ -740,6 +756,7 @@ def graph_view(request, pk):
                 and active_graph.status in {"failed", "building"}
             ),
             "health": health,
+            "graph_themes": graph_themes,
             "can_upload": can_upload,
             "recent_documents": recent_documents,
             "link_form": LinkForm(),

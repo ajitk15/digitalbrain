@@ -48,3 +48,53 @@ class CollectChangesTests(SimpleTestCase):
     def test_a_usable_change_is_still_taken(self):
         changes = collect_changes({"files": [{"file": 1, "content": "new"}]}, SHOWN)
         self.assertEqual(changes, [{"path": "src/api.py", "content": "new", "sha": "a"}])
+
+    def test_entries_past_the_number_shown_are_still_read(self):
+        """A live test author was shown two test files and returned four entries:
+        the two source files it was not given first, then its two tests. Reading
+        only the first two threw away the only entries that counted."""
+        tests = [
+            {"path": "tests/test_fhir.py", "text": "old fhir", "sha": "t1"},
+            {"path": "tests/test_consent.py", "text": "old consent", "sha": "t2"},
+        ]
+        changes = collect_changes(
+            {
+                "files": [
+                    {"file": "src/carepath/api/deps.py", "content": "not shown"},
+                    {"file": "src/carepath/api/routes_fhir.py", "content": "not shown"},
+                    {"file": 1, "content": "new fhir"},
+                    {"file": 2, "content": "new consent"},
+                ]
+            },
+            tests,
+            agent="test author",
+        )
+        self.assertEqual(
+            [change["path"] for change in changes], ["tests/test_fhir.py", "tests/test_consent.py"]
+        )
+
+    def test_a_file_may_be_named_by_the_exact_path_it_was_shown_with(self):
+        changes = collect_changes({"files": [{"file": "src/api.py", "content": "new"}]}, SHOWN)
+        self.assertEqual(changes, [{"path": "src/api.py", "content": "new", "sha": "a"}])
+
+    def test_a_path_that_was_not_shown_is_never_taken(self):
+        error = self.refusal({"files": [{"file": "src/secret.py", "content": "new"}]})
+        self.assertIn("'src/secret.py' is not one of the 2 shown", error.sample)
+
+    def test_one_change_per_file(self):
+        changes = collect_changes(
+            {
+                "files": [
+                    {"file": 1, "content": "first"},
+                    {"file": "src/api.py", "content": "second"},
+                ]
+            },
+            SHOWN,
+        )
+        self.assertEqual([change["content"] for change in changes], ["first"])
+
+    def test_the_message_names_the_agent_that_answered(self):
+        with self.assertRaises(UnusableAnswer) as raised:
+            collect_changes({"files": []}, SHOWN, agent="test author")
+        message = raised.exception.messages[0]
+        self.assertIn("The test author returned no usable file changes", message)

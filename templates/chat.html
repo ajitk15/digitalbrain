@@ -27,7 +27,7 @@
 {% if graph_ai_enabled and published_changed %}<p class="notice" role="status">Answering from graph <strong>version {{ published_graph }}</strong>; {{ published_changed }} of its {{ published_total }} source(s) have changed since it was published. <a href="{% url 'graph' application.pk %}?tab=versions">Review versions</a>.</p>{% endif %}
 {% if graph_ai_enabled and not published_graph %}<p class="notice notice-warning" role="status">No graph version is published yet. Graph answers are unavailable until an owner publishes one under <a href="{% url 'graph' application.pk %}?tab=versions">Knowledge → Versions</a>.</p>{% endif %}
 </header>
-<div class="chat-messages" id="chat-messages" tabindex="0" aria-label="Messages" data-application="{{ application.pk }}">
+{# Cloned by chat.js for the answer it streams, so that bubble and the server-rendered one wear the same mark. #}<template id="chat-avatar">{% include "_chat_avatar.html" %}</template><div class="chat-messages" id="chat-messages" tabindex="0" aria-label="Messages" data-application="{{ application.pk }}">
 {% if message_page.has_previous %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ message_page.previous_page_number }}">Load earlier messages</a>{% endif %}
 {% for message in message_page %}{% include "_chat_message.html" %}{% empty %}<div class="chat-empty"><h2>What would you like to understand?</h2><p>Ask about your documents, explore a topic, then ask follow-up questions here.</p><p class="muted">Each conversation stays with you in {{ application.name }}.</p></div>{% endfor %}
 {% if message_page.has_next %}<a href="?conversation={{ conversation.pk }}&amp;messages={{ message_page.next_page_number }}">Newer messages</a>{% endif %}

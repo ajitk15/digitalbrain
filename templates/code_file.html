@@ -1,8 +1,8 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}<p><a href="{% url 'code-graph' application.pk %}?repository={{ repository.pk }}">← Back to Code Graph</a></p><div class="page-heading"><div><p class="eyebrow">{{ repository.name }} · snapshot v{{ snapshot.number }}</p><h1>{{ file.path }}</h1><p class="muted">{{ file.language }} · {{ file.lines }} lines · commit <code>{{ snapshot.commit_sha|slice:':8' }}</code>{% if file.role %} · {{ file.get_role_display|default:file.role }}{% endif %}{% if not file.parse_ok %} · parse issue{% endif %}</p></div></div>
 <div class="metrics file-metrics"><div class="metric"><strong>{{ file.lines }}</strong><span>lines</span></div><div class="metric"><strong>{{ functions }}</strong><span>functions</span></div><div class="metric"><strong>{{ classes }}</strong><span>classes &amp; types</span></div><div class="metric"><strong>{{ dependencies|length }}</strong><span>depends on</span></div><div class="metric"><strong>{{ dependents|length }}</strong><span>used by</span></div><div class="metric"><strong>{{ affected_count }}</strong><span>could reach</span></div></div>
 
-{# Tabs are radio inputs and labels, not script: this page has to render and be
-   usable with JavaScript off, and the inspector panel lifts it as-is. #}
+{% comment %}Tabs are radio inputs and labels, not script: this page has to render and be
+   usable with JavaScript off, and the inspector panel lifts it as-is.{% endcomment %}
 <div class="file-tabs">
 <input type="radio" name="file-tab" id="file-tab-overview" class="tab-radio" checked>
 <input type="radio" name="file-tab" id="file-tab-deps" class="tab-radio">

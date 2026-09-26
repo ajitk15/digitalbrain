@@ -11,16 +11,26 @@ start - no knowledge graph, no code graph, no runs - while the *setup* a
 demonstration takes time to build stays: the applications, their connectors,
 credentials, sources, AI settings, features and people. This used to delete the
 applications and everything beneath them, which meant rebuilding connectors and
-re-entering credentials before every telling. It now removes exactly the three
+re-entering credentials before every telling. It now removes exactly the
 things a demonstration re-creates on screen:
 
-* **the knowledge graph** - the working graph and every saved version. The
-  background worker rebuilds the free structural graph from the kept sources as
-  a draft, so a demonstration starts at "generate and publish";
+* **the knowledge graph** - the working graph and every saved version. It stays
+  gone: each application is left with an *idle* graph row carrying its
+  sources' current fingerprint, which the background worker leaves alone until
+  a source changes. Without it the worker saw sources with no graph and rebuilt
+  a draft within a second, so the reset appeared not to have happened. A
+  demonstration starts at "Generate graph";
 * **the code graph** - registered repositories and their snapshots, files and
   edges, so "Add repository" is a step again;
 * **runs** - Code Factory runs with their phases, log, prepared changes, and the
-  change plans and gaps they produced.
+  change plans and gaps they produced, and ServiceOps triage runs;
+* **connector imports** - every record a Jira, ServiceNow or GitHub connector
+  brought in, superseded revisions included, so "Import" is a step again. The
+  connectors themselves stay, configured, with their last-import status
+  cleared. A scheduled connector's interval restarts from the reset rather
+  than finding itself long overdue and importing on the next worker tick -
+  the same trap the graph fell into. Uploaded documents and links are sources
+  somebody chose, not imports, and stay.
 
 Everything else is kept as it is, including chat history (a conversation pinned
 to a removed graph version is unpinned, not deleted), spend records and the
@@ -39,7 +49,11 @@ It is fenced accordingly:
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 
+from .connector_kinds import kind_for
+from .graphs import fingerprint
 from .models import (
     Application,
     ChangePlan,
@@ -48,13 +62,19 @@ from .models import (
     CodeRelationship,
     CodeRepository,
     CodeSnapshot,
+    Connector,
     FactoryRun,
     GraphRevision,
+    IncidentProfile,
+    KnowledgeEntry,
     KnowledgeGraph,
     PlanItem,
     ProposedChange,
     RunEvent,
     RunPhase,
+    TriageHypothesis,
+    TriageRun,
+    TriageVerdict,
 )
 from .policy import require_platform_admin
 from .services import audit
@@ -72,6 +92,11 @@ ORDER = (
     (FactoryRun, "application_id__in"),
     (PlanItem, "plan__application_id__in"),
     (ChangePlan, "application_id__in"),
+    # ServiceOps triage. A run PROTECTs the imported incident it triaged, so it
+    # has to go before the imports below.
+    (TriageVerdict, "hypothesis__run__application_id__in"),
+    (TriageHypothesis, "run__application_id__in"),
+    (TriageRun, "application_id__in"),
     # The code graph.
     (CodeRelationship, "snapshot__repository__application_id__in"),
     (CodeFile, "snapshot__repository__application_id__in"),
@@ -90,6 +115,23 @@ LABELS = {
     "CodeSnapshot": "code snapshots",
     "GraphRevision": "graph versions",
 }
+
+
+def imported(ids):
+    """Knowledge a connector brought in, for these applications.
+
+    An import is an ordinary entry with no document behind it, whose source is a
+    record URL under its connector's namespace - the same test `connectors.prune`
+    uses to decide what a connector owns.
+    """
+    owned = Q(pk__in=[])
+    for connector in Connector.objects.filter(application_id__in=ids):
+        try:
+            namespace = kind_for(connector.kind).namespace(connector.config)
+        except (KeyError, ValidationError):
+            continue
+        owned |= Q(application_id=connector.application_id, source__startswith=namespace)
+    return KnowledgeEntry.objects.filter(owned, document__isnull=True)
 
 
 def allowed():
@@ -113,6 +155,8 @@ def summary(organization):
         label = LABELS.get(model.__name__)
         if label and ids:
             counts[label] = model.objects.filter(**{lookup: ids}).count()
+    if ids:
+        counts["imported records"] = imported(ids).filter(active=True).count()
     return counts
 
 
@@ -138,6 +182,27 @@ def reset(user, organization, typed_name):
         count, _ = model.objects.filter(**{lookup: ids}).delete()
         if count:
             removed[model.__name__] = count
+    entries = imported(ids)
+    IncidentProfile.objects.filter(entry__in=entries).delete()
+    count, _ = entries.delete()
+    if count:
+        removed["KnowledgeEntry imported"] = count
+    # The connector reads as never imported, and its schedule counts from now.
+    Connector.objects.filter(application_id__in=ids).update(
+        last_synced_at=None,
+        last_attempt_at=timezone.now(),
+        last_count=0,
+        last_status="",
+        last_error="",
+        last_duration_ms=0,
+    )
+    # Idle, not absent: an application with sources and no graph row is exactly
+    # what the worker rebuilds. Matching the fingerprint is what holds it off,
+    # and only until the sources actually change.
+    KnowledgeGraph.objects.bulk_create(
+        KnowledgeGraph(application_id=pk, status="idle", fingerprint=fingerprint(pk))
+        for pk in ids
+    )
     # A conversation can pin a graph version for its graph answers. The version
     # is gone; the conversation is not, so it goes back to the current graph
     # rather than failing to find the one it named.

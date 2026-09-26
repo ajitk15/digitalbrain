@@ -193,6 +193,14 @@
   .swatch-extracted { background: var(--c-ok); }
   .swatch-inferred { background: var(--c-inferred); }
   .swatch-unquoted { background: var(--c-line-strong); }
+  /* The graph's theme colours, light-canvas steps, in the same fixed order graph.js uses. */
+  .theme-swatch { display: inline-block; margin-right: var(--s-1); vertical-align: middle; border-radius: 50%; }
+  .theme-1 { background: #2a78d6; }
+  .theme-2 { background: #eb6834; }
+  .theme-3 { background: #1baf7a; }
+  .theme-4 { background: #eda100; }
+  .theme-5 { background: #e87ba4; }
+  .theme-6 { background: #008300; }
 
   /* <progress> renders a precise proportion with no inline style. */
   .share-cell { display: flex; align-items: center; gap: var(--s-2); }
@@ -701,7 +709,7 @@
     .kb-graph { height: 420px; flex: none; }
   }
 
-  /* Chat: answers read as documents ------------------------------------ */
+  /* Chat ---------------------------------------------------------------- */
 
   .chat-workspace { min-height: 360px; }  /* Floor only; see .kb-panes above. */
 
@@ -798,6 +806,179 @@
     padding: var(--s-3) var(--s-4);
   }
   .chat-user .message-meta { text-align: right; }
+
+  /* Conversation ------------------------------------------------------
+     An answer is the assistant's mark beside a card; a question is a pill on
+     the right. chat.js builds its streaming bubble in the same shape, so the
+     server-rendered one that replaces it does not move. */
+  .chat-assistant {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr);
+    column-gap: var(--s-3);
+    align-items: start;
+  }
+  .message-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: var(--c-brand-tint);
+    border: 1px solid var(--c-brand-border);
+    margin-top: 2px;
+  }
+  .message-avatar .avatar-back { fill: var(--c-brand); opacity: .45; }
+  .message-avatar .avatar-front { fill: var(--c-brand); }
+  .message-bubble {
+    min-width: 0;
+    max-width: 78ch;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-sm) var(--r-xl) var(--r-xl) var(--r-xl);
+    padding: var(--s-3) var(--s-4);
+    box-shadow: var(--e-1);
+  }
+  .chat-assistant .message-body { max-width: none; }
+  .chat-assistant .message-meta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--s-2);
+    margin-bottom: var(--s-2);
+    font-size: var(--t-11);
+    color: var(--c-ink-faint);
+  }
+  .message-author { font-size: var(--t-12); font-weight: 650; color: var(--c-ink); }
+  .message-mode, .message-state {
+    font-size: var(--t-10);
+    font-weight: 600;
+    letter-spacing: .02em;
+    border-radius: var(--r-pill);
+    padding: 1px 8px;
+  }
+  .message-mode { color: var(--c-brand); background: var(--c-brand-tint-2); }
+  .message-state { color: var(--c-warn); background: var(--c-warn-bg); }
+  .message-state.is-failed { color: var(--c-bad); background: var(--c-bad-bg); }
+  .chat-assistant .message-meta time { margin-left: auto; }
+
+  .chat-user {
+    border: 1px solid var(--c-brand-border);
+    box-shadow: var(--e-1);
+  }
+  .chat-user .message-meta { font-size: var(--t-11); color: var(--c-ink-faint); }
+
+  /* Before the first word arrives, say it is working rather than show an empty card. */
+  .chat-assistant[data-status="streaming"] .message-body:empty::before {
+    content: "Thinking";
+    color: var(--c-ink-muted);
+    font-size: var(--t-13);
+  }
+  .chat-assistant[data-status="streaming"] .message-body:empty::after {
+    content: "6";
+    display: inline-block;
+    width: 0;
+    overflow: hidden;
+    vertical-align: bottom;
+    color: var(--c-ink-muted);
+    animation: chat-thinking 1.2s steps(4, jump-none) infinite;
+  }
+  @keyframes chat-thinking { to { width: 1.1em; } }
+  @media (prefers-reduced-motion: reduce) {
+    .chat-assistant[data-status="streaming"] .message-body:empty::after { animation: none; width: auto; }
+  }
+  .chat-tool {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s-1);
+    margin: 0 0 var(--s-2);
+    padding: 2px 10px;
+    border-radius: var(--r-pill);
+    background: var(--c-subtle);
+    color: var(--c-ink-muted);
+    font-size: var(--t-11);
+    font-style: normal;
+  }
+
+  /* Citation badges: text, not links. chat.js makes them open their source. */
+  .cite {
+    display: inline-block;
+    min-width: 1.5em;
+    margin-left: 2px;
+    padding: 1px 4px;
+    border: 1px solid var(--c-brand-border);
+    border-radius: var(--r-pill);
+    background: var(--c-brand-tint);
+    color: var(--c-brand);
+    font-size: .66em;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    text-align: center;
+    vertical-align: super;
+  }
+  .cite[role="button"] { cursor: pointer; }
+  .cite[role="button"]:hover, .cite[role="button"]:focus-visible {
+    background: var(--c-brand);
+    border-color: var(--c-brand);
+    color: #fff;
+    outline: none;
+  }
+  .source-chip.is-lit { border-color: var(--c-brand); box-shadow: 0 0 0 3px var(--c-brand-tint); }
+
+  .chat-assistant .message-sources { margin-top: var(--s-3); padding-top: var(--s-3); }
+  .source-count {
+    margin-left: var(--s-1);
+    padding: 0 6px;
+    border-radius: var(--r-pill);
+    background: var(--c-canvas);
+    color: var(--c-ink-muted);
+    letter-spacing: 0;
+  }
+  .more-sources { margin-top: var(--s-2); }
+  .more-sources > summary {
+    display: inline-flex;
+    gap: var(--s-1);
+    cursor: pointer;
+    list-style: none;
+    font-size: var(--t-11);
+    color: var(--c-ink-muted);
+  }
+  .more-sources > summary::-webkit-details-marker { display: none; }
+  .more-sources > summary::before { content: "+"; color: var(--c-brand); }
+  .more-sources[open] > summary::before { content: "2"; }
+  .more-sources .source-chips { margin-top: var(--s-2); }
+  .more-sources .source-chip:not([open]) { opacity: .8; }
+  /* Actions sit outside the bubbles, so a hidden one never leaves an empty
+     strip inside a message. An answer's are a quiet row under its card; a
+     question's Edit appears under it on hover, and takes space only when open. */
+  .chat-assistant .message-actions {
+    grid-column: 2;
+    margin-top: var(--s-1);
+    padding-left: var(--s-2);
+    opacity: 1;
+    gap: var(--s-3);
+  }
+  .chat-assistant .message-actions .link-button {
+    color: var(--c-ink-muted);
+    font-size: var(--t-12);
+    text-decoration: none;
+  }
+  .chat-assistant .message-actions .link-button:hover { color: var(--c-brand); }
+  .chat-user { position: relative; }
+  .chat-user .message-actions {
+    position: absolute;
+    top: 100%;
+    right: var(--s-2);
+    margin-top: 2px;
+  }
+  .chat-user .message-actions:has(details[open]) { position: static; margin-top: var(--s-2); }
+
+  @media (max-width: 560px) {
+    .chat-assistant { grid-template-columns: minmax(0, 1fr); }
+    .chat-assistant .message-actions { grid-column: 1; }
+    .message-avatar { display: none; }
+    .message-bubble { border-radius: var(--r-xl); }
+  }
 
   /* Source chips ------------------------------------------------------- */
 
@@ -1965,6 +2146,12 @@
   .kb-graph-bar #graph-search { flex: 1 1 160px; width: auto; min-width: 0; }
   .kb-graph-bar #graph-node { flex: 0 1 180px; width: auto; min-width: 0; }
   .kb-graph-bar .graph-filters { flex: 0 1 auto; }
+  .kb-graph-bar .graph-colour { display: inline-flex; align-items: center; gap: var(--s-1); margin: 0; white-space: nowrap; }
+  .kb-graph-bar .graph-colour select { width: auto; }
+  /* Theme names are node labels, not categories: keep their case, and cut a long one. */
+  .graph-filters.by-theme .graph-filter { text-transform: none; max-width: 22ch; }
+  .graph-filters.by-theme .graph-filter span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inspector-theme { margin: 0 0 var(--s-2); color: var(--c-ink-2, #48546c); font-size: var(--t-12); }
   /* Rebuilding is not exploring: it keeps the far end of the row to itself. */
   .graph-regenerate { margin-left: auto; }
   /*

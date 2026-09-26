@@ -42,16 +42,36 @@
     else form.removeAttribute("aria-busy");
   };
 
+  const avatar = document.getElementById("chat-avatar");
+
+  // The same shape _chat_message.html renders, so the finished fragment that
+  // replaces this bubble does not jump: an answer is an avatar beside a bubble
+  // holding its header and body; a question is a plain pill.
   const bubble = (role, text) => {
     const article = document.createElement("article");
     article.className = `chat-message chat-${role}`;
-    const meta = document.createElement("div");
-    meta.className = "message-meta";
-    meta.textContent = role === "user" ? "You" : "Digital Brain";
     const body = document.createElement("div");
     body.className = "message-body";
     body.textContent = text || "";
-    article.append(meta, body);
+    let meta;
+    if (role === "user") {
+      meta = document.createElement("div");
+      meta.className = "message-meta";
+      meta.textContent = "You";
+      article.append(meta, body);
+    } else {
+      meta = document.createElement("header");
+      meta.className = "message-meta";
+      const author = document.createElement("span");
+      author.className = "message-author";
+      author.textContent = "Digital Brain";
+      meta.append(author);
+      const wrap = document.createElement("div");
+      wrap.className = "message-bubble";
+      wrap.append(meta, body);
+      if (avatar) article.append(avatar.content.cloneNode(true));
+      article.append(wrap);
+    }
     const empty = messages.querySelector(".chat-empty");
     if (empty) empty.remove();
     messages.append(article);
@@ -114,7 +134,7 @@
       if (!tools) {
         tools = document.createElement("p");
         tools.className = "chat-tool";
-        assistant.article.insertBefore(tools, assistant.body);
+        assistant.body.before(tools);
       }
       tools.textContent = `Searching sources: ${info.detail || info.name}`;
       scrollDown();
@@ -252,7 +272,43 @@
     });
   }
 
+  // A citation badge and the source it points at light up together, and
+  // choosing a badge opens that source. Without this the badge is still the
+  // number, and the chip still carries the same number.
+  function wireCitations(root) {
+    const chips = [...root.querySelectorAll(".source-chip[data-numbers]")];
+    const chipFor = (number) =>
+      chips.find((chip) => chip.dataset.numbers.split(" ").includes(number));
+    root.querySelectorAll(".cite[data-cite]").forEach((badge) => {
+      const chip = chipFor(badge.dataset.cite);
+      if (!chip) return;
+      badge.tabIndex = 0;
+      badge.setAttribute("role", "button");
+      const title = chip.querySelector(".chip-title");
+      if (title) badge.title = title.textContent;
+      const light = (on) => chip.classList.toggle("is-lit", on);
+      badge.addEventListener("pointerenter", () => light(true));
+      badge.addEventListener("pointerleave", () => light(false));
+      badge.addEventListener("focus", () => light(true));
+      badge.addEventListener("blur", () => light(false));
+      const open = () => {
+        const more = chip.closest(".more-sources");
+        if (more) more.open = true;
+        chip.open = true;
+        chip.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      };
+      badge.addEventListener("click", open);
+      badge.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      });
+    });
+  }
+
   function wireMessage(root) {
+    wireCitations(root);
     if (!(navigator.clipboard && window.isSecureContext)) return;
     root.querySelectorAll("[data-copy]").forEach((button) => {
       button.hidden = false;

@@ -223,11 +223,12 @@ def reset_organization(request, pk):
     runs = removed.get("FactoryRun", 0)
     repositories = removed.get("CodeRepository", 0)
     versions = removed.get("GraphRevision", 0)
+    imports = removed.get("KnowledgeEntry imported", 0)
     messages.success(
         request,
         f"{organization.name} was reset: {runs} run(s), {repositories} code "
-        f"repositor{'y' if repositories == 1 else 'ies'} and {versions} graph "
-        "version(s) removed. Applications, connectors, credentials, sources, "
-        "settings and people are untouched.",
+        f"repositor{'y' if repositories == 1 else 'ies'}, {versions} graph "
+        f"version(s) and {imports} imported record(s) removed. Applications, "
+        "connectors, credentials, uploaded sources, settings and people are untouched.",
     )
     return redirect("platform-console")

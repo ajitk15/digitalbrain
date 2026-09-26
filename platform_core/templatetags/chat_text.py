@@ -9,9 +9,32 @@ from django.utils.safestring import mark_safe
 register = template.Library()
 
 
+#: An answer's [n] or [2,3] citation markers.
+CITATION = re.compile(r"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
+
+
+def citation(match):
+    """Each number a small badge: text, never a link.
+
+    `data-cite` lets chat.js light up the matching source; without it the badge
+    still reads as the number it always was.
+    """
+    return "".join(
+        f'<sup class="cite" data-cite="{number}"><span class="sr-only">source </span>'
+        f"{number}</sup>"
+        for number in re.findall(r"\d+", match.group(1))
+    )
+
+
+@register.filter
 def inline(value):
     value = str(escape(value))
-    value = re.sub(r"`([^`]+)`", r"<code>\1</code>", value)
+    # Code spans first, and citations only outside them: `items[1]` is code.
+    parts = re.split(r"(`[^`]+`)", value)
+    value = "".join(
+        f"<code>{part[1:-1]}</code>" if index % 2 else CITATION.sub(citation, part)
+        for index, part in enumerate(parts)
+    )
     return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
 
 
@@ -123,29 +146,54 @@ def chat_text(value):
 
 
 @register.filter
-def source_chips(citations):
-    """Group verified citations by source document.
+def source_chips(citations, body=None):
+    """Group verified citations by source document, the cited ones first.
 
     One document cited five times is one chip carrying [1,2,3,4,5], not five
     identical rows. The numbers are the inline [n] markers in the answer, so the
     grouping never breaks the link between a claim and its evidence.
 
+    Given the answer's text, a chip is `cited` when the answer actually points
+    at one of its numbers. Retrieval hands the model more sources than it uses,
+    and listing all of them at the same weight made eight sources look like the
+    basis of a two-line answer that rested on two. An answer with no markers at
+    all - source excerpts, a graph answer - has every chip cited, since there is
+    nothing to tell them apart by.
+
     The digest is deliberately dropped: it is a server-side integrity token used
     to verify a citation against its source, and has no business in the browser.
     """
     chips = {}
-    for index, citation in enumerate(citations or [], 1):
-        key = citation.get("id")
+    for index, citation_row in enumerate(citations or [], 1):
+        key = citation_row.get("id")
         chip = chips.setdefault(
             key,
             {
                 "id": key,
-                "title": citation.get("title", ""),
-                "graph_version": citation.get("graph_version"),
+                "title": citation_row.get("title", ""),
+                "graph_version": citation_row.get("graph_version"),
                 "numbers": [],
                 "excerpts": [],
             },
         )
         chip["numbers"].append(index)
-        chip["excerpts"].append({"number": index, "text": citation.get("excerpt", "")})
-    return list(chips.values())
+        chip["excerpts"].append({"number": index, "text": citation_row.get("excerpt", "")})
+    marked = {
+        int(number)
+        for group in CITATION.findall(str(body or ""))
+        for number in re.findall(r"\d+", group)
+    }
+    rows = list(chips.values())
+    for chip in rows:
+        chip["cited"] = not marked or bool(marked & set(chip["numbers"]))
+    return sorted(rows, key=lambda chip: not chip["cited"])
+
+
+@register.filter
+def source_groups(citations, body=None):
+    """The chips split for the page: what the answer cites, and the rest."""
+    chips = source_chips(citations, body)
+    return {
+        "cited": [chip for chip in chips if chip["cited"]],
+        "more": [chip for chip in chips if not chip["cited"]],
+    }

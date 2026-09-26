@@ -1129,7 +1129,7 @@ class PhaseBudgetTests(SimpleTestCase):
             MAX_EXPLANATION_CHARACTERS,
             MAX_ITEMS,
             MAX_QUOTE_CHARACTERS,
-            PHASE_TOKENS,
+            OUTPUT_LIMIT,
         )
 
         per_item = (
@@ -1138,7 +1138,7 @@ class PhaseBudgetTests(SimpleTestCase):
         worst_case = MAX_ITEMS * per_item / 4  # ~4 characters per token
         # Room to spare, because real answers vary: one live run came back at
         # 2,639 tokens and the next at 4,316 for the same ticket.
-        self.assertLess(worst_case, PHASE_TOKENS["analysis"] * 0.75)
+        self.assertLess(worst_case, OUTPUT_LIMIT * 0.75)
 
     def test_evidence_is_cited_by_the_number_it_was_shown_with(self):
         """A live run cited "source_id": "3"; UUIDs do not survive a long answer."""
@@ -1164,24 +1164,18 @@ class PhaseBudgetTests(SimpleTestCase):
         ):
             self.assertIn(str(value), ANALYSIS_INSTRUCTIONS)
 
-    def test_every_phase_that_calls_a_model_has_its_own_output_budget(self):
-        """One budget for differently shaped asks is what overran before.
+    def test_every_agent_shares_one_output_cap(self):
+        """Seven budgets, each raised only after a live run broke it, became one.
 
-        Verification and delivery call no model - they check and they write - so
-        they have no budget, and that absence is deliberate rather than missing.
+        A cap is not what is billed, so a tight one saved nothing and failed an
+        ordinary answer whenever the model thought for longer than last time.
         """
-        from platform_core.code_factory import PHASE_TOKENS
+        from platform_core import code_factory
 
-        # Six agents call a model; verification and delivery do not - they check
-        # and they write. That absence is deliberate rather than missing.
-        calls_a_model = set(BUILD_A) | {"work_order", "implementation", "tests", "review"}
-        self.assertEqual(set(PHASE_TOKENS), calls_a_model)
-        from platform_core.code_factory import BUILD_B
-
-        self.assertEqual(set(BUILD_B) - calls_a_model, {"verification", "delivery"})
-        self.assertLess(PHASE_TOKENS["triage"], PHASE_TOKENS["analysis"])
-        # Implementation returns whole files, so it needs the most room.
-        self.assertGreater(PHASE_TOKENS["implementation"], PHASE_TOKENS["analysis"])
+        self.assertFalse(hasattr(code_factory, "PHASE_TOKENS"))
+        self.assertEqual(code_factory.OUTPUT_LIMIT, 32000)
+        self.assertLessEqual(code_factory.MIN_OUTPUT_LIMIT, code_factory.OUTPUT_LIMIT)
+        self.assertLessEqual(code_factory.OUTPUT_LIMIT, code_factory.MAX_OUTPUT_LIMIT)
 
     def test_the_factory_has_its_own_worker_lane(self):
         from platform_core.document_worker import LANES

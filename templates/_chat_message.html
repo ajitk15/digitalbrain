@@ -1,22 +1,24 @@
 {% load chat_text %}
 {% if message.role == 'user' %}
 <article class="chat-message chat-user" id="message-{{ message.pk }}"><div class="message-meta">You · {{ message.created_at|date:"M d, H:i" }} UTC</div><div class="message-body">{{ message.body|linebreaksbr }}</div>
-{# A plain details/form pair: with JavaScript off it opens and posts on its own.
+{% comment %}A plain details/form pair: with JavaScript off it opens and posts on its own.
    chat.js's optimistic bubble is built without it, because a question that has
-   not been written yet has no id to post to; it is there on the next load. #}
+   not been written yet has no id to post to; it is there on the next load.
+   A block comment because the short form is one line only: written that way,
+   this used to render as text inside every question.{% endcomment %}
 <div class="message-actions"><details class="edit-question"><summary>Edit</summary><form method="post" action="{% url 'chat-edit' application.pk message.pk %}">{% csrf_token %}<label class="sr-only" for="edit-{{ message.pk }}">Edit this question</label><textarea id="edit-{{ message.pk }}" name="question" rows="3" maxlength="2000" required>{{ message.body }}</textarea><div class="actions"><button type="submit" class="button">Ask again</button></div><p class="muted">Asking again replaces this question and removes everything after it.</p></form></details></div>
 </article>
 {% else %}
-<article class="chat-message chat-assistant" id="message-{{ message.pk }}" data-status="{{ message.status }}"><div class="message-meta">Digital Brain · {% if message.mode == 'ai' %}AI answer{% elif message.mode == 'graph' %}Graph answer{% else %}Source excerpts{% endif %}{% if message.status == 'stopped' %} · stopped{% elif message.status == 'failed' %} · failed{% endif %}</div><div class="message-body">{{ message.body|chat_text }}</div>
+<article class="chat-message chat-assistant" id="message-{{ message.pk }}" data-status="{{ message.status }}">{% include "_chat_avatar.html" %}<div class="message-bubble">
+<header class="message-meta"><span class="message-author">Digital Brain</span><span class="message-mode">{% if message.mode == 'ai' %}AI answer{% elif message.mode == 'graph' %}Graph answer{% else %}Source excerpts{% endif %}</span>{% if message.status == 'stopped' %}<span class="message-state">Stopped</span>{% elif message.status == 'failed' %}<span class="message-state is-failed">Failed</span>{% endif %}<time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"M d, H:i" }} UTC</time></header>
+<div class="message-body">{{ message.body|chat_text }}</div>
 {% if message.error %}<p class="message-error">{{ message.error }}</p>{% endif %}
-{% if message.citations %}
+{% if message.citations %}{% with sources=message.citations|source_groups:message.body %}
 <section class="message-sources" aria-label="Sources for this answer">
-<h4>Sources</h4>
-<div class="source-chips">
-{% for chip in message.citations|source_chips %}<details class="source-chip"><summary><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2z"/></svg><span class="chip-title">{{ chip.title }}</span>{% if chip.graph_version %}<span class="source-tag">graph v{{ chip.graph_version }}</span>{% endif %}<span class="chip-numbers">{% for n in chip.numbers %}{{ n }}{% if not forloop.last %},{% endif %}{% endfor %}</span></summary><div class="chip-body"><a href="{% url 'knowledge-detail' application.pk chip.id %}">Open source</a>{% for excerpt in chip.excerpts %}<pre class="source-text">[{{ excerpt.number }}] {{ excerpt.text }}</pre>{% endfor %}</div></details>{% endfor %}
-</div>
+<h4>Sources <span class="source-count">{{ sources.cited|length }}</span></h4>
+<div class="source-chips">{% for chip in sources.cited %}{% include "_source_chip.html" %}{% endfor %}</div>
+{% if sources.more %}<details class="more-sources"><summary>{{ sources.more|length }} more retrieved, not cited</summary><div class="source-chips">{% for chip in sources.more %}{% include "_source_chip.html" %}{% endfor %}</div></details>{% endif %}
 </section>
-{% endif %}
-<div class="message-actions">{% if message.status != 'streaming' %}<button type="button" class="link-button" data-copy hidden>Copy</button><form method="post" action="{% url 'chat-regenerate' application.pk message.pk %}" class="inline-form" data-regenerate>{% csrf_token %}<button type="submit" class="link-button">Regenerate</button></form>{% endif %}</div>
-</article>
+{% endwith %}{% endif %}
+</div><footer class="message-actions">{% if message.status != 'streaming' %}<button type="button" class="link-button" data-copy hidden>Copy</button><form method="post" action="{% url 'chat-regenerate' application.pk message.pk %}" class="inline-form" data-regenerate>{% csrf_token %}<button type="submit" class="link-button">Regenerate</button></form>{% endif %}</footer></article>
 {% endif %}
