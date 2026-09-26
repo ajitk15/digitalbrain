@@ -230,12 +230,27 @@ async def _run(
         }, answer
 
 
+#: Our own failure messages, as the fixed labels the log is allowed to keep. A
+#: rejected answer and a missing result used to be one indistinguishable
+#: "ValueError" line - which is how an over-strict answer limit went unseen.
+FAILURE_KINDS = {
+    "Invalid answer": "answer_rejected",
+    "No successful result": "no_result",
+}
+
+
 def completion(config, question, citations, token, history=None, **options):
     try:
         return asyncio.run(_run(config.model, question, citations, token, history, **options))
     except (ClaudeSDKError, TimeoutError, OSError, ValueError, TypeError) as failure:
         # The operator needs the real text to debug; the user must never see it.
-        logger.warning("claude_completion_failed", exc_info=True)
+        # The log formatter keeps no exception message (it may carry provider
+        # prose), so which of our own failures this was travels as a fixed label.
+        logger.warning(
+            "claude_completion_failed",
+            exc_info=True,
+            extra={"failure_kind": FAILURE_KINDS.get(str(failure), "other")},
+        )
         log_result_failure(failure, options.get("max_tokens"))
         raise ValidationError(diagnosis(failure)) from None
 

@@ -6,6 +6,7 @@ from platform_core.agent_runtime.runtime import (
     recent_turns,
 )
 from platform_core.agent_runtime.usage import (
+    ANSWER_LIMIT,
     checked_answer,
     checked_count,
     checked_request_id,
@@ -56,7 +57,13 @@ class UsageValidationTests(SimpleTestCase):
 
     def test_answers_and_request_ids_are_bounded(self):
         self.assertEqual(checked_answer("ok"), "ok")
-        for value in (None, "", "   ", "x" * 20001):
+        # A long, legitimate answer - an implementation phase writing whole
+        # files - is accepted up to what Code Factory's largest output cap
+        # (64,000 tokens, ~4 characters each) can produce.
+        from platform_core.code_factory import MAX_OUTPUT_LIMIT
+
+        self.assertTrue(checked_answer("x" * (MAX_OUTPUT_LIMIT * 4)))
+        for value in (None, "", "   ", "x" * (ANSWER_LIMIT + 1)):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 checked_answer(value)
         self.assertEqual(checked_request_id("req-1"), "req-1")
@@ -85,3 +92,34 @@ class HistoryAndEvidenceTests(SimpleTestCase):
         self.assertEqual(payload[0]["source"], 1)
         self.assertNotIn("digest", payload[0])
         self.assertEqual(evidence_payload([]), [])
+
+
+class FailureLabelTests(SimpleTestCase):
+    def test_a_rejected_answer_is_labelled_in_the_log_without_its_text(self):
+        """The formatter keeps no exception message, so an answer thrown away by
+        the length check and a stream with no result used to read identically."""
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        from django.core.exceptions import ValidationError
+
+        from platform_core import claude_agents
+        from platform_core.observability import SafeJsonFormatter
+
+        config = SimpleNamespace(model="claude-sonnet-5")
+
+        def rejected(coroutine):
+            coroutine.close()
+            raise ValueError("Invalid answer")
+
+        with (
+            patch.object(claude_agents.asyncio, "run", side_effect=rejected),
+            self.assertLogs("platform_core.claude_agents", "WARNING") as logs,
+            self.assertRaises(ValidationError),
+        ):
+            claude_agents.completion(config, "q", [], "token")
+        record = next(r for r in logs.records if r.getMessage() == "claude_completion_failed")
+        entry = json.loads(SafeJsonFormatter().format(record))
+        self.assertEqual(entry["failure_kind"], "answer_rejected")
+        self.assertNotIn("Invalid answer", json.dumps(entry))

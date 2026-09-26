@@ -9,7 +9,13 @@ understate real spend.
 from dataclasses import dataclass
 
 TOKEN_LIMIT = 1000000
-ANSWER_LIMIT = 20000
+#: The longest answer accepted, in characters. It bounds a runaway reply; it
+#: must never be smaller than what a caller's own output cap lets the model
+#: write. It was 20,000 while Code Factory allows up to 64,000 output tokens
+#: (roughly 4 characters each): a live implementation phase - the new contents
+#: of every changed file - finished, was charged for, and was then thrown away
+#: here as "Invalid answer", shown as "Claude response unavailable".
+ANSWER_LIMIT = 300000
 REQUEST_ID_LIMIT = 160
 
 

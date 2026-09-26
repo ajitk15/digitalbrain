@@ -44,6 +44,8 @@ class SafeJsonFormatter(logging.Formatter):
             "max_tokens",
             "api_error_kind",
             "output_tokens",
+            # Which of our own failures it was, as a fixed label (claude_agents).
+            "failure_kind",
         ):
             if hasattr(record, field):
                 entry[field] = getattr(record, field)
