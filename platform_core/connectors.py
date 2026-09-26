@@ -151,6 +151,11 @@ def sync(user, connector_id, app_id):
                 "pruned": pruned,
             },
         )
+    if count or pruned:
+        # After the commit, so a slow build never holds the import's locks.
+        from .ops_graph import ensure_current
+
+        ensure_current(app)
     return count
 
 

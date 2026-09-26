@@ -292,6 +292,20 @@ evidence shows on every item it produces.
 Neither path checks the live fingerprint — answering from a published snapshot is the point.
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
 
+**The operations layer is the one exception, and it is deliberate.** The operations layer
+(incidents, changes and what connects them) is live, not publish-gated: it is rebuilt by rules
+from imported records whenever they change, and every edge is re-verified against its records
+when read. Documents stay publish-gated. Nothing a model says is written to either.
+`platform_core/ops_graph.py` builds it (`OperationsGraph`/`OpsNode`/`OpsEdge`); `ensure_current`
+rebuilds whenever the fingerprint over incident and change ids and digests, plus the published
+knowledge-graph revision, has moved. Runbook passages join it only from the **latest published**
+revision, by exact whole-word component or service name, and a passage from an older version
+is skipped at read. `neighbourhood()` is the one reader: the incident page and the triage
+evidence pack both use it, so they cannot disagree, and `score_pair` / `same_event` are the one
+definition of "similar" and "same event" for the page, triage, replay and the graph. The only
+edge a person makes is `confirmed` (a verdict's actual cause, chosen from the idea's own
+citations); a rebuild never touches it, and withdrawing the verdict deletes it.
+
 ## Chat shape
 
 `ChatConversation` → many `ChatMessage`, one row per message with `role`, `status` and an

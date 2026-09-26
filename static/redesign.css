@@ -3202,4 +3202,40 @@
   .guide-terms dt { font-weight: 600; }
   .guide-terms dd { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--t-13); }
   .guide-list { padding-left: var(--s-4); color: var(--c-ink-2); font-size: var(--t-13); }
+
+  /* The operations graph: how evidence was reached, and the map around an
+     incident. Node colours come from tokens, so both themes follow. */
+  .ops-path { display: block; margin-top: 2px; color: var(--c-ink-muted); font-size: var(--t-11); }
+  .ops-path span:not([aria-hidden]) { font-weight: 600; color: var(--c-ink-3); }
+  .ops-map { display: block; width: 100%; height: auto; max-height: 440px; margin: var(--s-2) 0; }
+  .ops-map a { cursor: pointer; }
+  .ops-line { stroke: var(--c-line-strong); stroke-width: 1.5; }
+  .ops-line-confirmed { stroke: var(--c-ok); stroke-width: 2.5; }
+  .ops-line-change { stroke: var(--c-warn); }
+  .ops-node circle { fill: var(--c-surface); stroke: var(--c-ink-faint); stroke-width: 2; }
+  .ops-node text { fill: var(--c-ink-2); font-size: 12px; }
+  .ops-center circle { fill: var(--c-brand); stroke: var(--c-brand-strong); }
+  .ops-center text { fill: var(--c-ink); font-weight: 700; }
+  .ops-map a:hover circle, .ops-map a:focus circle { stroke-width: 4; }
+  .ops-map a:focus { outline: none; }
+  .ops-component circle { fill: var(--c-info-bg); stroke: var(--c-info); }
+  .ops-service circle { fill: var(--c-line-soft); stroke: var(--c-ink-2); stroke-dasharray: 4 2; }
+  .ops-symptom circle { fill: var(--c-bad-bg); stroke: var(--c-bad); }
+  .ops-change circle { fill: var(--c-warn-bg); stroke: var(--c-warn); }
+  .ops-precedent circle { fill: var(--c-ok-bg); stroke: var(--c-ok); }
+  .ops-confirmed circle { fill: var(--c-ok); stroke: var(--c-ok); }
+  .ops-related circle { fill: var(--c-surface); stroke: var(--c-bad); stroke-dasharray: 3 2; }
+  .ops-passage circle { fill: var(--c-info); stroke: var(--c-info); }
+  .ops-legend { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-3); margin: 0; padding: 0; list-style: none; color: var(--c-ink-3); font-size: var(--t-12); }
+  .ops-legend li { display: inline-flex; align-items: center; gap: 6px; }
+  .ops-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--c-ink-faint); background: var(--c-surface); }
+  .ops-swatch.ops-incident { background: var(--c-brand); border-color: var(--c-brand-strong); }
+  .ops-swatch.ops-component { background: var(--c-info-bg); border-color: var(--c-info); }
+  .ops-swatch.ops-service { background: var(--c-line-soft); border-color: var(--c-ink-2); border-style: dashed; }
+  .ops-swatch.ops-symptom { background: var(--c-bad-bg); border-color: var(--c-bad); }
+  .ops-swatch.ops-change { background: var(--c-warn-bg); border-color: var(--c-warn); }
+  .ops-swatch.ops-precedent { background: var(--c-ok-bg); border-color: var(--c-ok); }
+  .ops-swatch.ops-confirmed { background: var(--c-ok); border-color: var(--c-ok); }
+  .ops-swatch.ops-related { border-style: dashed; border-color: var(--c-bad); }
+  .ops-swatch.ops-passage { background: var(--c-info); border-color: var(--c-info); }
 }

@@ -41,6 +41,14 @@
       value: "#35c8a0",
       section: "#7f8db0",
       entity: "#e0a92e",
+      incident: "#6d7cff",
+      change: "#e0a92e",
+      component: "#35c8a0",
+      service: "#b07cff",
+      symptom: "#ef7a7a",
+      group: "#7f8db0",
+      passage: "#b8c1d9",
+      confirmed: "#4cc38a",
       edge: "#2c3c60",
       inferred: "#e0a92e",
       label: "#b8c1d9",
@@ -53,6 +61,14 @@
       value: "#258777",
       section: "#7b879b",
       entity: "#b45309",
+      incident: "#4145c8",
+      change: "#b45309",
+      component: "#258777",
+      service: "#8a53bc",
+      symptom: "#a13e3e",
+      group: "#7b879b",
+      passage: "#58627a",
+      confirmed: "#1d6b45",
       edge: "#d7dce9",
       inferred: "#b45309",
       label: "#334155",
@@ -96,7 +112,22 @@
     }
     return COLORS[nodes.get(id).kind] || COLORS.section;
   };
-  const KINDS = ["document", "record", "value", "section", "entity"];
+  // The operations layer's kinds follow the knowledge graph's; a filter is
+  // offered only for kinds the graph on screen actually has.
+  const KINDS = [
+    "document",
+    "record",
+    "value",
+    "section",
+    "entity",
+    "incident",
+    "change",
+    "component",
+    "service",
+    "symptom",
+    "group",
+    "passage",
+  ];
   const START_NODES = 120;
   const MAX_NODES = 400;
   const WIDTH = 900;
@@ -489,12 +520,23 @@
       inspector.append(inTheme);
     }
 
+    if (node.knowledge_id) {
+      const open = document.createElement("a");
+      open.textContent = "Open the record";
+      open.href = `../knowledge/${node.knowledge_id}/`;
+      inspector.append(open);
+    }
+
     const related = edges.filter((e) => e.source === id || e.target === id);
     const inferred = related.filter((e) => e.inferred).length;
+    const confirmed = related.filter((e) => e.confirmed).length;
 
     const summary = document.createElement("p");
     summary.textContent =
-      `${related.length} relationship(s), ${inferred} AI-inferred. ` +
+      `${related.length} relationship(s), ` +
+      (graph.layer === "operations"
+        ? `${related.length - confirmed} derived by rules, ${confirmed} confirmed by a person. `
+        : `${inferred} AI-inferred. `) +
       "Showing up to 30 evidence entries.";
     inspector.append(summary);
 
@@ -512,7 +554,10 @@
       const block = document.createElement("div");
       block.className = "graph-evidence";
       const relation = document.createElement("strong");
-      relation.textContent = e.relation;
+      // Which way the relation reads: "INC2 is similar to INC1", not just "is similar to".
+      const other = nodes.get(e.source === id ? e.target : e.source);
+      relation.textContent =
+        e.source === id ? `${e.relation} ${other.label}` : `${other.label} ${e.relation} ${node.label}`;
       if (e.inferred) {
         const tag = document.createElement("span");
         tag.className = "inferred-tag";
@@ -611,8 +656,12 @@
         y2: b.y,
         // An inferred relation keeps a flat amber: guessed evidence must not
         // look like the same thing as a structural fact.
-        stroke: e.inferred ? COLORS.inferred : `url(#${gradientFor(from, to)})`,
-        "stroke-width": e.inferred ? 1.6 : 1.2,
+        stroke: e.confirmed
+          ? COLORS.confirmed
+          : e.inferred
+            ? COLORS.inferred
+            : `url(#${gradientFor(from, to)})`,
+        "stroke-width": e.confirmed ? 2.6 : e.inferred ? 1.6 : 1.2,
         "stroke-dasharray": e.inferred ? "4 3" : "",
         class: "kg-edge",
       });

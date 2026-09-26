@@ -3,6 +3,7 @@
 import hashlib
 import re
 import uuid
+from dataclasses import dataclass
 
 from django import forms
 from django.contrib import messages
@@ -13,6 +14,7 @@ from django.db.models import Q
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .models import KnowledgeEntry, TriageHypothesis, TriageRun, TriageVerdict
@@ -321,11 +323,116 @@ def verified(entry):
     return entry.active and hashlib.sha256(entry.content.encode()).hexdigest() == entry.digest
 
 
+@dataclass(frozen=True)
+class Record:
+    """An incident or change read once: its header fields and its symptoms."""
+
+    entry: KnowledgeEntry
+    fields: dict
+    description: str
+    terms: frozenset
+    signature: str
+
+
+def parse(entry):
+    fields, description = fields_and_description(entry)
+    return Record(
+        entry=entry,
+        fields=fields,
+        description=description,
+        terms=symptom_terms(entry.title, description),
+        signature=fingerprint(entry.title, description),
+    )
+
+
+def is_resolved(fields):
+    """Whether a record says it is finished, in any of the ways connectors say it."""
+    return bool(
+        fields.get("Resolved")
+        or fields.get("Close code")
+        or fields.get("Close notes")
+        or fields.get("Status", "").lower() in {"resolved", "closed", "done"}
+        or fields.get("State", "").lower() in {"resolved", "closed"}
+    )
+
+
+def is_open(fields):
+    """Open for "the same event": not resolved and not closed. Narrower than
+    `not is_resolved` on purpose - a close note on a still-open ticket is a
+    draft, and that ticket may well be a second report of what is happening now."""
+    state = fields.get("State", "").casefold()
+    return not (fields.get("Resolved") or state in {"resolved", "closed"})
+
+
+def _same(key, left, right):
+    return bool(left.get(key)) and left[key].casefold() == right.get(key, "").casefold()
+
+
+def score_pair(record, other, weights):
+    """How far a resolved incident is a precedent for another: the one definition.
+
+    Returns (score, reasons, differences, similarity). A score of 0 means not a
+    precedent. The page, triage, the replay command and the operations graph all
+    score through here, so none of them can disagree about what "similar" means.
+    """
+    fields, theirs = record.fields, other.fields
+    score = 0
+    reasons = []
+    if _same("CI", fields, theirs):
+        score += 4
+        reasons.append("same CI")
+    if _same("Service", fields, theirs):
+        score += 3
+        reasons.append("same service")
+    if _same("Environment", fields, theirs):
+        score += 1
+        reasons.append("same environment")
+    if record.signature and record.signature == other.signature:
+        score += 4
+        reasons.append("same symptom signature")
+    alike = similarity(record.terms, other.terms, weights)
+    if alike >= SIMILAR_SYMPTOMS:
+        # Up to 8, so what was reported can outweigh merely sharing a CI and
+        # a service (7) - which every ticket on a busy component does.
+        score += round(alike * 8)
+        reasons.append(
+            "similar symptoms: " + ", ".join(telling(record.terms & other.terms, weights))
+        )
+    differences = [
+        f"different {key.lower()}: {theirs[key]}"
+        for key in ("Service", "CI", "Environment")
+        if fields.get(key) and theirs.get(key) and fields[key].casefold() != theirs[key].casefold()
+    ]
+    return score, reasons, differences, alike
+
+
+def same_event(record, other, weights):
+    """Whether two open incidents look like one event, and why; None if not.
+
+    When both carry a service it must match; then they need an identical
+    fingerprint or symptoms at least `RELATED_SIMILARITY` alike, weighted so
+    rare words count more than common ones.
+    """
+    if not record.terms:
+        return None
+    mine, theirs = record.fields.get("Service"), other.fields.get("Service")
+    if mine and theirs and mine.casefold() != theirs.casefold():
+        return None
+    alike = similarity(record.terms, other.terms, weights)
+    same = bool(record.signature) and record.signature == other.signature
+    if not same and alike < RELATED_SIMILARITY:
+        return None
+    return {
+        "same_fingerprint": same,
+        "similarity": round(alike, 2),
+        "shared": telling(record.terms & other.terms, weights, limit=6),
+    }
+
+
 def precedent_rows(app, incident, limit=5, as_of=None):
     """Rank resolved incidents, without mistaking lexical fit for confidence."""
-    fields, description = fields_and_description(incident)
-    terms = symptom_terms(incident.title, description)
-    signature = fingerprint(incident.title, description)
+    record = parse(incident)
+    fields, terms = record.fields, record.terms
     weights = term_weights(app)
     candidates = incident_queryset(app).exclude(pk=incident.pk)
     if as_of is not None:
@@ -347,53 +454,20 @@ def precedent_rows(app, incident, limit=5, as_of=None):
     for candidate in candidates.order_by("-created_at")[:CANDIDATE_LIMIT]:
         if not verified(candidate):
             continue
-        other, other_description = fields_and_description(candidate)
+        theirs = parse(candidate)
+        other = theirs.fields
         if as_of is not None:
             from .serviceops_triage import _date
 
             resolved_at = _date(other.get("Resolved"))
             if resolved_at is None or resolved_at > as_of:
                 continue
-        if not (
-            other.get("Resolved")
-            or other.get("Close code")
-            or other.get("Close notes")
-            or other.get("Status", "").lower() in {"resolved", "closed", "done"}
-            or other.get("State", "").lower() in {"resolved", "closed"}
-        ):
+        if not is_resolved(other):
             continue
-        reasons = []
-        score = 0
-        if fields.get("CI") and fields["CI"].casefold() == other.get("CI", "").casefold():
-            score += 4
-            reasons.append("same CI")
-        if (
-            fields.get("Service")
-            and fields["Service"].casefold() == other.get("Service", "").casefold()
-        ):
-            score += 3
-            reasons.append("same service")
-        if (
-            fields.get("Environment")
-            and fields["Environment"].casefold() == other.get("Environment", "").casefold()
-        ):
-            score += 1
-            reasons.append("same environment")
-        if signature and signature == fingerprint(candidate.title, other_description):
-            score += 4
-            reasons.append("same symptom signature")
-        other_terms = symptom_terms(candidate.title, other_description)
-        alike = similarity(terms, other_terms, weights)
-        if alike >= SIMILAR_SYMPTOMS:
-            # Up to 8, so what was reported can outweigh merely sharing a CI and
-            # a service (7) - which every ticket on a busy component does.
-            score += round(alike * 8)
-            reasons.append(
-                "similar symptoms: " + ", ".join(telling(terms & other_terms, weights))
-            )
+        score, reasons, differences, _ = score_pair(record, theirs, weights)
         if not score:
             continue
-        excerpt = other.get("Close notes") or other_description[:450]
+        excerpt = other.get("Close notes") or theirs.description[:450]
         if excerpt and excerpt not in candidate.content:
             continue
         rows.append(
@@ -404,13 +478,7 @@ def precedent_rows(app, incident, limit=5, as_of=None):
                 "close_code": other.get("Close code", ""),
                 "score": score,
                 "reasons": reasons,
-                "differences": [
-                    f"different {key.lower()}: {other[key]}"
-                    for key in ("Service", "CI", "Environment")
-                    if fields.get(key)
-                    and other.get(key)
-                    and fields[key].casefold() != other[key].casefold()
-                ],
+                "differences": differences,
                 "excerpt": excerpt,
             }
         )
@@ -441,79 +509,21 @@ def related_open_rows(app, incident, limit=5):
     then the incident needs an identical fingerprint or symptoms at least
     `RELATED_SIMILARITY` alike, weighted so rare words count more than common ones.
     """
-    fields, description = fields_and_description(incident)
-    terms = symptom_terms(incident.title, description)
-    signature = fingerprint(incident.title, description)
-    if not terms:
+    record = parse(incident)
+    if not record.terms:
         return []
     weights = term_weights(app)
     rows = []
     for candidate in incident_queryset(app).exclude(pk=incident.pk).order_by("-created_at")[:500]:
         if not verified(candidate):
             continue
-        other, other_description = fields_and_description(candidate)
-        if other.get("Resolved") or other.get("State", "").casefold() in {"resolved", "closed"}:
+        theirs = parse(candidate)
+        if not is_open(theirs.fields):
             continue
-        if (
-            fields.get("Service")
-            and other.get("Service")
-            and fields["Service"].casefold() != other["Service"].casefold()
-        ):
-            continue
-        other_terms = symptom_terms(candidate.title, other_description)
-        alike = similarity(terms, other_terms, weights)
-        same = bool(signature) and signature == fingerprint(candidate.title, other_description)
-        if not same and alike < RELATED_SIMILARITY:
-            continue
-        rows.append(
-            {
-                "entry": candidate,
-                "fields": other,
-                "same_fingerprint": same,
-                "similarity": round(alike, 2),
-                "shared": telling(terms & other_terms, weights, limit=6),
-            }
-        )
+        match = same_event(record, theirs, weights)
+        if match:
+            rows.append({"entry": candidate, "fields": theirs.fields, **match})
     rows.sort(key=lambda row: (not row["same_fingerprint"], -row["similarity"]))
-    return rows[:limit]
-
-
-def change_rows(app, incident, limit=5):
-    """Recent same-CI changes preceding the incident, when timestamps are known."""
-    from datetime import timedelta
-
-    from .serviceops_triage import _date
-
-    fields, _ = fields_and_description(incident)
-    opened = _date(fields.get("Opened"))
-    ci = fields.get("CI")
-    if not (opened and ci):
-        return []
-    candidates = KnowledgeEntry.objects.filter(
-        application=app,
-        active=True,
-        source__icontains="change_request.do",
-        content__icontains=f"CI: {ci}",
-    ).order_by("-created_at")[:500]
-    rows = []
-    for entry in candidates:
-        if not verified(entry):
-            continue
-        other, description = fields_and_description(entry)
-        started = _date(other.get("Start"))
-        if other.get("CI", "").casefold() != ci.casefold() or not started:
-            continue
-        gap = opened - started
-        if timedelta(0) <= gap <= timedelta(days=2):
-            rows.append(
-                {
-                    "entry": entry,
-                    "fields": other,
-                    "excerpt": description[:500] or entry.title,
-                    "hours_before": round(gap.total_seconds() / 3600, 1),
-                }
-            )
-    rows.sort(key=lambda row: (row["hours_before"], str(row["entry"].pk)))
     return rows[:limit]
 
 
@@ -529,7 +539,14 @@ def graph_rows(app, incident):
         citations = graph_citations(app.pk, query)
     except ValidationError:
         return [], False
-    return [row for row in citations if row["id"] != str(incident.pk)][:5], True
+    # The quote itself as the excerpt: it is what stands in the source, so it
+    # can be checked there, and it is what a model may cite word for word. The
+    # relation it supports goes with it as context.
+    return [
+        dict(row, excerpt=row["quote"], context=row["relation"])
+        for row in citations
+        if row["id"] != str(incident.pk)
+    ][:5], True
 
 
 #: A run that has stopped moving, and so has a brief (or a reason it has none).
@@ -614,6 +631,14 @@ def labelled_hypotheses(app, run):
             }
             for citation in item.citations
         ]
+        # What the verdict form offers as "the actual cause": the records this
+        # idea cited, once each, never the incident itself.
+        seen = {str(run.incident_id)}
+        item.cause_choices = []
+        for citation in item.labelled_citations:
+            if citation["id"] not in seen:
+                seen.add(citation["id"])
+                item.cause_choices.append(citation)
     return hypotheses
 
 
@@ -633,9 +658,11 @@ def create_manual_incident(user, app, values):
     )
     content = f"{values['title']}\n\n{header}\n\n{values['description']}"
     entry = add_knowledge(user, app.pk, values["title"], content)
+    from .ops_graph import ensure_current
     from .serviceops_triage import profile
 
     profile(entry)
+    ensure_current(app)
     return entry
 
 
@@ -745,7 +772,11 @@ def serviceops(request, pk):
     if not verified(selected):
         raise Http404
     fields, description = fields_and_description(selected)
-    graph, graph_available = graph_rows(app, selected)
+    from .ops_graph import neighbourhood, neighbourhood_map
+
+    # The same walk triage makes, so the page shows exactly what a run would use.
+    walk = neighbourhood(app, selected)
+    drawn_map = neighbourhood_map(walk)
     run = pick_run(app, selected, request.GET.get("run", ""))
     return render(
         request,
@@ -760,17 +791,40 @@ def serviceops(request, pk):
             "number": fields.get("Number", ""),
             "state": fields.get("State") or fields.get("Status", ""),
             "description": description,
-            "precedents": precedent_rows(app, selected),
-            "related_open": related_open_rows(app, selected),
-            "changes": change_rows(app, selected),
-            "graph": graph,
-            "graph_available": graph_available,
+            "precedents": walk["precedents"],
+            "related_open": walk["related"],
+            "changes": walk["changes"],
+            "confirmed": walk["confirmed"],
+            "graph": walk["passages"],
+            "graph_available": walk["graph_available"],
+            "map": drawn_map,
+            "map_legend": map_legend(drawn_map),
             "origin": origin_link(selected),
             "typical_cost": typical_cost(app),
             **run_context(app, run),
             "run_count": TriageRun.objects.filter(application=app, incident=selected).count(),
         },
     )
+
+
+#: The incident map's key, in the order a reader meets the rings.
+MAP_LEGEND = (
+    ("incident", "This incident"),
+    ("component", "Component"),
+    ("service", "Service"),
+    ("symptom", "Symptom"),
+    ("confirmed", "Confirmed cause"),
+    ("change", "Change"),
+    ("precedent", "Similar, resolved"),
+    ("related", "Maybe the same event"),
+    ("passage", "Document passage"),
+)
+
+
+def map_legend(drawn_map):
+    """The key for the kinds this map actually draws, and no others."""
+    drawn = {item["kind"] for item in (drawn_map or {}).get("items", [])}
+    return [(kind, label) for kind, label in MAP_LEGEND if kind in drawn]
 
 
 def origin_link(entry):
@@ -964,25 +1018,64 @@ def triage_verdict(request, pk, hypothesis_id):
     )
     from .serviceops_triage import run_still_verified
 
-    if not run_still_verified(hypothesis.run):
+    run = hypothesis.run
+    if request.POST.get("action") == "retract":
+        # Only the person who gave a verdict takes it back. The confirmed-cause
+        # edge it made goes with it (CASCADE), so the graph forgets it too.
+        try:
+            verdict_id = uuid.UUID(request.POST.get("verdict_id", ""))
+        except ValueError:
+            raise Http404 from None
+        mine = get_object_or_404(
+            TriageVerdict, pk=verdict_id, hypothesis=hypothesis, user=request.user
+        )
+        with transaction.atomic():
+            audit(
+                request.user,
+                "serviceops.verdict_retracted",
+                hypothesis.pk,
+                app.product.portfolio.organization,
+                details={"verdict": mine.verdict, "had_cause": bool(mine.actual_cause_id)},
+            )
+            mine.delete()
+        return redirect(incident_url(app, run.incident_id, run.pk))
+
+    if not run_still_verified(run):
         raise Http404
     verdict = request.POST.get("verdict")
     if verdict not in {"accepted", "rejected", "partial"}:
         raise ValidationError("Choose a verdict.")
     note = request.POST.get("note", "").strip()[:1000]
+    cause = None
+    chosen = request.POST.get("cause", "").strip()
+    if chosen and verdict != "rejected":
+        # A closed choice: only a record this idea cited, in this application,
+        # still verifying. The id never widens scope - a foreign or retired one
+        # reads as "not found".
+        quotes = {citation["id"]: citation["quote"] for citation in hypothesis.citations}
+        if chosen not in quotes or chosen == str(run.incident_id):
+            raise Http404
+        cause = KnowledgeEntry.objects.filter(pk=chosen, application=app, active=True).first()
+        if cause is None or not verified(cause):
+            raise Http404
     with transaction.atomic():
-        TriageVerdict.objects.create(
+        record = TriageVerdict.objects.create(
             hypothesis=hypothesis,
             user=request.user,
             verdict=verdict,
             note=note,
+            actual_cause=cause,
+            confirmed_at=timezone.now() if cause else None,
         )
+        if cause:
+            from .ops_graph import confirm_cause
+
+            confirm_cause(app, run.incident, cause, record, quotes[chosen])
         audit(
             request.user,
             "serviceops.verdict",
             hypothesis.pk,
             app.product.portfolio.organization,
-            details={"verdict": verdict},
+            details={"verdict": verdict, "actual_cause": str(cause.pk) if cause else ""},
         )
-    run = hypothesis.run
     return redirect(incident_url(app, run.incident_id, run.pk))

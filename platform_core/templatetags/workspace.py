@@ -333,6 +333,17 @@ def document_steps(doc):
 
 
 @register.filter
+def has_operations(application):
+    """Whether Knowledge offers the operations layer: wherever ServiceOps is on.
+
+    The feature switch, not a count of nodes: the switch is cached for the
+    request, and this runs on every Knowledge screen, whose query budget
+    `test_feature_cache` pins.
+    """
+    return feature_enabled("service_ops", application)
+
+
+@register.filter
 def source_label(url):
     """A readable origin for a link-sourced document.
 

@@ -7,7 +7,7 @@
 <h2 class="panel-label">The six steps</h2>
 <ol class="guide-steps">
   <li><strong>Profile symptoms</strong><span>Picks out the words that describe the fault, ignoring ids, dates and filler, and recognises common phrasings of the same fault — "504", "gateway timeout" and "timed out" all count as a timeout.</span><em>No AI</em></li>
-  <li><strong>Gather evidence</strong><span>Finds similar past incidents, changes on the same component in the 48 hours before, other open incidents like this one, and runbook passages. Words that are rare in your incidents count for more than common ones, so "FHIR" matters more than "export".</span><em>No AI</em></li>
+  <li><strong>Walk the graph</strong><span>Starts at the incident in the operations graph and follows what it is joined to: the component and service it is on, changes there in the 48 hours before, similar resolved incidents, other open incidents that may be the same event, runbook passages that name the component, and causes people confirmed for incidents like it. Each piece of evidence says the path that found it. Words that are rare in your incidents count for more than common ones, so "FHIR" matters more than "export".</span><em>No AI</em></li>
   <li><strong>Ask the AI</strong><span>Only if there is evidence. Personal details are removed first. The AI may only use what step 2 found.</span><em class="guide-ai">AI{% if model_label and model_label != 'AI off' %} · {{ model_label }}{% endif %}</em></li>
   <li><strong>Verify citations</strong><span>Every quote must appear word for word in a live record, and every suggested check must be read-only. Anything else is dropped.</span><em>No AI</em></li>
   <li><strong>Rate the evidence</strong><span>Scores the evidence from 0 to 1 using fixed rules — the AI does not grade itself.</span><em>No AI</em></li>
@@ -19,7 +19,7 @@
   <div><dt>Evidence strength</dt><dd><strong>Too weak</strong> (under {{ insufficient_below }}): no ideas are shown — investigate by hand. <strong>Low</strong> (under {{ low_below }}) and <strong>Medium</strong>: ideas worth checking. There is no High yet: that needs a record of which ideas turned out right.</dd></div>
   <div><dt>Ideas to check</dt><dd>Up to three explanations, each with the records it quotes. They are leads, not a diagnosis.</dd></div>
   <div><dt>What to check first</dt><dd>A safe, read-only step to confirm or rule out the idea. Nothing is ever changed for you.</dd></div>
-  <div><dt>Was it useful?</dt><dd>Your answer is the outcome record that will let the strength rating be checked and calibrated. Please answer once you know.</dd></div>
+  <div><dt>Was it useful?</dt><dd>Your answer is the outcome record that will let the strength rating be checked and calibrated. Please answer once you know.</dd></div><div><dt>What was the actual cause?</dt><dd>When an idea was useful, name the record that turned out to be the cause. It is written into the operations graph with your name, and the next incident on the same component or with the same symptoms finds it first. Withdraw your answer and the graph forgets it. The AI never adds one.</dd></div>
 </dl>
 
 <h2 class="panel-label">Cost and safety</h2>
@@ -34,7 +34,7 @@
   <div><dt>Component (CI)</dt><dd>The server, application or part of the system the incident is on — ServiceNow calls it a configuration item.</dd></div>
   <div><dt>Service</dt><dd>The business service the component belongs to.</dd></div>
   <div><dt>Similar past incident</dt><dd>A resolved incident on the same component, service or symptoms, with how it was fixed.</dd></div>
-  <div><dt>Recent change</dt><dd>A change request on the same component that started shortly before the incident.</dd></div>
+  <div><dt>Recent change</dt><dd>A change request on the same component that started shortly before the incident.</dd></div><div><dt>Operations graph</dt><dd>Incidents, changes, components, services, symptoms and runbook passages, joined by fixed rules and rebuilt as records arrive. Shown around each incident, and in full under Knowledge → Graph → Operations.</dd></div>
 </dl>
 </div>
 <div class="actions"><a class="button" href="{% url 'serviceops' application.pk %}" data-modal-close>Got it</a></div>

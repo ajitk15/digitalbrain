@@ -1,0 +1,1 @@
+{% if row.path %}<span class="ops-path" title="How the operations graph reached this">{% for step in row.path %}{% if step %}{% if not forloop.first %}<span aria-hidden="true"> → </span>{% endif %}<span>{{ step }}</span>{% endif %}{% endfor %}</span>{% endif %}

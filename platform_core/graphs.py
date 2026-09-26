@@ -611,6 +611,23 @@ def graph_view(request, pk):
             else "There is no failed or interrupted generation to retry.",
         )
         return redirect("graph", pk=pk)
+    if request.GET.get("tab") == "operations":
+        # The operations layer: live, built by rules from imported incidents and
+        # changes, so it has no versions to publish and nothing to generate.
+        from .ops_graph import explorer_data
+
+        data = explorer_data(app)
+        return render(
+            request,
+            "graph_operations.html",
+            {
+                "application": app,
+                "grant": grant,
+                "knowledge_view": "operations",
+                "data": data,
+                "built_at": getattr(getattr(app, "operations_graph", None), "built_at", None),
+            },
+        )
     active_graph = KnowledgeGraph.objects.filter(application=app).first()
     graph = active_graph
     current = bool(graph and graph.status == "ready" and graph.fingerprint == fingerprint(pk))

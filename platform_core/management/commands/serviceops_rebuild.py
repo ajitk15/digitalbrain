@@ -5,6 +5,7 @@ import uuid
 from django.core.management.base import BaseCommand, CommandError
 
 from platform_core.models import Application
+from platform_core.ops_graph import rebuild
 from platform_core.serviceops import incident_queryset, verified
 from platform_core.serviceops_triage import profile
 
@@ -32,3 +33,7 @@ class Command(BaseCommand):
             profile(entry)
             count += 1
         self.stdout.write(f"Rebuilt {count} incident profiles; skipped {skipped} invalid sources.")
+        state = rebuild(app)
+        self.stdout.write(
+            f"Rebuilt the operations graph: {state.node_count} nodes, {state.edge_count} edges."
+        )

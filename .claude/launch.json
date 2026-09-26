@@ -14,6 +14,12 @@
       "port": 8055
     },
     {
+      "name": "digitalbrain-pages",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["manage.py", "runserver", "8056", "--noreload"],
+      "port": 8056
+    },
+    {
       "name": "diagrams",
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": [

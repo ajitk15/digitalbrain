@@ -440,6 +440,107 @@ class TriageVerdict(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class OperationsGraph(models.Model):
+    """One application's operations graph: when it was built, and from what.
+
+    The operations layer is live, unlike the knowledge graph's documents: it is
+    rebuilt by rules from imported incidents and changes whenever they change,
+    because incidents arrive hourly and triage cannot wait for someone to
+    publish. `fingerprint` is over those records' ids and digests, so a stale
+    graph is noticed and rebuilt before it is read.
+    """
+
+    application = models.OneToOneField(
+        Application, on_delete=models.CASCADE, related_name="operations_graph"
+    )
+    fingerprint = models.CharField(max_length=64, blank=True)
+    built_at = models.DateTimeField(null=True, blank=True)
+    node_count = models.PositiveIntegerField(default=0)
+    edge_count = models.PositiveIntegerField(default=0)
+
+
+class OpsNode(models.Model):
+    """A thing in operations: an incident, a change, a service, a component, a symptom."""
+
+    KINDS = [
+        ("incident", "Incident"),
+        ("change", "Change"),
+        ("service", "Service"),
+        ("component", "Component"),
+        ("symptom", "Symptom"),
+        ("group", "Assignment group"),
+        ("passage", "Document passage"),
+    ]
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=12, choices=KINDS)
+    #: Stable within the application: "incident:<entry id>", "component:carepath-api-green".
+    key = models.CharField(max_length=300)
+    label = models.CharField(max_length=300)
+    #: The record behind an incident, change or passage; empty for shared things
+    #: like a component, which exist because records name them.
+    entry = models.ForeignKey(
+        KnowledgeEntry, null=True, blank=True, on_delete=models.CASCADE, related_name="ops_nodes"
+    )
+    #: The facts shown on the page: number, state, priority, times, close code.
+    data = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["application", "key"], name="unique_ops_node")
+        ]
+        indexes = [models.Index(fields=["application", "kind"])]
+
+    def __str__(self):
+        return self.label
+
+
+class OpsEdge(models.Model):
+    """How two things in operations relate, and why.
+
+    Every relation but one is built by rules and replaced on every rebuild.
+    `confirmed` is the exception: a person asserted it in a verdict, it survives
+    rebuilds, and it goes when that verdict does.
+    """
+
+    RELATIONS = [
+        ("on", "is on component"),
+        ("in", "is in service"),
+        ("assigned", "is assigned to"),
+        ("symptom", "has symptom"),
+        ("before", "started before"),
+        ("similar", "is similar to"),
+        ("duplicate", "may be the same event as"),
+        ("mentions", "mentions"),
+        ("confirmed", "was confirmed caused by"),
+    ]
+    #: Relations a person makes. A rebuild never touches these.
+    PERSON_MADE = {"confirmed"}
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    source = models.ForeignKey(OpsNode, on_delete=models.CASCADE, related_name="outgoing")
+    target = models.ForeignKey(OpsNode, on_delete=models.CASCADE, related_name="incoming")
+    relation = models.CharField(max_length=12, choices=RELATIONS)
+    #: Strength where it has one: a similarity, hours before, a precedent score.
+    weight = models.FloatField(default=0)
+    #: Why, in words and numbers: reasons, shared symptoms, hours before, a quote.
+    detail = models.JSONField(default=dict, blank=True)
+    #: The verdict that asserted a `confirmed` edge; retracting it removes the edge.
+    verdict = models.ForeignKey(
+        TriageVerdict, null=True, blank=True, on_delete=models.CASCADE, related_name="edges"
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["source", "target", "relation"], name="unique_ops_edge")
+        ]
+        indexes = [models.Index(fields=["application", "relation"])]
+
+
 class CodeRepository(models.Model):
     """A repository registered inside one application's security boundary."""
 

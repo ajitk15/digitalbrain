@@ -264,6 +264,14 @@ def graph_snapshot(app_id, version=None):
     return revision.data, revision.number
 
 
+def published_version(app_id):
+    """The latest published graph version's number as text, or None."""
+    from .graphs import published_revision
+
+    revision = published_revision(app_id)
+    return str(revision.number) if revision else None
+
+
 def available_graph_versions(app_id):
     """Published versions a conversation may be pinned to, newest first.
 
@@ -331,6 +339,10 @@ def graph_citations(app_id, question, version=None):
                 "digest": entry.digest,
                 "excerpt": f"Graph v{graph.version}: {text}\nSource evidence: {quote}",
                 "graph_version": str(graph.version),
+                # The words as they stand in the source, for a caller that checks
+                # its excerpt against it: the excerpt above never appears there.
+                "quote": quote,
+                "relation": text,
             }
         )
         if len(selected) == 8:

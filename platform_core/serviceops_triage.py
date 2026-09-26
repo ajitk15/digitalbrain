@@ -28,13 +28,9 @@ from .models import (
     TriageRun,
 )
 from .serviceops import (
-    change_rows,
     fields_and_description,
     fingerprint,
-    graph_rows,
     incident_queryset,
-    precedent_rows,
-    related_open_rows,
     symptom_terms,
     verified,
 )
@@ -138,75 +134,104 @@ def redact(value):
     return value
 
 
-def evidence_pack(app, incident):
-    """Bounded source-linked evidence, with no provider or external ticket call."""
-    fields, description = fields_and_description(incident)
+def evidence_pack(app, incident, walk=None):
+    """Bounded source-linked evidence, with no provider or external ticket call.
+
+    Gathered by walking the operations graph, the same walk the incident page
+    shows, so the reader and the model are shown one set. Each item keeps the
+    path that found it; the model is told it in the item's title, since only
+    the excerpt is quotable.
+    """
+    from .ops_graph import neighbourhood, path_text
+
+    walk = walk or neighbourhood(app, incident)
     pack = []
-    precedents = precedent_rows(app, incident, limit=5)
-    for row in precedents:
-        entry = row["entry"]
+
+    def add(entry, kind, excerpt, reasons, path, **extra):
         pack.append(
             {
                 "id": str(entry.pk),
-                "kind": "precedent",
-                "title": entry.title,
-                "excerpt": row["excerpt"][:500],
+                "kind": kind,
+                "title": extra.pop("title", entry.title),
+                "excerpt": excerpt,
                 "digest": entry.digest,
-                "reasons": row["reasons"],
-                "close_code": row["close_code"],
+                "reasons": reasons,
+                "path": path_text(path),
                 "as_of": entry.created_at.isoformat(),
+                **extra,
             }
         )
-    for row in change_rows(app, incident):
-        entry = row["entry"]
-        pack.append(
-            {
-                "id": str(entry.pk),
-                "kind": "change",
-                "title": entry.title,
-                "excerpt": row["excerpt"],
-                "digest": entry.digest,
-                "reasons": [f"same CI, {row['hours_before']}h before onset"],
-                "hours_before": row["hours_before"],
-                "as_of": entry.created_at.isoformat(),
-            }
+
+    # A person's confirmed cause first: it is the strongest lead there is, and
+    # still only a lead.
+    for row in walk["confirmed"]:
+        add(
+            row["entry"],
+            "confirmed_cause",
+            row["excerpt"][:500],
+            [f"confirmed by {row['confirmed_by']} as the cause of {row['cause_of']}"],
+            row["path"],
+            own=row["own"],
         )
-    # The same related incidents the page lists, so the reader and the model are
-    # shown one set.
-    for row in related_open_rows(app, incident):
-        entry = row["entry"]
-        pack.append(
-            {
-                "id": str(entry.pk),
-                "kind": "related_open",
-                "title": entry.title,
-                "excerpt": entry.title,
-                "digest": entry.digest,
-                "reasons": [
-                    "same symptom fingerprint"
-                    if row["same_fingerprint"]
-                    else "shared symptoms: " + ", ".join(row["shared"][:3])
-                ],
-                "as_of": entry.created_at.isoformat(),
-            }
+    for row in walk["precedents"]:
+        add(
+            row["entry"],
+            "precedent",
+            row["excerpt"][:500],
+            row["reasons"],
+            row["path"],
+            close_code=row["close_code"],
         )
-    graph, available = graph_rows(app, incident)
-    for row in graph:
+    for row in walk["changes"]:
+        add(
+            row["entry"],
+            "change",
+            row["excerpt"],
+            [f"same CI, {row['hours_before']}h before onset"],
+            row["path"],
+            hours_before=row["hours_before"],
+        )
+    for row in walk["related"]:
+        add(
+            row["entry"],
+            "related_open",
+            row["entry"].title,
+            [
+                "same symptom fingerprint"
+                if row["same_fingerprint"]
+                else "shared symptoms: " + ", ".join(row["shared"][:3])
+            ],
+            row["path"],
+        )
+    for row in walk["passages"]:
         entry = KnowledgeEntry.objects.filter(pk=row["id"], application=app, active=True).first()
         if entry and verified(entry) and row["excerpt"] in entry.content:
-            pack.append(
-                {
-                    "id": str(entry.pk),
-                    "kind": "published_knowledge",
-                    "title": row["title"],
-                    "excerpt": row["excerpt"][:900],
-                    "digest": entry.digest,
-                    "reasons": ["published graph"],
-                    "as_of": entry.created_at.isoformat(),
-                    "graph_version": row["graph_version"],
-                }
+            add(
+                entry,
+                "published_knowledge",
+                row["excerpt"][:900],
+                ["published graph"],
+                row["path"],
+                title=row["title"],
+                graph_version=row["graph_version"],
             )
-    return pack[:40], available
+    return pack[:40], walk["graph_available"]
+
+
+def model_evidence(pack):
+    """What the model is shown of the pack: the path rides in the title, which is
+    never quotable, so the model learns how each item is connected without being
+    handed anything to cite that is not in a source."""
+    return [
+        {
+            "id": row["id"],
+            "title": redact(
+                f"{row['title']} [found via: {row['path']}]" if row.get("path") else row["title"]
+            ),
+            "excerpt": redact(row["excerpt"]),
+        }
+        for row in pack
+    ]
 
 
 def run_still_verified(run):
@@ -314,15 +339,23 @@ def _parsed_hypotheses(answer, pack):
 #: What the evidence score is made of, and how much each part counts. The page
 #: shows these beside each run's values, so a band can be traced to its parts.
 SCORE_WEIGHTS = {
-    "match": 0.25,
-    "agreement": 0.20,
-    "citation_coverage": 0.20,
-    "change_correlation": 0.15,
-    "reliability": 0.10,
+    "match": 0.22,
+    "agreement": 0.18,
+    "citation_coverage": 0.18,
+    "change_correlation": 0.14,
+    "history": 0.10,
+    "reliability": 0.09,
     "diversity": 0.05,
-    "freshness": 0.05,
+    "freshness": 0.04,
 }
+#: Bumped whenever the score is computed differently, so a cached run's band
+#: is not reused as if this scorer had given it.
+SCORER_VERSION = "v2"
 SCORE_LABELS = {
+    "history": (
+        "Confirmed history",
+        "Whether a cause people confirmed, here or on a similar incident, is cited",
+    ),
     "match": ("Precedent match", "How closely the best cited precedent matches"),
     "agreement": ("Close-code agreement", "Whether the cited precedents were closed the same way"),
     "citation_coverage": ("Citation coverage", "Share of hypotheses backed by a verified quote"),
@@ -351,9 +384,21 @@ def _score(pack, hypotheses):
         (2 ** (-row.get("hours_before", 48) / 6) for row in supporting if row["kind"] == "change"),
         default=0.0,
     )
+    # A cause confirmed on this incident counts fully; one confirmed on a
+    # similar incident is a precedent's conclusion, not this one's.
+    history = max(
+        (
+            1.0 if row.get("own") else 0.7
+            for row in supporting
+            if row["kind"] == "confirmed_cause"
+        ),
+        default=0.0,
+    )
     reliability = max(
         (
-            0.8
+            0.9
+            if row["kind"] == "confirmed_cause"
+            else 0.8
             if row["kind"] == "published_knowledge" or row.get("close_code")
             else 0.6
             if row["kind"] == "precedent"
@@ -376,6 +421,7 @@ def _score(pack, hypotheses):
         "agreement": agreement,
         "citation_coverage": coverage,
         "change_correlation": change,
+        "history": history,
         "reliability": reliability,
         "diversity": diversity,
         "freshness": freshness,
@@ -406,7 +452,7 @@ def _score(pack, hypotheses):
 #: follows a run while it works - the same shape as a Code Factory run.
 STEPS = (
     ("profile", "Profile symptoms", False),
-    ("evidence", "Gather evidence", False),
+    ("evidence", "Walk the graph", False),
     ("model", "Ask the AI", True),
     ("verify", "Verify citations", False),
     ("score", "Rate the evidence", False),
@@ -417,6 +463,7 @@ STEPS = (
 STALL_AFTER = timedelta(seconds=TRIAGE_TIMEOUT + 180)
 
 EVIDENCE_WORDS = (
+    ("confirmed_cause", "confirmed cause", "confirmed causes"),
     ("precedent", "resolved precedent", "resolved precedents"),
     ("change", "recent change", "recent changes"),
     ("related_open", "related open incident", "related open incidents"),
@@ -545,18 +592,23 @@ def _execute(run):
 
     started = time.monotonic()
     _step(run, "evidence", "running")
-    pack, graph_available = evidence_pack(app, incident)
+    from .ops_graph import neighbourhood
+
+    walk = neighbourhood(app, incident)
+    pack, graph_available = evidence_pack(app, incident, walk)
     counts = Counter(row["kind"] for row in pack)
     found = [
         f"{counts[kind]} {one if counts[kind] == 1 else many}"
         for kind, one, many in EVIDENCE_WORDS
         if counts[kind]
     ]
+    through = [item["node"].label for item in walk["entities"] if item["relation"] != "assigned"]
     _step(
         run,
         "evidence",
         "ok",
-        (", ".join(found) if found else "Nothing matched")
+        (f"Through {', '.join(through)}: " if through else "")
+        + (", ".join(found) if found else "nothing matched")
         + ("" if graph_available else " · no published graph"),
         started,
     )
@@ -568,7 +620,7 @@ def _execute(run):
         "pack": pack,
         # v2 asks for a headline per hypothesis, so a v1 answer is not reused.
         "prompt": PROMPT_VERSION,
-        "scorer": "v1",
+        "scorer": SCORER_VERSION,
         "provider": config.provider if config else "",
         "model": config.model if config else "",
     }
@@ -643,10 +695,7 @@ def _execute(run):
                     }
                 )
             )
-            citations = [
-                {"id": row["id"], "title": redact(row["title"]), "excerpt": redact(row["excerpt"])}
-                for row in pack
-            ]
+            citations = model_evidence(pack)
             answer = invoke_ai(
                 user,
                 app.pk,
@@ -748,6 +797,7 @@ def _execute(run):
             model=receipt.get("model", ""),
             error=error,
             prompt_version=PROMPT_VERSION,
+            scorer_version=SCORER_VERSION,
         )
         for rank, item in enumerate(hypotheses, 1):
             TriageHypothesis.objects.create(run=run, rank=rank, **item)

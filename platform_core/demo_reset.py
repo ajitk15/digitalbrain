@@ -76,6 +76,9 @@ from .models import (
     KnowledgeEntry,
     KnowledgeGraph,
     KnowledgeSource,
+    OperationsGraph,
+    OpsEdge,
+    OpsNode,
     PlanItem,
     ProposedChange,
     RunEvent,
@@ -105,6 +108,11 @@ ORDER = (
     (TriageVerdict, "hypothesis__run__application_id__in"),
     (TriageHypothesis, "run__application_id__in"),
     (TriageRun, "application_id__in"),
+    # The operations graph, confirmed causes included: they name records the
+    # reset is about to remove.
+    (OpsEdge, "application_id__in"),
+    (OpsNode, "application_id__in"),
+    (OperationsGraph, "application_id__in"),
     # The code graph.
     (CodeRelationship, "snapshot__repository__application_id__in"),
     (CodeFile, "snapshot__repository__application_id__in"),
