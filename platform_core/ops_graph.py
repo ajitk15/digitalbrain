@@ -74,6 +74,15 @@ def records_fingerprint(app):
     return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
+def documents_only(entries):
+    """Knowledge with a document behind it: uploads, links and folders.
+
+    A connector import has none - it is a record, and records are the
+    operations layer's own nodes, not passages about them.
+    """
+    return entries.filter(document__isnull=False)
+
+
 #: Shorter names would join passages by accident: a CI called "api" is in every
 #: document about any API.
 MIN_NAME_LENGTH = 4
@@ -103,7 +112,12 @@ def passages(app, names):
     }
     edges = revision.data.get("edges", [])
     ids = {edge.get("knowledge_id") for edge in edges if edge.get("knowledge_id")}
-    live = {str(entry.pk): entry for entry in sources_for(app.pk).filter(pk__in=ids)}
+    # Documents only. The published graph also holds imported tickets, whose own
+    # "CI: carepath-api-green" header line would otherwise "mention" the
+    # component - duplicating the operations layer and crowding out runbooks.
+    live = {
+        str(entry.pk): entry for entry in documents_only(sources_for(app.pk)).filter(pk__in=ids)
+    }
     found, counts, seen = [], {}, set()
     for edge in edges:
         quote = edge.get("evidence") or ""
@@ -572,9 +586,15 @@ def passage_rows(app, entities, searched, me):
                     "path": [me, edge.target.label, data.get("title") or node.entry.title],
                 }
             )
+    documented = {
+        str(pk)
+        for pk in documents_only(KnowledgeEntry.objects.filter(application=app))
+        .filter(pk__in=[row["id"] for row in searched])
+        .values_list("pk", flat=True)
+    }
     for row in searched:
         key = (row["id"], row["excerpt"])
-        if key not in seen:
+        if row["id"] in documented and key not in seen:
             seen.add(key)
             rows.append(dict(row, path=[me, "text search", row["title"]]))
     return rows

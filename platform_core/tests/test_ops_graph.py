@@ -186,9 +186,19 @@ class GraphUseTests(Fixtures, TestCase):
         """A published knowledge-graph version holding one quoted passage."""
         from django.utils import timezone
 
-        from platform_core.models import GraphRevision
+        from platform_core.models import Document, GraphRevision, KnowledgeEntry
 
         entry = add_knowledge(self.owner, self.app.pk, "Deployment runbook", text)
+        # An uploaded document, as a runbook is: a connector import has none.
+        document = Document.objects.create(
+            application=self.app,
+            uploaded_by=self.owner,
+            name=f"runbook-{number}.md",
+            size=len(text),
+            sha256="0" * 64,
+            status="ready",
+        )
+        KnowledgeEntry.objects.filter(pk=entry.pk).update(document=document)
         quote = text.splitlines()[1]
         GraphRevision.objects.create(
             application=self.app,
@@ -447,4 +457,44 @@ class GraphUseTests(Fixtures, TestCase):
         self.assertEqual(neighbourhood(self.app, current)["passages"], [])
         KnowledgeEntry.objects.filter(pk=runbook.pk).update(content=runbook.content)
         GraphRevision.objects.update(published_at=None)
+        self.assertEqual(neighbourhood(self.app, current)["passages"], [])
+
+    def test_an_imported_ticket_is_never_a_document_passage(self):
+        """Live CareOps: the published graph held the tickets too, and a ticket's
+        own "CI: api-green" header line "mentioned" the component."""
+        from django.utils import timezone
+
+        from platform_core.models import GraphRevision
+
+        current = self.scenario()
+        rebuild(self.app)
+        precedent = OpsNode.objects.get(label__startswith="INC2 ").entry
+        GraphRevision.objects.create(
+            application=self.app,
+            number=1,
+            fingerprint="x",
+            data={
+                "nodes": [
+                    {"id": "a", "label": "INC2", "kind": "record"},
+                    {"id": "b", "label": "api-green", "kind": "value"},
+                ],
+                "edges": [
+                    {
+                        "source": "a",
+                        "target": "b",
+                        "relation": "CI",
+                        "knowledge_id": str(precedent.pk),
+                        "digest": precedent.digest,
+                        "evidence": "CI: api-green",
+                        "line": 7,
+                    }
+                ],
+                "sources": [{"id": str(precedent.pk)}],
+            },
+            published_at=timezone.now(),
+        )
+        rebuild(self.app)
+        self.assertFalse(OpsEdge.objects.filter(relation="mentions").exists())
+        from platform_core.ops_graph import neighbourhood
+
         self.assertEqual(neighbourhood(self.app, current)["passages"], [])
