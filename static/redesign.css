@@ -2350,10 +2350,10 @@
   .graph-control:hover { background: #222839; filter: none; }
 
   .graph-legend { position: absolute; top: var(--s-3); right: var(--s-3); max-width: 62%; padding: 8px 11px; border-radius: 8px; background: rgba(17, 21, 31, .92); border: 1px solid #242b3d; }
-  .graph-legend summary { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #5c6780; cursor: pointer; }
+  .graph-legend summary { font-size: var(--t-11); letter-spacing: .1em; text-transform: uppercase; color: #5c6780; cursor: pointer; }
   .legend-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: 7px; }
   .legend-group b { font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: #5c6780; font-weight: 600; width: 100%; }
-  .legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; color: #b8c1d9; }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-11); color: #b8c1d9; }
   .legend-swatch { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
   .legend-swatch.role-entry { background: #a855f7; }
   .legend-swatch.role-service { background: #3b82f6; }
@@ -3202,6 +3202,80 @@
   .guide-terms dt { font-weight: 600; }
   .guide-terms dd { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--t-13); }
   .guide-list { padding-left: var(--s-4); color: var(--c-ink-2); font-size: var(--t-13); }
+
+  /* Overview: what is waiting on the reader, then where to start in each
+     application. The counts that used to lead the page are a footnote now. */
+  .attention-list { display: grid; gap: var(--s-2); margin: 0; padding: 0; list-style: none; }
+  .attention-item { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); }
+  .attention-icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-md); background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  .attention-problem .attention-icon { background: var(--c-bad-bg); color: var(--c-bad); }
+  .attention-problem { border-color: var(--c-bad-line); }
+  .attention-text { flex: 1; display: grid; gap: 2px; min-width: 0; }
+  .attention-text small { color: var(--c-ink-3); font-size: var(--t-12); }
+  .attention-text strong { overflow-wrap: anywhere; }
+  .attention-item .button { flex: none; }
+  .attention-clear { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: var(--s-3); border: 1px solid var(--c-ok-line); border-radius: var(--r-md); background: var(--c-ok-bg); color: var(--c-ok); }
+  .app-card-actions header { display: flex; align-items: flex-start; gap: var(--s-3); }
+  .app-card-actions header .app-icon { flex: none; margin-bottom: 0; }
+  .app-card-actions h3 { margin: 0; }
+  .app-card-actions h3 a { color: inherit; }
+  .app-card-actions header p { margin: 2px 0 0; color: var(--c-ink-3); font-size: var(--t-13); }
+  .app-purposes { display: flex; flex-wrap: wrap; gap: var(--s-1); margin: var(--s-2) 0 0; }
+  .app-actions { display: grid; gap: 2px; margin: var(--s-3) 0 0; padding: var(--s-2) 0 0; border-top: 1px solid var(--c-line-soft); list-style: none; }
+  .app-actions a { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-1); border-radius: var(--r-sm); font-weight: 600; }
+  .app-actions a:hover { background: var(--c-brand-tint); text-decoration: none; }
+  .overview-counts { margin-top: var(--s-4); font-size: var(--t-12); }
+  /* The graph explorer's filters and colouring, folded until wanted: finding
+     a node and zooming are what most visits need. */
+  .graph-more { flex-basis: 100%; }
+  .graph-more > summary { display: inline-flex; align-items: center; gap: var(--s-1); cursor: pointer; color: var(--c-ink-3); font-size: var(--t-13); font-weight: 600; }
+  .graph-more[open] > summary { margin-bottom: var(--s-2); }
+  .graph-more .graph-filters { margin-top: var(--s-1); }
+
+  /* Settings, grouped by goal: AI, integrations, people, advanced. */
+  .settings-tabs[data-grouped] { flex-wrap: wrap; row-gap: var(--s-2); }
+  .settings-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding-right: var(--s-3); margin-right: var(--s-2); border-right: 1px solid var(--c-line); }
+  .settings-group:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
+  .settings-group-label { margin-right: var(--s-1); color: var(--c-ink-3); font-size: var(--t-11); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+
+  /* Chat: how answers are made, folded behind a line that says what is in
+     effect; and questions to start an empty conversation with. */
+  .answer-settings { margin-top: var(--s-2); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-surface); }
+  .answer-settings > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-2); padding: var(--s-2) var(--s-3); cursor: pointer; font-size: var(--t-13); }
+  .answer-settings-label { font-weight: 600; }
+  .answer-settings-now { color: var(--c-ink-3); }
+  .answer-settings[open] > summary { border-bottom: 1px solid var(--c-line-soft); }
+  .answer-settings > small, .answer-settings > .conversation-mode { display: block; padding: var(--s-2) var(--s-3); }
+  .answer-settings .inline-form { margin: 0 var(--s-4) var(--s-1) 0; }
+  .answer-settings .inline-form label { margin-right: var(--s-2); }
+  .answer-settings .conversation-mode > select { margin-right: var(--s-4); }
+  .chat-starters { display: grid; gap: var(--s-2); max-width: 560px; margin: var(--s-3) auto 0; padding: 0; list-style: none; text-align: left; }
+  .chat-starters a { display: block; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink-2); }
+  .chat-starters a:hover { border-color: var(--c-brand); color: var(--c-brand-strong); text-decoration: none; }
+
+  /* A run's one next action, at the top of its page. */
+  .next-action { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-3) 0 0; padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-well, var(--c-canvas)); }
+  .next-action > div { flex: 1; display: grid; gap: 2px; min-width: 0; }
+  .next-action small { color: var(--c-ink-3); font-size: var(--t-12); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
+  .next-action p { margin: 0; color: var(--c-ink-2); font-size: var(--t-13); overflow-wrap: anywhere; }
+  .next-action .button { flex: none; }
+  .next-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink-3); }
+  .next-attention { border-color: var(--c-brand-border); background: var(--c-brand-tint); }
+  .next-attention .next-icon { color: var(--c-brand-strong); }
+  .next-problem { border-color: var(--c-bad-line); background: var(--c-bad-bg); }
+  .next-problem .next-icon { color: var(--c-bad); }
+  .next-done { border-color: var(--c-ok-line); background: var(--c-ok-bg); }
+  .next-done .next-icon { color: var(--c-ok); }
+  @media (max-width: 560px) {
+    .next-action { flex-wrap: wrap; }
+    .next-action .button { width: 100%; justify-content: center; }
+  }
+  /* A one-word action never breaks mid-word: "Op / en" read as two things. */
+  .incident-table td:last-child .link-button { white-space: nowrap; }
+  @media (max-width: 560px) {
+    .attention-item { flex-wrap: wrap; }
+    .attention-item .button { width: 100%; justify-content: center; }
+  }
 
   /* Live progress that cannot reach the server says so, pinned where it is seen. */
   .live-status { position: fixed; right: var(--s-4); bottom: var(--s-4); z-index: 50; max-width: 420px; margin: 0; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-warn-line); border-radius: var(--r-md); background: var(--c-warn-bg); color: var(--c-warn); font-size: var(--t-13); box-shadow: 0 4px 16px rgb(0 0 0 / 0.12); }

@@ -70,10 +70,10 @@ AREA_LABELS = {
 
 
 #: The icon each area and purpose is drawn with, matching the menu: Code Factory
-#: is "code", ServiceOps is "warning".
+#: is "code", ServiceOps is "pulse".
 AREA_ICONS = {
     "engineering": "code",
-    "operations": "warning",
+    "operations": "pulse",
     "connectors": "plug",
     "shared": "toggle",
     "both": "application",

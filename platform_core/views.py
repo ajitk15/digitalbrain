@@ -206,12 +206,18 @@ def application_home(request, pk):
 @login_required
 @require_GET
 def dashboard(request):
+    """Where to start and what is waiting, rather than how many things exist."""
+    from . import attention
+
+    applications = list(applications_for(request.user))
     return render(
         request,
         "dashboard.html",
         {
             "organizations": organizations_for(request.user),
-            "applications": applications_for(request.user),
+            "applications": applications,
+            "cards": attention.cards(applications),
+            "attention": attention.items(request.user, applications),
         },
     )
 

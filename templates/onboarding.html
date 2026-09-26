@@ -13,12 +13,12 @@
 
 {% if next_step %}
 <p class="onboard-start">{% icon "arrow-right" 15 %}<span><strong>{% if fresh %}Start with{% else %}Next —{% endif %} step {{ next_number }}: {{ next_step.label|lower }}.</strong> {{ next_step.action }}</span>
-<a class="button" href="{% url next_step.route application.pk %}"{% if next_step.modal %} data-modal{% endif %}>{% icon next_step.icon 13 %}{% if next_step.modal %}Set it up here{% else %}Go and set it up{% endif %}</a></p>
+<a class="button" href="{% url next_step.route application.pk %}"{% if next_step.modal %} data-modal{% endif %}>{% icon next_step.icon 13 %}{{ next_step.button }}</a></p>
 {% endif %}
 
 {% if setup.analysis_ready %}
 <p class="onboard-done">{% icon "check" 15 %}<span><strong>{% if setup.complete %}Onboarding complete.{% elif "engineering" in serving %}Ready to analyse tickets.{% else %}Ready.{% endif %}</strong> {% if "engineering" in serving %}{% if setup.complete %}{{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.{% else %}Opening pull requests needs the Engineering gate below — a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.{% endif %}{% endif %}{% if "operations" in serving %} {{ application.name }} can triage an incident against its past incidents, changes and runbooks.{% endif %}</span>
-{% if "engineering" in serving %}<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a>{% endif %}{% if "operations" in serving %}<a class="button secondary" href="{% url 'serviceops' application.pk %}">{% icon "warning" 13 %}Go to ServiceOps</a>{% endif %}</p>
+{% if "engineering" in serving %}<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a>{% endif %}{% if "operations" in serving %}<a class="button secondary" href="{% url 'serviceops' application.pk %}">{% icon "pulse" 13 %}Go to ServiceOps</a>{% endif %}</p>
 {% endif %}
 
 {% for gate in gates %}
@@ -31,7 +31,7 @@
 <span class="onboard-badge">{% if step.ok %}{% icon "check" 13 %}{% elif step.blocking %}{% icon "cross" 13 %}{% else %}{% icon "warning" 12 %}{% endif %}</span>
 <span class="onboard-name"><strong>{{ number }}. {{ step.label }}</strong><span class="sr-only"> — {% if step.ok %}done{% elif step.blocking %}required{% else %}recommended{% endif %}</span></span>
 <span class="onboard-detail">{{ step.detail }}</span>
-<span class="onboard-go">{% if step.action %}<a class="button{% if step.key != next_step.key %} secondary{% endif %}" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{% if step.modal %}Set up{% else %}Open{% endif %}</a>{% endif %}</span>
+<span class="onboard-go">{% if step.action %}<a class="button{% if step.key != next_step.key %} secondary{% endif %}" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{{ step.button }}</a>{% endif %}</span>
 {% if step.action %}<p class="onboard-why">{{ step.action }}</p>{% endif %}
 </li>
 {% endfor %}</ol>

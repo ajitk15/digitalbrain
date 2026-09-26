@@ -246,6 +246,22 @@ class ChatStreamViewTests(TestCase):
         page = self.client.get(self.url).content.decode()
         self.assertRegex(page, r'name="submission" value="[0-9a-f-]{36}"')
 
+    def test_an_empty_chat_offers_starters_that_send_nothing(self):
+        page = self.client.get(self.url, {"new": "1"}).content.decode()
+        self.assertIn('class="chat-starters"', page)
+        self.assertIn(f"Summarise what {self.app.name} does", page)
+        self.assertFalse(ChatMessage.objects.exists())
+
+    def test_a_starter_fills_the_composer(self):
+        page = self.client.get(self.url, {"new": "1", "q": "How is it deployed?"}).content.decode()
+        self.assertIn("How is it deployed?</textarea>", page)
+        self.assertFalse(ChatMessage.objects.exists())
+
+    def test_answer_settings_say_what_is_in_effect(self):
+        page = self.client.get(self.url, {"new": "1"}).content.decode()
+        self.assertIn('<details class="answer-settings" open>', page)
+        self.assertIn('class="answer-settings-now">AI answer', page)
+
     def test_search_conversations_never_take_the_streaming_path(self):
         response = self.client.post(
             self.url,

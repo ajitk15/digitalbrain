@@ -529,7 +529,12 @@ def chat(request, pk):
             f"Cleared {removed} conversation(s)." if removed else "You had no conversations.",
         )
         return redirect("chat", pk=pk)
-    form = QuestionForm(request.POST or None)
+    if request.method == "POST":
+        form = QuestionForm(request.POST)
+    else:
+        # A starter question fills the composer and sends nothing: the reader
+        # still presses Send, and can change it first. Works without script.
+        form = QuestionForm(initial={"question": request.GET.get("q", "").strip()[:500]})
     chat_config = AIConfiguration.objects.filter(application=app, purpose="chat").first()
     ai_enabled = bool(chat_config and chat_config.enabled)
     chat_key_present = bool(chat_config) and credential_available(chat_config, app)
@@ -660,8 +665,39 @@ def chat(request, pk):
             # A fresh key per rendered composer; chat.js makes a new one after
             # each send it completes without reloading the page.
             "submission": uuid.uuid4(),
+            "starters": chat_starters(app) if conversation is None else [],
+            # What the collapsed "Answer settings" line says is in effect.
+            "mode_label": dict(CHAT_MODE_LABELS).get(mode, mode),
+            "answer_version": (conversation.graph_version if conversation else None)
+            or published_graph,
         },
     )
+
+
+#: How each answer mode reads on the settings line.
+CHAT_MODE_LABELS = (("search", "Source excerpts"), ("ai", "AI answer"), ("graph", "Graph answer"))
+
+
+def chat_starters(app):
+    """Three questions worth asking any application first, for an empty chat.
+
+    Suggestions only: each fills the composer and sends nothing. Shaped by what
+    the application is for, so an operations team is not offered code questions.
+    """
+    from .services import purposes
+
+    serving = purposes(app)
+    starters = [f"Summarise what {app.name} does and who relies on it."]
+    if "operations" in serving:
+        starters.append(f"How is {app.name} deployed, and how is a release rolled back?")
+        starters.append("Which components have caused incidents before, and why?")
+    if "engineering" in serving:
+        starters.append(f"Which requirements does {app.name} not meet yet?")
+        starters.append("How is the system structured, and where is that written down?")
+    if len(starters) == 1:
+        starters.append("Which documents describe how it is deployed and operated?")
+        starters.append("What are the open risks, and where are they written down?")
+    return starters[:3]
 
 
 def submission_key(request):
@@ -1785,6 +1821,9 @@ def run_detail(request, pk, run_id):
         and grant.can_approve
         and (plan.author_id != request.user.pk or self_approval_allowed())
     )
+    can_retry_analysis = bool(
+        run.status == "failed" and run.plan is None and grant.role in {"owner", "contributor"}
+    )
     return render(
         request,
         "run_detail.html",
@@ -1802,10 +1841,13 @@ def run_detail(request, pk, run_id):
             "stage_state": {str(stage["number"]): stage["state"] for stage in run.stages},
             # A run that stopped before producing a plan failed in analysis, and
             # can be queued again on the same record.
-            "can_retry_analysis": bool(
-                run.status == "failed"
-                and run.plan is None
-                and grant.role in {"owner", "contributor"}
+            "can_retry_analysis": can_retry_analysis,
+            "next": dict(
+                zip(
+                    ("tone", "title", "detail", "anchor", "button"),
+                    next_action(run, grant, request.user, reviewable, can_retry_analysis),
+                    strict=True,
+                )
             ),
             "failed_agent": next((agent for agent in agents if agent["status"] == "failed"), None),
             # Section one: the gate, as green ticks rather than a page.
@@ -1835,6 +1877,119 @@ def run_detail(request, pk, run_id):
             "refresh_stage": next((stage for stage in run.stages if stage["number"] == 7), None),
         },
     )
+
+
+def next_action(run, grant, user, reviewable, can_retry_analysis):
+    """The one thing this reader should do next on a run, or why there is none.
+
+    Every stage already carries its own controls; a reader still had to scan
+    seven of them to find the one that wanted them. This names it at the top,
+    using the same conditions the stages use, so the two cannot disagree - and
+    it only offers an action to someone the stage would let take it.
+    Returns (tone, title, detail, anchor, button) - anchor and button empty
+    when there is nothing to do but wait.
+    """
+    plan = run.plan
+    if run.in_flight:
+        return ("working", "Nothing to do yet", "The run is working. This page follows it.", "", "")
+    if run.status == "failed":
+        if can_retry_analysis:
+            return (
+                "problem",
+                "Analysis failed",
+                run.error or "It stopped before a plan.",
+                "#stage-2",
+                "Retry the analysis",
+            )
+        if plan and plan.status == "approved" and grant.can_approve and not run.pull_request_url:
+            return (
+                "problem",
+                "The implementation agents failed",
+                run.error or "An agent stopped without an answer.",
+                "#stage-4",
+                "Run the agents again",
+            )
+        return ("problem", "This run failed", run.error or "See the stages below.", "", "")
+    if plan and plan.status == "rejected":
+        return (
+            "done",
+            "The plan was rejected",
+            "Nothing was written, and nothing more is asked of this run.",
+            "",
+            "",
+        )
+    if run.status == "awaiting_review" and plan and plan.status == "pending":
+        if reviewable:
+            return (
+                "attention",
+                "Review the plan",
+                f"{plan.items.count()} item(s), each with its evidence. Untick what you do "
+                "not want, then approve or reject.",
+                "#stage-3",
+                "Review the plan",
+            )
+        if grant.can_approve and plan.author_id == user.pk:
+            return (
+                "waiting",
+                "Waiting for a second approver",
+                "You wrote this plan, so somebody else approves it.",
+                "",
+                "",
+            )
+        return (
+            "waiting",
+            "Waiting for review",
+            "Somebody with approval rights on this application decides.",
+            "",
+            "",
+        )
+    if run.status == "awaiting_review" and plan and plan.status == "approved":
+        if not grant.can_approve:
+            return (
+                "waiting",
+                "Approved - waiting for an approver to carry on",
+                "Only somebody with approval rights starts the implementation.",
+                "",
+                "",
+            )
+        if not run.repository_confirmed:
+            return (
+                "attention",
+                "Confirm the repository",
+                f"{run.proposed_repository or 'The repository'} was guessed from the ticket. "
+                "Confirm where a pull request would go before anything is written.",
+                "#stage-4",
+                "Confirm it",
+            )
+        return (
+            "attention",
+            "Run the implementation agents",
+            "They write the change here, not to the repository. Several model calls.",
+            "#stage-4",
+            "Run the agents",
+        )
+    if run.status == "prepared":
+        if grant.can_approve:
+            return (
+                "attention",
+                "Decide on the pull request",
+                "Read what was written, then open a draft pull request - or discard it, "
+                "and nothing is written anywhere.",
+                "#stage-5",
+                "Read the summary",
+            )
+        return ("waiting", "Waiting for an approver to open the pull request", "", "", "")
+    if run.status == "delivered":
+        return (
+            "done",
+            "Pull request opened",
+            "The repository's own checks run on it; their results appear below.",
+            "#stage-6",
+            "See the checks",
+        )
+    if run.status == "complete":
+        return ("done", "Done", "Nothing more is asked of this run.", "", "")
+    return ("waiting", run.get_status_display(), "", "", "")
 
 
 def self_approval_allowed():

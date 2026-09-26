@@ -168,6 +168,48 @@ class PagesTests(BrowserTestCase):
                 self.assertNoScriptErrors()
 
 
+#: Nothing a reader needs is set smaller than this. Measured as rendered, so a
+#: rule in the legacy stylesheet that still wins the cascade is caught too.
+MIN_TEXT_PX = 11
+
+SMALL_TEXT = """(minimum) => {
+  const small = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const text = walker.currentNode.textContent.trim();
+    const el = walker.currentNode.parentElement;
+    if (!text || !el || el.closest('svg, [aria-hidden="true"], .sr-only')) continue;
+    const box = el.getBoundingClientRect();
+    if (!box.width || !box.height || getComputedStyle(el).visibility === 'hidden') continue;
+    const size = parseFloat(getComputedStyle(el).fontSize);
+    if (size >= minimum) continue;
+    const tag = el.tagName.toLowerCase();
+    small.push(`${size}px <${tag} class="${el.className}">${text.slice(0, 40)}`);
+  }
+  return [...new Set(small)];
+}"""
+
+
+class ReadabilityTests(BrowserTestCase):
+    def test_no_screen_sets_text_smaller_than_the_minimum(self):
+        for name in (
+            "dashboard",
+            "graph",
+            "documents",
+            "chat",
+            "serviceops",
+            "onboarding",
+            "plans",
+        ):
+            with self.subTest(screen=name):
+                if name == "dashboard":
+                    self.page.goto(f"{self.live_server_url}{reverse('dashboard')}")
+                else:
+                    self.open(name, self.app.pk)
+                self.page.wait_for_load_state("networkidle")
+                self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
+
+
 class ChatTests(BrowserTestCase):
     def setUp(self):
         super().setUp()

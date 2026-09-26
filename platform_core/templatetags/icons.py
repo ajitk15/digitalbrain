@@ -31,6 +31,14 @@ ICONS = {
     "organization": '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M10 21v-5h4v5"/>',
     "application": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/>',
     "audit": '<path d="M14 3v5h5"/><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2z"/><path d="M9 13h6"/><path d="M9 17h4"/>',
+    # One glyph per part of the product, so no two menu entries look alike:
+    # Knowledge is what an application has read, Code Graph its code's
+    # structure, ServiceOps the running service. The warning triangle is kept
+    # for warnings; it used to stand for ServiceOps as well.
+    "knowledge": '<path d="M2 5.5A1.5 1.5 0 0 1 3.5 4H9a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H3.5A1.5 1.5 0 0 1 2 16.5z"/><path d="M22 5.5A1.5 1.5 0 0 0 20.5 4H15a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h6.5a1.5 1.5 0 0 0 1.5-1.5z"/>',
+    "code-graph": '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10"/><path d="M18 10a6 6 0 0 1-6 6H8"/>',
+    "network": '<circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="18" r="2.2"/><circle cx="19" cy="18" r="2.2"/><path d="m10.9 6.9-4.8 9.2"/><path d="m13.1 6.9 4.8 9.2"/><path d="M7.2 18h9.6"/>',
+    "pulse": '<path d="M3 12h4l2.5-6 5 12L17 12h4"/>',
     # Settings sections
     "sliders": '<path d="M4 6h11"/><path d="M19 6h1"/><circle cx="17" cy="6" r="2"/><path d="M4 18h1"/><path d="M9 18h11"/><circle cx="7" cy="18" r="2"/>',
     "cost": '<circle cx="12" cy="12" r="9"/><path d="M12 7v10"/><path d="M14.5 9.5A2.5 2.5 0 0 0 12 8c-1.4 0-2.5.9-2.5 2s1.1 2 2.5 2 2.5.9 2.5 2-1.1 2-2.5 2a2.5 2.5 0 0 1-2.5-1.5"/>',

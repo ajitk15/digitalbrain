@@ -99,7 +99,7 @@ def application_menu(context):
             "Knowledge",
             "graph",
             "knowledge",
-            "graph",
+            "knowledge",
             {
                 "knowledge",
                 "knowledge-detail",
@@ -110,7 +110,7 @@ def application_menu(context):
                 "document-delete",
             },
         ),
-        ("Code Graph", "code-graph", "code_graph", "graph", {"code-graph", "code-file"}),
+        ("Code Graph", "code-graph", "code_graph", "code-graph", {"code-graph", "code-file"}),
         # Knowledge, Code Graph, Code Factory: what an application knows, what
         # its code is, and the pipeline that reads both. Chat sits after them
         # because it asks questions of that knowledge rather than building it,
@@ -127,7 +127,7 @@ def application_menu(context):
             "ServiceOps",
             "serviceops",
             "service_ops",
-            "warning",
+            "pulse",
             {
                 "serviceops",
                 "serviceops-runs",
@@ -173,17 +173,36 @@ def settings_nav(context):
     request = context["request"]
     grant = ApplicationGrant.objects.filter(application=app, user=request.user).first()
     current = request.resolver_match.url_name
-    return {
-        "items": [
-            {
-                "label": label,
-                "icon": name,
-                "url": reverse(route, args=[app.pk]),
-                "current": current in routes,
-            }
-            for label, route, routes, name in settings_sections(app, grant)
-        ]
-    }
+    items = [
+        {
+            "label": label,
+            "icon": name,
+            "url": reverse(route, args=[app.pk]),
+            "current": current in routes,
+            "group": SETTINGS_GROUPS.get(route, "Advanced"),
+        }
+        for label, route, routes, name in settings_sections(app, grant)
+    ]
+    # Grouped by what somebody came to do, not listed in the order screens
+    # were built. Each keeps its own URL and its own permission check.
+    groups = [
+        (group, [item for item in items if item["group"] == group])
+        for group in ("AI", "Integrations", "People", "Advanced")
+    ]
+    return {"items": items, "groups": [(name, found) for name, found in groups if found]}
+
+
+#: Which goal each settings screen serves.
+SETTINGS_GROUPS = {
+    "ai-settings": "AI",
+    "usage": "AI",
+    "connectors": "Integrations",
+    "credentials": "Integrations",
+    "api-tokens": "Integrations",
+    "application-access": "People",
+    "application-features": "Advanced",
+    "chat-settings": "Advanced",
+}
 
 
 @register.inclusion_tag("organization_tree.html", takes_context=True)

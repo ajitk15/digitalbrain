@@ -68,7 +68,7 @@ GATES = (
     ),
 )
 #: Drawn beside each gate's heading, matching the menu and the create form.
-GATE_ICONS = {CONNECTORS: "plug", ANALYSIS: "code", DELIVERY: "github", TRIAGE: "warning"}
+GATE_ICONS = {CONNECTORS: "plug", ANALYSIS: "code", DELIVERY: "github", TRIAGE: "pulse"}
 #: The gate that must be ready before a purpose counts as set up. Delivery is
 #: deliberately not one: an application that only analyses is finished.
 FIRST_GATE = {"engineering": ANALYSIS, "operations": TRIAGE}
@@ -104,6 +104,25 @@ class Step:
     #: page that renders and submits on its own. Every one of these does, and
     #: with JavaScript off the link simply navigates.
     modal: bool = False
+
+    @property
+    def button(self):
+        """What its button says: the screen it opens, not a bare "Open"."""
+        if self.route == "onboarding-connectors":
+            return "Choose connectors"
+        return f"Open {PLACES.get(self.route, 'the screen')}"
+
+
+#: What each fix-it screen is called on its button.
+PLACES = {
+    "application-features": "Features",
+    "graph": "Knowledge",
+    "ai-settings": "AI settings",
+    "credentials": "Credentials",
+    "connectors": "Connectors",
+    "code-graph": "Code Graph",
+    "application-access": "People & access",
+}
 
 
 def credential_step(app, configured, gate, key):
@@ -367,8 +386,7 @@ def steps(app):
             ANALYSIS,
             "Knowledge graph published",
             published is not None,
-            f"Version {published.number}, published "
-            f"{published.published_at:%d %b %Y}."
+            f"Version {published.number}, published {published.published_at:%d %b %Y}."
             if published
             else "No revision has been published.",
             ""
@@ -393,9 +411,7 @@ def steps(app):
             f"{configured.get_provider_display()} {configured.model}."
             if configured
             else "No model is configured for plan drafting.",
-            ""
-            if configured
-            else "Choose a provider and model for plan drafting in Settings.",
+            "" if configured else "Choose a provider and model for plan drafting in Settings.",
             "ai-settings",
             "sliders",
             modal=True,
@@ -404,9 +420,7 @@ def steps(app):
 
     found.append(credential_step(app, configured, ANALYSIS, "credential"))
 
-    tickets = (
-        KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="").count()
-    )
+    tickets = KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="").count()
     found.append(
         Step(
             "tickets",
@@ -456,8 +470,7 @@ def steps(app):
             "snapshot the design names components rather than files, and "
             "implementation has nothing to open."
             if code_graph
-            else "Tick Code Graph on the Features screen, then register the "
-            "repository.",
+            else "Tick Code Graph on the Features screen, then register the repository.",
             "code-graph" if code_graph else "application-features",
             "code",
         )
@@ -479,8 +492,7 @@ def steps(app):
                 DELIVERY,
                 "One repository to read",
                 unambiguous,
-                f"{names[0]} is the only indexed repository, so runs pin it "
-                "automatically."
+                f"{names[0]} is the only indexed repository, so runs pin it automatically."
                 if unambiguous
                 else f"{len(with_snapshot)} indexed repositories and no way to "
                 "choose between them.",
@@ -516,7 +528,6 @@ def steps(app):
         )
     )
 
-
     approvers = ApplicationGrant.objects.filter(application=app, can_approve=True).count()
     if settings.ALLOW_SELF_APPROVAL:
         # One person may approve their own plan here, so a second approver is
@@ -545,17 +556,14 @@ def steps(app):
             DELIVERY,
             "A second approver",
             approvers > 1,
-            f"{approvers} member(s) can approve."
-            if approvers
-            else "Nobody can approve a plan.",
+            f"{approvers} member(s) can approve." if approvers else "Nobody can approve a plan.",
             ""
             if approvers > 1
             else "Grant approval to a second member. Whoever starts a run "
             "authors its plan and cannot approve their own: with one approver, "
             "a plan they start can never be approved."
             if approvers
-            else "Grant approval to at least two members on the People & access "
-            "screen.",
+            else "Grant approval to at least two members on the People & access screen.",
             "application-access",
             "people",
             modal=True,
@@ -641,8 +649,4 @@ def first_outstanding(app_steps):
 
 def outstanding(app_steps, gate=None):
     """The steps still to do, for a count on a card or a nav badge."""
-    return [
-        step
-        for step in app_steps
-        if not step.ok and (gate is None or step.gate == gate)
-    ]
+    return [step for step in app_steps if not step.ok and (gate is None or step.gate == gate)]

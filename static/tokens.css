@@ -120,8 +120,8 @@
      heading is not a paragraph anybody reads at length. */
   --measure: 1200px;
   --f-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --t-10: 10px;
-  --t-11: 11px;
+  --t-10: 11px; /* was 10px: nothing a reader needs is set smaller than 11 */
+  --t-11: 12px; /* was 11px */
   --t-12: 12px;
   --t-13: 13px;
   --t-14: 14px;
