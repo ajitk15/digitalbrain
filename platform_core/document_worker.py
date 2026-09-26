@@ -156,6 +156,12 @@ def code_graph_steps():
     return (process_next_repository, process_next_head)
 
 
+def serviceops_steps():
+    from .serviceops_triage import process_next_triage
+
+    return (process_next_triage,)
+
+
 def connector_steps():
     from .connectors import process_next_connector
 
@@ -192,6 +198,9 @@ LANES = (
     # Its own lane for the same reason graph has one: a Code Factory run makes
     # three provider calls in sequence and must not sit in front of an upload.
     ("factory", factory_steps, 2.0),
+    # Its own lane, checked every second: somebody is watching a triage run's
+    # steps as it goes, and it must not wait behind a Code Factory run.
+    ("serviceops", serviceops_steps, 1.0),
     # Its own lane, not maintenance: an import waits on somebody else's instance
     # and may take tens of seconds, which must not sit in front of the retention
     # sweep. Ten seconds between ticks is ample when the shortest interval an

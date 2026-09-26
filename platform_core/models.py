@@ -374,6 +374,9 @@ class IncidentProfile(models.Model):
 
 class TriageRun(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    #: "Triage run 3", unique within its application, as Code Factory numbers its
+    #: runs: the id addresses a run, the number is how people refer to one.
+    number = models.PositiveIntegerField(default=0)
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
     incident = models.ForeignKey(KnowledgeEntry, on_delete=models.PROTECT)
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -391,6 +394,10 @@ class TriageRun(models.Model):
     prompt_version = models.CharField(max_length=20, default="v1")
     scorer_version = models.CharField(max_length=20, default="v1")
     error = models.CharField(max_length=300, blank=True)
+    #: Each step as it ran - name, state, what it found, how long it took - so a
+    #: brief shows how it was reached rather than only where it ended.
+    #: `serviceops_triage.STEPS` is the order; the page follows it live.
+    phases = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -402,6 +409,9 @@ class TriageHypothesis(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     run = models.ForeignKey(TriageRun, related_name="hypotheses", on_delete=models.CASCADE)
     rank = models.PositiveSmallIntegerField()
+    #: A headline to scan before reading the statement. Blank on hypotheses made
+    #: before prompt v2 asked for one; the page then shortens the statement.
+    title = models.CharField(max_length=120, blank=True)
     statement = models.CharField(max_length=600)
     next_step = models.CharField(max_length=600)
     citations = models.JSONField(default=list)

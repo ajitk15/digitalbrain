@@ -1,0 +1,25 @@
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
+{% block title %}Triage run #{{ run.number }} · ServiceOps · {{ application.name }}{% endblock %}
+{% block content %}{% comment %}One run on a page of its own, and the popup behind "Run details": every step and what it found, then why the run got its band. With JavaScript off it is this page.{% endcomment %}
+<div class="run-detail">
+<p class="eyebrow">{{ application.name }} / SERVICEOPS</p>
+<div class="triage-head"><h1>Triage run #{{ run.number }}</h1>{% include "_run_state.html" with r=run count=hypotheses|length long=True %}</div>
+<p class="muted"><a href="{% url 'serviceops' application.pk %}?incident={{ incident.pk }}&amp;run={{ run.pk }}">{% if incident_number %}{{ incident_number }} · {% endif %}{{ incident.title }}</a> · run by {{ run.requested_by.username }} · <time datetime="{{ run.created_at|date:'c' }}" data-local>{{ run.created_at|date:"M d, Y H:i" }} UTC</time>{% if run.fingerprint %} · <span title="A short code for this incident's symptoms. Incidents with the same code describe the same symptoms.">symptom code <code>{{ run.fingerprint }}</code></span>{% endif %}</p>
+{% if stale %}<p class="notice notice-warning">A source this run quoted has changed since, so its brief is no longer shown. Triage the incident again.</p>{% endif %}
+
+<h2 class="panel-label">Steps</h2>
+{% include "_triage_steps.html" %}
+{% if run.status == 'failed' %}<p class="notice notice-error">{{ run.error }}</p>{% endif %}
+
+{% if score %}
+<h2 class="panel-label">Why the evidence strength is {% if run.band == 'insufficient' %}too weak{% else %}{{ run.band }}{% endif %}</h2>
+<p class="muted">Strength is a score from 0 to 1, added up from seven parts. Under {{ score.insufficient_below }} it is too weak to suggest causes and no ideas are shown; under {{ score.low_below }} it is low; above that, medium. There is no high yet, because nobody's verdicts have been collected long enough to check the score against real outcomes.</p>
+<div class="table-wrap"><table class="score-table"><thead><tr><th>Part</th><th>Weight</th><th>This run</th><th>Points</th></tr></thead><tbody>{% for part in score.parts %}<tr><td><strong>{{ part.label }}</strong><small>{{ part.meaning }}</small></td><td class="mono">{{ part.weight }}%</td><td class="share-cell"><progress class="share-bar" value="{{ part.value }}" max="100"></progress><span class="share-value">{{ part.value }}%</span></td><td class="mono">{{ part.points|floatformat:2 }}</td></tr>{% endfor %}<tr class="score-total"><td colspan="3"><strong>Evidence strength</strong></td><td class="mono"><strong>{{ score.raw|floatformat:2 }}</strong></td></tr></tbody></table></div>
+{% if notes %}<ul class="limitations">{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul>{% endif %}
+
+<h2 class="panel-label">Ideas to check</h2>
+{% include "_triage_hypotheses.html" with readonly=True %}
+{% endif %}
+</div>
+<div class="actions"><a class="button secondary" href="{% url 'serviceops' application.pk %}?incident={{ incident.pk }}&amp;run={{ run.pk }}" data-modal-close>Close</a></div>
+{% endblock %}

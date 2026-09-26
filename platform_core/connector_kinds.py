@@ -96,9 +96,15 @@ def named(value):
     Providers wrap almost everything - a status, a priority, a type - in an
     object with a name. Reading it defensively keeps a malformed record from
     raising where it should simply be reported as unknown.
+
+    ServiceNow is the exception: with `sysparm_display_value=true` a reference
+    field arrives as `{"display_value": ..., "link": ...}` and has no name. Read
+    only as a name, every incident's Service, CI and assignment group came
+    through empty - and ServiceOps matches precedents and changes on exactly
+    those, so triage lost its strongest signals without a word.
     """
     if isinstance(value, dict):
-        return text(value.get("name"))
+        return text(value.get("name") or value.get("display_value"))
     return text(value)
 
 

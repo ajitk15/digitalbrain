@@ -3070,4 +3070,136 @@
   .priority-p4 { background: var(--c-info-bg); color: var(--c-info); }
   .priority-p5 { background: var(--c-priority-5-bg); color: var(--c-priority-5); }
   .priority-unknown { background: var(--c-subtle); color: var(--c-ink-3); }
+
+  /* A hypothesis's citations: each named by its ticket, the exact quote under it. */
+  .citations { list-style: none; padding: 0; margin: var(--s-3) 0; }
+  .citations li { margin: 0 0 var(--s-2); }
+  .citations q { display: block; margin-top: 2px; color: var(--c-ink-2); font-size: var(--t-13); }
+
+  /* ServiceOps -------------------------------------------------------------
+     Three short sections per incident - the incident, its triage, the evidence -
+     with the long detail (every step, the score) behind "Run details". The step
+     strip and rows reuse Code Factory's, so a run reads the same on both. */
+  .serviceops-heading { margin-bottom: var(--s-2); }
+  .incident-table td, .runs-table td { vertical-align: middle; }
+  .incident-link { display: inline-flex; align-items: center; gap: var(--s-2); color: var(--c-ink); text-decoration: none; }
+  .incident-link:hover strong { color: var(--c-brand-strong); text-decoration: underline; }
+  .incident-table td small { display: block; margin-top: 2px; }
+  .table-note { font-size: var(--t-12); margin-top: var(--s-2); }
+  .run-chip { display: inline-flex; align-items: center; gap: var(--s-1); font-weight: 600; font-size: var(--t-12); color: var(--c-ink-2); text-decoration: none; }
+  .back-link { margin: var(--s-3) 0; font-size: var(--t-13); }
+  .back-link a { display: inline-flex; align-items: center; gap: var(--s-1); }
+
+  .incident-card, .triage-run, .evidence-card {
+    border: 1px solid var(--c-line);
+    border-radius: var(--r-lg);
+    background: var(--c-surface);
+    padding: var(--s-4) var(--s-5);
+    box-shadow: var(--e-1);
+    margin-bottom: var(--s-4);
+  }
+  .incident-card h2 { margin: var(--s-2) 0 var(--s-3); font-size: var(--t-20); }
+  .incident-facts { display: flex; flex-wrap: wrap; gap: var(--s-2) var(--s-5); margin: 0 0 var(--s-3); }
+  .incident-facts dt { font-size: var(--t-11); color: var(--c-ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .incident-facts dd { margin: 2px 0 0; font-weight: 600; }
+  .incident-symptoms { max-width: var(--measure); color: var(--c-ink-2); margin: 0 0 var(--s-3); }
+  .incident-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+  .incident-actions form { margin: 0; }
+  .incident-actions small { margin-left: auto; }
+
+  .triage-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+  .triage-head h1, .triage-head h2 { margin: 0 var(--s-1) 0 0; }
+  .run-number { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Runs list: the incident takes the room, everything else sizes to its content. */
+  .runs-table { width: 100%; }
+  .runs-table th:not(:nth-child(2)), .runs-table td:not(:nth-child(2)) { width: 1%; white-space: nowrap; }
+  .runs-table td:nth-child(2) { min-width: 280px; }
+  .runs-table td, .runs-table th { padding-inline: var(--s-3); }
+  .incident-link > span { min-width: 0; }
+  /* A run's state and strength: two pills, apart, never wrapping into each other. */
+  .run-result { display: inline-flex; flex-wrap: nowrap; align-items: center; gap: var(--s-1); white-space: nowrap; }
+  .run-chip { gap: var(--s-2); }
+  .triage-links { display: inline-flex; gap: var(--s-3); margin-left: auto; font-size: var(--t-13); }
+  .triage-links a { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .run-state-queued, .run-state-running { background: var(--c-info-bg); color: var(--c-info); }
+  .run-state-completed { background: var(--c-ok-bg); color: var(--c-ok); }
+  .run-state-evidence { background: var(--c-warn-bg); color: var(--c-warn); }
+  .run-state-failed { background: var(--c-bad-bg); color: var(--c-bad); }
+  .triage-band-medium { background: var(--c-ok-bg); color: var(--c-ok); }
+  .triage-band-low { background: var(--c-warn-bg); color: var(--c-warn); }
+  .triage-band-insufficient { background: var(--c-subtle); color: var(--c-ink-3); }
+  .triage-run .stage-strip { margin: var(--s-3) 0; }
+  .triage-steps { padding: var(--s-3) var(--s-4); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-well); }
+  .triage-steps .agent-text small { display: block; }
+  .triage-live { display: flex; align-items: center; gap: var(--s-2); }
+  .triage-by { font-size: var(--t-12); margin: 0 0 var(--s-3); }
+
+  .hypothesis { border-top: 1px solid var(--c-line-soft); padding: var(--s-3) 0; }
+  .hypothesis h3 { display: flex; gap: var(--s-2); align-items: flex-start; margin: 0 0 var(--s-2); font-size: var(--t-15); font-weight: 600; line-height: var(--lh-body); }
+  .hypothesis-rank { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--c-brand-tint); color: var(--c-brand-strong); font-size: var(--t-12); font-weight: 700; }
+  .hypothesis-check, .hypothesis-counter { margin: 0 0 var(--s-2) 30px; color: var(--c-ink-2); font-size: var(--t-13); }
+  .hypothesis-check strong, .hypothesis-counter strong { display: block; font-size: var(--t-11); color: var(--c-ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .hypothesis-more { margin: 0 0 var(--s-2) 30px; }
+  .hypothesis-more > summary { cursor: pointer; font-size: var(--t-13); color: var(--c-brand-strong); }
+  .verdict { margin: 0 0 var(--s-2) 30px; font-size: var(--t-12); color: var(--c-ink-3); }
+  .verdict-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0 0 0 30px; font-size: var(--t-13); }
+  .verdict-form select, .verdict-form input { width: auto; font-size: var(--t-13); }
+  .verdict-form input { flex: 1 1 180px; }
+
+  .evidence-group { border-top: 1px solid var(--c-line-soft); padding: var(--s-2) 0; }
+  .evidence-group > summary { display: flex; align-items: baseline; gap: var(--s-2); cursor: pointer; padding: var(--s-1) 0; }
+  .evidence-group > summary small { color: var(--c-ink-3); font-size: var(--t-12); }
+  .evidence-group .count { min-width: 22px; text-align: center; padding: 0 7px; border-radius: var(--r-pill); background: var(--c-canvas); color: var(--c-ink-2); font-size: var(--t-12); font-weight: 700; }
+  .evidence-row { padding: var(--s-2) 0 var(--s-2) var(--s-4); border-left: 2px solid var(--c-line-soft); margin: var(--s-2) 0; }
+  .evidence-row > a { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 600; }
+  .evidence-row small { display: block; color: var(--c-ink-3); font-size: var(--t-12); }
+  .evidence-row p { margin: var(--s-1) 0 0; font-size: var(--t-13); color: var(--c-ink-2); max-width: var(--measure); }
+
+  .run-detail .triage-head { margin-bottom: var(--s-2); }
+  .run-detail .panel-label { margin-top: var(--s-4); }
+  .score-table { table-layout: auto; }
+  .score-table td small { display: block; color: var(--c-ink-3); font-size: var(--t-11); }
+  .score-table td { vertical-align: middle; }
+  /* The part's name and meaning get the room; the numbers stay narrow. */
+  .score-table td:first-child { min-width: 220px; }
+  .score-table td:not(:first-child), .score-table th:not(:first-child) { white-space: nowrap; width: 1%; }
+  .score-table .share-cell .share-bar { width: 90px; }
+  .score-total td { border-top: 1px solid var(--c-line); }
+  .limitations { margin: var(--s-2) 0 0; padding-left: var(--s-4); font-size: var(--t-12); color: var(--c-ink-3); }
+
+  /* Newcomer help: filters, what pressing Triage does, what to do next, plain
+     notes behind an (i), a first-visit pointer and the guide popup. */
+  .heading-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  .first-visit { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0 0 var(--s-3); }
+  .first-visit > svg { flex: none; margin-top: 3px; }
+  .first-visit > span { flex: 1; }
+  .filter-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin: 0 0 var(--s-3); }
+  .filter-chips a { display: inline-flex; align-items: center; gap: var(--s-1); padding: 3px 12px; border: 1px solid var(--c-line); border-radius: var(--r-pill); background: var(--c-surface); color: var(--c-ink-2); font-size: var(--t-13); text-decoration: none; }
+  .filter-chips a[aria-current] { border-color: var(--c-brand); background: var(--c-brand-tint); color: var(--c-brand-strong); font-weight: 600; }
+  .filter-chips .count { padding: 0 6px; border-radius: var(--r-pill); background: var(--c-canvas); font-size: var(--t-11); font-weight: 700; }
+  .chip-divider { width: 1px; height: 18px; background: var(--c-line); }
+  .assess-hint { display: block; margin-top: 2px; color: var(--c-warn); font-size: var(--t-11); font-weight: 600; }
+  .triage-cost { display: flex; align-items: center; gap: var(--s-1); margin: var(--s-3) 0 0; font-size: var(--t-12); }
+  .triage-next { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0 0 var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--c-brand-tint-2); color: var(--c-ink-2); font-size: var(--t-13); }
+  .triage-next > svg { flex: none; margin-top: 3px; color: var(--c-brand); }
+  .triage-by { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-2); }
+  .info-note { display: inline-block; }
+  .info-note > summary { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; color: var(--c-brand-strong); }
+  .info-note ul { margin: var(--s-2) 0; padding-left: var(--s-4); color: var(--c-ink-2); }
+  .hypothesis-statement { margin: var(--s-2) 0; color: var(--c-ink-2); font-size: var(--t-13); max-width: var(--measure); }
+  .verdict-form small { flex-basis: 100%; }
+
+  .guide { max-width: 720px; }
+  .guide-lead { font-size: var(--t-15); color: var(--c-ink-2); }
+  .guide-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: var(--s-2); }
+  .guide-steps li { counter-increment: step; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; column-gap: var(--s-3); align-items: start; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-well); }
+  .guide-steps li::before { content: counter(step); display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--c-brand-tint); color: var(--c-brand-strong); font-size: var(--t-12); font-weight: 700; grid-row: span 2; }
+  .guide-steps strong { grid-column: 2; }
+  .guide-steps span { grid-column: 2; color: var(--c-ink-2); font-size: var(--t-13); }
+  .guide-steps em { grid-column: 3; grid-row: 1; font-style: normal; font-size: var(--t-11); font-weight: 600; padding: 2px 8px; border-radius: var(--r-sm); border: 1px solid var(--c-line); color: var(--c-ink-3); white-space: nowrap; }
+  .guide-steps .guide-ai { background: var(--c-info-bg); border-color: var(--c-info-line); color: var(--c-info); }
+  .guide-terms { display: grid; gap: var(--s-2); margin: 0; }
+  .guide-terms dt { font-weight: 600; }
+  .guide-terms dd { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--t-13); }
+  .guide-list { padding-left: var(--s-4); color: var(--c-ink-2); font-size: var(--t-13); }
 }

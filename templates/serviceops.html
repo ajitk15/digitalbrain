@@ -1,78 +1,27 @@
-{% extends 'base.html' %}{% load workspace %}
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
 {% block title %}ServiceOps · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}
-<div class="page-heading"><div><p class="eyebrow">{{ application.name }} / SERVICEOPS</p><h1>Incident triage</h1><p class="muted">Evidence from this application's imported incidents and published knowledge. Hypotheses are suggestions for review. Similarity is a search aid, not a cause or confidence score.</p></div></div>
-
-<div class="split">
-  <section class="card">
-    <h2>Imported incidents</h2>
-    <p class="muted">The most recent 100 active incident sources are listed. Import records under Settings → Connectors to add or refresh them.</p>
-    {% for item in incidents %}
-      <div class="list-row"><div>
-        {% if item.number or item.priority %}<div class="incident-tags">
-          {% if item.number %}<span class="incident-badge incident-number">{{ item.number }}</span>{% endif %}
-          {% if item.priority %}<span class="incident-badge incident-priority priority-{{ item.priority_tone }}">Priority {{ item.priority }}</span>{% endif %}
-        </div>{% endif %}
-        <strong>{{ item.entry.title }}</strong><small>{{ item.entry.created_at|date:"M d, Y H:i" }} UTC</small>
-      </div><a class="link-button" href="?incident={{ item.entry.pk }}">Triage</a></div>
-    {% empty %}<div class="empty"><h3>No imported incidents</h3><p>Connect a ServiceNow incident table or a Jira issue feed with incident records.</p></div>{% endfor %}
-    {% if grant.role != 'viewer' %}<details><summary>Add a manual incident</summary><form method="post">{% csrf_token %}<input type="hidden" name="action" value="manual">{{ manual_form.as_p }}<button type="submit">Save incident</button></form></details>{% endif %}
-  </section>
-
-  <section class="card">
-    {% if selected %}
-      <h2>{{ selected.title }}</h2>
-      <p class="muted">Source revision {{ selected.created_at|date:"M d, Y H:i" }} UTC · symptom signature {% if fingerprint %}<code>{{ fingerprint }}</code>{% else %}unavailable{% endif %}</p>
-      <p><a href="{% url 'knowledge-detail' application.pk selected.pk %}">Read the original source</a></p>
-      <dl>
-        {% if fields.Number %}<dt>Number</dt><dd><span class="incident-badge incident-number">{{ fields.Number }}</span></dd>{% endif %}
-        {% if fields.Key %}<dt>Key</dt><dd>{{ fields.Key }}</dd>{% endif %}
-        {% if fields.Service %}<dt>Service</dt><dd>{{ fields.Service }}</dd>{% endif %}
-        {% if fields.CI %}<dt>Configuration item</dt><dd>{{ fields.CI }}</dd>{% endif %}
-        {% if fields.Environment %}<dt>Environment</dt><dd>{{ fields.Environment }}</dd>{% endif %}
-        {% if fields.Impact %}<dt>Impact</dt><dd>{{ fields.Impact }}</dd>{% endif %}
-        {% if fields.Priority %}<dt>Priority</dt><dd><span class="incident-badge incident-priority priority-{{ priority_tone }}">Priority {{ fields.Priority }}</span></dd>{% endif %}
-        {% if fields.State %}<dt>State</dt><dd>{{ fields.State }}</dd>{% endif %}
-        {% if fields.Status %}<dt>Status</dt><dd>{{ fields.Status }}</dd>{% endif %}
-      </dl>
-      {% if description %}<h3>Reported symptoms</h3><p>{{ description|truncatechars:800 }}</p>{% endif %}
-      {% if grant.role != 'viewer' %}<form method="post">{% csrf_token %}<input type="hidden" name="incident" value="{{ selected.pk }}"><button type="submit">Generate triage brief</button></form>{% endif %}
-    {% else %}
-      <div class="empty"><h3>Choose an incident</h3><p>The evidence pack will compare it with resolved records and search the published graph. No model is called.</p></div>
-    {% endif %}
-  </section>
-</div>
-
-{% if selected %}
-<section class="section"><h2>Related open incidents</h2><p class="muted">Open records with the same normalized symptom fingerprint. Review each source before treating them as one event.</p><div class="card-grid">{% for row in related_open %}<article class="card"><h3><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">{{ row.fields.Number|default:row.entry.title }}</a></h3><p>{{ row.entry.title }}</p></article>{% empty %}<p>No other open incident has this fingerprint.</p>{% endfor %}</div></section>
-<section class="section"><h2>Recent changes</h2><p class="muted">Same-CI changes started within 48 hours before the reported incident opening. Timing alone does not establish cause.</p><div class="card-grid">{% for row in changes %}<article class="card"><h3><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">{{ row.fields.Number|default:row.entry.title }}</a></h3><p>{{ row.entry.title }} · {{ row.hours_before }} hours before opening</p><p>{{ row.excerpt|truncatechars:500 }}</p></article>{% empty %}<p>No time-correlated change is available from imported records.</p>{% endfor %}</div></section>
-<section class="section"><h2>Triage brief</h2>
-  {% if run %}<div class="card">
-    <p><strong>Confidence band: {{ run.band|capfirst }}</strong> · {{ run.created_at|date:"M d, Y H:i" }} UTC</p>
-    <p class="muted">Provisional evidence score. No probability is shown until outcomes are independently confirmed and calibrated.</p>
-    {% if run.error %}<p class="notice notice-warning">Model unavailable. The evidence pack remains available.</p>{% endif %}
-    {% for limitation in run.limitations %}<p class="muted">{{ limitation }}</p>{% endfor %}
-    {% for hypothesis in run.hypotheses.all %}<article class="card"><h3>Hypothesis {{ hypothesis.rank }}</h3><p>{{ hypothesis.statement }}</p><p><strong>Read-only check:</strong> {{ hypothesis.next_step }}</p>
-      {% if hypothesis.counter_evidence %}<p><strong>What could disprove it:</strong> {{ hypothesis.counter_evidence }}</p>{% endif %}
-      <ul>{% for citation in hypothesis.citations %}<li><a href="{% url 'knowledge-detail' application.pk citation.id %}">{{ citation.id }}</a>: {{ citation.quote }}</li>{% endfor %}</ul>
-      {% for verdict in hypothesis.verdicts.all %}<p class="muted">{{ verdict.verdict|capfirst }} by {{ verdict.user }} · {{ verdict.created_at|date:"M d, Y H:i" }} UTC{% if verdict.note %} — {{ verdict.note }}{% endif %}</p>{% endfor %}
-      {% if grant.role != 'viewer' %}<form method="post" action="{% url 'serviceops-verdict' application.pk hypothesis.pk %}">{% csrf_token %}<label for="verdict-{{ hypothesis.pk }}">Assessment</label><select id="verdict-{{ hypothesis.pk }}" name="verdict"><option value="accepted">Useful</option><option value="partial">Partly useful</option><option value="rejected">Incorrect</option></select><label for="note-{{ hypothesis.pk }}">Note</label><input id="note-{{ hypothesis.pk }}" name="note" maxlength="1000"><button type="submit">Save assessment</button></form>{% endif %}
-    </article>{% empty %}<p>No evidence-supported hypothesis is available. Review the sources below and investigate manually.</p>{% endfor %}
-  </div>{% else %}<div class="card"><p>Generate a brief to save the evidence and any supported hypotheses for review.</p></div>{% endif %}
+{% include "_serviceops_nav.html" %}
+<section class="section">
+{% if counts.all %}
+<nav class="filter-chips" aria-label="Show incidents">
+  <a href="?"{% if not show and not priority %} aria-current="page"{% endif %}>All <span class="count">{{ counts.all }}</span></a>
+  <a href="?show=untriaged{% if priority %}&amp;priority={{ priority }}{% endif %}"{% if show == 'untriaged' %} aria-current="page"{% endif %} title="Incidents nobody has triaged yet">Needs triage <span class="count">{{ counts.untriaged }}</span></a>
+  <a href="?show=unassessed{% if priority %}&amp;priority={{ priority }}{% endif %}"{% if show == 'unassessed' %} aria-current="page"{% endif %} title="Triaged, but nobody has said whether the suggestions were useful">Needs your assessment <span class="count">{{ counts.unassessed }}</span></a>
+  {% if priorities %}<span class="chip-divider" aria-hidden="true"></span>{% for tone in priorities %}<a href="?priority={{ tone }}{% if show %}&amp;show={{ show }}{% endif %}"{% if priority == tone %} aria-current="page"{% endif %}>{{ tone|upper }}</a>{% endfor %}{% endif %}
+</nav>
+{% if incidents %}
+<div class="table-wrap"><table class="incident-table"><thead><tr><th>Incident</th><th>Priority</th><th>State</th><th>Last triage</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>
+{% for item in incidents %}<tr>
+  <td><a class="incident-link" href="?incident={{ item.entry.pk }}">{% if item.number %}<span class="incident-badge incident-number">{{ item.number }}</span>{% endif %}<strong>{{ item.entry.title }}</strong></a><small class="muted">{% if item.service %}{{ item.service }} · {% endif %}imported <time datetime="{{ item.entry.created_at|date:'c' }}" data-local>{{ item.entry.created_at|date:"M d, H:i" }} UTC</time></small></td>
+  <td>{% if item.priority %}<span class="incident-badge incident-priority priority-{{ item.priority_tone }}">{{ item.priority }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+  <td>{{ item.state|default:"—" }}</td>
+  <td>{% if item.last_run %}<a class="run-chip" href="{% url 'serviceops-run' application.pk item.last_run.pk %}" data-modal><span class="run-number">#{{ item.last_run.number }}</span>{% include "_run_state.html" with r=item.last_run %}</a>{% if item.needs_assessment %}<small class="assess-hint">Needs your assessment</small>{% endif %}{% else %}<span class="muted">Not triaged</span>{% endif %}</td>
+  <td><a class="link-button" href="?incident={{ item.entry.pk }}">Open</a></td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% else %}<p class="muted">No incident matches this filter. <a href="?">Show all</a></p>{% endif %}
+<p class="muted table-note">The most recent 100 imported incidents. To add or refresh them, <a href="{% url 'connectors' application.pk %}">import from a connector</a>.</p>
+{% else %}<div class="empty card"><h3>No incidents yet</h3><p>Incidents come from ServiceNow or Jira. <a href="{% url 'connectors' application.pk %}">Set up or run a connector</a>, then press Import — or add one by hand with <em>Add incident</em>.</p></div>{% endif %}
 </section>
-<section class="section"><h2>Similar resolved incidents</h2><p class="muted">Ranked from at most 500 recent candidates by shared CI, service, environment, symptom signature and terms. Only active source revisions with intact digests appear. A match does not establish the cause of this incident.</p>
-  <div class="card-grid">
-  {% for row in precedents %}<article class="card"><div class="incident-tags">{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{% if row.fields.Priority %}<span class="incident-badge incident-priority priority-{{ row.priority_tone }}">Priority {{ row.fields.Priority }}</span>{% endif %}</div><h3><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">{{ row.entry.title }}</a></h3><p class="muted">{{ row.entry.created_at|date:"M d, Y" }} · {{ row.reasons|join:", " }}</p>{% for difference in row.differences %}<p class="muted">{{ difference }}</p>{% endfor %}{% if row.close_code %}<p>Close code: {{ row.close_code }}</p>{% endif %}<p>{{ row.excerpt|truncatechars:500 }}</p><p><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}">Verify source and full resolution</a></p></article>
-  {% empty %}<div class="empty"><h3>No comparable resolved incidents yet</h3><p>Check the original record and available knowledge. A missing precedent is not evidence that the incident is new.</p></div>{% endfor %}
-  </div>
-</section>
-
-<section class="section"><h2>Published knowledge</h2><p class="muted">These graph passages were checked against active sources and exact quotes when the page loaded. Review whether a passage actually applies before using it.</p>
-  {% if not graph_available %}<p class="notice notice-warning">No published graph is available. Incident precedent search remains usable.</p>{% endif %}
-  <div class="card-grid">
-  {% for row in graph %}<article class="card"><h3><a href="{% url 'knowledge-detail' application.pk row.id %}">{{ row.title }}</a></h3><p>{{ row.excerpt|truncatechars:600 }}</p><p class="muted">Published graph version {{ row.graph_version }}</p></article>
-  {% empty %}{% if graph_available %}<div class="empty"><h3>No matching graph passages</h3><p>Search Knowledge directly or add a runbook for this service.</p></div>{% endif %}{% endfor %}
-  </div>
-</section>
-{% endif %}
 {% endblock %}

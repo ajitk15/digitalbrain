@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% load icons %}{% block content %}{% comment %}Opened as a popup from ServiceOps; a page of its own without JavaScript. It posts to itself and redirects to the new incident.{% endcomment %}
+<p class="eyebrow">{{ application.name }} / SERVICEOPS</p><h1>Add an incident</h1>
+<p class="muted">For an incident that is not in ServiceNow or Jira. It is stored as knowledge and can be triaged like an imported one.</p>
+<form method="post" class="stacked-form">{% csrf_token %}{{ form.as_p }}<div class="actions"><button type="submit" class="button">{% icon "plus" %}Add incident</button><a class="button secondary" href="{% url 'serviceops' application.pk %}" data-modal-close>Cancel</a></div></form>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
+{% block title %}{{ number|default:selected.title }} · ServiceOps · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}
+{% include "_serviceops_nav.html" %}
+<p class="back-link"><a href="{% url 'serviceops' application.pk %}">{% icon "arrow-left" 13 %}All incidents</a></p>
+
+{% comment %}1. The incident: what was reported, where, and the one thing to do with it.{% endcomment %}
+<section class="incident-card">
+  <div class="incident-tags">{% if number %}<span class="incident-badge incident-number">{{ number }}</span>{% endif %}{% if fields.Priority %}<span class="incident-badge incident-priority priority-{{ priority_tone }}">{{ fields.Priority }}</span>{% endif %}{% if state %}<span class="pill">{{ state }}</span>{% endif %}</div>
+  <h2>{{ selected.title }}</h2>
+  <dl class="incident-facts">{% if fields.Service %}<div><dt>Service</dt><dd>{{ fields.Service }}</dd></div>{% endif %}{% if fields.CI %}<div><dt title="Configuration item: the server, application or component the incident is on">Component (CI)</dt><dd>{{ fields.CI }}</dd></div>{% endif %}{% if fields.Environment %}<div><dt>Environment</dt><dd>{{ fields.Environment }}</dd></div>{% endif %}{% if fields.Impact %}<div><dt>Impact</dt><dd>{{ fields.Impact }}</dd></div>{% endif %}{% if fields.Opened %}<div><dt>Opened</dt><dd>{{ fields.Opened }}</dd></div>{% endif %}</dl>
+  {% if description %}<p class="incident-symptoms">{{ description|truncatechars:400 }}</p>{% endif %}
+  <div class="incident-actions">{% if grant.role != 'viewer' %}<form method="post">{% csrf_token %}<input type="hidden" name="incident" value="{{ selected.pk }}"><button type="submit" class="button"{% if run_live %} disabled{% endif %}>{% icon "refresh" %}{% if run %}Triage again{% else %}Triage this incident{% endif %}</button></form>{% endif %}<a class="button secondary" href="{% url 'knowledge-detail' application.pk selected.pk %}" data-modal>{% icon "document" %}Read source</a>{% if origin %}<a class="button secondary" href="{{ origin.1 }}" rel="noreferrer noopener" target="_blank">{% icon "external" %}{{ origin.0 }}</a>{% endif %}</div>
+  {% if grant.role != 'viewer' %}<p class="muted triage-cost">{% icon "info" 12 %}Triage takes about 30 seconds and makes one AI call{% if model_label and model_label != 'AI off' %} on {{ model_label }}{% endif %}{% if typical_cost %}, typically {{ typical_cost }}{% endif %}. It is free when the evidence has not changed since the last run, and nothing is changed anywhere.</p>{% endif %}
+</section>
+
+{% comment %}2. Triage: the latest run in brief. Every step's result and why it got its strength open in a popup. While it runs the section is followed live by static/documents.js; the Refresh link is the same page without script.{% endcomment %}
+<section class="section triage-run" data-live="triage-run"{% if run_live %} data-live-pending{% endif %}>
+  <div class="triage-head"><h2>Triage</h2>
+    {% if run %}<span class="run-number">Run #{{ run.number }}</span>{% include "_run_state.html" with r=run count=hypotheses|length long=True %}{% endif %}
+    <span class="triage-links">{% if run %}<a href="{% url 'serviceops-run' application.pk run.pk %}" data-modal>{% icon "info" 13 %}Run details</a>{% endif %}{% if run_count > 1 %}<a href="{% url 'serviceops-runs' application.pk %}?incident={{ selected.pk }}">{% icon "history" 13 %}All runs ({{ run_count }})</a>{% endif %}</span>
+  </div>
+  {% if run %}
+    {% include "_triage_steps.html" with compact=True %}
+    {% if run_live %}<p class="muted triage-live"><span class="spinner" aria-hidden="true"></span>Working through the steps — this updates on its own. <a href="?incident={{ selected.pk }}&amp;run={{ run.pk }}">Refresh</a></p>{% endif %}
+    {% if run.status == 'failed' %}<p class="notice notice-error">{{ run.error }}</p>{% endif %}
+    {% if score %}
+      <p class="triage-next">{% icon "info" 13 %}<span>{% if hypotheses %}Start with idea 1: run its check, then say whether it was useful. The ideas are suggestions from the evidence below, not a diagnosis.{% else %}The evidence was not strong enough to suggest a cause. Open the evidence below and investigate by hand.{% endif %}</span></p>
+      <div class="muted triage-by">Run by {{ run.requested_by.username }} · <time datetime="{{ run.created_at|date:'c' }}" data-local>{{ run.created_at|date:"M d, H:i" }} UTC</time>{% if notes %}<details class="info-note"><summary>{% icon "info" 12 %}About this result</summary><ul>{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul></details>{% endif %}</div>
+      {% include "_triage_hypotheses.html" %}
+    {% endif %}
+  {% else %}<p class="muted">Not triaged yet. Triage looks for similar past incidents and recent changes, asks the AI for up to three ideas only when there is evidence, checks every quote word for word, and rates how strong the evidence is. <a href="{% url 'serviceops-guide' application.pk %}" data-modal>How it works</a></p>{% endif %}
+</section>
+
+{% comment %}3. Evidence: what triage drew on, found without any AI, one group per kind, collapsed to a count.{% endcomment %}
+<section class="section evidence-card"><h2>Evidence</h2><p class="muted">Found in your own records, without any AI. Open a group to see it; a match is a lead, not a cause.</p>
+  <details class="evidence-group"><summary><strong>Similar past incidents</strong><span class="count">{{ precedents|length }}</span><small>resolved, on the same component, service or symptoms</small></summary>
+    {% for row in precedents %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{{ row.reasons|join:" · " }}{% for difference in row.differences %} · {{ difference }}{% endfor %}</small>{% if row.close_code or row.excerpt %}<p>{% if row.close_code %}<strong>{{ row.close_code }}.</strong> {% endif %}{{ row.excerpt|truncatechars:220 }}</p>{% endif %}</div>
+    {% empty %}<p class="muted">None yet. A missing match is not evidence that the incident is new.</p>{% endfor %}
+  </details>
+  <details class="evidence-group"><summary><strong>Recent changes</strong><span class="count">{{ changes|length }}</span><small>on the same component, up to 48 hours before</small></summary>
+    {% for row in changes %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{{ row.hours_before }} hours before the incident opened</small><p>{{ row.excerpt|truncatechars:220 }}</p></div>
+    {% empty %}<p class="muted">No change on this component in the 48 hours before it opened.</p>{% endfor %}
+  </details>
+  <details class="evidence-group"><summary><strong>Other open incidents like this</strong><span class="count">{{ related_open|length }}</span><small>same service, same symptoms — maybe one event</small></summary>
+    {% for row in related_open %}<div class="evidence-row"><a href="?incident={{ row.entry.pk }}">{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{% if row.same_fingerprint %}Same symptoms{% else %}Shared symptoms: {{ row.shared|join:", " }}{% endif %}</small></div>
+    {% empty %}<p class="muted">No other open incident looks like the same event.</p>{% endfor %}
+  </details>
+  <details class="evidence-group"><summary><strong>Runbooks and design documents</strong><span class="count">{% if graph_available %}{{ graph|length }}{% else %}—{% endif %}</span><small>{% if graph_available %}quote-checked passages from the knowledge graph{% else %}no knowledge graph published yet{% endif %}</small></summary>
+    {% for row in graph %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.id %}" data-modal>{{ row.title }}</a><small>Graph version {{ row.graph_version }}</small><p>{{ row.excerpt|truncatechars:220 }}</p></div>
+    {% empty %}<p class="muted">{% if graph_available %}No passage matches this incident.{% else %}Publish a knowledge graph under Knowledge to add runbook and design passages here.{% endif %}</p>{% endfor %}
+  </details>
+</section>
+{% endblock %}

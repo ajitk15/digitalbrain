@@ -76,6 +76,7 @@ async function refreshLive() {
     keepDisclosures(node, incoming);
     if (incoming.outerHTML !== node.outerHTML) node.replaceWith(incoming);
   });
+  localTimes(document);
   return fresh.querySelector("[data-live-pending]") !== null;
 }
 
@@ -122,4 +123,48 @@ document.addEventListener("change", (event) => {
   paths.value = JSON.stringify(
     Array.from(input.files, (file) => file.webkitRelativePath || file.name)
   );
+});
+
+// Times are rendered in UTC so the page reads the same everywhere and without
+// script. Here they are shown in the reader's own time, with the UTC original
+// kept as the tooltip. Nothing changes where the reader is on UTC already.
+function localTimes(root) {
+  root.querySelectorAll("time[data-local]:not([data-localised])").forEach((node) => {
+    const when = new Date(node.getAttribute("datetime"));
+    if (Number.isNaN(when.getTime()) || when.getTimezoneOffset() === 0) return;
+    node.title = node.textContent.trim();
+    node.textContent = when.toLocaleString([], {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    node.dataset.localised = "true";
+  });
+}
+localTimes(document);
+
+// A first-visit note, dismissed once and remembered in this browser. Without
+// script, or where storage is refused, it simply stays.
+document.querySelectorAll("[data-first-visit]").forEach((note) => {
+  const key = `digital-brain.first-visit.${note.dataset.firstVisit}`;
+  try {
+    if (localStorage.getItem(key)) {
+      note.remove();
+      return;
+    }
+  } catch {
+    return;
+  }
+  const button = note.querySelector("[data-dismiss]");
+  if (!button) return;
+  button.hidden = false;
+  button.addEventListener("click", () => {
+    try {
+      localStorage.setItem(key, "dismissed");
+    } catch {
+      /* storage refused: the note goes for this page view only */
+    }
+    note.remove();
+  });
 });

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}{% load icons %}{% load workspace %}
+{% block title %}Triage runs · ServiceOps · {{ application.name }}{% endblock %}
+{% block content %}{% application_nav %}
+{% include "_serviceops_nav.html" %}
+<section class="section">
+{% if focus %}<p class="notice">Runs for <strong>{{ focus.title }}</strong> only. <a href="{% url 'serviceops-runs' application.pk %}">Show every run</a></p>{% endif %}
+{% if rows %}
+<div class="table-wrap"><table class="runs-table"><thead><tr><th>Run</th><th>Incident</th><th>Result</th><th>Run by</th><th>When</th></tr></thead><tbody>
+{% for row in rows %}<tr>
+  <td><a class="run-number" href="{% url 'serviceops-run' application.pk row.run.pk %}" data-modal>#{{ row.run.number }}</a></td>
+  <td><a class="incident-link" href="{% url 'serviceops' application.pk %}?incident={{ row.run.incident_id }}&amp;run={{ row.run.pk }}">{% if row.number %}<span class="incident-badge incident-number">{{ row.number }}</span>{% endif %}<span>{{ row.run.incident.title|truncatechars:90 }}</span></a></td>
+  <td>{% include "_run_state.html" with r=row.run count=row.hypotheses %}</td>
+  <td>{{ row.run.requested_by.username }}{% if row.run.trigger != 'manual' %} <small class="muted">({{ row.run.trigger }})</small>{% endif %}</td>
+  <td><time datetime="{{ row.run.created_at|date:'c' }}" data-local>{{ row.run.created_at|date:"M d, H:i" }} UTC</time></td>
+</tr>{% endfor %}
+</tbody></table></div>
+{% else %}<div class="empty card"><h3>No triage runs yet</h3><p>Open an incident and press Triage. Every run is kept here with its steps and result.</p></div>{% endif %}
+</section>
+{% endblock %}

@@ -87,6 +87,26 @@ urlpatterns = [
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path("applications/<uuid:pk>/serviceops/", serviceops.serviceops, name="serviceops"),
     path(
+        "applications/<uuid:pk>/serviceops/runs/",
+        serviceops.serviceops_runs,
+        name="serviceops-runs",
+    ),
+    path(
+        "applications/<uuid:pk>/serviceops/runs/<uuid:run_id>/",
+        serviceops.serviceops_run,
+        name="serviceops-run",
+    ),
+    path(
+        "applications/<uuid:pk>/serviceops/guide/",
+        serviceops.serviceops_guide,
+        name="serviceops-guide",
+    ),
+    path(
+        "applications/<uuid:pk>/serviceops/incidents/new/",
+        serviceops.serviceops_incident_new,
+        name="serviceops-incident-new",
+    ),
+    path(
         "applications/<uuid:pk>/serviceops/hypotheses/<uuid:hypothesis_id>/verdict/",
         serviceops.triage_verdict,
         name="serviceops-verdict",
