@@ -1114,23 +1114,28 @@ def plan_item(request, pk, plan_id, item_id):
 @login_required
 @require_http_methods(["GET"])
 def onboarding(request, pk):
-    """What this application still needs before Code Factory can work.
+    """What this application still needs, for whatever it is for.
 
-    Read-only, and every row links to the screen that fixes it rather than
-    fixing it here: each of those screens has its own permission check and its
-    own audit event, and a setup page that wrote to all of them would be a
-    second way to do everything with none of that.
+    One page for Engineering, Operations or both: the shared connector choice,
+    then each purpose's gates. Read-only, and every row links to the screen that
+    fixes it rather than fixing it here: each of those screens has its own
+    permission check and its own audit event, and a setup page that wrote to all
+    of them would be a second way to do everything with none of that.
     """
-    from .readiness import GATES, gate_ready, outstanding, record_completion, setup
+    from .readiness import GATE_ICONS, GATES, gate_ready, outstanding, record_completion, setup
+    from .services import purposes
 
-    app, grant = access(request.user, pk, "code_factory")
+    app, grant = access(request.user, pk, "knowledge")
     state = setup(app)
     record_completion(app, state)
     found = state.steps
+    serving = purposes(app)
     # "Nothing but the switch that got you here" - derived from the application
     # rather than from a query parameter, so it still greets somebody who
     # created this last week and is only now coming back to it.
-    fresh = not [step for step in found if step.ok and step.key != "code_factory"]
+    fresh = not [
+        step for step in found if step.ok and step.key not in {"code_factory", "service_ops"}
+    ]
     # One sequence across both gates rather than 1-5 and then 1-4 again. The
     # number is what somebody says out loud - "I am stuck on step 6" - and two
     # sixes on one screen would make that ambiguous. Positional, so a step that
@@ -1152,6 +1157,7 @@ def onboarding(request, pk):
                 {
                     "key": key,
                     "label": label,
+                    "icon": GATE_ICONS[key],
                     "blurb": blurb,
                     "steps": [
                         (order[step.key], step)
@@ -1163,8 +1169,10 @@ def onboarding(request, pk):
                     "done": sum(1 for step in found if step.gate == key and step.ok),
                     "count": sum(1 for step in found if step.gate == key),
                 }
-                for key, label, blurb in GATES
+                for key, label, blurb, purpose in GATES
+                if purpose is None or purpose in serving
             ],
+            "serving": serving,
         },
     )
 

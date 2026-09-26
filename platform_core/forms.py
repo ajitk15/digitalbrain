@@ -6,7 +6,14 @@ from django.db.models import Q
 from PIL import Image, UnidentifiedImageError
 
 from .models import ApplicationGrant, ChatRetention, Portfolio, Product, User
-from .services import OPT_IN_FEATURES, available_features
+from .services import (
+    AREA_ICONS,
+    OPT_IN_FEATURES,
+    PURPOSE_CHOICES,
+    area_of,
+    available_features,
+    features_for_purpose,
+)
 
 
 class ResourceForm(forms.Form):
@@ -84,6 +91,14 @@ class ApplicationForm(ResourceForm):
     )
     new_product = forms.CharField(max_length=120, required=False, label="New product name")
     owner = forms.ModelChoiceField(queryset=User.objects.none(), label="Application owner")
+    # Asked on the page (the radios carry `required`), tolerated when absent so a
+    # caller that predates the question still creates what it always did.
+    purpose = forms.ChoiceField(
+        choices=[(key, label) for key, label, _ in PURPOSE_CHOICES],
+        required=False,
+        label="What is this application for?",
+        widget=forms.RadioSelect(attrs={"required": True}),
+    )
     # Ticked by default. Approval can only be handed on by someone who holds it
     # (`services.change_grant`), so an owner created without it could never give
     # it to anyone, themselves included, and Code Factory stalled at review with
@@ -120,11 +135,23 @@ class ApplicationForm(ResourceForm):
             for name in ("portfolio", "new_portfolio", "product", "new_product"):
                 del self.fields[name]
         # Features default to on, matching services.all_features, where a missing
-        # row means enabled. Unticking one writes an ApplicationFeature row.
+        # row means enabled. Unticking one writes an ApplicationFeature row. Only
+        # the shared ones are boxes: engineering and operations features follow
+        # `purpose`, and connector kinds are chosen during onboarding.
         for key, label in available_features():
-            self.fields[f"feature_{key}"] = forms.BooleanField(
-                required=False, initial=key not in OPT_IN_FEATURES, label=label
-            )
+            if area_of(key) == "shared":
+                self.fields[f"feature_{key}"] = forms.BooleanField(
+                    required=False, initial=key not in OPT_IN_FEATURES, label=label
+                )
+
+    @property
+    def purpose_cards(self):
+        """Each purpose radio with its description and icon, for the cards."""
+        described = {key: text for key, _, text in PURPOSE_CHOICES}
+        return [
+            (radio, described[radio.data["value"]], AREA_ICONS[radio.data["value"]])
+            for radio in self["purpose"]
+        ]
 
     @property
     def feature_fields(self):
@@ -163,12 +190,21 @@ class ApplicationForm(ResourceForm):
         taken literally, including all of them being off.
         """
         if not self.data.get("features_declared"):
-            return {key: key not in OPT_IN_FEATURES for key, _ in available_features()}
-        return {
-            name.removeprefix("feature_"): bool(value)
-            for name, value in self.cleaned_data.items()
-            if name.startswith("feature_")
-        }
+            chosen = {
+                key: key not in OPT_IN_FEATURES
+                for key, _ in available_features()
+                if area_of(key) == "shared"
+            }
+        else:
+            chosen = {
+                name.removeprefix("feature_"): bool(value)
+                for name, value in self.cleaned_data.items()
+                if name.startswith("feature_")
+            }
+        # No purpose posted - a script, or a caller from before the question
+        # existed - is "Both", so nothing is switched off that used to be on.
+        purpose = getattr(self, "cleaned_data", {}).get("purpose") or self.data.get("purpose")
+        return chosen | features_for_purpose(purpose)
 
 
 class GrantForm(forms.Form):

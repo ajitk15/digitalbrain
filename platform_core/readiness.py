@@ -28,23 +28,50 @@ when it had not started.
 
 from dataclasses import dataclass
 
+CONNECTORS = "connectors"
 ANALYSIS = "analysis"
 DELIVERY = "delivery"
+TRIAGE = "triage"
 
+#: (gate, heading, what it is for, purpose it belongs to or None for shared).
+#: An application is shown the shared gate and the gates of the purposes it
+#: serves - Engineering, Operations or both - on one page.
 GATES = (
     (
+        CONNECTORS,
+        "Choose your connectors",
+        "Which systems this application imports from. Only the ones ticked are "
+        "offered on the Connectors and Credentials screens.",
+        None,
+    ),
+    (
         ANALYSIS,
-        "Analyse a ticket",
+        "Engineering · Analyse a ticket",
         "What a run needs to read a ticket, compare it against the graph and "
         "propose fixes with evidence. Nothing here writes anywhere.",
+        "engineering",
     ),
     (
         DELIVERY,
-        "Open a pull request",
+        "Engineering · Open a pull request",
         "What the second half additionally needs to turn an approved plan into "
         "a draft pull request. Each change still passes its own review gate.",
+        "engineering",
+    ),
+    (
+        TRIAGE,
+        "Operations · Triage an incident",
+        "What triage needs to find evidence for an incident - past incidents, "
+        "changes and runbooks - and suggest causes that cite it. Nothing here "
+        "changes any system.",
+        "operations",
     ),
 )
+#: Drawn beside each gate's heading, matching the menu and the create form.
+GATE_ICONS = {CONNECTORS: "plug", ANALYSIS: "code", DELIVERY: "github", TRIAGE: "warning"}
+#: The gate that must be ready before a purpose counts as set up. Delivery is
+#: deliberately not one: an application that only analyses is finished.
+FIRST_GATE = {"engineering": ANALYSIS, "operations": TRIAGE}
 
 
 @dataclass(frozen=True)
@@ -77,6 +104,228 @@ class Step:
     #: page that renders and submits on its own. Every one of these does, and
     #: with JavaScript off the link simply navigates.
     modal: bool = False
+
+
+def credential_step(app, configured, gate, key):
+    """Whether the provider a purpose is configured with has a credential here."""
+    from django.conf import settings
+
+    from .secrets import application_secret
+
+    provider = configured.provider if configured else ""
+    credential = bool(application_secret(app, provider)) if provider else False
+    # The development concession, reported as one rather than hidden: a run does
+    # work without a mounted credential here, and it works by spending whoever
+    # started the server. Somebody setting up an application should be told that
+    # before other people use the instance.
+    host_login = provider == "claude" and not credential and settings.CLAUDE_USE_HOST_LOGIN
+    return Step(
+        key,
+        gate,
+        "Provider credential",
+        credential or host_login,
+        f"A {provider} credential is set for this application."
+        if credential
+        else "Falling back to the host Claude login. Runs spend whoever "
+        "started this server, not this application."
+        if host_login
+        else f"No {provider or 'provider'} credential is set.",
+        ""
+        if credential
+        else "Set a Claude credential on the Credentials screen before "
+        "other people use this instance. The fallback is refused in "
+        "production."
+        if host_login
+        else "Set the provider credential on the Credentials screen.",
+        "credentials",
+        "key",
+        blocking=not host_login,
+        modal=True,
+    )
+
+
+def chosen_connectors(app):
+    """The connector kinds this application's owner ticked, or None if not asked yet.
+
+    Answered means onboarding wrote a row for a kind; until then every kind is
+    allowed, as a missing feature row always means enabled.
+    """
+    from .connector_kinds import KINDS
+    from .models import ApplicationFeature
+    from .services import connector_feature
+
+    rows = dict(
+        ApplicationFeature.objects.filter(
+            application=app, key__in=[connector_feature(kind) for kind in KINDS]
+        ).values_list("key", "enabled")
+    )
+    if not rows:
+        return None
+    return [kind for kind in KINDS if rows.get(connector_feature(kind), True)]
+
+
+def connector_steps(app):
+    """The one shared question: which systems this application imports from."""
+    from .connector_kinds import KINDS
+
+    chosen = chosen_connectors(app)
+    names = ", ".join(KINDS[kind].label for kind in chosen or [])
+    return [
+        Step(
+            "connectors_chosen",
+            CONNECTORS,
+            "Connectors chosen",
+            chosen is not None,
+            (f"Using {names}." if names else "No connectors: nothing is imported.")
+            if chosen is not None
+            else "Not chosen yet. Every kind is offered until you do.",
+            "" if chosen is not None else "Tick the systems this application imports from.",
+            "onboarding-connectors",
+            "plug",
+            modal=True,
+        )
+    ]
+
+
+def operations_steps(app):
+    """What ServiceOps triage needs, in the order somebody would set it up."""
+    from .connector_kinds import KINDS
+    from .graphs import published_revision
+    from .models import AIConfiguration, KnowledgeEntry
+    from .secrets import application_secret
+    from .serviceops import incident_queryset
+    from .services import feature_enabled
+
+    found = []
+    enabled = feature_enabled("service_ops", app)
+    found.append(
+        Step(
+            "service_ops",
+            TRIAGE,
+            "ServiceOps switched on",
+            enabled,
+            "Enabled for this application." if enabled else "Not enabled.",
+            "" if enabled else "Tick ServiceOps on the Features screen.",
+            "application-features",
+            "toggle",
+            modal=True,
+        )
+    )
+    for kind in chosen_connectors(app) or []:
+        spec = KINDS[kind]
+        if not spec.credential_required:
+            continue
+        mounted = bool(application_secret(app, kind))
+        found.append(
+            Step(
+                f"credential_{kind}",
+                TRIAGE,
+                f"{spec.label} credential",
+                mounted,
+                f"A {spec.label} credential is set." if mounted else "Not set.",
+                "" if mounted else f"Set the {spec.label} credential on the Credentials screen.",
+                "credentials",
+                "key",
+                modal=True,
+            )
+        )
+    incidents = incident_queryset(app).count()
+    found.append(
+        Step(
+            "incidents",
+            TRIAGE,
+            "Incidents imported",
+            bool(incidents),
+            f"{incidents} incident(s) to triage and learn from."
+            if incidents
+            else "No incident has been imported.",
+            ""
+            if incidents
+            else "Add a ServiceNow connector on the incident table and import. Resolved "
+            "incidents with close notes are what triage learns from.",
+            "connectors",
+            "plug",
+        )
+    )
+    changes = KnowledgeEntry.objects.filter(
+        application=app, active=True, source__icontains="change_request.do"
+    ).count()
+    found.append(
+        Step(
+            "changes",
+            TRIAGE,
+            "Changes imported",
+            bool(changes),
+            f"{changes} change request(s)." if changes else "No change request has been imported.",
+            ""
+            if changes
+            else "Add a second ServiceNow connector on the change_request table. A change "
+            "on the same component shortly before an incident is often its cause.",
+            "connectors",
+            "plug",
+            blocking=False,
+        )
+    )
+    published = published_revision(app.pk)
+    runbooks = (
+        published is not None
+        and KnowledgeEntry.objects.filter(
+            application=app, active=True, document__isnull=False
+        ).exists()
+    )
+    found.append(
+        Step(
+            "runbooks",
+            TRIAGE,
+            "Runbooks published",
+            runbooks,
+            f"Version {published.number} is published with documents."
+            if runbooks
+            else "No published knowledge graph with documents."
+            if published is None
+            else "The published graph holds no documents.",
+            ""
+            if runbooks
+            else "Upload runbooks and design documents in Knowledge, generate a graph and "
+            "publish it. Triage then reaches the passages that name an incident's component.",
+            "graph",
+            "graph",
+            blocking=False,
+        )
+    )
+    configured = AIConfiguration.objects.filter(
+        application=app, purpose="serviceops_triage", enabled=True
+    ).first()
+    found.append(
+        Step(
+            "triage_model",
+            TRIAGE,
+            "Model for triage",
+            configured is not None,
+            f"{configured.get_provider_display()} {configured.model}."
+            if configured
+            else "No model is configured for ServiceOps triage.",
+            "" if configured else "Choose a provider and model for ServiceOps triage in Settings.",
+            "ai-settings",
+            "sliders",
+            modal=True,
+        )
+    )
+    found.append(credential_step(app, configured, TRIAGE, "triage_credential"))
+    return found
+
+
+def all_steps(app):
+    """Every step this application's onboarding shows: shared, then each purpose's."""
+    from .services import purposes
+
+    serving = purposes(app)
+    found = connector_steps(app)
+    if "engineering" in serving:
+        found += steps(app)
+    if "operations" in serving:
+        found += operations_steps(app)
+    return found
 
 
 def steps(app):
@@ -153,40 +402,7 @@ def steps(app):
         )
     )
 
-    provider = configured.provider if configured else ""
-    credential = bool(application_secret(app, provider)) if provider else False
-    # The development concession, reported as one rather than hidden: a run does
-    # work without a mounted credential here, and it works by spending whoever
-    # started the server. Somebody setting up an application should be told that
-    # before other people use the instance.
-    host_login = (
-        provider == "claude" and not credential and settings.CLAUDE_USE_HOST_LOGIN
-    )
-    found.append(
-        Step(
-            "credential",
-            ANALYSIS,
-            "Provider credential",
-            credential or host_login,
-            f"A {provider} credential is set for this application."
-            if credential
-            else "Falling back to the host Claude login. Runs spend whoever "
-            "started this server, not this application."
-            if host_login
-            else f"No {provider or 'provider'} credential is set.",
-            ""
-            if credential
-            else "Set a Claude credential on the Credentials screen before "
-            "other people use this instance. The fallback is refused in "
-            "production."
-            if host_login
-            else "Set the provider credential on the Credentials screen.",
-            "credentials",
-            "key",
-            blocking=not host_login,
-            modal=True,
-        )
-    )
+    found.append(credential_step(app, configured, ANALYSIS, "credential"))
 
     tickets = (
         KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="").count()
@@ -300,7 +516,6 @@ def steps(app):
         )
     )
 
-    from django.conf import settings
 
     approvers = ApplicationGrant.objects.filter(application=app, can_approve=True).count()
     if settings.ALLOW_SELF_APPROVAL:
@@ -374,15 +589,24 @@ class Setup:
 
 
 def setup(app):
-    """Everything a caller needs to report progress, in one pass."""
-    found = steps(app)
+    """Everything a caller needs to report progress, in one pass.
+
+    `analysis_ready` means every purpose this application serves can do its
+    first job - analyse a ticket, triage an incident - and the connectors are
+    chosen. Delivery only counts where Engineering is switched on.
+    """
+    from .services import purposes
+
+    serving = purposes(app)
+    found = all_steps(app)
+    first = [CONNECTORS] + [FIRST_GATE[purpose] for purpose in serving]
     return Setup(
         steps=tuple(found),
         done=sum(1 for step in found if step.ok),
         total=len(found),
         next_step=first_outstanding(found),
-        analysis_ready=gate_ready(found, ANALYSIS),
-        delivery_ready=gate_ready(found, DELIVERY),
+        analysis_ready=all(gate_ready(found, gate) for gate in first),
+        delivery_ready="engineering" not in serving or gate_ready(found, DELIVERY),
     )
 
 

@@ -43,7 +43,98 @@ FEATURES = {
     "connectors": ("External connectors", True),
     "service_ops": ("ServiceOps incident triage", True),
     "chat_api": ("Chat API", True),
+    # One switch per connector kind, so an application offers only the systems
+    # its owner chose during onboarding. Keyed `connector_<kind>` after
+    # `connector_kinds.KINDS`; a missing row still means enabled.
+    "connector_github": ("GitHub connector", True),
+    "connector_jira": ("Jira connector", True),
+    "connector_servicenow": ("ServiceNow connector", True),
 }
+
+#: Which part of the product each feature belongs to. The create form and the
+#: Features screen group by it; nothing about whether a feature works does.
+FEATURE_AREAS = {
+    "code_graph": "engineering",
+    "code_factory": "engineering",
+    "service_ops": "operations",
+    "connector_github": "connectors",
+    "connector_jira": "connectors",
+    "connector_servicenow": "connectors",
+}
+AREA_LABELS = {
+    "engineering": "Engineering",
+    "operations": "Operations",
+    "connectors": "Connectors",
+    "shared": "Shared",
+}
+
+
+#: The icon each area and purpose is drawn with, matching the menu: Code Factory
+#: is "code", ServiceOps is "warning".
+AREA_ICONS = {
+    "engineering": "code",
+    "operations": "warning",
+    "connectors": "plug",
+    "shared": "toggle",
+    "both": "application",
+}
+
+
+def area_of(key):
+    return FEATURE_AREAS.get(key, "shared")
+
+
+#: What an application is for, chosen when it is created. Not stored: it is
+#: whichever of these have their features switched on, so the switches stay the
+#: one source of truth and an owner changes sides on the Features screen.
+PURPOSES = {
+    "engineering": ("code_graph", "code_factory"),
+    "operations": ("service_ops",),
+}
+PURPOSE_CHOICES = (
+    (
+        "engineering",
+        "Engineering",
+        "Turn tickets into reviewed fixes and pull requests. Code Graph and Code Factory.",
+    ),
+    (
+        "operations",
+        "Operations",
+        "Triage incidents with evidence from past incidents, changes and runbooks. ServiceOps.",
+    ),
+    ("both", "Both", "Everything above."),
+)
+#: The connector kinds onboarding ticks first for each purpose. Only a starting
+#: point: the owner can tick any kind for any purpose.
+DEFAULT_CONNECTORS = {
+    "engineering": ("jira", "github"),
+    "operations": ("servicenow",),
+}
+
+
+def connector_feature(kind):
+    return f"connector_{kind}"
+
+
+def purposes(application):
+    """The purposes this application serves, in display order."""
+    return [
+        purpose
+        for purpose, keys in PURPOSES.items()
+        if any(feature_enabled(key, application) for key in keys)
+    ]
+
+
+def features_for_purpose(purpose):
+    """{feature key: enabled} for the engineering and operations features.
+
+    Anything but a known single purpose - "both", nothing, or a value no form
+    offered - is both, so a bad value can never switch everything off.
+    """
+    chosen = {purpose} if purpose in PURPOSES else set(PURPOSES)
+    return {
+        key: owner in chosen for owner, keys in PURPOSES.items() for key in keys
+    }
 
 #: Features an owner must switch on deliberately, rather than ones they may
 #: switch off. `feature_enabled` still reads a missing row as enabled - that

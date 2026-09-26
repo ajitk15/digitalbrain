@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from platform_core.models import (
     AIConfiguration,
+    ApplicationFeature,
     ApplicationGrant,
     CodeRepository,
     GraphRevision,
@@ -76,7 +77,10 @@ class ReadinessTests(TestCase):
             configured_by=self.owner,
         )
         add_knowledge(
-            self.owner, self.app.pk, "OPS-1", "A ticket",
+            self.owner,
+            self.app.pk,
+            "OPS-1",
+            "A ticket",
             source="https://team.atlassian.net/browse/OPS-1",
         )
         found = steps(self.app)
@@ -191,10 +195,26 @@ class ReadinessTests(TestCase):
                 self.assertTrue(step.detail)
 
 
+def engineering_only(app):
+    """An Engineering application: ServiceOps switched off, as the create form does."""
+    ApplicationFeature.objects.create(application=app, key="service_ops", enabled=False)
+
+
+def choose_connectors(app, *kinds):
+    """What onboarding's connector question writes: a row for every kind."""
+    for kind in ("github", "jira", "servicenow"):
+        ApplicationFeature.objects.update_or_create(
+            application=app, key=f"connector_{kind}", defaults={"enabled": kind in kinds}
+        )
+
+
 @override_settings(**SETTINGS)
 class OnboardingScreenTests(TestCase):
-    setUp = ReadinessTests.setUp
     index = ReadinessTests.index
+
+    def setUp(self):
+        ReadinessTests.setUp(self)
+        engineering_only(self.app)
 
     def test_the_screen_lists_both_gates_with_what_to_do(self):
         response = self.client.get(reverse("onboarding", args=[self.app.pk]))
@@ -230,16 +250,22 @@ class OnboardingScreenTests(TestCase):
 
     def test_progress_is_counted(self):
         response = self.client.get(reverse("onboarding", args=[self.app.pk]))
-        self.assertContains(response, "of 8</strong> done")
+        # The shared connector question, then Engineering's eight.
+        self.assertContains(response, "of 9</strong> done")
 
     def test_steps_are_numbered_in_one_sequence_across_both_gates(self):
-        """The number is what somebody says out loud, so there is only one 6."""
+        """The number is what somebody says out loud, so there is only one 7."""
         response = self.client.get(reverse("onboarding", args=[self.app.pk]))
-        self.assertContains(response, "1. Code Factory switched on")
-        self.assertContains(response, "5. Tickets imported")
-        # First step of the second gate, and it is 6 rather than 1 again.
-        self.assertContains(response, "6. Code indexed")
+        self.assertContains(response, "1. Connectors chosen")
+        self.assertContains(response, "2. Code Factory switched on")
+        self.assertContains(response, "6. Tickets imported")
+        # First step of the delivery gate, and it is 7 rather than 1 again.
+        self.assertContains(response, "7. Code indexed")
         self.assertNotContains(response, "1. Code indexed")
+
+    def test_an_engineering_application_is_not_shown_the_operations_gate(self):
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        self.assertNotContains(response, "Triage an incident")
 
     def test_a_satisfied_step_carries_no_instructions(self):
         """Half the rows are done, and a done row is one line: what it says and
@@ -250,18 +276,23 @@ class OnboardingScreenTests(TestCase):
         done = body.split('<li class="onboard-step onboard-ok')[1].split("</li>")[0]
         self.assertIn("Code Factory switched on", done)
         self.assertNotIn("onboard-why", done)
-        self.assertNotIn("<a class=\"button", done)
+        self.assertNotIn('<a class="button', done)
+
 
 @override_settings(**SETTINGS)
 class SetupStripTests(TestCase):
     """The checklist follows you to the screens that satisfy it."""
 
-    setUp = ReadinessTests.setUp
     publish = ReadinessTests.publish
+
+    def setUp(self):
+        ReadinessTests.setUp(self)
+        engineering_only(self.app)
 
     def ready_to_analyse(self):
         from platform_core.models import AIConfiguration
 
+        choose_connectors(self.app, "jira")
         self.publish()
         AIConfiguration.objects.create(
             application=self.app,
@@ -274,7 +305,10 @@ class SetupStripTests(TestCase):
             configured_by=self.owner,
         )
         add_knowledge(
-            self.owner, self.app.pk, "OPS-1", "A ticket",
+            self.owner,
+            self.app.pk,
+            "OPS-1",
+            "A ticket",
             source="https://team.atlassian.net/browse/OPS-1",
         )
 
@@ -285,7 +319,7 @@ class SetupStripTests(TestCase):
 
     def test_it_names_the_next_thing_to_do(self):
         response = self.client.get(reverse("documents", args=[self.app.pk]))
-        self.assertContains(response, "next: knowledge graph published")
+        self.assertContains(response, "next: connectors chosen")
 
     @override_settings(CLAUDE_USE_HOST_LOGIN=True)
     def test_it_goes_once_the_application_can_analyse_a_ticket(self):
@@ -302,17 +336,12 @@ class SetupStripTests(TestCase):
     def test_somebody_without_a_grant_is_not_shown_it(self):
         """They cannot act on it, and they should not learn from a banner what
         deny-by-default keeps off the rest of the screen."""
-        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
-            role="viewer"
-        )
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(role="viewer")
         response = self.client.get(reverse("documents", args=[self.app.pk]))
         self.assertContains(response, "Setting up")  # a viewer still holds a grant
 
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
-        self.assertEqual(
-            self.client.get(reverse("documents", args=[self.app.pk])).status_code, 404
-        )
-
+        self.assertEqual(self.client.get(reverse("documents", args=[self.app.pk])).status_code, 404)
 
     def test_the_run_narration_and_the_screen_come_from_the_same_list(self):
         """The drift this module exists to prevent, pinned."""

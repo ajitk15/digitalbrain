@@ -3203,6 +3203,27 @@
   .guide-terms dd { margin: 2px 0 0; color: var(--c-ink-2); font-size: var(--t-13); }
   .guide-list { padding-left: var(--s-4); color: var(--c-ink-2); font-size: var(--t-13); }
 
+  /* What an application is for, as cards on the create form, and the same
+     cards for onboarding's connector choice. The approval box belongs to
+     Engineering; with Operations picked it is hidden by CSS alone, so the form
+     needs no script and the server still decides what is recorded. */
+  .purpose-cards { display: grid; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; border: 0; }
+  .purpose-cards legend { margin-bottom: var(--s-2); font-weight: 600; }
+  .purpose-card { display: flex; align-items: flex-start; gap: var(--s-3); padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); cursor: pointer; }
+  /* Form inputs are full-width blocks everywhere else; a radio or checkbox in a
+     card is a control beside its label. */
+  .purpose-card input { flex: none; display: inline-block; width: auto; min-height: 0; height: auto; margin: 10px 0 0; }
+  .purpose-card > span { display: grid; gap: 2px; }
+  .purpose-card small { color: var(--c-ink-3); font-size: var(--t-13); }
+  .purpose-icon { flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--r-md); background: var(--c-canvas); color: var(--c-ink-2); }
+  .purpose-card:has(input:checked) .purpose-icon { background: var(--c-surface); color: var(--c-brand-strong); }
+  .purpose-cards legend, .checkbox-grid legend { display: inline-flex; align-items: center; gap: var(--s-1); }
+  .feature-area, .gate-heading { display: flex; align-items: center; gap: var(--s-2); }
+  .feature-area > svg, .gate-heading > svg { flex: none; color: var(--c-brand); }
+  .purpose-card:has(input:checked) { border-color: var(--c-brand); background: var(--c-brand-tint); }
+  .purpose-card:has(input:focus-visible) { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .application-form:has(input[name="purpose"][value="operations"]:checked) .engineering-only { display: none; }
+
   /* The operations graph: how evidence was reached, and the map around an
      incident. Node colours come from tokens, so both themes follow. */
   .ops-path { display: block; margin-top: 2px; color: var(--c-ink-muted); font-size: var(--t-11); }

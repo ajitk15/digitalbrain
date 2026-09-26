@@ -1,9 +1,15 @@
 """Rebuild the CarePath demonstration workspace from nothing.
 
 Everything here is derived from demo-artifacts/demo-kit/demo-setup.md, which is
-the runbook a person would follow by hand. This does the parts that need no
+the runbook a person would follow by hand. Two applications, one per purpose:
+
+* CarePathDev - Engineering: Jira tickets, the CarePath repository, Code Factory.
+* CarePathOps - Operations: ServiceNow incidents and changes, ServiceOps triage.
+
+Both read the same lifecycle documents. This does the parts that need no
 credential, so the only manual steps left are the ones that involve a secret:
-the administrator's password, and the Jira, GitHub-write and Claude credentials.
+the administrator's password, and the Jira, ServiceNow, GitHub-write and Claude
+credentials. Connectors are left to onboarding, which asks for them.
 
 Idempotent. Run it twice and the second run reports what already existed rather
 than creating a second ACME. Nothing here deletes anything.
@@ -31,23 +37,56 @@ from platform_core.models import (  # noqa: E402
     Product,
     User,
 )
+from platform_core.services import (  # noqa: E402
+    DEFAULT_CONNECTORS,
+    connector_feature,
+    features_for_purpose,
+)
 
 DOCS = "https://github.com/ajitk15/carepathdocs/tree/main"
 CODE = "ajitk15/carepath"
 
-#: Ticked on the create form in the runbook. chat_api is deliberately absent:
-#: it is the one API surface that spends the application's model budget, so it
-#: stays opt-in and gets an explicit disabled row rather than a missing one.
-ENABLED = (
-    "knowledge",
-    "code_factory",
-    "code_graph",
-    "connectors",
-    "service_ops",
-    "chat",
-    "usage_reports",
+#: (name, purpose, the AI purpose its first job needs)
+APPLICATIONS = (
+    ("CarePathDev", "engineering", "plan_drafting"),
+    ("CarePathOps", "operations", "serviceops_triage"),
 )
-DISABLED = ("chat_api",)
+
+
+def build(admin, product, name, purpose, ai_purpose):
+    app, made = Application.objects.get_or_create(name=name, product=product)
+    print(f"{'created' if made else 'found  '} application {name} ({purpose}, {app.pk})")
+    # Owner, and explicitly able to approve, as the create form does. On this
+    # instance allow_self_approval is on, which is what lets one operator run
+    # the pipeline end to end; a real deployment grants a second person.
+    ApplicationGrant.objects.update_or_create(
+        application=app, user=admin, defaults={"role": "owner", "can_approve": True}
+    )
+    # What the create form writes for this purpose, then what onboarding's
+    # connector question writes for its defaults.
+    for key, enabled in features_for_purpose(purpose).items():
+        ApplicationFeature.objects.update_or_create(
+            application=app, key=key, defaults={"enabled": enabled}
+        )
+    for kind in ("github", "jira", "servicenow"):
+        ApplicationFeature.objects.update_or_create(
+            application=app,
+            key=connector_feature(kind),
+            defaults={"enabled": kind in DEFAULT_CONNECTORS[purpose]},
+        )
+    AIConfiguration.objects.get_or_create(
+        application=app,
+        purpose=ai_purpose,
+        defaults={
+            "provider": "claude",
+            "model": "claude-sonnet-5",
+            "enabled": True,
+            "input_rate": 3,
+            "output_rate": 15,
+            "configured_by": admin,
+        },
+    )
+    return app
 
 
 def main():
@@ -62,86 +101,39 @@ def main():
 
     org, made = Organization.objects.get_or_create(name="ACME")
     print(f"{'created' if made else 'found  '} organization ACME")
-
-    _, made = OrganizationMember.objects.get_or_create(
+    OrganizationMember.objects.get_or_create(
         organization=org, user=admin, defaults={"is_admin": True}
     )
-    print(f"{'created' if made else 'found  '} membership for {admin.get_username()}")
+    portfolio, _ = Portfolio.objects.get_or_create(name="Integrated Care", organization=org)
+    product, _ = Product.objects.get_or_create(name="Care Coordination", portfolio=portfolio)
 
-    portfolio, made = Portfolio.objects.get_or_create(name="Integrated Care", organization=org)
-    print(f"{'created' if made else 'found  '} portfolio Integrated Care")
-
-    product, made = Product.objects.get_or_create(name="Care Coordination", portfolio=portfolio)
-    print(f"{'created' if made else 'found  '} product Care Coordination")
-
-    app, made = Application.objects.get_or_create(name="CarePath", product=product)
-    print(f"{'created' if made else 'found  '} application CarePath  ({app.pk})")
-
-    # Owner, and explicitly able to approve. On this instance allow_self_approval
-    # is on, which is what lets one operator run the pipeline end to end; a real
-    # deployment grants approval to a second person instead.
-    grant, made = ApplicationGrant.objects.get_or_create(
-        application=app, user=admin, defaults={"role": "owner", "can_approve": True}
-    )
-    if not made and not grant.can_approve:
-        grant.can_approve = True
-        grant.save(update_fields=["can_approve"])
-    print(f"{'created' if made else 'found  '} owner grant with approval rights")
-
-    for key in ENABLED:
-        ApplicationFeature.objects.update_or_create(
-            application=app, key=key, defaults={"enabled": True}
-        )
-    for key in DISABLED:
-        ApplicationFeature.objects.update_or_create(
-            application=app, key=key, defaults={"enabled": False}
-        )
-    print(f"features: {len(ENABLED)} enabled, {len(DISABLED)} left off ({', '.join(DISABLED)})")
-
-    # Plan drafting is the one a Code Factory run refuses without. The rates are
-    # what the receipts are priced at; they do not change what is called.
-    config, made = AIConfiguration.objects.get_or_create(
-        application=app,
-        purpose="plan_drafting",
-        defaults={
-            "provider": "claude",
-            "model": "claude-sonnet-5",
-            "enabled": True,
-            "input_rate": 3,
-            "output_rate": 15,
-            "configured_by": admin,
-        },
-    )
-    print(f"{'created' if made else 'found  '} AI configuration {config.provider} {config.model}")
-
-    # ---- the two imports, both public, both anonymous ----
     from platform_core.code_graph_ingest import register
     from platform_core.link_sources import submit
     from platform_core.models import CodeRepository, KnowledgeSource
 
-    if KnowledgeSource.objects.filter(application=app, url=DOCS).exists():
-        print("found   knowledge source carepathdocs")
-    else:
-        notes = []
-        created = submit(admin, app.pk, DOCS, notes)
-        print(f"created knowledge source carepathdocs: {len(created)} document(s) queued")
-        for note in notes:
-            print(f"        {note}")
+    built = {}
+    for name, purpose, ai_purpose in APPLICATIONS:
+        app = built[name] = build(admin, product, name, purpose, ai_purpose)
+        if KnowledgeSource.objects.filter(application=app, url=DOCS).exists():
+            print("found   knowledge source carepathdocs")
+        else:
+            notes = []
+            created = submit(admin, app.pk, DOCS, notes)
+            print(f"created knowledge source carepathdocs: {len(created)} document(s) queued")
 
-    if CodeRepository.objects.filter(application=app, external_id=CODE.lower()).exists():
+    dev = built["CarePathDev"]
+    if CodeRepository.objects.filter(application=dev, external_id=CODE.lower()).exists():
         print("found   code repository ajitk15/carepath")
     else:
-        repo = register(admin, app.pk, CODE)
+        repo = register(admin, dev.pk, CODE)
         print(f"created code repository {repo.name}, queued for indexing")
 
     print()
     print("Left to do, because each one needs a secret I will not handle:")
-    print(f"  Credentials screen: Claude, GitHub (write), Jira   (application {app.pk})")
-    print("  Knowledge: generate a graph and publish it once the documents convert")
-    print()
-    print("The worker converts documents and indexes the repository in the")
-    print("background; start the server and watch the Knowledge and Code Graph")
-    print("screens settle.")
+    print(f"  CarePathDev credentials: Claude, Jira, GitHub (write)  ({dev.pk})")
+    print(f"  CarePathOps credentials: Claude, ServiceNow            ({built['CarePathOps'].pk})")
+    print("  Then follow each application's onboarding: its connectors, a")
+    print("  graph generated and published once the documents convert, and an import.")
     return 0
 
 

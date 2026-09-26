@@ -144,6 +144,11 @@ urlpatterns = [
     path("applications/<uuid:pk>/plans/", workbench.plans, name="plans"),
     path("applications/<uuid:pk>/plans/new-ticket/", workbench.ticket_new, name="ticket-new"),
     path("applications/<uuid:pk>/onboarding/", workbench.onboarding, name="onboarding"),
+    path(
+        "applications/<uuid:pk>/onboarding/connectors/",
+        views.onboarding_connectors,
+        name="onboarding-connectors",
+    ),
     path("applications/<uuid:pk>/runs/", workbench.runs, name="runs"),
     path("applications/<uuid:pk>/runs/<uuid:run_id>/", workbench.run_detail, name="run-detail"),
     path(

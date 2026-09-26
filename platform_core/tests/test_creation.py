@@ -21,7 +21,7 @@ from platform_core.models import (
     Product,
     User,
 )
-from platform_core.services import available_features
+from platform_core.services import area_of, available_features
 
 
 @override_settings(
@@ -85,11 +85,9 @@ class ApplicationCreationTests(TestCase):
         self.assertEqual(grant.role, "owner")
 
     def test_creation_lands_on_the_onboarding_checklist(self):
-        """"It exists" is the least useful thing to say to somebody who now has
+        """ "It exists" is the least useful thing to say to somebody who now has
         eight things to do."""
-        response = self.client.post(
-            self.url(), self.payload(owner=str(self.admin.pk))
-        )
+        response = self.client.post(self.url(), self.payload(owner=str(self.admin.pk)))
         app = Application.objects.get(name="Reporting")
         self.assertRedirects(response, reverse("onboarding", args=[app.pk]))
 
@@ -98,20 +96,26 @@ class ApplicationCreationTests(TestCase):
         applications, so the creator cannot always open what they just made."""
         response = self.client.post(self.url(), self.payload())
         app = Application.objects.get(name="Reporting")
-        self.assertFalse(
-            ApplicationGrant.objects.filter(application=app, user=self.admin).exists()
-        )
+        self.assertFalse(ApplicationGrant.objects.filter(application=app, user=self.admin).exists())
         self.assertRedirects(response, reverse("organization", args=[self.org.pk]))
 
-    def test_creation_without_code_factory_does_not_send_you_to_its_screen(self):
-        """The checklist is behind the feature, and an unticked box means off."""
-        # The marker is what makes an absent checkbox mean "off" rather than
-        # "this caller never mentioned features".
-        payload = self.payload(owner=str(self.admin.pk), features_declared="1")
-        payload.pop("feature_code_factory")
+    def test_an_operations_application_goes_to_its_own_onboarding(self):
+        """The checklist follows the purpose, so it is there without Code Factory."""
+        payload = self.payload(owner=str(self.admin.pk), purpose="operations")
         response = self.client.post(self.url(), payload)
-        self.assertTrue(Application.objects.filter(name="Reporting").exists())
-        self.assertRedirects(response, reverse("organization", args=[self.org.pk]))
+        app = Application.objects.get(name="Reporting")
+        self.assertRedirects(
+            response, reverse("onboarding", args=[app.pk]), fetch_redirect_response=False
+        )
+        off = set(
+            ApplicationFeature.objects.filter(application=app, enabled=False).values_list(
+                "key", flat=True
+            )
+        )
+        self.assertEqual(off, {"code_graph", "code_factory"})
+        # Hidden for Operations, and still granted: without it nobody could ever
+        # hand it on if Engineering is switched on later.
+        self.assertTrue(ApplicationGrant.objects.get(application=app, user=self.admin).can_approve)
 
     def test_each_created_level_is_audited(self):
         self.client.post(self.url(), self.payload())
@@ -321,28 +325,66 @@ class FeatureSelectionTests(TestCase):
         OrganizationMember.objects.create(organization=self.org, user=self.owner)
         self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
 
-    def create(self, **features):
+    def create(self, purpose="both", name="Selective", **features):
         data = {
-            "name": "Selective",
+            "name": name,
             "new_portfolio": "P",
             "new_product": "Q",
             "owner": str(self.owner.pk),
+            "purpose": purpose,
             # The marker the form posts: without it an absent checkbox means
             # "this caller said nothing about features", not "switch it off".
             "features_declared": "1",
         }
         for key, _ in available_features():
-            if features.get(key, True):
+            if area_of(key) == "shared" and features.get(key, True):
                 data[f"feature_{key}"] = "on"
         response = self.client.post(reverse("application-create", args=[self.org.pk]), data)
         self.assertEqual(response.status_code, 302)
-        return Application.objects.get(name="Selective")
+        return Application.objects.get(name=name)
 
-    def test_every_registry_feature_appears_on_the_form(self):
+    def test_every_shared_feature_is_a_box_and_the_rest_follow_the_purpose(self):
         response = self.client.get(reverse("application-create", args=[self.org.pk]))
         for key, label in available_features():
-            self.assertContains(response, f"feature_{key}")
-            self.assertContains(response, label)
+            if area_of(key) == "shared":
+                self.assertContains(response, f'name="feature_{key}"')
+                self.assertContains(response, label)
+            else:
+                # Engineering and Operations follow the purpose; connector kinds
+                # are chosen during onboarding.
+                self.assertNotContains(response, f'name="feature_{key}"')
+        for value in ("engineering", "operations", "both"):
+            self.assertContains(response, f'value="{value}"')
+        self.assertContains(response, "What is this application for?")
+
+    def test_each_purpose_switches_on_its_own_part_only(self):
+        expected = {
+            "engineering": {"service_ops"},
+            "operations": {"code_graph", "code_factory"},
+            "both": set(),
+        }
+        for purpose, off in expected.items():
+            with self.subTest(purpose=purpose):
+                app = self.create(purpose=purpose, name=f"For {purpose}")
+                written = set(
+                    ApplicationFeature.objects.filter(application=app, enabled=False).values_list(
+                        "key", flat=True
+                    )
+                )
+                self.assertEqual(written, off)
+                # Connector kinds are left for onboarding to ask about.
+                self.assertFalse(
+                    ApplicationFeature.objects.filter(
+                        application=app, key__startswith="connector_"
+                    ).exists()
+                )
+
+    def test_an_unknown_purpose_switches_nothing_off(self):
+        """A value no form offered is not a way to disable everything."""
+        from platform_core.forms import ApplicationForm
+
+        form = ApplicationForm(data={"purpose": "nonsense"}, organization=self.org)
+        self.assertTrue(all(form.selected_features().values()))
 
     def test_all_features_ticked_writes_no_rows(self):
         """A missing row already means enabled; writing them all would be noise."""
@@ -393,11 +435,12 @@ class FeatureSelectionTests(TestCase):
         self.assertEqual(response.status_code, 302)
         app = Application.objects.get(name="Bare")
         rows = ApplicationFeature.objects.filter(application=app, enabled=False)
-        self.assertEqual(rows.count(), len(available_features()))
+        shared = [key for key, _ in available_features() if area_of(key) == "shared"]
+        self.assertEqual(set(rows.values_list("key", flat=True)), set(shared))
 
     def test_an_unticked_feature_is_recorded_as_disabled(self):
-        app = self.create(code_factory=False)
-        row = ApplicationFeature.objects.get(application=app, key="code_factory")
+        app = self.create(chat=False)
+        row = ApplicationFeature.objects.get(application=app, key="chat")
         self.assertFalse(row.enabled)
         self.assertEqual(ApplicationFeature.objects.filter(application=app).count(), 1)
 
@@ -412,10 +455,12 @@ class FeatureSelectionTests(TestCase):
         self.assertEqual(self.client.get(reverse("graph", args=[app.pk])).status_code, 200)
 
     def test_the_disabled_feature_disappears_from_the_navigation(self):
-        app = self.create(code_factory=False)
+        app = self.create(purpose="operations")
         self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
         response = self.client.get(reverse("graph", args=[app.pk]))
         self.assertNotContains(response, ">Code Factory</a>")
+        self.assertNotContains(response, ">Code Graph</a>")
+        self.assertContains(response, ">ServiceOps</a>")
         self.assertContains(response, ">Chat</a>")
 
 

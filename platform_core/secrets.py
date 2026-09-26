@@ -276,12 +276,35 @@ def clear_credential(user, app_id, key):
     return app
 
 
+def relevant(app, key):
+    """Whether this application uses a credential, by what it is set up for.
+
+    Jira and ServiceNow follow the connector kinds its owner chose; GitHub
+    (write) follows Code Factory. GitHub (read) is also how link imports and Code
+    Graph authenticate, so it stays. The registry is unchanged - this only
+    decides which rows the screen offers.
+    """
+    from .services import connector_feature, feature_enabled
+
+    if key in {"jira", "servicenow"}:
+        return feature_enabled(connector_feature(key), app)
+    if key == "github_write":
+        return feature_enabled("code_factory", app)
+    return True
+
+
 def rows(app):
-    """Every credential this application can hold, with where it stands."""
+    """Every credential this application uses, with where it stands.
+
+    A credential that is set is always listed, used or not, so it can be seen
+    and cleared.
+    """
     records = {row.name: row for row in ManagedCredential.objects.filter(application=app)}
     listed = []
     for entry in MANAGEABLE.values():
         source = source_of(app, entry.key)
+        if not source and not relevant(app, entry.key):
+            continue
         record = records.get(entry.key)
         listed.append(
             {

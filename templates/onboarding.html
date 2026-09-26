@@ -3,10 +3,10 @@
 <section class="onboard-welcome">
 <p class="eyebrow">Welcome</p>
 <h1>{{ application.name }} is ready to set up</h1>
-<p>Nothing is configured yet. Below is everything this application needs, in the order to do it — <strong>{{ done }} of {{ total }}</strong> done. Four or five screens, and you can stop and come back; this page always shows where you got to.</p>
+<p>Nothing is configured yet. Below is everything this application needs for {% if serving|length == 2 %}Engineering and Operations{% elif "engineering" in serving %}Engineering{% elif "operations" in serving %}Operations{% else %}its knowledge{% endif %}, in the order to do it — <strong>{{ done }} of {{ total }}</strong> done. A few screens, and you can stop and come back; this page always shows where you got to.</p>
 </section>
 {% else %}
-<p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
+{% if "engineering" in serving %}<p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>{% elif "operations" in serving %}<p><a href="{% url 'serviceops' application.pk %}">← Back to ServiceOps</a></p>{% endif %}
 <div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Application onboarding</h1></div>
 <p class="onboard-progress"><strong>{{ done }} of {{ total }}</strong> done</p></div>
 {% endif %}
@@ -17,13 +17,13 @@
 {% endif %}
 
 {% if setup.analysis_ready %}
-<p class="onboard-done">{% icon "check" 15 %}<span><strong>{% if setup.complete %}Onboarding complete.{% else %}Ready to analyse tickets.{% endif %}</strong> {% if setup.complete %}{{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.{% else %}Opening pull requests needs the second gate below — a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.{% endif %}</span>
-<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a></p>
+<p class="onboard-done">{% icon "check" 15 %}<span><strong>{% if setup.complete %}Onboarding complete.{% elif "engineering" in serving %}Ready to analyse tickets.{% else %}Ready.{% endif %}</strong> {% if "engineering" in serving %}{% if setup.complete %}{{ application.name }} can analyse a ticket against its published graph and, once a plan is approved and its repository confirmed, open a draft pull request.{% else %}Opening pull requests needs the Engineering gate below — a separate decision, and an application that only ever analyses tickets is finished rather than half-finished.{% endif %}{% endif %}{% if "operations" in serving %} {{ application.name }} can triage an incident against its past incidents, changes and runbooks.{% endif %}</span>
+{% if "engineering" in serving %}<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a>{% endif %}{% if "operations" in serving %}<a class="button secondary" href="{% url 'serviceops' application.pk %}">{% icon "warning" 13 %}Go to ServiceOps</a>{% endif %}</p>
 {% endif %}
 
 {% for gate in gates %}
 <section class="card section onboard-gate">
-<div class="card-heading"><h2>{{ gate.label }}</h2>
+<div class="card-heading"><h2 class="gate-heading">{% icon gate.icon 16 %}{{ gate.label }}</h2>
 <span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.done }} of {{ gate.count }}{% endif %}</span></div>
 <p class="muted">{{ gate.blurb }}</p>
 <ol class="onboard-list">{% for number, step in gate.steps %}
@@ -38,5 +38,5 @@
 </section>
 {% endfor %}
 
-<p class="muted section"><small>A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</small></p>
+{% if "engineering" in serving %}<p class="muted section"><small>A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</small></p>{% endif %}
 {% endblock %}

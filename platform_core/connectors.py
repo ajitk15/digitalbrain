@@ -69,6 +69,17 @@ def credential_location(app, kind):
     }
 
 
+def allowed_kinds(app):
+    """The connector kinds this application's owner chose, in registry order.
+
+    A kind switched off is not offered, cannot be added or edited, and its
+    existing connectors stop importing - by hand or on a schedule.
+    """
+    from .services import connector_feature
+
+    return [kind for kind in KINDS if feature_enabled(connector_feature(kind), app)]
+
+
 def owner_access(user, app_id):
     app, grant = access(user, app_id, "connectors")
     if grant.role != "owner":
@@ -88,6 +99,13 @@ def sync(user, connector_id, app_id):
     connector = get_object_or_404(Connector, pk=connector_id, application=app)
     if not connector.enabled:
         raise ValidationError("Enable this connector before importing.")
+    if connector.kind not in allowed_kinds(app):
+        message = (
+            f"{kind_for(connector.kind).label} is switched off for this application. "
+            "Tick it under Settings › Features to import from it again."
+        )
+        finish(connector, "failed", 0, time.monotonic(), message)
+        raise ValidationError(message)
     kind = kind_for(connector.kind)
     secret = credential(app, connector.kind)
     if kind.credential_required and not secret:
@@ -280,7 +298,7 @@ def connectors(request, pk):
                 }
                 for row in rows
             ],
-            "kinds": list(KINDS.values()),
+            "kinds": [KINDS[kind] for kind in allowed_kinds(app)],
         },
     )
 
@@ -294,12 +312,16 @@ def connector_form(request, pk, connector_id=None):
         get_object_or_404(Connector, pk=connector_id, application=app) if connector_id else None
     )
     key = connector.kind if connector else request.GET.get("kind", "")
+    allowed = allowed_kinds(app)
     if key not in KINDS:
         return render(
             request,
             "connector_choose.html",
-            {"application": app, "grant": grant, "kinds": list(KINDS.values())},
+            {"application": app, "grant": grant, "kinds": [KINDS[kind] for kind in allowed]},
         )
+    if key not in allowed:
+        # Deny by default: a kind the owner switched off reads as absent.
+        raise Http404
     kind = KINDS[key]
     initial = dict(connector.config) if connector else {}
     if connector:

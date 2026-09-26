@@ -50,14 +50,18 @@ CLAUDE_CREDENTIAL   = <PASTE_YOUR_ANTHROPIC_KEY_OR_SETUP_TOKEN>
 ACME                          organization
 └── Integrated Care           portfolio
     └── Care Coordination     product
-        └── CarePath          application
+        ├── CarePathDev       application · Engineering (Code Graph, Code Factory)
+        └── CarePathOps       application · Operations (ServiceOps)
 ```
 
-| Thing | Where it lives |
-| --- | --- |
-| Lifecycle documents | https://github.com/ajitk15/carepathdocs/tree/main |
-| The service itself | https://github.com/ajitk15/carepath |
-| Tickets | https://ajitk15.atlassian.net · project KAN |
+| Thing | Where it lives | Used by |
+| --- | --- | --- |
+| Lifecycle documents | https://github.com/ajitk15/carepathdocs/tree/main | both |
+| The service itself | https://github.com/ajitk15/carepath | CarePathDev |
+| Tickets | https://ajitk15.atlassian.net · project KAN | CarePathDev |
+| Incidents and changes | https://dev401026.service-now.com · service CAREPATH_OPS | CarePathOps |
+
+`scripts/rebuild_demo.py` does every step below that needs no secret.
 
 ---
 
@@ -91,16 +95,22 @@ application**, or straight to:
 | New portfolio name | `Integrated Care` |
 | Product | *leave blank* |
 | New product name | `Care Coordination` |
-| Application name | `CarePath` |
+| What is this application for? | **Engineering** |
+| Application name | `CarePathDev` |
 | Application owner | yourself |
-| Explicitly grant this owner Code Factory approval rights | **tick** |
+| Grant this owner Code Factory approval rights | **tick** |
 
-**Tick these features:** Knowledge, Code Factory, Code Graph, External
-connectors. Leave **Chat API** unticked — it is opt-in because it spends the
-application's model budget through an API surface.
+Leave the shared features as they are. Engineering switches on Code Graph and
+Code Factory and leaves ServiceOps off.
 
 Submitting lands you on the **onboarding checklist**, which is the map for
-everything below. Work top to bottom; it always shows where you got to.
+everything below. Its first step asks **which connectors** this application
+imports from: keep **Jira** and **GitHub** ticked. Only those are offered on the
+Connectors and Credentials screens afterwards. Work top to bottom; the page
+always shows where you got to.
+
+The Operations application is set up in [its own section](#operations-carepathops)
+after the run.
 
 ---
 
@@ -224,6 +234,37 @@ The whole run takes two to three minutes, mostly model calls.
   nothing. "No, discard it" is a real answer.
 - **Stage 7.** The test author agent wrote the tests; GitHub ran them. The
   platform never executed a line of the customer's code.
+
+---
+
+## Operations: CarePathOps
+
+Create a second application the same way, choosing **Operations** and naming it
+`CarePathOps`. The approval-rights box disappears: it belongs to Engineering.
+
+Its onboarding is ServiceOps' own:
+
+1. **Connectors:** keep **ServiceNow** ticked.
+2. **Credentials:** ServiceNow (the `digibrain` service account password).
+3. **Connectors → New connector → ServiceNow**, twice:
+
+   | Field | Incidents | Changes |
+   | --- | --- | --- |
+   | Instance URL | `https://dev401026.service-now.com` | same |
+   | User name | `digibrain` | same |
+   | Table | `incident` | `change_request` |
+   | Encoded query | *blank* | `business_service.name=CAREPATH_OPS^ORDERBYDESCsys_updated_on` |
+   | Incident assignment groups | `CAREOPS` | *blank* |
+
+   Sync both: eleven incidents and two changes.
+4. **Knowledge:** the same `carepathdocs/tree/main` link, then generate and
+   publish. Triage reaches the deployment runbook through the component an
+   incident is on.
+
+**ServiceOps → INC0010009 → Triage this incident.** The run walks the operations
+graph through `carepath-api-green`, cites `CHG0030001` (2.2 hours before) and the
+resolved clinic A and B timeouts, and reaches the runbook passages that name the
+component, each with the path that found it.
 
 ---
 

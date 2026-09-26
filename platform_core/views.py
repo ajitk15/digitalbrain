@@ -48,7 +48,17 @@ from .policy import (
     organizations_for,
     require_platform_admin,
 )
-from .services import FEATURES, audit, change_grant, feature_enabled, update_branding
+from .services import (
+    AREA_ICONS,
+    AREA_LABELS,
+    FEATURES,
+    area_of,
+    audit,
+    change_grant,
+    feature_enabled,
+    purposes,
+    update_branding,
+)
 
 
 @require_GET
@@ -431,7 +441,11 @@ def create_application(request, pk=None, organization_id=None):
                 application=app,
                 user=values["owner"],
                 role="owner",
-                can_approve=values["owner_can_approve"],
+                # The box is hidden for Operations, so its value is not a choice
+                # anyone made there. Kept on for the reason the field states: an
+                # owner without it could never grant it if Engineering is
+                # switched on later.
+                can_approve=values["owner_can_approve"] or values.get("purpose") == "operations",
             )
             if values.get("grant_me_owner") and values["owner"] != request.user:
                 # Explicit, never implied. Administering an organization does not
@@ -464,12 +478,12 @@ def create_application(request, pk=None, organization_id=None):
         # Straight to the checklist, because "it exists" is the least useful
         # thing to tell somebody who now has eight things to do. Only when the
         # creator can actually open it: administering an organization does not
-        # grant access to its applications, and the screen is behind the
-        # code_factory feature - so somebody who granted ownership to a
-        # colleague, or who left that feature unticked, would land on a 404
-        # immediately after a success message.
+        # grant access to its applications, so somebody who granted ownership
+        # to a colleague would land on a 404 immediately after a success
+        # message. The checklist follows the application's purpose, so it is
+        # there whichever part of the product was chosen.
         reachable = (
-            feature_enabled("code_factory", app)
+            feature_enabled("knowledge", app)
             and ApplicationGrant.objects.filter(application=app, user=request.user).exists()
         )
         if reachable:
@@ -568,6 +582,65 @@ def usage(request, pk):
 
 @login_required
 @require_http_methods(["GET", "POST"])
+def onboarding_connectors(request, pk):
+    """Onboarding's one question: which systems this application imports from.
+
+    Owner-only, like the Features screen these are switches on. Every kind gets
+    an explicit row, so "answered, nothing ticked" differs from "not asked yet",
+    where every kind is still allowed. Ticked first: the kinds that suit what
+    the application is for.
+    """
+    from .connector_kinds import KINDS
+    from .readiness import chosen_connectors
+    from .services import DEFAULT_CONNECTORS, connector_feature, purposes
+
+    app, _ = application_for(request.user, pk, owner=True)
+    if request.method == "POST":
+        wanted = {kind: f"connector_{kind}" in request.POST for kind in KINDS}
+        organization = app.product.portfolio.organization
+        with transaction.atomic():
+            for kind, enabled in wanted.items():
+                key = connector_feature(kind)
+                row, created = ApplicationFeature.objects.get_or_create(
+                    application=app, key=key, defaults={"enabled": enabled}
+                )
+                if created:
+                    if enabled:
+                        # Written so the question reads as answered, but it
+                        # matches what a missing row meant: nothing changed.
+                        continue
+                elif row.enabled == enabled:
+                    continue
+                else:
+                    row.enabled = enabled
+                    row.save(update_fields=["enabled"])
+                audit(
+                    request.user,
+                    "feature.enabled" if enabled else "feature.disabled",
+                    key,
+                    organization,
+                )
+        names = [KINDS[kind].label for kind, on in wanted.items() if on]
+        messages.success(
+            request,
+            f"Connectors chosen: {', '.join(names)}." if names else "No connectors chosen.",
+        )
+        return redirect("onboarding", pk=app.pk)
+    chosen = chosen_connectors(app)
+    if chosen is None:
+        chosen = {kind for purpose in purposes(app) for kind in DEFAULT_CONNECTORS[purpose]}
+    return render(
+        request,
+        "onboarding_connectors.html",
+        {
+            "application": app,
+            "kinds": [(kind, spec, kind in chosen) for kind, spec in KINDS.items()],
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
 def features(request, pk=None):
     if pk is None:
         require_platform_admin(request.user)
@@ -638,9 +711,25 @@ def features(request, pk=None):
                 "available": available,
                 "enabled": available and configured,
                 "effective": feature_enabled(key, app) if app else available and configured,
+                "area": area_of(key),
             }
         )
-    return render(request, "features.html", {"features": rows, "application": app})
+    # Grouped by what each feature is part of, in the order a reader decides:
+    # what the application is for, then where it imports from, then the rest.
+    groups = [
+        (AREA_LABELS[area], AREA_ICONS[area], [row for row in rows if row["area"] == area])
+        for area in ("engineering", "operations", "connectors", "shared")
+    ]
+    return render(
+        request,
+        "features.html",
+        {
+            "features": rows,
+            "groups": [group for group in groups if group[2]],
+            "application": app,
+            "purposes": [AREA_LABELS[purpose] for purpose in purposes(app)] if app else [],
+        },
+    )
 
 
 @login_required

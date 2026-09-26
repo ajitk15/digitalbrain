@@ -1,0 +1,6 @@
+{% extends 'base.html' %}{% load icons %}{% block title %}Connectors · {{ application.name }}{% endblock %}{% block content %}{% comment %}Onboarding's connector question. Opened as a dialog from the checklist; a page of its own without JavaScript.{% endcomment %}
+<p class="eyebrow">{{ application.name }}</p><h1>Which systems does this application import from?</h1>
+<p class="muted">Only the ones you tick are offered on the Connectors and Credentials screens. You can change this later under Settings &rsaquo; Features.</p>
+<section class="card form-card"><form method="post" action="{% url 'onboarding-connectors' application.pk %}">{% csrf_token %}
+<fieldset class="purpose-cards"><legend>{% icon "plug" 14 %} Connectors</legend>{% for kind, spec, on in kinds %}<label class="purpose-card"><input type="checkbox" name="connector_{{ kind }}" value="on"{% if on %} checked{% endif %}><span class="purpose-icon">{% icon spec.icon 18 %}</span><span><strong>{{ spec.label }}</strong><small>{{ spec.summary }}</small></span></label>{% endfor %}</fieldset>
+<div class="actions"><button class="button">Save</button> <a class="button secondary" href="{% url 'onboarding' application.pk %}" data-modal-close>Cancel</a></div></form></section>{% endblock %}

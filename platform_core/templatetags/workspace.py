@@ -39,8 +39,9 @@ def application_nav(context):
         and user is not None
         and getattr(user, "is_authenticated", False)
         # Only for somebody who could act on it: a grant, and the feature that
-        # the checklist itself lives behind.
-        and feature_enabled("code_factory", app)
+        # the checklist itself lives behind - Knowledge, which Engineering and
+        # Operations both build on.
+        and feature_enabled("knowledge", app)
         and ApplicationGrant.objects.filter(application=app, user=user).exists()
     ):
         found = setup(app)

@@ -222,6 +222,27 @@ there puts a checkbox on the create form, a row on the Features screen and an en
 the nav, with nothing else to change. A missing `ApplicationFeature` row means enabled,
 so only unticked features are written.
 
+**What an application is for is the switches, not a field.** The create form asks
+"What is this application for?" - Engineering (`code_graph`, `code_factory`), Operations
+(`service_ops`) or Both - and `services.PURPOSES` turns the answer into those rows; only
+the shared features are checkboxes. `services.purposes(app)` reads it back from the switches,
+so changing sides is ticking features on the Features screen, which groups them by
+`FEATURE_AREAS`. A caller that posts no purpose, or an unknown one, gets Both: a bad value
+must never switch everything off. Onboarding (`readiness.all_steps`) shows the shared
+connector question, then each purpose's gates on one page; `readiness.steps` stays exactly
+the Code Factory list because `prevalidate` narrates it.
+
+**Connector kinds are features too** (`connector_github`, `connector_jira`,
+`connector_servicenow`). Onboarding's connector question writes a row for every kind, so
+"answered" differs from "not asked" (where every kind is still allowed). A kind switched
+off is not offered, 404s on add and edit, and `sync` refuses it - which stops its schedule
+with no code that knows about schedules. The Credentials screen lists only what the
+application uses, and always lists a credential that is set so it can be cleared.
+
+Deleting an application has no screen: `manage.py delete_application <id> --confirm-name
+<name> --as <admin>` is the operator's tool, refuses while a run is in flight, and removes
+only credential files this platform wrote.
+
 Both the create form and the Features screen post a hidden `features_declared` marker.
 An unticked checkbox is simply absent from a POST, so without the marker "every box off"
 and "this caller never mentioned features" are the same bytes — and the second must not
