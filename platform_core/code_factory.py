@@ -122,6 +122,15 @@ NO_GRAPH = (
 
 #: A background job with nobody holding a request open, but still a ceiling.
 PHASE_TIMEOUT = 300
+#: Phases that write far more than they read get longer. Implementation writes
+#: the new contents of every file the approved items touch in one answer: a
+#: live CARE-401 run with eight approved items ran the full 300 seconds and was
+#: cut off with nothing to show for it.
+PHASE_TIMEOUTS = {"implementation": 900}
+
+
+def phase_timeout(phase_name):
+    return PHASE_TIMEOUTS.get(phase_name, PHASE_TIMEOUT)
 
 #: Bounds on what an analysis may produce.
 #:
@@ -547,7 +556,7 @@ def ask(user, app_id, phase_name, instructions, question, citations, receipt):
         receipt=receipt,
         instructions=instructions,
         max_tokens=output_limit(app_id),
-        timeout=PHASE_TIMEOUT,
+        timeout=phase_timeout(phase_name),
     )
 
 
@@ -3073,11 +3082,12 @@ def publish(user, app_id, run_id):
 #: How long a working run may say nothing before it is presumed dead.
 #:
 #: A phase writes a line before each model call and another after it, so silence
-#: means one call in flight - bounded by PHASE_TIMEOUT. Three times that leaves
-#: room for a slow provider and still catches the case this exists for: the
-#: worker process went away. A restart does that, and every run it had claimed
-#: stays "Running" forever with nobody left to finish it.
-STALL_AFTER = timedelta(seconds=PHASE_TIMEOUT * 3)
+#: means one call in flight - bounded by the longest phase timeout. Three times
+#: that leaves room for a slow provider and still catches the case this exists
+#: for: the worker process went away. A restart does that, and every run it had
+#: claimed stays "Running" forever with nobody left to finish it. Measured from
+#: the longest, or a healthy implementation call would be reclaimed mid-answer.
+STALL_AFTER = timedelta(seconds=max(PHASE_TIMEOUT, *PHASE_TIMEOUTS.values()) * 3)
 
 #: The statuses a worker holds a run in. Nothing else can stall: a run waiting
 #: for a person is waiting on purpose.
