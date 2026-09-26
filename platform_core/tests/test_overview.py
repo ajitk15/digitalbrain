@@ -38,7 +38,7 @@ class OverviewTests(TestCase):
         if plan_status:
             plan = ChangePlan.objects.create(
                 application=self.app,
-                author=self.owner,
+                author=self.viewer,  # somebody else: an author does not review their own
                 title="Consent",
                 proposal="p",
                 validation="v",
@@ -83,6 +83,19 @@ class OverviewTests(TestCase):
             can_approve=False
         )
         self.assertNotContains(self.page(), "a plan is waiting for your review")
+
+    @override_settings(ALLOW_SELF_APPROVAL=False)
+    def test_an_author_is_not_asked_to_review_their_own_plan(self):
+        """The same rule the approval screen enforces, or the prompt sends an
+        author to a review the screen then refuses."""
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        run = self.factory_run("awaiting_review", "pending")
+        ChangePlan.objects.filter(pk=run.plan_id).update(author=self.owner)
+        self.assertNotContains(self.page(), "a plan is waiting for your review")
+        with override_settings(ALLOW_SELF_APPROVAL=True):
+            self.assertContains(self.page(), "a plan is waiting for your review")
 
     def test_an_approved_run_and_a_recent_failure_are_both_prompts(self):
         self.factory_run("awaiting_review", "approved")

@@ -262,6 +262,41 @@ class ChatStreamViewTests(TestCase):
         self.assertIn('<details class="answer-settings" open>', page)
         self.assertIn('class="answer-settings-now">AI answer', page)
 
+    def test_the_banner_names_the_version_this_conversation_answers_from(self):
+        """Settings said v1 while the banner, measured against the latest
+        published version, said "answering from version 2"."""
+        from django.utils import timezone
+
+        from platform_core.models import AIConfiguration, ChatConversation, GraphRevision
+
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="graph_retrieval",
+            provider="openai",
+            model="gpt-5.6-luna",
+            enabled=True,
+            input_rate=1,
+            output_rate=2,
+            configured_by=self.owner,
+        )
+        for number in (1, 2):
+            GraphRevision.objects.create(
+                application=self.app,
+                number=number,
+                fingerprint=f"f{number}",
+                published_at=timezone.now(),
+                data={"nodes": [], "edges": [], "sources": []},
+                quality={},
+            )
+        pinned = ChatConversation.objects.create(
+            application=self.app, user=self.owner, title="Pinned", mode="graph", graph_version=1
+        )
+        page = self.client.get(self.url, {"conversation": pinned.pk}).content.decode()
+        self.assertIn("Answering from graph <strong>version 1</strong>", page)
+        self.assertIn("version 2 is the latest published", page)
+        self.assertNotIn("Answering from graph <strong>version 2</strong>", page)
+        self.assertIn("graph version 1", page)  # the answer settings line agrees
+
     def test_search_conversations_never_take_the_streaming_path(self):
         response = self.client.post(
             self.url,

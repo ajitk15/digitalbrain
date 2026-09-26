@@ -74,6 +74,8 @@ def cards(apps):
 
 def items(user, apps):
     """What is waiting on this person, most pressing first, at most MAX_ITEMS."""
+    from .workbench import self_approval_allowed
+
     apps = list(apps)
     if not apps:
         return []
@@ -100,7 +102,13 @@ def items(user, apps):
         name = f"Run {run.number} · {run.ticket_external_id or run.ticket_title[:40]}"
         mine = user.pk in {run.requested_by_id, run.acting_user_id}
         plan_status = run.plan.status if run.plan else ""
-        if run.status == "awaiting_review" and plan_status == "pending" and grant.can_approve:
+        # The same rule the approval screen enforces: an author may not review
+        # their own plan unless this deployment allows self-approval. The
+        # prompt once invited authors to a review the screen then refused.
+        may_review = grant.can_approve and (
+            run.plan is None or run.plan.author_id != user.pk or self_approval_allowed()
+        )
+        if run.status == "awaiting_review" and plan_status == "pending" and may_review:
             found.append(
                 Item(
                     app,

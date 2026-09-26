@@ -546,9 +546,24 @@ def chat(request, pk):
 
     published = published_revision(app.pk)
     published_graph = published.number if published else None
-    # How far the revision answering here has moved from its sources. Shown,
-    # never enforced: reproducibility is why answers come from a snapshot.
-    published_changed, published_total = revision_drift(published, app.pk) if published else (0, 0)
+    # The revision this conversation actually answers from: its pinned version
+    # when it has one, else the latest published. The banner and the answer
+    # settings once disagreed - settings said v1 while the banner, measured
+    # against the latest, said "answering from version 2".
+    answering = published
+    if conversation is not None and conversation.graph_version:
+        from .models import GraphRevision
+
+        answering = (
+            GraphRevision.objects.filter(
+                application=app, number=conversation.graph_version, published_at__isnull=False
+            ).first()
+            or published
+        )
+    answering_graph = answering.number if answering else None
+    # How far that revision has moved from its sources. Shown, never
+    # enforced: reproducibility is why answers come from a snapshot.
+    published_changed, published_total = revision_drift(answering, app.pk) if answering else (0, 0)
     # Mode is a property of the conversation. A new conversation may be started in a
     # chosen mode; sending a message can never change it, so a paid mode is never
     # entered by accident.
@@ -668,8 +683,12 @@ def chat(request, pk):
             "starters": chat_starters(app) if conversation is None else [],
             # What the collapsed "Answer settings" line says is in effect.
             "mode_label": dict(CHAT_MODE_LABELS).get(mode, mode),
-            "answer_version": (conversation.graph_version if conversation else None)
-            or published_graph,
+            "answer_version": answering_graph,
+            # A newer published version than the one this conversation is
+            # pinned to, named separately rather than as what answers.
+            "newer_published": published_graph
+            if answering_graph and published_graph and published_graph != answering_graph
+            else None,
         },
     )
 
