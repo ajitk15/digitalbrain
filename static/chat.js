@@ -110,8 +110,10 @@
     scrollDown();
   };
 
-  const stream = (payload) => {
-    const assistant = bubble("assistant", "");
+  // `existing` is an answer already on the page - one resumed after its first
+  // request was lost - rather than a bubble made for a question just sent.
+  const stream = (payload, existing) => {
+    const assistant = existing || bubble("assistant", "");
     assistant.article.dataset.status = "streaming";
     let text = "";
     let tools = null;
@@ -277,6 +279,25 @@
     field.value = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
   }
 
+  // An answer saved as streaming that nothing is producing: the request that
+  // would have opened its stream was lost, or the server restarted. Open it
+  // now. The server starts at most one stream per answer, so a second tab
+  // doing the same is simply refused. Only the latest can be in flight.
+  const stranded = [...messages.querySelectorAll(".chat-assistant[data-resume]")].pop();
+  if (canStream && stranded) {
+    const payload = {
+      stream: stranded.dataset.resume,
+      fragment: stranded.dataset.fragment,
+      stop: stranded.dataset.stop,
+    };
+    const body = stranded.querySelector(".message-body");
+    body.textContent = "";
+    stranded.removeAttribute("data-resume");
+    setBusy(true);
+    stream(payload, { article: stranded, body });
+    active.stopUrl = payload.stop;
+  }
+
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
@@ -284,8 +305,11 @@
     }
   });
 
-  // Restores the composer when the page is reached through bfcache.
-  window.addEventListener("pageshow", () => {
+  // Restores the composer when the page is reached through bfcache. Only then:
+  // pageshow also fires on an ordinary load, and closing the stream there shut
+  // the one a stranded answer had just resumed before it was even requested.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
     if (active) { active.close(); active = null; }
     showStop(false);
     setBusy(false);

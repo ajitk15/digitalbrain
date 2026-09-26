@@ -9,9 +9,9 @@
 <div class="message-actions"><details class="edit-question"><summary>Edit</summary><form method="post" action="{% url 'chat-edit' application.pk message.pk %}">{% csrf_token %}<label class="sr-only" for="edit-{{ message.pk }}">Edit this question</label><textarea id="edit-{{ message.pk }}" name="question" rows="3" maxlength="2000" required>{{ message.body }}</textarea><div class="actions"><button type="submit" class="button">Ask again</button></div><p class="muted">Asking again replaces this question and removes everything after it.</p></form></details></div>
 </article>
 {% else %}
-<article class="chat-message chat-assistant" id="message-{{ message.pk }}" data-status="{{ message.status }}">{% include "_chat_avatar.html" %}<div class="message-bubble">
+<article class="chat-message chat-assistant" id="message-{{ message.pk }}" data-status="{{ message.status }}"{% if message.stranded %} data-resume="{% url 'chat-stream' application.pk message.pk %}" data-fragment="{% url 'chat-message' application.pk message.pk %}" data-stop="{% url 'chat-stop' application.pk message.pk %}"{% endif %}>{% include "_chat_avatar.html" %}<div class="message-bubble">
 <header class="message-meta"><span class="message-author">Digital Brain</span><span class="message-mode">{% if message.mode == 'ai' %}AI answer{% elif message.mode == 'graph' %}Graph answer{% else %}Source excerpts{% endif %}</span>{% if message.status == 'stopped' %}<span class="message-state">Stopped</span>{% elif message.status == 'failed' %}<span class="message-state is-failed">Failed</span>{% endif %}<time datetime="{{ message.created_at|date:'c' }}">{{ message.created_at|date:"M d, H:i" }} UTC</time></header>
-<div class="message-body">{{ message.body|chat_text }}</div>
+<div class="message-body">{% if message.stranded %}<p class="message-stranded">This answer did not finish: the connection was lost before it started, or the server restarted. It resumes by itself here; without that, press Regenerate.</p>{% else %}{{ message.body|chat_text }}{% endif %}</div>
 {% if message.error %}<p class="message-error">{{ message.error }}</p>{% endif %}
 {% if message.citations %}{% with sources=message.citations|source_groups:message.body %}
 <section class="message-sources" aria-label="Sources for this answer">
@@ -20,5 +20,5 @@
 {% if sources.more %}<details class="more-sources"><summary>{{ sources.more|length }} more retrieved, not cited</summary><div class="source-chips">{% for chip in sources.more %}{% include "_source_chip.html" %}{% endfor %}</div></details>{% endif %}
 </section>
 {% endwith %}{% endif %}
-</div><footer class="message-actions">{% if message.status != 'streaming' %}<button type="button" class="link-button" data-copy hidden>Copy</button><form method="post" action="{% url 'chat-regenerate' application.pk message.pk %}" class="inline-form" data-regenerate>{% csrf_token %}<button type="submit" class="link-button">Regenerate</button></form>{% endif %}</footer></article>
+</div><footer class="message-actions">{% if message.status != 'streaming' or message.stranded %}{% if message.status != 'streaming' %}<button type="button" class="link-button" data-copy hidden>Copy</button>{% endif %}<form method="post" action="{% url 'chat-regenerate' application.pk message.pk %}" class="inline-form" data-regenerate>{% csrf_token %}<button type="submit" class="link-button">Regenerate</button></form>{% endif %}</footer></article>
 {% endif %}

@@ -45,20 +45,32 @@ PATIENCE_MS = 15000
 
 
 def browser_or_skip():
-    """(playwright, browser), or SkipTest with the reason."""
-    if os.environ.get("DIGITAL_BRAIN_BROWSER_TESTS") == "0":
+    """(playwright, browser), or SkipTest with the reason.
+
+    With DIGITAL_BRAIN_REQUIRE_BROWSER=1 - set it in any CI job that is meant to
+    run these - a missing Playwright or a browser that will not start is a
+    failure, not a skip, so the coverage cannot quietly disappear.
+    """
+    required = os.environ.get("DIGITAL_BRAIN_REQUIRE_BROWSER") == "1"
+
+    def unavailable(reason):
+        if required:
+            raise RuntimeError(f"Browser tests are required here, but {reason}")
+        raise SkipTest(reason)
+
+    if os.environ.get("DIGITAL_BRAIN_BROWSER_TESTS") == "0" and not required:
         raise SkipTest("Browser tests disabled by DIGITAL_BRAIN_BROWSER_TESTS=0.")
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        raise SkipTest("Playwright is not installed: uv sync --group dev.") from None
+        unavailable("Playwright is not installed: uv sync --group dev.")
     driver = sync_playwright().start()
     try:
         # The Chrome already on the machine: no separate browser download.
         browser = driver.chromium.launch(channel="chrome", headless=True)
     except Exception as failure:
         driver.stop()
-        raise SkipTest(f"Chrome could not be started for browser tests: {failure}") from None
+        unavailable(f"Chrome could not be started for browser tests: {failure}")
     return driver, browser
 
 
@@ -227,6 +239,9 @@ class ChatTests(BrowserTestCase):
         self.ask("Which deployment serves traffic?")
         answer = self.page.locator(".chat-assistant").last
         answer.get_by_text("carepath-api-green serves traffic.").wait_for()
+        # The finished message, rendered by the server once the worker has
+        # written it - not just the streamed text, which arrives first.
+        self.page.locator('.chat-assistant[data-status="complete"]').last.wait_for()
         self.assertSamePage()
         conversation = ChatConversation.objects.get()
         self.assertEqual(conversation.graph_version, 1)
@@ -234,10 +249,13 @@ class ChatTests(BrowserTestCase):
         self.assertEqual(ChatMessage.objects.get(role="assistant").status, "complete")
         self.assertNoScriptErrors()
 
-    def test_a_lost_response_is_not_asked_twice(self):
+    def test_a_lost_response_is_not_asked_twice_and_still_answered(self):
         """The first request reaches the server, which saves it, but the browser
         never hears back. The fallback post carries the same key, and the server
-        shows the saved conversation rather than asking - and paying - again."""
+        shows the saved conversation rather than asking - and paying - again.
+
+        Not asking twice is half of it: the saved answer was a placeholder nobody
+        was streaming, and it once stayed empty for good. It must resume."""
         patches = self.provider()
         for item in patches:
             item.start()
@@ -252,8 +270,12 @@ class ChatTests(BrowserTestCase):
             else:
                 route.continue_()
 
+        chat_url = f"{self.live_server_url}{reverse('chat', args=[self.app.pk])}"
+        # The chat page only - not the answer's stream or fragment beneath it,
+        # which interception would buffer rather than stream.
         self.page.route(
-            f"{self.live_server_url}{reverse('chat', args=[self.app.pk])}**", lose_the_response
+            lambda url: url.split("?")[0] == chat_url,
+            lose_the_response,
         )
         self.open("chat", self.app.pk, query="?new=1")
         self.ask("Which deployment serves traffic?")
@@ -263,6 +285,17 @@ class ChatTests(BrowserTestCase):
         conversation = ChatConversation.objects.get()
         self.assertIn(str(conversation.pk), self.page.url)
         self.assertEqual(ChatMessage.objects.filter(role="user").first().conversation, conversation)
+        # And the answer arrives: the stranded placeholder resumes on this page.
+        self.page.locator(".chat-assistant").last.get_by_text(
+            "carepath-api-green serves traffic."
+        ).wait_for()
+        # The finished message, rendered by the server once the worker has
+        # written it - not just the streamed text, which arrives first.
+        self.page.locator('.chat-assistant[data-status="complete"]').last.wait_for()
+        answer = ChatMessage.objects.get(role="assistant")
+        self.assertEqual(answer.status, "complete")
+        self.assertEqual(answer.body, "carepath-api-green serves traffic.")
+        self.assertEqual(ChatMessage.objects.filter(role="user").count(), 1)
         # The fallback's own navigation aborted the first fetch; that is the
         # scenario, not an error in the page's scripts.
         self.script_errors = [e for e in self.script_errors if "net::ERR" not in e]

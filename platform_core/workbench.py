@@ -394,9 +394,7 @@ def mode_options(ai_enabled, graph_ai_enabled):
 
 def available_modes(graph_ai_enabled):
     """Modes a conversation may be switched to. Search never needs configuration."""
-    return [
-        (value, label) for value, label in CHAT_MODES if value != "graph" or graph_ai_enabled
-    ]
+    return [(value, label) for value, label in CHAT_MODES if value != "graph" or graph_ai_enabled]
 
 
 def unavailable_reason(mode):
@@ -556,26 +554,18 @@ def chat(request, pk):
         else:
             question = form.cleaned_data["question"]
             submission = submission_key(request)
-            already = (
-                ChatMessage.objects.filter(
-                    application=app, user=request.user, role="user", submission=submission
-                )
-                .select_related("conversation")
-                .first()
-                if submission
-                else None
-            )
-            if already is not None:
+            claim, first = claim_submission(app, request.user, submission)
+            if not first:
                 # The same send, again: a browser that lost the first response
-                # cannot tell whether it was saved. Show what was saved; never
-                # ask - and pay for - the same question twice.
-                destination = (
-                    f"{reverse('chat', args=[pk])}?conversation={already.conversation_id}"
+                # cannot tell whether it was saved. Show what was saved - or, if
+                # the first request is still being handled, the conversation
+                # list it will appear in. Never ask, and pay for, the same
+                # question twice.
+                destination = reverse("chat", args=[pk]) + (
+                    f"?conversation={claim.conversation_id}" if claim.conversation_id else ""
                 )
                 if wants_stream(request):
-                    return JsonResponse(
-                        {"duplicate": True, "redirect": destination}, status=409
-                    )
+                    return JsonResponse({"duplicate": True, "redirect": destination}, status=409)
                 return redirect(destination)
             if mode in {"ai", "graph"} and wants_stream(request):
                 # Streaming path: persist the exchange now and let the browser
@@ -590,6 +580,7 @@ def chat(request, pk):
                     graph_version=new_graph_version(request, app.pk, graph_ai_enabled),
                     submission=submission,
                 )
+                settle_submission(claim, conversation)
                 audit(
                     request.user,
                     "chat.answered",
@@ -620,8 +611,13 @@ def chat(request, pk):
                     ),
                     submission=submission,
                 )
+                settle_submission(claim, conversation)
                 return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
             except (ValidationError, ImproperlyConfigured) as error:
+                # Nothing was saved, so the key is free again. The page that
+                # re-renders carries a new one anyway.
+                if claim is not None:
+                    claim.delete()
                 form.add_error(None, failure_text(error))
     history_messages = (
         conversation.messages.filter(application=app, user=request.user).order_by(
@@ -631,9 +627,15 @@ def chat(request, pk):
         else ChatMessage.objects.none()
     )
     message_pages = Paginator(history_messages, 60)
-    message_page = message_pages.get_page(
-        request.GET.get("messages", message_pages.num_pages)
-    )
+    message_page = message_pages.get_page(request.GET.get("messages", message_pages.num_pages))
+    message_page.object_list = list(message_page.object_list)
+    for message in message_page.object_list:
+        # An answer still marked streaming that no stream in this process is
+        # producing: its request was lost, or the server restarted mid-answer.
+        # chat.js resumes it; without script, Regenerate is offered.
+        message.stranded = (
+            message.status == "streaming" and streaming.get_session(message.pk) is None
+        )
     return render(
         request,
         "chat.html",
@@ -668,6 +670,34 @@ def submission_key(request):
         return str(uuid.UUID(request.POST.get("submission", "")))
     except ValueError:
         return ""
+
+
+def claim_submission(app, user, key):
+    """(claim, True) for the first request with this key; (claim, False) after.
+
+    The claim is written before anything else, in a transaction of its own, and
+    the unique constraint decides the race: of two overlapping requests exactly
+    one inserts, and the other is told it is a repeat. No key, no claim.
+    """
+    from django.db import IntegrityError
+
+    from .models import ChatSubmission
+
+    if not key:
+        return None, True
+    try:
+        with transaction.atomic():
+            return ChatSubmission.objects.create(application=app, user=user, key=key), True
+    except IntegrityError:
+        return ChatSubmission.objects.get(application=app, user=user, key=key), False
+
+
+def settle_submission(claim, conversation):
+    """Point a claim at the conversation its send landed in."""
+    from .models import ChatSubmission
+
+    if claim is not None:
+        ChatSubmission.objects.filter(pk=claim.pk).update(conversation=conversation)
 
 
 def resend(request, pk, app, conversation, question, trim_from=None):
@@ -816,9 +846,7 @@ def retitle(user, app, message_id, question, answer):
     """
     from .ai import generate_title
 
-    conversation = (
-        ChatConversation.objects.filter(messages__id=message_id).distinct().first()
-    )
+    conversation = ChatConversation.objects.filter(messages__id=message_id).distinct().first()
     if conversation is None or conversation.title_locked:
         return None
     if conversation.messages.filter(role="assistant", status="complete").count() > 1:
@@ -832,9 +860,7 @@ def retitle(user, app, message_id, question, answer):
 
 def public_citations(citations):
     """Citations as the browser may see them: never the digest."""
-    return [
-        {"id": c["id"], "title": c["title"], "excerpt": c["excerpt"]} for c in citations or []
-    ]
+    return [{"id": c["id"], "title": c["title"], "excerpt": c["excerpt"]} for c in citations or []]
 
 
 @login_required
@@ -922,9 +948,7 @@ def chat_message(request, pk, message_id):
 
 
 def owned_conversation(user, app, conversation_id):
-    return get_object_or_404(
-        ChatConversation, pk=conversation_id, application=app, user=user
-    )
+    return get_object_or_404(ChatConversation, pk=conversation_id, application=app, user=user)
 
 
 @login_required
@@ -965,9 +989,7 @@ def chat_conversation(request, pk, conversation_id):
                 chosen = None
             if chosen not in available_graph_versions(app.pk):
                 messages.error(request, "Choose an available graph version.")
-                return redirect(
-                    f"{reverse('chat', args=[pk])}?conversation={conversation.pk}"
-                )
+                return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
             conversation.graph_version = chosen
         conversation.save(update_fields=["graph_version", "updated_at"])
     elif action == "mode":
@@ -1002,6 +1024,11 @@ def chat_regenerate(request, pk, message_id):
     )
     if not question:
         raise Http404
+    if answer.status == "streaming" and streaming.get_session(answer.pk) is not None:
+        # Still being written by a live stream: replacing it now would race the
+        # worker that owns the row.
+        messages.info(request, "That answer is still being written. Wait for it to finish.")
+        return redirect(f"{reverse('chat', args=[pk])}?conversation={conversation.pk}")
     # The old exchange is removed by answer_question once a replacement exists.
     return resend(request, pk, app, conversation, question, trim_from=answer.sequence - 1)
 
@@ -1092,6 +1119,8 @@ def plans(request, pk):
             ).first(),
         },
     )
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def ticket_new(request, pk):
@@ -1202,11 +1231,7 @@ def onboarding(request, pk):
                     "label": label,
                     "icon": GATE_ICONS[key],
                     "blurb": blurb,
-                    "steps": [
-                        (order[step.key], step)
-                        for step in found
-                        if step.gate == key
-                    ],
+                    "steps": [(order[step.key], step) for step in found if step.gate == key],
                     "ready": gate_ready(found, key),
                     "outstanding": outstanding(found, key),
                     "done": sum(1 for step in found if step.gate == key and step.ok),
@@ -1518,9 +1543,7 @@ def agent_report(name, label, waiting, phase, run, configured=None):
             order, leftover = output.get("order", {}), output.get("leftover", [])
             detail = f"Set an intent for {len(order)} file(s)"
             detail += (
-                f"; {len(leftover)} approved item(s) no file could satisfy."
-                if leftover
-                else "."
+                f"; {len(leftover)} approved item(s) no file could satisfy." if leftover else "."
             )
         elif name == "implementation":
             files = output.get("files", [])
@@ -1559,13 +1582,10 @@ def agent_report(name, label, waiting, phase, run, configured=None):
         elif name == "verification":
             checked, created = output.get("checked", []), output.get("created", [])
             detail = f"Re-read {len(checked)} file(s); none had moved"
-            detail += (
-                f", and {len(created)} new path(s) were still absent." if created else "."
-            )
+            detail += f", and {len(created)} new path(s) were still absent." if created else "."
         elif name == "delivery":
             detail = (
-                f"Committed to {output.get('branch', 'a branch')} and opened a draft "
-                "pull request."
+                f"Committed to {output.get('branch', 'a branch')} and opened a draft pull request."
             )
     if phase.prompt_tokens:
         detail += f" ({phase.prompt_tokens:,} in / {phase.completion_tokens:,} out tokens)"
@@ -1593,9 +1613,7 @@ def run_agent(request, pk, run_id, name):
     from .models import FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
-    run = get_object_or_404(
-        FactoryRun.objects.select_related("plan"), pk=run_id, application=app
-    )
+    run = get_object_or_404(FactoryRun.objects.select_related("plan"), pk=run_id, application=app)
     labels = {key: label for key, label, _ in AGENT_ROW}
     if name not in labels:
         raise Http404
@@ -1715,9 +1733,7 @@ def run_detail(request, pk, run_id):
                 discard(request.user, pk, run.pk)
                 messages.success(request, "The prepared change was discarded. Nothing was written.")
             elif action == "refresh":
-                for line in refresh_after(
-                    request.user, pk, run.pk, request.POST.getlist("target")
-                ):
+                for line in refresh_after(request.user, pk, run.pk, request.POST.getlist("target")):
                     messages.success(request, line)
             elif action == "refresh-decline":
                 decline_refresh(request.user, pk, run.pk)
@@ -1733,9 +1749,7 @@ def run_detail(request, pk, run_id):
         return redirect("run-detail", pk=pk, run_id=run.pk)
 
     checks = [
-        step
-        for step in setup(app).steps
-        if step.gate == "analysis" or step.key == "github_write"
+        step for step in setup(app).steps if step.gate == "analysis" or step.key == "github_write"
     ]
     phases_by_name = {phase.name: phase for phase in run.phases.all()}
     items = list(run.plan.items.order_by("sequence")) if run.plan else []
@@ -1793,9 +1807,7 @@ def run_detail(request, pk, run_id):
                 and run.plan is None
                 and grant.role in {"owner", "contributor"}
             ),
-            "failed_agent": next(
-                (agent for agent in agents if agent["status"] == "failed"), None
-            ),
+            "failed_agent": next((agent for agent in agents if agent["status"] == "failed"), None),
             # Section one: the gate, as green ticks rather than a page.
             "checks": checks,
             "checks_passed": sum(1 for step in checks if step.ok),
@@ -1820,9 +1832,7 @@ def run_detail(request, pk, run_id):
             # The stage itself decides when to show; this is only the vocabulary
             # it renders, so the list and the wording live in one place.
             "refresh_targets": REFRESH_TARGETS,
-            "refresh_stage": next(
-                (stage for stage in run.stages if stage["number"] == 7), None
-            ),
+            "refresh_stage": next((stage for stage in run.stages if stage["number"] == 7), None),
         },
     )
 
@@ -1876,9 +1886,7 @@ def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=Fal
         # Approving nothing is not an approval. Saying so beats writing a plan
         # whose every item is rejected and then failing at implementation with
         # "none of the files the design named could be read".
-        raise ValidationError(
-            "Choose at least one item to implement, or reject the plan instead."
-        )
+        raise ValidationError("Choose at least one item to implement, or reject the plan instead.")
     current = {
         str(e.pk): e.digest for e in KnowledgeEntry.objects.filter(application=app, active=True)
     }
@@ -2021,10 +2029,7 @@ def plan_detail(request, pk, plan_id):
             ),
             "run": run,
             "can_deliver": bool(
-                run
-                and grant.can_approve
-                and plan.status == "approved"
-                and not run.pull_request_url
+                run and grant.can_approve and plan.status == "approved" and not run.pull_request_url
             ),
             "write_credential": bool(write_credential(app)),
         },

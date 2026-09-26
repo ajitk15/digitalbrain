@@ -180,6 +180,68 @@ class ChatStreamViewTests(TestCase):
         )
         self.assertEqual(ChatMessage.objects.filter(role="user").count(), 2)
 
+    def test_a_key_can_be_claimed_once_whatever_the_timing(self):
+        """The database decides the race: checking first let two overlapping
+        requests both find nothing and both ask."""
+        from django.db import IntegrityError, transaction
+
+        from platform_core.models import ChatSubmission
+
+        ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+
+    def test_a_repeat_while_the_first_is_still_in_flight_asks_nothing(self):
+        from platform_core.models import ChatSubmission
+
+        # The first request has claimed the key and not yet saved anything.
+        ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+        response = self.client.post(
+            self.url,
+            {"question": "Refund deadline?", "mode": "ai", "submission": self.KEY},
+            headers={"X-Digital-Brain-Stream": "1"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["redirect"], self.url)
+        self.assertFalse(ChatMessage.objects.exists())
+
+    def test_a_failed_send_frees_its_key(self):
+        from django.core.exceptions import ValidationError
+
+        from platform_core.models import ChatSubmission
+
+        with patch(
+            "platform_core.workbench.answer_question",
+            side_effect=ValidationError("provider down"),
+        ):
+            self.client.post(
+                self.url, {"question": "Refund deadline?", "mode": "search", "submission": self.KEY}
+            )
+        self.assertFalse(ChatSubmission.objects.exists())
+
+    def test_an_answer_nothing_is_streaming_is_offered_back(self):
+        """The lost-response case: the question and its placeholder were saved,
+        but the stream that would write the answer was never opened."""
+        payload = self.start().json()
+        page = self.client.get(self.url, {"conversation": payload["conversation"]})
+        body = page.content.decode()
+        self.assertIn(f'data-resume="{payload["stream"]}"', body)
+        self.assertIn("This answer did not finish", body)
+        self.assertIn(reverse("chat-regenerate", args=[self.app.pk, payload["message"]]), body)
+
+    def test_an_answer_being_streamed_is_left_alone(self):
+        payload = self.start().json()
+        streaming.open_session(payload["message"])
+        self.addCleanup(streaming.close_session, payload["message"])
+        page = self.client.get(self.url, {"conversation": payload["conversation"]}).content.decode()
+        self.assertNotIn("data-resume", page)
+        response = self.client.post(
+            reverse("chat-regenerate", args=[self.app.pk, payload["message"]])
+        )
+        self.assertEqual(response.status_code, 302)
+        # Not replaced under the worker that owns it.
+        self.assertTrue(ChatMessage.objects.filter(pk=payload["message"]).exists())
+
     def test_the_composer_carries_a_fresh_key(self):
         page = self.client.get(self.url).content.decode()
         self.assertRegex(page, r'name="submission" value="[0-9a-f-]{36}"')

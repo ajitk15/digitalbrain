@@ -789,10 +789,9 @@ class ChatMessage(models.Model):
     # Both halves of one exchange are written in the same transaction, so
     # created_at cannot order them; an explicit sequence can.
     sequence = models.PositiveIntegerField()
-    #: The composer's one-time key, on the question. A browser that lost the
-    #: response to a send cannot know whether it was saved; it posts again with
-    #: the same key, and a key already here means "already asked", answered by
-    #: showing that conversation rather than asking - and paying - twice.
+    #: The composer's one-time key, on the question it sent: which send asked
+    #: it. Whether a send is a repeat is decided by `ChatSubmission`, whose
+    #: unique constraint makes the claim atomic; this is the record.
     submission = models.CharField(max_length=36, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -807,6 +806,34 @@ class ChatMessage(models.Model):
         indexes = [
             models.Index(fields=["conversation", "sequence"]),
             models.Index(fields=["application", "user", "submission"]),
+        ]
+
+
+class ChatSubmission(models.Model):
+    """One send from the chat composer, claimed before anything is done for it.
+
+    The claim is the first write, in its own transaction, and the unique
+    constraint is what makes it atomic: two overlapping requests with the same
+    key cannot both succeed, so only one ever reaches the provider. Checking for
+    an existing message first was not enough - two requests could both look,
+    find nothing, and both ask.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    key = models.CharField(max_length=36)
+    #: Set once the send has a conversation, so a repeat can be shown it.
+    conversation = models.ForeignKey(
+        ChatConversation, null=True, blank=True, on_delete=models.CASCADE
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "user", "key"], name="unique_chat_submission"
+            )
         ]
 
 
