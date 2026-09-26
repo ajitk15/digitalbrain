@@ -14,6 +14,15 @@ All four must be clean:
 .venv/Scripts/python.exe scripts/production_preflight.py
 ```
 
+`manage.py test` includes **browser tests** (`platform_core/tests/test_browser.py`):
+Playwright (dev dependency) drives the installed Chrome against a live test server, with
+the model patched out, so the JavaScript runs for real. They exist because a script error
+made every in-place progress update throw for a day while every HTML test passed. They skip
+and say why where Playwright or Chrome is missing, or with `DIGITAL_BRAIN_BROWSER_TESTS=0`.
+Changing `static/*.js`, a CSP-affecting template or a `data-live`/`data-modal` flow means
+adding or updating one there. Wait on selectors, never `wait_for_function`: that evaluates a
+string, and the CSP refuses it - as it should.
+
 After changing anything under `static/`, run `manage.py collectstatic` **and restart the
 server**. Templates resolve hashed filenames through the staticfiles manifest, which the
 running process caches at boot — otherwise you will be testing the previous asset and
