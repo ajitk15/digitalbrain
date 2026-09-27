@@ -4,7 +4,7 @@ from django.urls import reverse
 
 from platform_core.models import Application, ApplicationGrant, OrganizationMember, Portfolio
 from platform_core.policy import applications_for, organizations_for
-from platform_core.services import feature_enabled, knowledge_label
+from platform_core.services import feature_enabled, knowledge_label, purposes, purposes_for
 
 register = template.Library()
 
@@ -67,6 +67,12 @@ def settings_sections(app, grant):
     """
     sections = []
     if grant and grant.role == "owner":
+        sections.append(
+            ("Appearance", "application-identity", {"application-identity"}, "application")
+        )
+        sections.append(("Features", "application-features", {"application-features"}, "toggle"))
+        if feature_enabled("chat", app):
+            sections.append(("Chat history", "chat-settings", {"chat-settings"}, "history"))
         sections.append(("AI settings", "ai-settings", {"ai-settings"}, "sliders"))
     if feature_enabled("usage_reports", app):
         sections.append(("AI costs", "usage", {"usage"}, "cost"))
@@ -82,9 +88,6 @@ def settings_sections(app, grant):
             )
         sections.append(("Credentials", "credentials", {"credentials"}, "lock"))
         sections.append(("People & access", "application-access", {"application-access"}, "people"))
-        sections.append(("Features", "application-features", {"application-features"}, "toggle"))
-        if feature_enabled("chat", app):
-            sections.append(("Chat history", "chat-settings", {"chat-settings"}, "history"))
     if grant:
         # Any member with application access may hold a token; it can never do
         # more than they can.
@@ -190,22 +193,33 @@ def settings_nav(context):
     # Grouped by what somebody came to do, not listed in the order screens
     # were built. Each keeps its own URL and its own permission check.
     groups = [
-        (group, [item for item in items if item["group"] == group])
-        for group in ("AI", "Integrations", "People", "Advanced")
+        {"name": group, "icon": icon, "items": found, "url": found[0]["url"]}
+        for group, icon in (
+            ("Application", "application"),
+            ("AI", "sliders"),
+            ("Integrations", "plug"),
+            ("Access", "people"),
+        )
+        if (found := [item for item in items if item["group"] == group])
     ]
-    return {"items": items, "groups": [(name, found) for name, found in groups if found]}
+    current_group = next(
+        (group for group in groups if any(item["current"] for item in group["items"])),
+        groups[0] if groups else None,
+    )
+    return {"groups": groups, "current_group": current_group}
 
 
 #: Which goal each settings screen serves.
 SETTINGS_GROUPS = {
+    "application-identity": "Application",
+    "application-features": "Application",
+    "chat-settings": "Application",
     "ai-settings": "AI",
     "usage": "AI",
     "connectors": "Integrations",
     "credentials": "Integrations",
     "api-tokens": "Integrations",
-    "application-access": "People",
-    "application-features": "Advanced",
-    "chat-settings": "Advanced",
+    "application-access": "Access",
 }
 
 
@@ -280,6 +294,18 @@ def organization_tree(context):
         .select_related("product__portfolio")
         .order_by("product__portfolio__name", "product__name", "name", "id")
     )
+    listed = list(listed)
+    # In bulk: the tree is on every page, and asking each application would
+    # be a query per row.
+    accessible = [app for app in listed if app.accessible]
+    # The selected application's feature checks are already memoized on its
+    # page; use them instead of issuing the two bulk queries for a single row.
+    if len(accessible) == 1:
+        serving = {accessible[0].pk: purposes(accessible[0])}
+    elif accessible:
+        serving = purposes_for(accessible)
+    else:
+        serving = {}
     for app in listed:
         org = tree.get(app.organization_id)
         if org is None:
@@ -301,6 +327,8 @@ def organization_tree(context):
         current = bool(app.accessible and selected_app and app.pk == selected_app.pk)
         branch["current"] |= current
         product["current"] |= current
+        purpose_list = serving.get(app.pk, [])
+        purpose = purpose_list[0] if len(purpose_list) == 1 else "both" if purpose_list else ""
         product["applications"].append(
             {
                 "id": app.pk,
@@ -308,6 +336,10 @@ def organization_tree(context):
                 "current": current,
                 "accessible": app.accessible,
                 "active": app.active,
+                "logo_digest": app.logo_digest if app.accessible else "",
+                "identity_icon": app.identity_icon if app.accessible else "",
+                "purpose": purpose,
+                "purpose_label": " + ".join(label.title() for label in purpose_list),
             }
         )
     for org in tree.values():

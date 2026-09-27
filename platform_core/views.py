@@ -177,10 +177,14 @@ def application_identity(request, pk):
                 app.product.portfolio.organization,
             )
         messages.success(request, "Application appearance updated.")
-        destination = "onboarding" if request.POST.get("return_to") == "onboarding" else "dashboard"
+        destination = (
+            "onboarding"
+            if request.POST.get("return_to") == "onboarding"
+            else "application-identity"
+        )
         if destination == "onboarding":
             return redirect(destination, pk=app.pk)
-        return redirect(destination)
+        return redirect(destination, pk=app.pk)
     return render(
         request,
         "application_identity.html",
@@ -323,21 +327,13 @@ def dashboard(request):
 
     applications = list(applications_for(request.user))
     waiting = attention.items(request.user, applications)
-    cards = attention.cards(applications)
-    owner_ids = set(
-        ApplicationGrant.objects.filter(
-            user=request.user, application__in=applications, role=ApplicationGrant.Role.OWNER
-        ).values_list("application_id", flat=True)
-    )
-    for card in cards:
-        card["can_edit_identity"] = card["application"].pk in owner_ids
     return render(
         request,
         "dashboard.html",
         {
             "organizations": organizations_for(request.user),
             "applications": applications,
-            "cards": cards,
+            "cards": attention.cards(applications),
             "attention": waiting[: attention.MAX_ITEMS],
             "attention_total": len(waiting),
         },

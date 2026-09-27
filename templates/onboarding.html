@@ -39,7 +39,7 @@
 {% endfor %}
 
 {% if grant.role == 'owner' %}
-<section class="card section onboarding-appearance"><div><h2>{% icon "application" 16 %}Make this application easy to recognize <span class="pill">Optional</span></h2><p class="muted">Use a simple icon, upload a logo, or keep the first letter. You can change it later from Overview.</p></div><a class="button secondary" href="{% url 'application-identity' application.pk %}?return_to=onboarding" data-modal>Choose icon or logo</a></section>
+<section class="card section onboarding-appearance"><div><h2>{% icon "application" 16 %}Make this application easy to recognize <span class="pill">Optional</span></h2><p class="muted">Use a simple icon, upload a logo, or keep the first letter. You can change it later in Settings › Appearance.</p></div><a class="button secondary" href="{% url 'application-identity' application.pk %}?return_to=onboarding">Choose icon or logo</a></section>
 {% endif %}
 
 

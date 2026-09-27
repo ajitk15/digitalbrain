@@ -507,10 +507,9 @@ class ChatLayoutTests(BrowserTestCase):
 
 
 class SettingsTabsTests(BrowserTestCase):
-    """The settings tabs wrapped to three rows (89px) at 1280px, so the
-    navigation pushed every settings screen down before it said anything."""
+    """Settings categories stay compact while each page remains discoverable."""
 
-    def test_the_settings_tabs_fit_one_row_on_a_laptop(self):
+    def test_the_settings_categories_fit_without_scrolling_on_a_laptop(self):
         self.page.set_viewport_size({"width": 1280, "height": 800})
         self.open("ai-settings", self.app.pk)
         found = self.page.evaluate(
@@ -518,21 +517,26 @@ class SettingsTabsTests(BrowserTestCase):
               const tabs = document.querySelector('.settings-tabs');
               const links = [...tabs.querySelectorAll('a')];
               const top = (a) => Math.round(a.getBoundingClientRect().top);
-              return {links: links.length, tops: [...new Set(links.map(top))]};
+              return {
+                labels: links.map(a => a.textContent.trim()),
+                rows: new Set(links.map(top)).size,
+                scrolls: tabs.scrollWidth > tabs.clientWidth,
+              };
             }"""
         )
-        self.assertGreaterEqual(found["links"], 6)
-        self.assertEqual(len(found["tops"]), 1, found)
-        strip = self.page.evaluate(
-            "(() => { const t = document.querySelector('.settings-tabs');"
-            " return [t.scrollWidth, t.clientWidth]; })()"
-        )
-        self.assertLessEqual(strip[0], strip[1], "the strip scrolls at 1280px")
+        self.assertEqual(found["labels"], ["Application", "AI", "Integrations", "Access"])
+        self.assertEqual(found["rows"], 1, found)
+        self.assertFalse(found["scrolls"], found)
+        self.assertEqual(self.page.locator(".settings-section-nav a").all_text_contents(),
+                         ["AI settings", "AI costs"])
+        self.page.get_by_role("link", name="Application", exact=True).click()
+        appearance_url = reverse("application-identity", args=[self.app.pk])
+        self.assertEqual(self.page.url.split("?")[0], f"{self.live_server_url}{appearance_url}")
+        self.assertEqual(self.page.locator(".settings-section-nav a").all_text_contents(),
+                         ["Appearance", "Features", "Chat history"])
         self.assertNoScriptErrors()
 
-    def test_a_narrow_window_scrolls_the_tabs_rather_than_wrapping_them(self):
-        """Wrapping cost three rows; a narrow window now scrolls one row, and
-        starts with the current tab in view."""
+    def test_a_narrow_desktop_window_has_no_settings_scrollbar(self):
         self.page.set_viewport_size({"width": 900, "height": 800})
         self.open("chat-settings", self.app.pk)
         found = self.page.evaluate(
@@ -540,18 +544,18 @@ class SettingsTabsTests(BrowserTestCase):
               const tabs = document.querySelector('.settings-tabs');
               const links = [...tabs.querySelectorAll('a')];
               const top = (a) => Math.round(a.getBoundingClientRect().top);
-              const current = tabs.querySelector('[aria-current]').getBoundingClientRect();
-              const strip = tabs.getBoundingClientRect();
               return {
-                tops: new Set(links.map(top)).size,
+                rows: new Set(links.map(top)).size,
                 scrolls: tabs.scrollWidth > tabs.clientWidth,
-                visible: current.left >= strip.left && current.right <= strip.right,
+                currentSection: document.querySelector(
+                  '.settings-section-nav [aria-current]'
+                )?.textContent.trim(),
               };
             }"""
         )
-        self.assertEqual(found["tops"], 1, "the tabs wrapped")
-        self.assertTrue(found["scrolls"], "900px was expected to be too narrow for one row")
-        self.assertTrue(found["visible"], "the current tab was scrolled out of view")
+        self.assertEqual(found["rows"], 1, found)
+        self.assertFalse(found["scrolls"], found)
+        self.assertEqual(found["currentSection"], "Chat history")
         self.assertNoScriptErrors()
 
 

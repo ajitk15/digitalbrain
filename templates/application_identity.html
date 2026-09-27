@@ -1,15 +1,15 @@
 {% extends 'base.html' %}{% load workspace icons %}
 {% block title %}Application appearance · {{ application.name }}{% endblock %}
-{% block content %}
+{% block content %}{% application_nav %}{% settings_nav %}
 <p class="eyebrow">{{ application.name }}</p><h1>Application icon or logo</h1>
 <p class="muted">Optional. Give this application a recognizable image in the workspace. Engineering and Operations keep their own labels and colors.</p>
 <section class="card form-card application-identity">
 <div class="identity-preview"><span class="app-icon" aria-hidden="true">{% if application.logo_digest %}<img src="{% url 'application-logo' application.pk %}" alt="">{% elif application.identity_icon %}{% icon application.identity_icon 20 %}{% else %}{{ application.name|first|upper }}{% endif %}</span><strong>{{ application.name }}</strong></div>
 <form method="post" enctype="multipart/form-data">{% csrf_token %}
-<input type="hidden" name="return_to" value="{{ return_to|default:'dashboard' }}">
+<input type="hidden" name="return_to" value="{{ return_to|default:'appearance' }}">
 {{ form.non_field_errors }}
 <fieldset class="identity-choice"><legend>Choose how it appears</legend>{{ form.style.errors }}{{ form.style }}</fieldset>
 <div class="identity-options"><div class="identity-icon-option">{{ form.icon.label_tag }}{{ form.icon.errors }}{{ form.icon }}</div><div class="identity-logo-option">{{ form.logo.label_tag }}{{ form.logo.errors }}{{ form.logo }}<small>{{ form.logo.help_text }}</small>{% if application.logo_digest %}<small>Leave the file empty to keep the current logo.</small>{% endif %}</div></div>
-<div class="actions"><button class="button" type="submit">Save appearance</button><a class="button secondary" href="{% if return_to == 'onboarding' %}{% url 'onboarding' application.pk %}{% else %}{% url 'dashboard' %}{% endif %}" data-modal-close>Cancel</a></div>
+<div class="actions"><button class="button" type="submit">Save appearance</button><a class="button secondary" href="{% if return_to == 'onboarding' %}{% url 'onboarding' application.pk %}{% else %}{% url 'application' application.pk %}{% endif %}">Cancel</a></div>
 </form></section>
 {% endblock %}

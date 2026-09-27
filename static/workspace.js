@@ -74,14 +74,3 @@
   window.addEventListener("hashchange", revealHash);
   revealHash();
 })();
-
-/* A settings strip too wide for the window scrolls sideways; start it where
-   the current tab is, so the page you are on is never the one scrolled away. */
-(() => {
-  const strip = document.querySelector(".settings-tabs[data-grouped]");
-  const current = strip?.querySelector("[aria-current]");
-  if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
-  const box = current.getBoundingClientRect();
-  const left = box.left - strip.getBoundingClientRect().left + strip.scrollLeft;
-  if (left + box.width > strip.clientWidth) strip.scrollLeft = left - 16;
-})();

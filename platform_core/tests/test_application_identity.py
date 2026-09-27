@@ -28,12 +28,20 @@ class ApplicationIdentityTests(TestCase):
         image.save(output, format="JPEG")
         return SimpleUploadedFile("identity.jpg", output.getvalue(), content_type="image/jpeg")
 
+    def test_settings_entry_opens_application_appearance(self):
+        page = self.client.get(reverse("application", args=[self.app.pk]), follow=True)
+        self.assertContains(page, f'href="{self.url}"')
+        appearance = self.client.get(self.url)
+        self.assertContains(appearance, 'aria-label="Settings categories"')
+        self.assertContains(appearance, 'aria-label="Application settings"')
+        self.assertContains(appearance, 'aria-current="page">Appearance</a>')
+
     def test_overview_distinguishes_engineering_and_operations_with_labels_and_icons(self):
         ApplicationFeature.objects.create(application=self.app, key="service_ops", enabled=False)
         page = self.client.get(reverse("dashboard"))
         self.assertContains(page, "purpose-engineering")
         self.assertContains(page, "Engineering")
-        self.assertContains(page, self.url)
+        self.assertNotContains(page, "Change icon or logo")
         ApplicationFeature.objects.filter(application=self.app, key="service_ops").update(
             enabled=True
         )
@@ -43,14 +51,36 @@ class ApplicationIdentityTests(TestCase):
         self.assertContains(page, "purpose-operations")
         self.assertContains(page, "Operations")
 
+    def test_sidebar_repeats_the_purpose_and_selected_identity(self):
+        ApplicationFeature.objects.create(application=self.app, key="service_ops", enabled=False)
+        page = self.client.get(reverse("dashboard"))
+        self.assertContains(page, "tree-app-engineering")
+        self.assertContains(page, 'class="tree-purpose">Engineering</small>')
+
+        ApplicationFeature.objects.filter(application=self.app, key="service_ops").update(
+            enabled=True
+        )
+        for key in ("code_factory", "code_graph"):
+            ApplicationFeature.objects.create(application=self.app, key=key, enabled=False)
+        page = self.client.get(reverse("dashboard"))
+        self.assertContains(page, "tree-app-operations")
+        self.assertContains(page, 'class="tree-purpose">Operations</small>')
+
+        self.client.post(self.url, {"style": "icon", "icon": "pulse"})
+        self.assertContains(self.client.get(reverse("dashboard")), "tree-app-operations")
+        self.client.post(self.url, {"style": "logo", "logo": self.upload()})
+        tree = self.client.get(reverse("dashboard")).content.decode().split('class="org-tree"')[1]
+        self.assertIn(reverse("application-logo", args=[self.app.pk]), tree)
+
     def test_owner_can_choose_icon_then_restore_initial(self):
         self.assertRedirects(
             self.client.post(self.url, {"style": "icon", "icon": "pulse"}),
-            reverse("dashboard"),
+            self.url,
         )
         self.app.refresh_from_db()
         self.assertEqual(self.app.identity_icon, "pulse")
-        self.assertContains(self.client.get(reverse("dashboard")), "icon or logo")
+        self.assertContains(self.client.get(self.url), "Appearance")
+        self.assertNotContains(self.client.get(reverse("dashboard")), "Change icon or logo")
         self.client.post(self.url, {"style": "letter"})
         self.app.refresh_from_db()
         self.assertEqual(self.app.identity_icon, "")

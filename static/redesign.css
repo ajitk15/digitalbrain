@@ -3241,19 +3241,14 @@
   .graph-more[open] > summary { margin-bottom: var(--s-2); }
   .graph-more .graph-filters { margin-top: var(--s-1); }
 
-  /* Settings, grouped by goal: AI, integrations, people, advanced. */
-  /* One row, always. It wrapped to three rows (89px) at 1280px; fitting it
-     with a few pixels to spare only moved the problem to the next long name.
-     Too narrow now means the strip scrolls sideways, as tab strips do, and
-     workspace.js brings the current tab into view. */
-  .settings-tabs[data-grouped] { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
-  .settings-group { display: flex; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap; align-items: center; gap: var(--s-1); padding-right: var(--s-2); margin-right: var(--s-1); border-right: 1px solid var(--c-line); }
-  .settings-group:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
-  /* The group label already says what each tab is for, so the icons were a
-     second label that cost the strip a row at 1280px. */
-  .settings-tabs[data-grouped] a { padding-inline: 9px; }
-  .settings-tabs[data-grouped] a svg { display: none; }
-  .settings-group-label { margin-right: 2px; color: var(--c-ink-3); font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  /* Settings: four clear categories, then only the current category's pages. */
+  .settings-tabs { margin-bottom: var(--s-2); gap: var(--s-2); overflow: visible; }
+  .settings-tabs a { gap: var(--s-2); padding-inline: var(--s-3); white-space: nowrap; }
+  .settings-tabs a svg { display: block; }
+  .settings-section-nav { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-bottom: var(--s-5); }
+  .settings-section-nav a { display: inline-flex; align-items: center; min-height: 34px; padding: var(--s-1) var(--s-3); border-radius: var(--r-md); color: var(--c-ink-2); font-size: var(--t-13); }
+  .settings-section-nav a:hover { background: var(--c-surface); }
+  .settings-section-nav a[aria-current] { background: var(--c-brand-tint); color: var(--c-brand-strong); font-weight: 700; }
 
   /* Chat: the conversation and the composer get the screen. The workspace
      used to be a fixed calc(100dvh - 215px) box with overflow hidden, which
@@ -3412,7 +3407,6 @@
   .app-purposes .pill { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-11); }
   .app-purposes .purpose-engineering { background: #edf0ff; color: #344a9d; }
   .app-purposes .purpose-operations { background: #e6f5f1; color: #185f58; }
-  .app-appearance-link { display: inline-block; margin-top: var(--s-2); font-size: var(--t-12); }
   .onboarding-appearance { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
   .onboarding-appearance h2 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-1); }
   .onboarding-appearance p { margin: 0; }
@@ -3428,4 +3422,13 @@
   .application-identity input[type="radio"] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; border: 0; background: none; accent-color: var(--c-brand); }
   .identity-choice { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
   .identity-choice > div > div { margin: 4px 0; }
-}
+  /* The sidebar repeats the card identity in a compact, labelled form. */
+  .sidebar .org-tree .tree-app:not(.tree-locked) { align-items: center; border-left: 2px solid transparent; }
+  .sidebar .org-tree .tree-app-engineering { border-left-color: #4156ad; }
+  .sidebar .org-tree .tree-app-operations { border-left-color: #24746b; }
+  .sidebar .org-tree .tree-app-both { border-left-color: var(--c-brand); }
+  .sidebar .org-tree .tree-app:not(.tree-locked) .tree-symbol { display: grid; place-items: center; width: 22px; height: 22px; flex: none; margin: 0; border-radius: 5px; background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  .sidebar .org-tree .tree-app-operations .tree-symbol { background: #e6f5f1; color: #185f58; }
+  .sidebar .org-tree .tree-app .tree-symbol img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+  .sidebar .org-tree .tree-app .tree-app-copy { display: grid; gap: 1px; flex: 1; min-width: 0; }
+  .sidebar .org-tree .tree-app .tree-purpose { display: block; margin: 0; color: var(--c-ink-3); font-size: var(--t-11); line-height: 1.2; font-weight: 500; }}

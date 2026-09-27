@@ -137,13 +137,13 @@ def knowledge_label(application):
     return "Runbooks" if purposes(application) == ["operations"] else "Knowledge"
 
 
-def knowledge_labels(applications):
-    """{application id: knowledge_label} for a list, in two queries however long.
+def purposes_for(applications):
+    """{application id: its purposes} for a list, in two queries however long.
 
     The same rule as `purposes`, read in bulk: a feature is on unless the
     deployment cannot offer it, a global switch is off, or the application's
-    own row is off. For a page of cards, where asking each one would be a
-    query per card.
+    own row is off. For lists - cards, the sidebar - where asking each
+    application would be a query per row on every page.
     """
     ids = [app.pk for app in applications]
     keys = [key for keys in PURPOSES.values() for key in keys]
@@ -163,15 +163,22 @@ def knowledge_labels(applications):
             and (app_id, key) not in off_locally
         )
 
-    labels = {}
-    for app_id in ids:
-        serving = [
+    return {
+        app_id: [
             purpose
             for purpose, purpose_keys in PURPOSES.items()
             if any(on(app_id, key) for key in purpose_keys)
         ]
-        labels[app_id] = "Runbooks" if serving == ["operations"] else "Knowledge"
-    return labels
+        for app_id in ids
+    }
+
+
+def knowledge_labels(applications):
+    """{application id: knowledge_label} for a list, without a query per row."""
+    return {
+        app_id: "Runbooks" if serving == ["operations"] else "Knowledge"
+        for app_id, serving in purposes_for(applications).items()
+    }
 
 
 def features_for_purpose(purpose):
