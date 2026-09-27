@@ -597,12 +597,17 @@ def chat(request, pk):
             if not first:
                 # The same send, again: a browser that lost the first response
                 # cannot tell whether it was saved. Show what was saved - or, if
-                # the first request is still being handled, the conversation
-                # list it will appear in. Never ask, and pay for, the same
-                # question twice.
+                # the first request is still being handled, say so. Never ask,
+                # and pay for, the same question twice.
                 destination = reverse("chat", args=[pk]) + (
                     f"?conversation={claim.conversation_id}" if claim.conversation_id else ""
                 )
+                if not claim.conversation_id:
+                    messages.info(
+                        request,
+                        "That question is still being answered. It appears in your "
+                        "conversations when it is done - there is no need to send it again.",
+                    )
                 if wants_stream(request):
                     return JsonResponse({"duplicate": True, "redirect": destination}, status=409)
                 return redirect(destination)
@@ -610,15 +615,19 @@ def chat(request, pk):
                 # Streaming path: persist the exchange now and let the browser
                 # open the event stream. The synchronous branch below stays the
                 # no-JavaScript fallback and is never removed.
-                conversation, placeholder = start_answer(
-                    app,
-                    request.user,
-                    conversation,
-                    question,
-                    mode,
-                    graph_version=new_graph_version(request, app.pk, graph_ai_enabled),
-                    submission=submission,
-                )
+                try:
+                    conversation, placeholder = start_answer(
+                        app,
+                        request.user,
+                        conversation,
+                        question,
+                        mode,
+                        graph_version=new_graph_version(request, app.pk, graph_ai_enabled),
+                        submission=submission,
+                    )
+                except Exception:
+                    release_submission(claim)
+                    raise
                 settle_submission(claim, conversation)
                 audit(
                     request.user,
@@ -655,9 +664,13 @@ def chat(request, pk):
             except (ValidationError, ImproperlyConfigured) as error:
                 # Nothing was saved, so the key is free again. The page that
                 # re-renders carries a new one anyway.
-                if claim is not None:
-                    claim.delete()
+                release_submission(claim)
                 form.add_error(None, failure_text(error))
+            except Exception:
+                # Anything else: the key goes back if nothing was saved, so
+                # the same retry is answered rather than refused as a repeat.
+                release_submission(claim)
+                raise
     history_messages = (
         conversation.messages.filter(application=app, user=request.user).order_by(
             "sequence", "created_at", "id"
@@ -699,7 +712,7 @@ def chat(request, pk):
             # A fresh key per rendered composer; chat.js makes a new one after
             # each send it completes without reloading the page.
             "submission": uuid.uuid4(),
-            "starters": chat_starters(app) if conversation is None else [],
+            "starters": chat_starters(app, mode) if conversation is None else [],
             # What the collapsed "Answer settings" line says is in effect.
             "mode_label": dict(CHAT_MODE_LABELS).get(mode, mode),
             "answer_version": answering_graph,
@@ -716,25 +729,37 @@ def chat(request, pk):
 CHAT_MODE_LABELS = (("search", "Source excerpts"), ("ai", "AI answer"), ("graph", "Graph answer"))
 
 
-def chat_starters(app):
+def chat_starters(app, mode="ai"):
     """Three questions worth asking any application first, for an empty chat.
 
     Suggestions only: each fills the composer and sends nothing. Shaped by what
-    the application is for, so an operations team is not offered code questions.
+    the application is for, so an operations team is not offered code questions,
+    and by how answers are made here: source search returns matching passages
+    and cannot summarise, so it is offered things to find rather than questions
+    that promise a synthesis it will not give.
     """
     from .services import purposes
 
     serving = purposes(app)
-    starters = [f"Summarise what {app.name} does and who relies on it."]
+    if mode == "search":
+        starters = [f"What {app.name} does and who uses it"]
+        if "operations" in serving:
+            starters += ["Deployment and rollback steps", "Past incidents and their causes"]
+        if "engineering" in serving:
+            starters += ["Requirements not met yet", "Where the system design is written down"]
+        if len(starters) == 1:
+            starters += ["How it is deployed and operated", "Known risks"]
+        return starters[:3]
+    starters = [f"Summarise what {app.name} does"]
     if "operations" in serving:
-        starters.append(f"How is {app.name} deployed, and how is a release rolled back?")
-        starters.append("Which components have caused incidents before, and why?")
+        starters.append("How is a release rolled back?")
+        starters.append("What has caused incidents before?")
     if "engineering" in serving:
-        starters.append(f"Which requirements does {app.name} not meet yet?")
-        starters.append("How is the system structured, and where is that written down?")
+        starters.append("Which requirements are not met yet?")
+        starters.append("How is the system structured?")
     if len(starters) == 1:
-        starters.append("Which documents describe how it is deployed and operated?")
-        starters.append("What are the open risks, and where are they written down?")
+        starters.append("How is it deployed and operated?")
+        starters.append("What are the open risks?")
     return starters[:3]
 
 
@@ -746,12 +771,35 @@ def submission_key(request):
         return ""
 
 
+#: How old a claim with nothing saved under it must be before it is taken for
+#: abandoned - its request died, most often in a restart. Longer than any
+#: answer may run (the runtimes stop a provider call at 120 seconds) with room
+#: to spare, so a request that is merely slow is never answered twice.
+CLAIM_ABANDONED_AFTER = timedelta(minutes=5)
+
+
+def saved_under(app, user, key):
+    """The conversation a send with this key saved its exchange in, if it did."""
+    return (
+        ChatMessage.objects.filter(application=app, user=user, submission=key)
+        .values_list("conversation_id", flat=True)
+        .first()
+    )
+
+
 def claim_submission(app, user, key):
-    """(claim, True) for the first request with this key; (claim, False) after.
+    """(claim, True) for the request that may answer this key; (claim, False) after.
 
     The claim is written before anything else, in a transaction of its own, and
     the unique constraint decides the race: of two overlapping requests exactly
     one inserts, and the other is told it is a repeat. No key, no claim.
+
+    A repeat is not always a duplicate of something that exists. If the send
+    saved its exchange, the claim is pointed at it, so the repeat is shown it.
+    If nothing was saved and the claim is older than any answer can take, its
+    request died: the claim is taken over - by exactly one retry, since only one
+    guarded delete can succeed - and this send is answered rather than refused
+    forever. Otherwise the first request is still working.
     """
     from django.db import IntegrityError
 
@@ -759,11 +807,39 @@ def claim_submission(app, user, key):
 
     if not key:
         return None, True
-    try:
-        with transaction.atomic():
-            return ChatSubmission.objects.create(application=app, user=user, key=key), True
-    except IntegrityError:
-        return ChatSubmission.objects.get(application=app, user=user, key=key), False
+    for _ in range(2):
+        try:
+            with transaction.atomic():
+                return ChatSubmission.objects.create(application=app, user=user, key=key), True
+        except IntegrityError:
+            pass
+        claim = ChatSubmission.objects.filter(application=app, user=user, key=key).first()
+        if claim is None:
+            continue  # released between the insert and the read; try again
+        saved = saved_under(app, user, key)
+        if saved:
+            if claim.conversation_id != saved:
+                ChatSubmission.objects.filter(pk=claim.pk).update(conversation_id=saved)
+                claim.conversation_id = saved
+            return claim, False
+        cutoff = timezone.now() - CLAIM_ABANDONED_AFTER
+        abandoned, _ = ChatSubmission.objects.filter(pk=claim.pk, created_at__lt=cutoff).delete()
+        if not abandoned:
+            return claim, False
+    return ChatSubmission.objects.get(application=app, user=user, key=key), False
+
+
+def release_submission(claim):
+    """Give a key back after a send that failed - but only if it saved nothing.
+
+    Freeing it after the exchange was written would let the same send be asked,
+    and paid for, a second time.
+    """
+    from .models import ChatSubmission
+
+    if claim is None or saved_under(claim.application, claim.user, claim.key):
+        return
+    ChatSubmission.objects.filter(pk=claim.pk).delete()
 
 
 def settle_submission(claim, conversation):

@@ -233,6 +233,102 @@ class ChatStreamViewTests(TestCase):
             )
         self.assertFalse(ChatSubmission.objects.exists())
 
+    def send_with_key(self, stream=True):
+        return self.client.post(
+            self.url,
+            {"question": "Refund deadline?", "mode": "ai", "submission": self.KEY},
+            headers={"X-Digital-Brain-Stream": "1"} if stream else {},
+        )
+
+    def test_an_unexpected_failure_before_anything_is_saved_frees_the_key(self):
+        """Codex's probe: a failure after the claim and before any message left
+        the claim behind, and the same retry answered 409 forever with nothing
+        saved. A send that saved nothing gives its key back, whatever raised."""
+        from django.db import OperationalError
+
+        from platform_core.models import ChatSubmission
+
+        with (
+            patch(
+                "platform_core.workbench.start_answer",
+                side_effect=OperationalError("database is locked"),
+            ),
+            self.assertRaises(OperationalError),
+        ):
+            self.send_with_key()
+        self.assertFalse(ChatSubmission.objects.exists())
+        retry = self.send_with_key()
+        self.assertEqual(retry.status_code, 201)
+        self.assertEqual(ChatMessage.objects.count(), 2)
+
+    def test_the_plain_path_frees_the_key_on_an_unexpected_failure_too(self):
+        from platform_core.models import ChatSubmission
+
+        with (
+            patch("platform_core.workbench.answer_question", side_effect=RuntimeError("boom")),
+            self.assertRaises(RuntimeError),
+        ):
+            self.send_with_key(stream=False)
+        self.assertFalse(ChatSubmission.objects.exists())
+
+    def test_a_key_is_kept_when_the_failure_came_after_the_save(self):
+        """Duplicate-charge protection still holds: once the exchange is saved,
+        a later failure must not free the key for a second, paid ask."""
+        from platform_core.models import ChatSubmission
+
+        with (
+            patch("platform_core.workbench.settle_submission", side_effect=RuntimeError("boom")),
+            self.assertRaises(RuntimeError),
+        ):
+            self.send_with_key()
+        self.assertTrue(ChatSubmission.objects.exists())
+        again = self.send_with_key()
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(ChatMessage.objects.count(), 2)
+
+    def test_a_claim_is_reconnected_to_what_its_send_saved(self):
+        """The exchange was saved but the claim never learned its conversation:
+        a repeat is shown that conversation, not the empty chat list."""
+        from platform_core.models import ChatSubmission
+
+        conversation = self.start().json()["conversation"]
+        ChatMessage.objects.update(submission=self.KEY)
+        claim = ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+        again = self.send_with_key()
+        self.assertEqual(again.status_code, 409)
+        self.assertIn(conversation, again.json()["redirect"])
+        claim.refresh_from_db()
+        self.assertEqual(str(claim.conversation_id), conversation)
+
+    def test_an_abandoned_claim_is_taken_over_by_the_retry(self):
+        """The process died mid-send - a restart - so nothing will ever settle
+        the claim. Once it is older than any answer can take, it is abandoned,
+        and the same retry is answered instead of refused forever."""
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from platform_core.models import ChatSubmission
+        from platform_core.workbench import CLAIM_ABANDONED_AFTER
+
+        ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+        ChatSubmission.objects.update(
+            created_at=timezone.now() - CLAIM_ABANDONED_AFTER - timedelta(seconds=1)
+        )
+        retry = self.send_with_key()
+        self.assertEqual(retry.status_code, 201)
+        self.assertEqual(ChatSubmission.objects.count(), 1)
+        self.assertEqual(ChatMessage.objects.count(), 2)
+
+    def test_a_repeat_while_the_first_is_answering_says_so(self):
+        from platform_core.models import ChatSubmission
+
+        ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
+        response = self.send_with_key(stream=False)
+        page = self.client.get(response["Location"])
+        self.assertContains(page, "still being answered")
+        self.assertFalse(ChatMessage.objects.exists())
+
     def test_an_answer_nothing_is_streaming_is_offered_back(self):
         """The lost-response case: the question and its placeholder were saved,
         but the stream that would write the answer was never opened."""
@@ -265,6 +361,15 @@ class ChatStreamViewTests(TestCase):
         self.assertIn('class="chat-starters"', page)
         self.assertIn(f"Summarise what {self.app.name} does", page)
         self.assertFalse(ChatMessage.objects.exists())
+
+    def test_source_search_offers_things_to_find_not_summaries(self):
+        """Excerpts cannot summarise, so a search-mode chat was offering
+        questions its answers could not meet."""
+        self.chat_config.delete()
+        page = self.client.get(self.url, {"new": "1"}).content.decode()
+        self.assertIn('class="chat-starters"', page)
+        self.assertIn(f"What {self.app.name} does and who uses it", page)
+        self.assertNotIn("Summarise", page)
 
     def test_a_starter_fills_the_composer(self):
         page = self.client.get(self.url, {"new": "1", "q": "How is it deployed?"}).content.decode()

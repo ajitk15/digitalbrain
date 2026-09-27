@@ -379,9 +379,9 @@ AUDITED = (
 class AccessibilityTests(BrowserTestCase):
     def test_every_screen_names_its_controls_and_keeps_its_headings_in_order(self):
         report = {}
-        for name in ("dashboard", *AUDITED):
-            if name == "dashboard":
-                self.page.goto(f"{self.live_server_url}{reverse('dashboard')}")
+        for name in ("dashboard", "attention", *AUDITED):
+            if name in ("dashboard", "attention"):
+                self.page.goto(f"{self.live_server_url}{reverse(name)}")
             else:
                 self.open(name, self.app.pk)
             self.page.wait_for_load_state("networkidle")
@@ -392,9 +392,9 @@ class AccessibilityTests(BrowserTestCase):
 
     def test_text_has_enough_contrast_to_read(self):
         report = {}
-        for name in ("dashboard", *AUDITED):
-            if name == "dashboard":
-                self.page.goto(f"{self.live_server_url}{reverse('dashboard')}")
+        for name in ("dashboard", "attention", *AUDITED):
+            if name in ("dashboard", "attention"):
+                self.page.goto(f"{self.live_server_url}{reverse(name)}")
             else:
                 self.open(name, self.app.pk)
             self.page.wait_for_load_state("networkidle")
@@ -452,7 +452,10 @@ class ChatLayoutTests(BrowserTestCase):
               return {
                 send: box('#chat-send').bottom, composer: box('#chat-composer').top,
                 messages: box('#chat-messages').height,
-                starter: document.querySelector('.chat-starters a').getBoundingClientRect().bottom,
+                starter: Math.max(...[...document.querySelectorAll('.chat-starters a')]
+                  .map((a) => a.getBoundingClientRect().bottom)),
+                starters: document.querySelectorAll('.chat-starters a').length,
+                messagesBottom: box('#chat-messages').bottom,
                 mode: mode.value, modeDisabled: mode.selectedOptions[0].disabled,
                 height: innerHeight,
               };
@@ -460,14 +463,38 @@ class ChatLayoutTests(BrowserTestCase):
         )
 
     def test_the_conversation_and_send_fit_a_laptop_window(self):
-        for width, height in ((1280, 720), (1366, 768)):
-            with self.subTest(size=f"{width}x{height}"):
-                self.page.set_viewport_size({"width": width, "height": height})
-                self.open("chat", self.app.pk, query="?new=1")
-                found = self.measure()
-                self.assertLessEqual(found["send"], found["height"], "Send is below the fold")
-                self.assertGreaterEqual(found["messages"], 200)
-                self.assertLessEqual(found["starter"], found["composer"], "a starter is covered")
+        """Every starter, not just the first, and with setup unfinished too:
+        the setup strip takes height, and that is when the composer covered
+        the lower suggestions."""
+        from platform_core.models import AIConfiguration, Application
+
+        cases = [(finished, ai) for finished in (True, False) for ai in (False, True)]
+        for finished, ai in cases:
+            Application.objects.filter(pk=self.app.pk).update(
+                setup_completed_at=timezone.now() if finished else None
+            )
+            AIConfiguration.objects.filter(application=self.app, purpose="chat").delete()
+            if ai:
+                # AI mode offers the longer synthesis questions.
+                AIConfiguration.objects.create(
+                    application=self.app,
+                    purpose="chat",
+                    provider="openai",
+                    model="gpt-5.6-luna",
+                    input_rate=1,
+                    output_rate=1,
+                    configured_by=self.owner,
+                    enabled=True,
+                )
+            for width, height in ((1280, 720), (1366, 768)):
+                with self.subTest(size=f"{width}x{height}", setup_finished=finished, ai=ai):
+                    self.page.set_viewport_size({"width": width, "height": height})
+                    self.open("chat", self.app.pk, query="?new=1")
+                    found = self.measure()
+                    self.assertGreater(found["starters"], 1)
+                    self.assertLessEqual(found["send"], found["height"], "Send is below the fold")
+                    self.assertGreaterEqual(found["messages"], 200)
+                    self.assertLessEqual(found["starter"], found["composer"], "starter covered")
         self.assertNoScriptErrors()
 
     def test_without_ai_a_new_chat_opens_on_a_mode_that_works(self):

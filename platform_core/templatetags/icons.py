@@ -60,6 +60,7 @@ ICONS = {
     "external": '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/>',
     "arrow-right": '<path d="M5 12h13"/><path d="m12 5 7 7-7 7"/>',
     "arrow-left": '<path d="M19 12H6"/><path d="m12 19-7-7 7-7"/>',
+    "arrow-up": '<path d="M12 19V6"/><path d="m5 12 7-7 7 7"/>',
     # Status. "check" and "cross" are the bare glyphs, with no circle of their
     # own, for painting white inside a filled badge; "success" and "error" are
     # the standalone stroked versions that sit beside a label.

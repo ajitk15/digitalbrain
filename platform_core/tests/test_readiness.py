@@ -234,6 +234,17 @@ class OnboardingScreenTests(TestCase):
         rows = body.split('<ol class="onboard-list">', 1)[1]
         self.assertNotIn('class="button" href', rows)
 
+    def test_the_current_step_is_offered_once_not_twice(self):
+        """The "Start with" card and the step's own row both carried the same
+        button and the same reason; the row now points up at the card."""
+        response = self.client.get(reverse("onboarding", args=[self.app.pk]))
+        body = response.content.decode()
+        step = response.context["next_step"]
+        target = reverse(step.route, args=[self.app.pk])
+        self.assertEqual(body.count(f'href="{target}"'), 1)
+        self.assertEqual(body.count(step.action), 1)
+        self.assertIn("Next step, above", body)
+
     def test_it_is_read_only(self):
         """Each fix has its own permission check and audit event elsewhere."""
         self.assertEqual(

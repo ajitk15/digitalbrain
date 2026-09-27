@@ -26,8 +26,18 @@ from .services import AREA_LABELS, feature_enabled, purposes
 #: How long a failed run stays on the list. After that it is history, and the
 #: run list is where history lives.
 FAILED_RUN_WINDOW = timedelta(days=14)
-#: The list is a prompt, not a report: the rest is one click away on each screen.
+#: The Overview shows this many; the rest are on the full list, one click away.
 MAX_ITEMS = 8
+
+#: What kind of thing is waiting, in the order the full list offers them as
+#: filters. A kind is a fixed label, never data.
+KINDS = {
+    "review": "Plans to review",
+    "delivery": "Runs to carry on",
+    "failure": "Failures",
+    "assessment": "Ideas to assess",
+    "setup": "Setup to finish",
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +56,8 @@ class Item:
     action: str
     #: "attention" for something waiting on a decision, "problem" for a failure.
     tone: str = "attention"
+    #: Which of `KINDS` this is, for filtering the full list.
+    kind: str = "review"
 
 
 def actions(app):
@@ -127,6 +139,7 @@ def items(user, apps):
                     url,
                     "code",
                     "Review the plan",
+                    kind="review",
                 )
             )
         elif (
@@ -135,14 +148,32 @@ def items(user, apps):
             and (mine or grant.can_approve)
         ):
             found.append(
-                Item(app, f"{name}: approved, waiting for its next step", url, "code", "Carry on")
+                Item(
+                    app,
+                    f"{name}: approved, waiting for its next step",
+                    url,
+                    "code",
+                    "Carry on",
+                    kind="delivery",
+                )
             )
         elif run.status == "prepared" and (mine or grant.can_approve):
             found.append(
-                Item(app, f"{name}: ready to open a pull request", url, "github", "Open it")
+                Item(
+                    app,
+                    f"{name}: ready to open a pull request",
+                    url,
+                    "github",
+                    "Open it",
+                    kind="delivery",
+                )
             )
         elif run.status == "failed" and mine:
-            found.append(Item(app, f"{name}: failed", url, "error", "See why", tone="problem"))
+            found.append(
+                Item(
+                    app, f"{name}: failed", url, "error", "See why", tone="problem", kind="failure"
+                )
+            )
 
     owned = [app for app in apps if getattr(grants.get(app.pk), "role", "") == "owner"]
     for connector in Connector.objects.filter(
@@ -158,6 +189,7 @@ def items(user, apps):
                     "plug",
                     "See why",
                     tone="problem",
+                    kind="failure",
                 )
             )
 
@@ -195,6 +227,7 @@ def items(user, apps):
                 reverse("serviceops", args=[app.pk]) + "?show=unassessed",
                 "pulse",
                 "Assess them",
+                kind="assessment",
             )
         )
 
@@ -216,6 +249,7 @@ def items(user, apps):
                         reverse("onboarding", args=[app.pk]),
                         "empty",
                         "Continue setup",
+                        kind="setup",
                     )
                 )
 

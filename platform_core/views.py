@@ -205,6 +205,52 @@ def application_home(request, pk):
 
 @login_required
 @require_GET
+def attention_list(request):
+    """Everything the Overview's attention list holds, filterable.
+
+    The Overview shows the most pressing few and used to say the rest were "on
+    each application's own screens" - true, and no help finding them. Filters
+    narrow the caller's own items and nothing else: `attention.items` is scoped
+    by their grants, so a foreign application id matches nothing.
+    """
+    from . import attention
+
+    applications = list(applications_for(request.user))
+    everything = attention.items(request.user, applications)
+    application = request.GET.get("application", "")
+    kind = request.GET.get("kind", "")
+    shown = [
+        item for item in everything if not application or str(item.application.pk) == application
+    ]
+    kinds = [
+        (key, label, sum(1 for item in shown if item.kind == key))
+        for key, label in attention.KINDS.items()
+    ]
+    in_application = len(shown)
+    if kind in attention.KINDS:
+        shown = [item for item in shown if item.kind == kind]
+    else:
+        kind = ""
+    present = {item.application.pk for item in everything}
+    return render(
+        request,
+        "attention.html",
+        {
+            "everything": everything,
+            "applications": [app for app in applications if app.pk in present],
+            # Not "application": base.html reads that name as the current
+            # application object, for the sidebar.
+            "chosen": application,
+            "kind": kind,
+            "kinds": [entry for entry in kinds if entry[2]],
+            "in_application": in_application,
+            "page": Paginator(shown, 50).get_page(request.GET.get("page")),
+        },
+    )
+
+
+@login_required
+@require_GET
 def dashboard(request):
     """Where to start and what is waiting, rather than how many things exist."""
     from . import attention

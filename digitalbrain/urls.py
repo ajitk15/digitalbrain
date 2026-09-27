@@ -195,6 +195,7 @@ urlpatterns = [
         name="password",
     ),
     path("", views.dashboard, name="dashboard"),
+    path("attention/", views.attention_list, name="attention"),
     path("branding/logo.png", views.logo, name="logo"),
     path("favicon.ico", views.favicon, name="favicon"),
     path("platform/", views.platform_console, name="platform-console"),

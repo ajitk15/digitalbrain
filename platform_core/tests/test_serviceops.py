@@ -295,7 +295,7 @@ class ServiceOpsViewTests(TestCase):
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
         page = self.client.get(self.url)
         self.assertNotContains(page, connectors)
-        self.assertContains(page, "Ask an application owner to import incidents")
+        self.assertContains(page, "An application owner imports them from a connector")
         # Nor told to use a button a viewer does not have.
         self.assertNotContains(page, "<em>Add incident</em>")
 
@@ -825,6 +825,43 @@ class ServiceOpsViewTests(TestCase):
         text = self.client.get(guide)
         for words in ("The six steps", "Ask the AI", "Evidence strength", "never changes"):
             self.assertContains(text, words)
+
+    def test_an_empty_list_offers_one_first_action_for_each_role(self):
+        """Help and adding by hand sat beside the way in as equals; the one
+        thing that actually fills the list is now the only primary action."""
+        from platform_core.models import ApplicationGrant, Connector
+
+        page = self.client.get(self.url).content.decode()
+        self.assertIn(">Connect ServiceNow or Jira</a>", page)
+        self.assertIn(">Add one by hand</a>", page)
+        self.assertNotIn(">Import incidents</a>", page)
+        self.assertNotIn('class="button secondary" href="' + reverse(
+            "serviceops-guide", args=[self.app.pk]
+        ), page)
+
+        Connector.objects.create(
+            application=self.app, kind="servicenow", name="SN", config={}, created_by=self.owner
+        )
+        page = self.client.get(self.url).content.decode()
+        self.assertIn(">Import incidents</a>", page)
+        self.assertNotIn("Connect ServiceNow or Jira", page)
+
+        ApplicationGrant.objects.filter(application=self.app, user=self.viewer).update(
+            role="contributor"
+        )
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        page = self.client.get(self.url).content.decode()
+        self.assertIn('class="button" href="' + reverse(
+            "serviceops-incident-new", args=[self.app.pk]
+        ), page)
+        self.assertNotIn(">Import incidents</a>", page)
+
+        ApplicationGrant.objects.filter(application=self.app, user=self.viewer).update(
+            role="viewer"
+        )
+        page = self.client.get(self.url).content.decode()
+        self.assertIn("An application owner imports them", page)
+        self.assertNotIn("empty-actions", page)
 
     def test_the_incident_page_speaks_plainly(self):
         current = self.incident("Queue timeout", number="INC0010009")

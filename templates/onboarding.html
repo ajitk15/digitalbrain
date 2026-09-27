@@ -27,12 +27,11 @@
 <span class="pill{% if gate.ready %} status-ready{% endif %}">{% if gate.ready %}Ready{% else %}{{ gate.done }} of {{ gate.count }}{% endif %}</span></div>
 <p class="muted">{{ gate.blurb }}</p>
 <ol class="onboard-list">{% for number, step in gate.steps %}
-{% comment %}Not done yet is not a failure: outstanding steps are neutral and numbered, and only the current one opens up with its reason. The one primary action is the "Start with" card above; every row button is secondary.{% endcomment %}<li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}todo{% else %}optional{% endif %}{% if step.key == next_step.key %} onboard-next{% endif %}">
+{% comment %}Not done yet is not a failure: outstanding steps are neutral and numbered, and only the current one opens up with its reason. The one action for the current step is the "Start with" card above: its row points there rather than repeating the button and the reason. Every other row button is secondary.{% endcomment %}<li class="onboard-step onboard-{% if step.ok %}ok{% elif step.blocking %}todo{% else %}optional{% endif %}{% if step.key == next_step.key %} onboard-next{% endif %}">
 <span class="onboard-badge">{% if step.ok %}{% icon "check" 13 %}{% elif step.blocking %}{{ number }}{% else %}–{% endif %}</span>
 <span class="onboard-name"><strong>{{ number }}. {{ step.label }}</strong>{% if not step.ok and not step.blocking %} <small class="onboard-optional-tag">optional</small>{% endif %}<span class="sr-only"> — {% if step.ok %}done{% elif step.blocking %}to do{% else %}recommended{% endif %}</span></span>
 <span class="onboard-detail">{{ step.detail }}</span>
-<span class="onboard-go">{% if step.action %}<a class="button secondary" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{{ step.button }}</a>{% endif %}</span>
-{% if step.action and step.key == next_step.key %}<p class="onboard-why">{{ step.action }}</p>{% endif %}
+<span class="onboard-go">{% if step.key == next_step.key %}<span class="onboard-here">{% icon "arrow-up" 13 %}Next step, above</span>{% elif step.action %}<a class="button secondary" href="{% url step.route application.pk %}"{% if step.modal %} data-modal{% endif %}>{% icon step.icon 13 %}{{ step.button }}</a>{% endif %}</span>
 </li>
 {% endfor %}</ol>
 </section>

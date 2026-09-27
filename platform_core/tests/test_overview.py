@@ -180,7 +180,51 @@ class OverviewTests(TestCase):
         response = self.page()
         self.assertEqual(len(response.context["attention"]), MAX_ITEMS)
         self.assertContains(response, f'<span class="count">{MAX_ITEMS + 2}</span>', html=True)
-        self.assertContains(response, f"Showing the {MAX_ITEMS} most pressing of {MAX_ITEMS + 2}")
+        self.assertContains(response, f"View all {MAX_ITEMS + 2}</a>")
+        self.assertContains(response, f'href="{reverse("attention")}"')
+
+    def test_the_full_list_holds_everything_and_filters_it(self):
+        from platform_core.attention import MAX_ITEMS
+
+        for index in range(MAX_ITEMS + 2):
+            Connector.objects.create(
+                application=self.app,
+                kind="jira",
+                name=f"Jira {index}",
+                config={},
+                created_by=self.owner,
+                last_status="failed",
+            )
+        self.factory_run("awaiting_review", "pending")
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        url = reverse("attention")
+        everything = self.client.get(url)
+        self.assertEqual(len(everything.context["page"].object_list), MAX_ITEMS + 3)
+        failures = self.client.get(url, {"kind": "failure"})
+        self.assertEqual(len(failures.context["page"].object_list), MAX_ITEMS + 2)
+        self.assertNotContains(failures, "waiting for your review")
+        reviews = self.client.get(url, {"kind": "review", "application": str(self.app.pk)})
+        self.assertContains(reviews, "waiting for your review")
+        self.assertEqual(len(reviews.context["page"].object_list), 1)
+
+    def test_the_full_list_never_shows_another_applications_work(self):
+        ApplicationGrant.objects.create(application=self.other, user=self.viewer, role="owner")
+        FactoryRun.objects.create(
+            application=self.other,
+            requested_by=self.viewer,
+            ticket_external_id="SECRET-1",
+            status="failed",
+            number=1,
+            finished_at=timezone.now(),
+        )
+        page = self.client.get(reverse("attention"), {"application": str(self.other.pk)})
+        self.assertEqual(page.status_code, 200)
+        self.assertNotContains(page, "SECRET-1")
+        # The sidebar lists it as "No access" for an org admin; the list and
+        # its application filter must not offer it at all.
+        self.assertNotContains(page, f'value="{self.other.pk}"')
 
     def test_history_is_never_loaded_to_be_thrown_away(self):
         """Old failures and superseded triage runs are filtered in the database.

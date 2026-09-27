@@ -17,7 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .models import KnowledgeEntry, TriageHypothesis, TriageRun, TriageVerdict
+from .models import Connector, KnowledgeEntry, TriageHypothesis, TriageRun, TriageVerdict
 from .services import audit
 from .workbench import access, add_knowledge
 
@@ -761,6 +761,16 @@ def serviceops(request, pk):
                 "priority": priority if priority in priorities else "",
                 "priorities": priorities,
                 "counts": counts,
+                # Only asked when there is nothing to list: it decides the one
+                # thing the empty screen offers an owner - connect a source, or
+                # run the import from the one they have.
+                "incident_sources": (
+                    Connector.objects.filter(
+                        application=app, enabled=True, kind__in=("servicenow", "jira")
+                    ).exists()
+                    if not counts["all"]
+                    else None
+                ),
             },
         )
 
