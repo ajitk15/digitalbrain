@@ -374,6 +374,11 @@ def render_source_add(request, app, grant, form, link_form, folder_form=None):
             "folder_form": folder_form or FolderForm(),
             "next": wanted if wanted in RETURN_ROUTES else "",
             "sharepoint_ready": sharepoint_available(app),
+            # Which way of adding is shown: the one just posted, so a form that
+            # comes back with an error is the one on screen.
+            "chosen": {"folder": "folder", "link": "link"}.get(
+                request.POST.get("action") or request.GET.get("kind", ""), "files"
+            ),
         },
     )
 

@@ -165,6 +165,38 @@ class OverviewTests(TestCase):
         # Three runs and eight ideas, but two incidents waiting.
         self.assertContains(self.page(), "2 triaged incidents with ideas nobody has assessed")
 
+    def test_a_long_list_says_how_long_it_is(self):
+        from platform_core.attention import MAX_ITEMS
+
+        for index in range(MAX_ITEMS + 2):
+            Connector.objects.create(
+                application=self.app,
+                kind="jira",
+                name=f"Jira {index}",
+                config={},
+                created_by=self.owner,
+                last_status="failed",
+            )
+        response = self.page()
+        self.assertEqual(len(response.context["attention"]), MAX_ITEMS)
+        self.assertContains(response, f'<span class="count">{MAX_ITEMS + 2}</span>', html=True)
+        self.assertContains(response, f"Showing the {MAX_ITEMS} most pressing of {MAX_ITEMS + 2}")
+
+    def test_history_does_not_make_the_overview_slower(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def queries():
+            with CaptureQueriesContext(connection) as captured:
+                self.page()
+            return len(captured)
+
+        before = queries()
+        for number in range(2, 40):
+            self.factory_run("failed", finished=timezone.now() - timedelta(days=60))
+            FactoryRun.objects.filter(number=1).update(number=number)
+        self.assertEqual(queries(), before)
+
     def test_another_applications_work_never_appears(self):
         ApplicationGrant.objects.create(application=self.other, user=self.viewer, role="owner")
         FactoryRun.objects.create(

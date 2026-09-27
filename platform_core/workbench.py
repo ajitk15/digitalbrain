@@ -392,9 +392,17 @@ def mode_options(ai_enabled, graph_ai_enabled):
     ]
 
 
-def available_modes(graph_ai_enabled):
-    """Modes a conversation may be switched to. Search never needs configuration."""
-    return [(value, label) for value, label in CHAT_MODES if value != "graph" or graph_ai_enabled]
+def available_modes(graph_ai_enabled, ai_enabled=True):
+    """Modes a conversation may be switched to. Search never needs configuration.
+
+    Uses the same availability `mode_options` shows: a mode the selector marks
+    "setup required" is not one a conversation can be put in.
+    """
+    return [
+        (value, label)
+        for value, label in CHAT_MODES
+        if (value != "graph" or graph_ai_enabled) and (value != "ai" or ai_enabled)
+    ]
 
 
 def unavailable_reason(mode):
@@ -411,11 +419,25 @@ def unavailable_reason(mode):
     return "Choose an available answer mode."
 
 
-def requested_mode(request, graph_ai_enabled):
-    """Mode for a conversation that does not exist yet."""
+def requested_mode(request, graph_ai_enabled, ai_enabled=True):
+    """Mode for a conversation that does not exist yet.
+
+    AI answers when they are set up, source search when they are not: the page
+    once opened on "AI · setup required" - a disabled option, selected, with
+    Send enabled - when a working mode was right there. A mode the reader asked
+    for by name is kept only if it can actually answer.
+    """
     source = request.POST if request.method == "POST" else request.GET
-    mode = source.get("mode", "ai")
-    return mode if mode in dict(available_modes(graph_ai_enabled)) else "ai"
+    usable = dict(available_modes(graph_ai_enabled, ai_enabled))
+    mode = source.get("mode", "")
+    if mode in usable:
+        return mode
+    if request.method == "POST":
+        # A send is never quietly answered some other way: a mode asked for by
+        # name and not available, or none at all, is refused with the reason.
+        # Only the page picks a working default - and shows it, selected.
+        return mode if mode in dict(CHAT_MODES) else "ai"
+    return "ai" if "ai" in usable else "search"
 
 
 def wants_stream(request):
@@ -567,9 +589,11 @@ def chat(request, pk):
     # Mode is a property of the conversation. A new conversation may be started in a
     # chosen mode; sending a message can never change it, so a paid mode is never
     # entered by accident.
-    mode = conversation.mode if conversation else requested_mode(request, graph_ai_enabled)
+    mode = (
+        conversation.mode if conversation else requested_mode(request, graph_ai_enabled, ai_enabled)
+    )
     if request.method == "POST" and form.is_valid():
-        if mode not in dict(available_modes(graph_ai_enabled)):
+        if mode not in dict(available_modes(graph_ai_enabled, ai_enabled)):
             form.add_error(None, unavailable_reason(mode))
         else:
             question = form.cleaned_data["question"]
@@ -1051,8 +1075,11 @@ def chat_conversation(request, pk, conversation_id):
         graph_ai_enabled = AIConfiguration.objects.filter(
             application=app, purpose="graph_retrieval", enabled=True
         ).exists()
+        ai_enabled = AIConfiguration.objects.filter(
+            application=app, purpose="chat", enabled=True
+        ).exists()
         mode = request.POST.get("mode", "")
-        if mode not in dict(available_modes(graph_ai_enabled)):
+        if mode not in dict(available_modes(graph_ai_enabled, ai_enabled)):
             messages.error(request, "Choose an available answer mode.")
         else:
             conversation.mode = mode
@@ -1117,7 +1144,7 @@ def plans(request, pk):
     The drafting POST paths went with the list. They had no page posting to
     them, which is code claiming a capability the product does not offer.
     """
-    from .code_factory import ticket_choices
+    from .code_factory import NO_GRAPH, ticket_choices
     from .models import Connector, FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
@@ -1160,6 +1187,17 @@ def plans(request, pk):
             # Analysis is refused without one, so the form is not offered either:
             # a button that can only fail is worse than a sentence saying why.
             "published_graph": published_graph_version(app.pk),
+            "unblock": dict(
+                zip(
+                    ("title", "detail", "url", "button", "modal"),
+                    graph_unblock(app, grant),
+                    strict=True,
+                )
+            )
+            if not published_graph_version(app.pk)
+            else None,
+            # The same words start_run and execute refuse with (CLAUDE.md: NO_GRAPH).
+            "no_graph": NO_GRAPH,
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
@@ -1173,6 +1211,47 @@ def plans(request, pk):
                 models.F("last_synced_at").desc(nulls_last=True), "name"
             ).first(),
         },
+    )
+
+
+def graph_unblock(app, grant):
+    """What stands between this application and a published graph, as one step.
+
+    Code Factory cannot analyse without a published graph, and used to say so
+    in a paragraph. This names the exact next thing - publish the draft that
+    exists, generate one from the sources that exist, or add sources - and
+    what doing it unlocks. Returns (headline, detail, url, button, modal).
+    """
+    from .graphs import sources_for
+    from .models import GraphRevision
+
+    can_act = grant.role in {"owner", "contributor"}
+    draft = GraphRevision.objects.filter(application=app).order_by("-number").first()
+    if draft is not None:
+        return (
+            f"Publish graph version {draft.number}",
+            "A draft is ready. Publishing it lets Code Factory analyse tickets against it; "
+            "every gap a run finds will cite evidence from it.",
+            reverse("graph", args=[app.pk]) + "?tab=versions",
+            "Review and publish" if can_act else "",
+            False,
+        )
+    if sources_for(app.pk).exists():
+        return (
+            "Generate a knowledge graph",
+            "Sources are in, but no graph has been built from them yet. Generate one, "
+            "publish it, and tickets can be analysed.",
+            reverse("graph-generate", args=[app.pk]),
+            "Generate a graph" if can_act else "",
+            True,
+        )
+    return (
+        "Add sources first",
+        "Code Factory compares tickets with what this application's documents say. "
+        "Add requirements and design documents, then generate and publish a graph.",
+        reverse("source-add", args=[app.pk]),
+        "Add sources" if can_act else "",
+        True,
     )
 
 

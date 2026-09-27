@@ -210,6 +210,71 @@ class ReadabilityTests(BrowserTestCase):
                 self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
 
 
+class ChatLayoutTests(BrowserTestCase):
+    """Chat's own task fits a laptop window: at 1280x720 the message area had
+    100px and Send was below the fold, and a new chat opened on a disabled
+    "AI · setup required" mode with Send enabled."""
+
+    def setUp(self):
+        super().setUp()
+        from platform_core.models import Application
+
+        Application.objects.filter(pk=self.app.pk).update(setup_completed_at=timezone.now())
+
+    def measure(self):
+        return self.page.evaluate(
+            """() => {
+              const box = (s) => document.querySelector(s).getBoundingClientRect();
+              const mode = document.getElementById('chat-mode');
+              return {
+                send: box('#chat-send').bottom, composer: box('#chat-composer').top,
+                messages: box('#chat-messages').height,
+                starter: document.querySelector('.chat-starters a').getBoundingClientRect().bottom,
+                mode: mode.value, modeDisabled: mode.selectedOptions[0].disabled,
+                height: innerHeight,
+              };
+            }"""
+        )
+
+    def test_the_conversation_and_send_fit_a_laptop_window(self):
+        for width, height in ((1280, 720), (1366, 768)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open("chat", self.app.pk, query="?new=1")
+                found = self.measure()
+                self.assertLessEqual(found["send"], found["height"], "Send is below the fold")
+                self.assertGreaterEqual(found["messages"], 200)
+                self.assertLessEqual(found["starter"], found["composer"], "a starter is covered")
+        self.assertNoScriptErrors()
+
+    def test_without_ai_a_new_chat_opens_on_a_mode_that_works(self):
+        self.open("chat", self.app.pk, query="?new=1")
+        found = self.measure()
+        self.assertEqual(found["mode"], "search")
+        self.assertFalse(found["modeDisabled"])
+        self.assertIn("AI answers are not set up here", self.page.inner_text(".chat-setup"))
+
+
+class SettingsTabsTests(BrowserTestCase):
+    """The settings tabs wrapped to three rows (89px) at 1280px, so the
+    navigation pushed every settings screen down before it said anything."""
+
+    def test_the_settings_tabs_fit_one_row_on_a_laptop(self):
+        self.page.set_viewport_size({"width": 1280, "height": 800})
+        self.open("ai-settings", self.app.pk)
+        found = self.page.evaluate(
+            """() => {
+              const tabs = document.querySelector('.settings-tabs');
+              const links = [...tabs.querySelectorAll('a')];
+              const top = (a) => Math.round(a.getBoundingClientRect().top);
+              return {links: links.length, tops: [...new Set(links.map(top))]};
+            }"""
+        )
+        self.assertGreaterEqual(found["links"], 6)
+        self.assertEqual(len(found["tops"]), 1, found)
+        self.assertNoScriptErrors()
+
+
 class ChatTests(BrowserTestCase):
     def setUp(self):
         super().setUp()
@@ -275,6 +340,8 @@ class ChatTests(BrowserTestCase):
             item.start()
             self.addCleanup(item.stop)
         self.open("chat", self.app.pk, query="?new=1")
+        # Folded behind its summary line; a reader opens it to choose.
+        self.page.locator(".answer-settings > summary").click()
         self.page.select_option("#chat-mode", "graph")
         self.page.select_option("#graph-version", "1")
         self.mark_page()

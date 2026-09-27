@@ -1822,8 +1822,13 @@
   }
   .onboard-badge svg { stroke-width: 3; }
   .onboard-ok .onboard-badge { background: var(--c-ok); }
-  .onboard-blocked .onboard-badge { background: var(--c-bad); }
-  .onboard-warn .onboard-badge { background: var(--c-warn, var(--c-ink-3)); }
+  /* Not done yet is not a failure: neutral, numbered, and outlined, so red is
+     left for something that actually went wrong. The current step alone is in
+     the brand colour. */
+  .onboard-todo .onboard-badge,
+  .onboard-optional .onboard-badge { background: var(--c-surface); color: var(--c-ink-3); border: 1.5px solid var(--c-line-strong); font-size: var(--t-11); font-weight: 700; }
+  .onboard-next .onboard-badge { border-color: var(--c-brand); color: var(--c-brand-strong); }
+  .onboard-optional-tag { color: var(--c-ink-3); font-size: var(--t-11); font-weight: 600; }
 
   /* Narrow enough that a fixed name column would squeeze the detail to nothing:
      the row becomes badge + name, with detail, reason and button beneath it. */
@@ -3234,9 +3239,36 @@
 
   /* Settings, grouped by goal: AI, integrations, people, advanced. */
   .settings-tabs[data-grouped] { flex-wrap: wrap; row-gap: var(--s-2); }
-  .settings-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding-right: var(--s-3); margin-right: var(--s-2); border-right: 1px solid var(--c-line); }
+  .settings-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding-right: var(--s-2); margin-right: var(--s-1); border-right: 1px solid var(--c-line); }
   .settings-group:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
-  .settings-group-label { margin-right: var(--s-1); color: var(--c-ink-3); font-size: var(--t-11); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  /* The group label already says what each tab is for, so the icons were a
+     second label that cost the strip a row at 1280px. */
+  .settings-tabs[data-grouped] a { padding-inline: 9px; }
+  .settings-tabs[data-grouped] a svg { display: none; }
+  .settings-group-label { margin-right: 2px; color: var(--c-ink-3); font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+
+  /* Chat: the conversation and the composer get the screen. The workspace
+     used to be a fixed calc(100dvh - 215px) box with overflow hidden, which
+     assumed nothing sat above it: with breadcrumbs and a setup strip, Send
+     fell below a 720px window and the messages had 100px. Now the page
+     scrolls, the messages area has a real minimum, and the composer stays
+     pinned to the bottom of the window whatever is above it. */
+  .chat-workspace { height: auto; overflow: visible; }
+  .chat-messages { min-height: 200px; overflow: auto; }
+  .chat-composer { position: sticky; bottom: 0; z-index: 5; border-radius: 0 0 var(--r-md) var(--r-md); box-shadow: 0 -6px 16px rgb(0 0 0 / 0.05); }
+  /* The composer pinned at the bottom must not cover what it is pinned over:
+     the label stays for screen readers, the box starts at two lines. */
+  .chat-composer > label[for="id_question"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .chat-composer { padding-top: var(--s-2); padding-bottom: var(--s-2); }
+  .chat-composer textarea { min-height: 48px; margin: 0 0 var(--s-1); }
+  .chat-empty { padding: var(--s-2) var(--s-3); }
+  .chat-empty h2 { margin: 0 0 var(--s-1); font-size: var(--t-17); }
+  .chat-empty > p { margin: 0; }
+  .chat-messages:has(.chat-empty) { padding-top: var(--s-2); padding-bottom: var(--s-2); }
+  .chat-starters { margin-top: var(--s-2); }
+  .chat-setup { margin: 0 0 var(--s-2); padding: var(--s-2) var(--s-3); border-radius: var(--r-md); background: var(--c-info-bg); color: var(--c-ink-2); font-size: var(--t-13); }
+  .chat-setup-problem { background: var(--c-warn-bg); color: var(--c-warn); }
+  .chat-setup a { font-weight: 600; }
 
   /* Chat: how answers are made, folded behind a line that says what is in
      effect; and questions to start an empty conversation with. */
@@ -3249,9 +3281,25 @@
   .answer-settings .inline-form { margin: 0 var(--s-4) var(--s-1) 0; }
   .answer-settings .inline-form label { margin-right: var(--s-2); }
   .answer-settings .conversation-mode > select { margin-right: var(--s-4); }
-  .chat-starters { display: grid; gap: var(--s-2); max-width: 560px; margin: var(--s-3) auto 0; padding: 0; list-style: none; text-align: left; }
-  .chat-starters a { display: block; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink-2); }
+  .chat-starters { display: grid; gap: 6px; max-width: 560px; margin: var(--s-3) auto 0; padding: 0; list-style: none; text-align: left; }
+  .chat-starters a { display: block; padding: 6px var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink-2); }
   .chat-starters a:hover { border-color: var(--c-brand); color: var(--c-brand-strong); text-decoration: none; }
+
+  /* Add a source: pick one way, see one form. Radios and :has(), no script. */
+  .intake-choice { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); margin: 0 0 var(--s-3); padding: 0; border: 0; }
+  .intake-choice legend { margin-bottom: var(--s-2); font-weight: 600; }
+  .intake-option { display: block; cursor: pointer; }
+  .intake-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+  .intake-option > span { display: grid; gap: 2px; justify-items: start; height: 100%; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink-2); }
+  .intake-option > span svg { color: var(--c-ink-3); }
+  .intake-option small { color: var(--c-ink-3); font-size: var(--t-12); }
+  .intake-option input:checked + span { border-color: var(--c-brand); background: var(--c-brand-tint); }
+  .intake-option input:checked + span svg { color: var(--c-brand-strong); }
+  .intake-option input:focus-visible + span { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  .source-intake:has(#intake-files:checked) .intake-part:not(.part-files),
+  .source-intake:has(#intake-folder:checked) .intake-part:not(.part-folder),
+  .source-intake:has(#intake-link:checked) .intake-part:not(.part-link) { display: none; }
+  @media (max-width: 560px) { .intake-choice { grid-template-columns: 1fr; } }
 
   /* A run's one next action, at the top of its page. */
   .next-action { display: flex; align-items: center; gap: var(--s-3); margin: var(--s-3) 0 0; padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-well, var(--c-canvas)); }

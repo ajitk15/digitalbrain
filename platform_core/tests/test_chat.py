@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from platform_core.models import (
+    AIConfiguration,
     ApplicationGrant,
     AuditEvent,
     ChatConversation,
@@ -33,6 +34,18 @@ class ConversationTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
         self.url = reverse("chat", args=[self.app.pk])
+        # AI mode is offered only once it is set up; the model call itself is
+        # patched in each test that makes one.
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="chat",
+            provider="openai",
+            model="gpt-5.6-luna",
+            input_rate=1,
+            output_rate=1,
+            configured_by=self.owner,
+            enabled=True,
+        )
         self.source = add_knowledge(
             self.owner, self.app.pk, "Refund policy", "Refund requests expire after thirty days."
         )

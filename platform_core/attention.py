@@ -16,6 +16,7 @@ for anyone but a viewer. Read-only: nothing here writes.
 from dataclasses import dataclass
 from datetime import timedelta
 
+from django.db.models import Count, Exists, OuterRef, Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -73,7 +74,13 @@ def cards(apps):
 
 
 def items(user, apps):
-    """What is waiting on this person, most pressing first, at most MAX_ITEMS."""
+    """What is waiting on this person, most pressing first.
+
+    All of it: the caller shows the first MAX_ITEMS and says how many there are,
+    so a long list is never cut short without saying so. Each query is bounded in
+    the database - live states, a recent window, the latest run per incident -
+    rather than loading history and discarding it here.
+    """
     from .workbench import self_approval_allowed
 
     apps = list(apps)
@@ -86,18 +93,22 @@ def items(user, apps):
     by_id = {app.pk: app for app in apps}
     found = []
 
+    recent = timezone.now() - FAILED_RUN_WINDOW
+    factory_apps = [
+        app for app in apps if app.pk in grants and feature_enabled("code_factory", app)
+    ]
     runs = (
-        FactoryRun.objects.filter(application__in=apps)
-        .filter(status__in=["awaiting_review", "prepared", "failed"])
+        FactoryRun.objects.filter(application__in=factory_apps)
+        .filter(
+            Q(status__in=["awaiting_review", "prepared"])
+            | Q(status="failed", finished_at__gte=recent)
+        )
         .select_related("plan")
         .order_by("-created_at")
     )
-    recent = timezone.now() - FAILED_RUN_WINDOW
     for run in runs:
         app = by_id[run.application_id]
-        grant = grants.get(app.pk)
-        if grant is None or not feature_enabled("code_factory", app):
-            continue
+        grant = grants[app.pk]
         url = reverse("run-detail", args=[app.pk, run.pk])
         name = f"Run {run.number} · {run.ticket_external_id or run.ticket_title[:40]}"
         mine = user.pk in {run.requested_by_id, run.acting_user_id}
@@ -130,7 +141,7 @@ def items(user, apps):
             found.append(
                 Item(app, f"{name}: ready to open a pull request", url, "github", "Open it")
             )
-        elif run.status == "failed" and mine and run.finished_at and run.finished_at >= recent:
+        elif run.status == "failed" and mine:
             found.append(Item(app, f"{name}: failed", url, "error", "See why", tone="problem"))
 
     owned = [app for app in apps if getattr(grants.get(app.pk), "role", "") == "owner"]
@@ -158,27 +169,22 @@ def items(user, apps):
         and feature_enabled("knowledge", app)
     ]
     # Each incident's latest run only, as the ServiceOps list counts them: ideas
-    # on a run that a newer one replaced are not waiting on anyone.
-    latest = {}
-    for run_id, app_id, incident_id, status in (
-        TriageRun.objects.filter(application__in=assessors)
-        .order_by("-number")
-        .values_list("pk", "application_id", "incident_id", "status")
-    ):
-        latest.setdefault(incident_id, (run_id, app_id, status))
-    open_runs = {
-        run_id: app_id for run_id, app_id, status in latest.values() if status == "completed"
-    }
-    waiting = {}
-    for run_id in (
-        TriageHypothesis.objects.filter(run__in=list(open_runs), verdicts__isnull=True)
-        # Without clearing the model's ordering by rank, distinct() counts
-        # each idea rather than each run: two incidents read as five.
+    # on a run that a newer one replaced are not waiting on anyone. Counted in
+    # the database, so the cost does not grow with every run ever made.
+    newer = TriageRun.objects.filter(
+        application_id=OuterRef("application_id"),
+        incident_id=OuterRef("incident_id"),
+        number__gt=OuterRef("number"),
+    )
+    unassessed = TriageHypothesis.objects.filter(run=OuterRef("pk"), verdicts__isnull=True)
+    waiting = dict(
+        TriageRun.objects.filter(application__in=assessors, status="completed")
+        .filter(~Exists(newer), Exists(unassessed))
         .order_by()
-        .values_list("run_id", flat=True)
-        .distinct()
-    ):
-        waiting[open_runs[run_id]] = waiting.get(open_runs[run_id], 0) + 1
+        .values("application_id")
+        .annotate(count=Count("pk"))
+        .values_list("application_id", "count")
+    )
     for app_id, count in waiting.items():
         app = by_id[app_id]
         found.append(
@@ -215,4 +221,4 @@ def items(user, apps):
 
     # Failures first: something broke. Then decisions waiting on a person.
     found.sort(key=lambda item: item.tone != "problem")
-    return found[:MAX_ITEMS]
+    return found

@@ -210,6 +210,7 @@ def dashboard(request):
     from . import attention
 
     applications = list(applications_for(request.user))
+    waiting = attention.items(request.user, applications)
     return render(
         request,
         "dashboard.html",
@@ -217,7 +218,8 @@ def dashboard(request):
             "organizations": organizations_for(request.user),
             "applications": applications,
             "cards": attention.cards(applications),
-            "attention": attention.items(request.user, applications),
+            "attention": waiting[: attention.MAX_ITEMS],
+            "attention_total": len(waiting),
         },
     )
 

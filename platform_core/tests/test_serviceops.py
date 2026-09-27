@@ -777,7 +777,10 @@ class ServiceOpsViewTests(TestCase):
     def test_a_newcomer_is_pointed_at_the_guide_and_it_explains_the_steps(self):
         page = self.client.get(self.url)
         guide = reverse("serviceops-guide", args=[self.app.pk])
-        self.assertContains(page, "New to ServiceOps?")
+        # One pointer, in the heading: a separate "New to ServiceOps?" note
+        # repeated the same guide link directly beneath it.
+        self.assertContains(page, "How triage works")
+        self.assertNotContains(page, "New to ServiceOps?")
         self.assertContains(page, f'href="{guide}" data-modal')
         text = self.client.get(guide)
         for words in ("The six steps", "Ask the AI", "Evidence strength", "never changes"):

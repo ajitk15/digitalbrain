@@ -101,6 +101,20 @@ class ChatStreamViewTests(TestCase):
             self.owner, self.app.pk, "Refund policy", "Refund requests expire after thirty days."
         )
         self.url = reverse("chat", args=[self.app.pk])
+        # Streaming is the AI path, so these conversations have AI configured;
+        # without it a send in "ai" mode is refused before anything is saved.
+        from platform_core.models import AIConfiguration
+
+        self.chat_config = AIConfiguration.objects.create(
+            application=self.app,
+            purpose="chat",
+            provider="openai",
+            model="gpt-5.6-luna",
+            enabled=True,
+            input_rate=1,
+            output_rate=2,
+            configured_by=self.owner,
+        )
 
     def start(self, question="Refund deadline?"):
         return self.client.post(
@@ -259,8 +273,22 @@ class ChatStreamViewTests(TestCase):
 
     def test_answer_settings_say_what_is_in_effect(self):
         page = self.client.get(self.url, {"new": "1"}).content.decode()
-        self.assertIn('<details class="answer-settings" open>', page)
+        # Folded: its summary line says what is in effect.
+        self.assertIn('<details class="answer-settings">', page)
         self.assertIn('class="answer-settings-now">AI answer', page)
+
+    def test_an_ai_send_without_ai_set_up_is_refused_not_quietly_switched(self):
+        self.chat_config.delete()
+        response = self.client.post(self.url, {"question": "Refund deadline?", "mode": "ai"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "AI answers are not configured")
+        self.assertFalse(ChatMessage.objects.exists())
+
+    def test_without_ai_a_new_chat_opens_on_source_search(self):
+        self.chat_config.delete()
+        page = self.client.get(self.url, {"new": "1"}).content.decode()
+        self.assertIn('<option value="search" selected', page)
+        self.assertIn("AI answers are not set up here", page)
 
     def test_the_banner_names_the_version_this_conversation_answers_from(self):
         """Settings said v1 while the banner, measured against the latest
@@ -395,6 +423,8 @@ class ChatStreamViewTests(TestCase):
         from platform_core.workbench import answer_worker
 
         payload = self.start().json()
+        # Configuration withdrawn between the send and the answer.
+        self.chat_config.delete()
         session = streaming.open_session(payload["message"])
         try:
             answer_worker(

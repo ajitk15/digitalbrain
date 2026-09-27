@@ -232,11 +232,13 @@ class AIRoutingTests(TestCase):
     def test_unconfigured_chat_is_explicit_and_never_falls_back_to_search(self):
         url = reverse("chat", args=[self.app.pk])
         page = self.client.get(url)
-        self.assertContains(page, "LLM chat is not configured")
-        self.assertContains(page, 'value="ai" selected')
+        # The page says so and opens on the mode that works, selected in view...
+        self.assertContains(page, "AI answers are not set up here")
+        self.assertContains(page, 'value="search" selected')
+        # ...but a send that names no mode is refused, never answered as search.
         response = self.client.post(url, {"question": "Hello there"})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "must configure Chat conversation")
+        self.assertContains(response, "enable Chat conversation in AI settings")
         self.assertFalse(ChatMessage.objects.exists())
 
     @patch("platform_core.secrets.application_secret", return_value="scoped-key")
@@ -259,7 +261,7 @@ class AIRoutingTests(TestCase):
 
         with patch("platform_core.secrets.application_secret", return_value=""):
             response = self.client.post(reverse("chat", args=[self.app.pk]), {"question": "Hello"})
-        self.assertContains(response, "API key file is missing")
+        self.assertContains(response, "it has no credential, so AI answers will fail")
         self.assertContains(response, "gpt-5.6-luna")
         self.assertContains(response, "Hello")
         self.assertFalse(ChatMessage.objects.exists())

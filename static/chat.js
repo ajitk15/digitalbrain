@@ -25,7 +25,12 @@
   const canStream =
     "EventSource" in window && modeSelect && modeSelect.value !== "search";
 
-  if (!new URLSearchParams(location.search).has("messages")) {
+  // Open at the latest message - but only when there are messages. An empty
+  // conversation scrolled to its bottom hid the starter questions above.
+  if (
+    !new URLSearchParams(location.search).has("messages") &&
+    messages.querySelector(".chat-message")
+  ) {
     messages.scrollTop = messages.scrollHeight;
   }
 

@@ -220,7 +220,19 @@ class OnboardingScreenTests(TestCase):
         response = self.client.get(reverse("onboarding", args=[self.app.pk]))
         self.assertContains(response, "Analyse a ticket")
         self.assertContains(response, "Open a pull request")
-        self.assertContains(response, "generate a graph and publish it")
+        # Every step is listed, but only the current one opens up with its
+        # reason: the page once explained all eleven at once.
+        self.assertContains(response, "Knowledge graph published")
+        self.assertContains(response, "Tick the systems this application imports from.")
+        self.assertNotContains(response, "generate a graph and publish it")
+
+    def test_not_done_yet_is_not_drawn_as_a_failure(self):
+        body = self.client.get(reverse("onboarding", args=[self.app.pk])).content.decode()
+        self.assertIn("onboard-todo", body)
+        self.assertNotIn("onboard-blocked", body)
+        # One primary action: the "Start with" card. Row buttons are secondary.
+        rows = body.split('<ol class="onboard-list">', 1)[1]
+        self.assertNotIn('class="button" href', rows)
 
     def test_it_is_read_only(self):
         """Each fix has its own permission check and audit event elsewhere."""

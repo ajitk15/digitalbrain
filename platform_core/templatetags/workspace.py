@@ -33,9 +33,13 @@ def application_nav(context):
     # is why the milestone is recorded rather than recomputed. Answering "is it
     # unfinished?" takes seven queries, and a page render has a budget that
     # test_feature_cache pins.
+    match = getattr(request, "resolver_match", None)
     if (
         app is not None
         and app.setup_completed_at is None
+        # Not on the checklist itself: the strip there only repeated the next
+        # step the page already leads with.
+        and getattr(match, "url_name", "") not in {"onboarding", "onboarding-connectors"}
         and user is not None
         and getattr(user, "is_authenticated", False)
         # Only for somebody who could act on it: a grant, and the feature that
