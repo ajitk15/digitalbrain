@@ -160,7 +160,10 @@ it, so anything in there can be deleted without the platform noticing. Not named
 the only place this server retrieves a user-supplied URL. It resolves first, refuses
 private, loopback, link-local, multicast and reserved addresses unless an operator
 named the host in `fetch_allow_hosts`, then pins the connection to the validated
-address so DNS cannot change the answer underneath it. http/https only, no redirects
+address so DNS cannot change the answer underneath it. Every resolved address is validated,
+and they are dialled in turn until one connects - the request itself is sent once. Pinning
+to only the first used to fail every GitHub download whenever the resolver listed an
+unreachable CDN address first. http/https only, no redirects
 followed, 8 MB and 20 s caps, no credentials attached. Do not add a second code path
 that fetches URLs.
 
@@ -240,6 +243,12 @@ so changing sides is ticking features on the Features screen, which groups them 
 must never switch everything off. Onboarding (`readiness.all_steps`) shows the shared
 connector question, then each purpose's gates on one page; `readiness.steps` stays exactly
 the Code Factory list because `prevalidate` narrates it.
+
+Knowledge stays a shared feature - triage cites runbook passages from the published
+knowledge graph - but an **Operations-only application calls it "Runbooks"**
+(`services.knowledge_label`), and the operations graph is ServiceOps' own **Graph** tab
+(`serviceops-graph`), not a tab inside Knowledge. It used to be both, which made an
+Operations application read as two products. `graph?tab=operations` redirects there.
 
 **Connector kinds are features too** (`connector_github`, `connector_jira`,
 `connector_servicenow`). Onboarding's connector question writes a row for every kind, so

@@ -85,6 +85,8 @@ class Application(NamedResource):
     #: run that needs it, and the run says so. It is not a reason to start
     #: greeting somebody who onboarded months ago.
     setup_completed_at = models.DateTimeField(null=True, blank=True)
+    identity_icon = models.CharField(max_length=24, blank=True)
+    logo_digest = models.CharField(max_length=64, blank=True)
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -94,6 +96,15 @@ class Application(NamedResource):
     @property
     def organization_id(self):
         return self.product.portfolio.organization_id
+
+
+class ApplicationLogo(models.Model):
+    """The optional, sanitized PNG lives separately from application list rows."""
+
+    application = models.OneToOneField(
+        Application, on_delete=models.CASCADE, related_name="custom_logo", primary_key=True
+    )
+    png = models.BinaryField()
 
 
 class ApplicationGrant(models.Model):

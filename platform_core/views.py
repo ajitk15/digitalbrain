@@ -18,6 +18,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 from .ai import seed_application_ai
 from .forms import (
     ApplicationForm,
+    ApplicationIdentityForm,
     BrandingForm,
     ChatRetentionForm,
     GrantForm,
@@ -30,6 +31,7 @@ from .models import (
     Application,
     ApplicationFeature,
     ApplicationGrant,
+    ApplicationLogo,
     AuditEvent,
     Branding,
     ChatConversation,
@@ -120,6 +122,69 @@ def logo(request):
     response["Cache-Control"] = "public, max-age=0, must-revalidate"
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+@login_required
+@require_GET
+def application_logo(request, pk):
+    app, _ = application_for(request.user, pk)
+    if not app.logo_digest:
+        raise Http404
+    image = get_object_or_404(ApplicationLogo, application=app)
+    etag = f'"{app.logo_digest}"'
+    response = (
+        HttpResponse(status=304)
+        if request.headers.get("If-None-Match") == etag
+        else HttpResponse(bytes(image.png), content_type="image/png")
+    )
+    response["ETag"] = etag
+    response["Cache-Control"] = "private, max-age=0, must-revalidate"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def application_identity(request, pk):
+    """Optional appearance, editable by an application owner at any time."""
+    app, _ = application_for(request.user, pk, owner=True)
+    current_style = "logo" if app.logo_digest else "icon" if app.identity_icon else "letter"
+    form = ApplicationIdentityForm(
+        request.POST or None,
+        request.FILES or None,
+        has_logo=bool(app.logo_digest),
+        initial={"style": current_style, "icon": app.identity_icon or "code"},
+    )
+    if request.method == "POST" and form.is_valid():
+        style = form.cleaned_data["style"]
+        png = form.cleaned_data["logo"]
+        with transaction.atomic():
+            if style == "logo" and png:
+                ApplicationLogo.objects.update_or_create(
+                    application=app, defaults={"png": png}
+                )
+                app.logo_digest = hashlib.sha256(png).hexdigest()
+            elif style != "logo":
+                ApplicationLogo.objects.filter(application=app).delete()
+                app.logo_digest = ""
+            app.identity_icon = form.cleaned_data["icon"] if style == "icon" else ""
+            app.save(update_fields=["identity_icon", "logo_digest"])
+            audit(
+                request.user,
+                "application.identity_updated",
+                app.pk,
+                app.product.portfolio.organization,
+            )
+        messages.success(request, "Application appearance updated.")
+        destination = "onboarding" if request.POST.get("return_to") == "onboarding" else "dashboard"
+        if destination == "onboarding":
+            return redirect(destination, pk=app.pk)
+        return redirect(destination)
+    return render(
+        request,
+        "application_identity.html",
+        {"application": app, "form": form, "return_to": request.GET.get("return_to")},
+    )
 
 
 @login_required
@@ -257,13 +322,21 @@ def dashboard(request):
 
     applications = list(applications_for(request.user))
     waiting = attention.items(request.user, applications)
+    cards = attention.cards(applications)
+    owner_ids = set(
+        ApplicationGrant.objects.filter(
+            user=request.user, application__in=applications, role=ApplicationGrant.Role.OWNER
+        ).values_list("application_id", flat=True)
+    )
+    for card in cards:
+        card["can_edit_identity"] = card["application"].pk in owner_ids
     return render(
         request,
         "dashboard.html",
         {
             "organizations": organizations_for(request.user),
             "applications": applications,
-            "cards": attention.cards(applications),
+            "cards": cards,
             "attention": waiting[: attention.MAX_ITEMS],
             "attention_total": len(waiting),
         },

@@ -3400,4 +3400,32 @@
   .ops-swatch.ops-confirmed { background: var(--c-ok); border-color: var(--c-ok); }
   .ops-swatch.ops-related { border-style: dashed; border-color: var(--c-bad); }
   .ops-swatch.ops-passage { background: var(--c-info); border-color: var(--c-info); }
+
+  /* Application purpose and owner-selected identity. Labels stay readable without color. */
+  .app-card-actions.app-purpose-engineering:not(.app-purpose-operations) { border-top: 3px solid #4156ad; }
+  .app-card-actions.app-purpose-operations:not(.app-purpose-engineering) { border-top: 3px solid #24746b; }
+  .app-card-actions.app-purpose-engineering.app-purpose-operations { border-top: 3px solid var(--c-brand); }
+  .app-card-actions.app-purpose-operations:not(.app-purpose-engineering) .app-icon { background: #e6f5f1; color: #185f58; }
+  .app-icon img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
+  .application-menu-name { display: inline-flex; align-items: center; gap: var(--s-2); }
+  .application-menu-name .app-icon { width: 24px; height: 24px; margin: 0; font-size: var(--t-12); flex: none; }
+  .app-purposes .pill { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-11); }
+  .app-purposes .purpose-engineering { background: #edf0ff; color: #344a9d; }
+  .app-purposes .purpose-operations { background: #e6f5f1; color: #185f58; }
+  .app-appearance-link { display: inline-block; margin-top: var(--s-2); font-size: var(--t-12); }
+  .onboarding-appearance { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
+  .onboarding-appearance h2 { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-1); }
+  .onboarding-appearance p { margin: 0; }
+  .identity-preview { display: flex; align-items: center; gap: var(--s-2); margin-bottom: var(--s-4); }
+  .identity-preview .app-icon { flex: none; margin: 0; }
+  .application-identity fieldset { margin-bottom: var(--s-4); }
+  .application-identity fieldset label { display: inline-flex; align-items: center; gap: var(--s-1); margin: var(--s-1) var(--s-3) var(--s-1) 0; }
+  .identity-options { margin-bottom: var(--s-4); }
+  .identity-icon-option, .identity-logo-option { display: none; }
+  .application-identity:has(input[name="style"][value="icon"]:checked) .identity-icon-option { display: block; }
+  .application-identity:has(input[name="style"][value="logo"]:checked) .identity-logo-option { display: block; }
+  .identity-options small { margin-top: var(--s-1); }
+  .application-identity input[type="radio"] { width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; border: 0; background: none; accent-color: var(--c-brand); }
+  .identity-choice { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-2) var(--s-3); }
+  .identity-choice > div > div { margin: 4px 0; }
 }

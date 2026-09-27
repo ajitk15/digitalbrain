@@ -104,13 +104,16 @@ class Step:
     #: page that renders and submits on its own. Every one of these does, and
     #: with JavaScript off the link simply navigates.
     modal: bool = False
+    #: The screen's name when it depends on the application: Knowledge is
+    #: called Runbooks in an Operations-only one. Empty means `PLACES`.
+    place: str = ""
 
     @property
     def button(self):
         """What its button says: the screen it opens, not a bare "Open"."""
         if self.route == "onboarding-connectors":
             return "Choose connectors"
-        return f"Open {PLACES.get(self.route, 'the screen')}"
+        return f"Open {self.place or PLACES.get(self.route, 'the screen')}"
 
 
 #: What each fix-it screen is called on its button.
@@ -213,7 +216,7 @@ def operations_steps(app):
     from .models import AIConfiguration, KnowledgeEntry
     from .secrets import application_secret
     from .serviceops import incident_queryset
-    from .services import feature_enabled
+    from .services import feature_enabled, knowledge_label
 
     found = []
     enabled = feature_enabled("service_ops", app)
@@ -305,11 +308,13 @@ def operations_steps(app):
             else "The published graph holds no documents.",
             ""
             if runbooks
-            else "Upload runbooks and design documents in Knowledge, generate a graph and "
-            "publish it. Triage then reaches the passages that name an incident's component.",
+            else f"Upload runbooks and design documents in {knowledge_label(app)}, generate a "
+            "graph and publish it. Triage then reaches the passages that name an incident's "
+            "component.",
             "graph",
             "graph",
             blocking=False,
+            place=knowledge_label(app),
         )
     )
     configured = AIConfiguration.objects.filter(

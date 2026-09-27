@@ -3,7 +3,13 @@
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.models import ApplicationGrant, OperationsGraph, OpsEdge, OpsNode
+from platform_core.models import (
+    ApplicationFeature,
+    ApplicationGrant,
+    OperationsGraph,
+    OpsEdge,
+    OpsNode,
+)
 from platform_core.ops_graph import clear, ensure_current, rebuild
 from platform_core.serviceops import create_manual_incident, precedent_rows, related_open_rows
 from platform_core.workbench import add_knowledge
@@ -301,20 +307,53 @@ class GraphUseTests(Fixtures, TestCase):
             {(line["a"], line["b"]) for line in response.context["map"]["lines"]},
         )
 
-    def test_operations_layer_in_the_knowledge_explorer(self):
+    def test_operations_graph_is_a_serviceops_tab(self):
         self.scenario()
-        response = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "operations"})
+        response = self.client.get(reverse("serviceops-graph", args=[self.app.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="knowledge-graph-data"')
         kinds = {node["kind"] for node in response.context["data"]["nodes"]}
         self.assertTrue({"incident", "change", "component", "service", "symptom"} <= kinds)
-        self.assertContains(response, "?tab=operations")
+        self.assertContains(response, reverse("serviceops-graph", args=[self.app.pk]))
+        self.assertContains(response, 'aria-label="ServiceOps views"')
+        # Knowledge no longer carries a second, operations tab of its own.
+        knowledge = self.client.get(reverse("graph", args=[self.app.pk]))
+        self.assertNotContains(knowledge, "?tab=operations")
+
+    def test_the_old_knowledge_address_arrives_at_serviceops(self):
+        response = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "operations"})
+        self.assertRedirects(
+            response,
+            reverse("serviceops-graph", args=[self.app.pk]),
+            fetch_redirect_response=False,
+        )
+
+    def test_operations_graph_needs_serviceops(self):
+        ApplicationFeature.objects.create(application=self.app, key="service_ops", enabled=False)
+        response = self.client.get(reverse("serviceops-graph", args=[self.app.pk]))
+        # The same answer every other ServiceOps screen gives with it off.
+        self.assertEqual(response.status_code, 403)
+
+    def test_knowledge_is_called_runbooks_only_in_an_operations_application(self):
+        response = self.client.get(reverse("serviceops", args=[self.app.pk]))
+        self.assertContains(response, "Knowledge</a>")
+        self.assertNotContains(response, "Runbooks</a>")
+        for key in ("code_graph", "code_factory"):
+            ApplicationFeature.objects.create(application=self.app, key=key, enabled=False)
+        response = self.client.get(reverse("serviceops", args=[self.app.pk]))
+        self.assertContains(response, "Runbooks</a>")
+        self.assertNotContains(response, "Knowledge</a>")
+        documents = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(documents, '<h1 class="sr-only">Runbooks</h1>')
 
     def test_operations_layer_of_another_application_is_not_found(self):
         self.incident("INC77", "Export times out", "504.", app=self.other)
         ApplicationGrant.objects.filter(application=self.other, user=self.owner).delete()
-        response = self.client.get(reverse("graph", args=[self.other.pk]), {"tab": "operations"})
-        self.assertEqual(response.status_code, 404)
+        for response in (
+            self.client.get(reverse("graph", args=[self.other.pk]), {"tab": "operations"}),
+            self.client.get(reverse("serviceops-graph", args=[self.other.pk])),
+        ):
+            self.assertEqual(response.status_code, 404)
 
     # Phase 4 ------------------------------------------------------------
 

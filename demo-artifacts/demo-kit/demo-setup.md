@@ -61,7 +61,10 @@ ACME                          organization
 | Tickets | https://ajitk15.atlassian.net · project KAN | CarePathDev |
 | Incidents and changes | https://dev401026.service-now.com · service CAREPATH_OPS | CarePathOps |
 
-`scripts/rebuild_demo.py` does every step below that needs no secret.
+**The short way:** `start-all.cmd -Demo` does every step below, including the
+connectors. It asks for each credential on the console (hidden; Enter skips one),
+imports, converts, publishes the graph and prints both checklists. The sections
+below are what it does, for doing it by hand or checking what it did.
 
 ---
 

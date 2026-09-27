@@ -4,7 +4,7 @@ from django.urls import reverse
 
 from platform_core.models import Application, ApplicationGrant, OrganizationMember, Portfolio
 from platform_core.policy import applications_for, organizations_for
-from platform_core.services import feature_enabled
+from platform_core.services import feature_enabled, knowledge_label
 
 register = template.Library()
 
@@ -100,7 +100,7 @@ def application_menu(context):
     current = request.resolver_match.url_name
     definitions = [
         (
-            "Knowledge",
+            knowledge_label(app),
             "graph",
             "knowledge",
             "knowledge",
@@ -369,14 +369,9 @@ def document_steps(doc):
 
 
 @register.filter
-def has_operations(application):
-    """Whether Knowledge offers the operations layer: wherever ServiceOps is on.
-
-    The feature switch, not a count of nodes: the switch is cached for the
-    request, and this runs on every Knowledge screen, whose query budget
-    `test_feature_cache` pins.
-    """
-    return feature_enabled("service_ops", application)
+def knowledge_name(application):
+    """Knowledge, or Runbooks in an Operations-only application."""
+    return knowledge_label(application)
 
 
 @register.filter

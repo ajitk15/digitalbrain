@@ -7,7 +7,12 @@ param(
     # a normal run does stays predictable.
     [switch]$Install,
     # Re-run only the AI provider question, without touching anything else.
-    [switch]$ConfigureAI
+    [switch]$ConfigureAI,
+    # Build the CarePath demonstration before the server starts: both
+    # applications, their sources, connectors and credentials (asked for here,
+    # hidden), then import, convert and publish. Safe to repeat - it reports
+    # what already exists. See scripts/rebuild_demo.py.
+    [switch]$Demo
 )
 . (Join-Path $PSScriptRoot 'scripts/runtime-common.ps1')
 . (Join-Path $PSScriptRoot 'scripts/environment.ps1')
@@ -126,6 +131,17 @@ try {
         & $PythonExecutable 'scripts/ai_setup.py'
         if ($LASTEXITCODE -ne 0) {
             Write-Warning 'AI provider setup did not complete. Re-run with -ConfigureAI to try again.'
+        }
+    }
+    if ($Demo) {
+        # Before the server, not after: the script drives conversion and the
+        # graph itself, so the site comes up with the demo already published and
+        # no worker is competing for the same documents. Like the AI question, a
+        # demo that cannot finish (a skipped credential, an unreachable Jira)
+        # warns and still starts the site.
+        & $PythonExecutable 'scripts/rebuild_demo.py'
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning 'The demo did not finish. Re-run with -Demo; it picks up where it stopped.'
         }
     }
     Invoke-Checked $PythonExecutable @('manage.py', 'collectstatic', '--noinput')

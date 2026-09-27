@@ -21,6 +21,7 @@
 {% if "engineering" in serving %}<a class="button secondary" href="{% url 'plans' application.pk %}">{% icon "code" 13 %}Go to Code Factory</a>{% endif %}{% if "operations" in serving %}<a class="button secondary" href="{% url 'serviceops' application.pk %}">{% icon "pulse" 13 %}Go to ServiceOps</a>{% endif %}</p>
 {% endif %}
 
+
 {% for gate in gates %}
 <section class="card section onboard-gate">
 <div class="card-heading"><h2 class="gate-heading">{% icon gate.icon 16 %}{{ gate.label }}</h2>
@@ -36,6 +37,11 @@
 {% endfor %}</ol>
 </section>
 {% endfor %}
+
+{% if grant.role == 'owner' %}
+<section class="card section onboarding-appearance"><div><h2>{% icon "application" 16 %}Make this application easy to recognize <span class="pill">Optional</span></h2><p class="muted">Use a simple icon, upload a logo, or keep the first letter. You can change it later from Overview.</p></div><a class="button secondary" href="{% url 'application-identity' application.pk %}?return_to=onboarding" data-modal>Choose icon or logo</a></section>
+{% endif %}
+
 
 {% if "engineering" in serving %}<p class="muted section"><small>A gate reading <strong>Ready</strong> means the application is configured for it. Each individual change still passes its own review: a plan is approved by somebody who did not write it, and the repository a run writes to is confirmed by hand, because a ticket does not get to choose where this platform writes.</small></p>{% endif %}
 {% endblock %}

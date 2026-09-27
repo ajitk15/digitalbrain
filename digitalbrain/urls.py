@@ -98,6 +98,11 @@ urlpatterns = [
         name="serviceops-run",
     ),
     path(
+        "applications/<uuid:pk>/serviceops/graph/",
+        serviceops.serviceops_graph,
+        name="serviceops-graph",
+    ),
+    path(
         "applications/<uuid:pk>/serviceops/guide/",
         serviceops.serviceops_guide,
         name="serviceops-guide",
@@ -145,6 +150,12 @@ urlpatterns = [
     path("applications/<uuid:pk>/plans/", factory_views.plans, name="plans"),
     path("applications/<uuid:pk>/plans/new-ticket/", factory_views.ticket_new, name="ticket-new"),
     path("applications/<uuid:pk>/onboarding/", workbench.onboarding, name="onboarding"),
+    path(
+        "applications/<uuid:pk>/appearance/",
+        views.application_identity,
+        name="application-identity",
+    ),
+    path("applications/<uuid:pk>/logo.png", views.application_logo, name="application-logo"),
     path(
         "applications/<uuid:pk>/onboarding/connectors/",
         views.onboarding_connectors,

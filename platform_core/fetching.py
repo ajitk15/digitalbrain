@@ -32,6 +32,8 @@ import ssl
 from urllib.parse import unquote, urlparse
 
 MAX_BYTES = 8 * 1024 * 1024
+#: Per address: a dead one in a rotation should cost seconds, not the whole budget.
+CONNECT_TIMEOUT = 5
 TIMEOUT = 20
 USER_AGENT = "Digital-Brain"
 
@@ -152,14 +154,41 @@ def _connection(parsed, family, literal):
 
     def connect():
         sock = socket.socket(family, socket.SOCK_STREAM)
+        sock.settimeout(CONNECT_TIMEOUT)
+        try:
+            sock.connect((literal, port))
+        except OSError:
+            sock.close()
+            raise
         sock.settimeout(TIMEOUT)
-        sock.connect((literal, port))
         if parsed.scheme == "https":
             sock = connection._context.wrap_socket(sock, server_hostname=parsed.hostname)
         connection.sock = sock
 
     connection.connect = connect
     return connection
+
+
+def _connected(parsed, addresses):
+    """A connection to the first of `addresses` that answers.
+
+    Every one of them already passed `resolve`, so moving to the next keeps the
+    pin: DNS is still never consulted again. Only the connect is retried - the
+    request goes out once, on whichever connection this returns, so a POST is
+    never sent twice. Without this, one unreachable address in a CDN's rotation
+    failed every download whenever the resolver happened to list it first.
+    """
+    failure = None
+    for family, literal in dict.fromkeys(addresses):
+        connection = _connection(parsed, family, literal)
+        try:
+            connection.connect()
+        except (OSError, ssl.SSLError) as error:
+            connection.close()
+            failure = error
+            continue
+        return connection
+    raise failure
 
 
 def normalise(raw):
@@ -222,7 +251,6 @@ def fetch(raw, *, headers=None, method="GET", body=None):
         raise FetchError("Unsupported request method.")
     parsed = normalise(raw)
     addresses = resolve(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
-    family, literal = addresses[0]
     target = parsed.path or "/"
     if parsed.query:
         target += "?" + parsed.query
@@ -230,8 +258,9 @@ def fetch(raw, *, headers=None, method="GET", body=None):
     request_headers = {"User-Agent": USER_AGENT, "Accept": "*/*"}
     request_headers.update(headers or {})
 
-    connection = _connection(parsed, family, literal)
+    connection = None
     try:
+        connection = _connected(parsed, addresses)
         if body is not None:
             request_headers.setdefault("Content-Length", str(len(body)))
         connection.request(method, target, body=body, headers=request_headers)
@@ -263,6 +292,7 @@ def fetch(raw, *, headers=None, method="GET", body=None):
             f"{parsed.hostname} could not be reached. Check the link and connectivity."
         ) from None
     finally:
-        connection.close()
+        if connection is not None:
+            connection.close()
 
     return body, content_type, suggested_name(parsed, content_type), parsed.geturl()

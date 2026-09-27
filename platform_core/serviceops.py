@@ -980,6 +980,31 @@ def serviceops_run(request, pk, run_id):
 
 
 @login_required
+def serviceops_graph(request, pk):
+    """The operations graph: incidents, changes and what connects them.
+
+    It used to be a tab inside Knowledge, which made an Operations application
+    look like two products. It is ServiceOps' own evidence - live, built by
+    rules, nothing to publish - so it sits beside the incidents it explains.
+    """
+    app, grant = access(request.user, pk, "service_ops")
+    access(request.user, pk, "knowledge")
+    from .ops_graph import explorer_data
+
+    return render(
+        request,
+        "graph_operations.html",
+        {
+            "application": app,
+            "grant": grant,
+            "view": "graph",
+            "data": explorer_data(app),
+            "built_at": getattr(getattr(app, "operations_graph", None), "built_at", None),
+        },
+    )
+
+
+@login_required
 def serviceops_guide(request, pk):
     """How triage works, for someone meeting it for the first time. A popup."""
     app, grant = access(request.user, pk, "service_ops")

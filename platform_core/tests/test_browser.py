@@ -363,6 +363,7 @@ AUDITED = (
     "serviceops",
     "serviceops-runs",
     "onboarding",
+    "application-identity",
     "plans",
     "code-graph",
     "connectors",

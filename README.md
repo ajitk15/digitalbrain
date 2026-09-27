@@ -80,6 +80,20 @@ the shell history. Starting without `-Install` when no administrator exists says
 so and points here. Bootstrap stays disabled once an administrator exists: it can
 neither elevate nor reset an account.
 
+## Demo in one step
+
+```powershell
+start-all.cmd -Demo
+```
+
+Builds the CarePath demonstration before the server starts: ACME, CarePathDev
+(Engineering) and CarePathOps (Operations), their document source, repository,
+Jira and ServiceNow connectors, and their credentials - asked for on the console,
+hidden, and skippable with Enter. It then imports, converts, builds the graph and
+publishes it, and prints each application's onboarding checklist. Run it again
+after adding a skipped credential; it keeps what exists. On a new machine,
+`start-all.cmd -Install -Demo` does setup and the demo together.
+
 ## AI provider
 
 ```powershell

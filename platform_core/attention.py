@@ -21,7 +21,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import ApplicationGrant, Connector, FactoryRun, TriageHypothesis, TriageRun
-from .services import AREA_LABELS, feature_enabled, purposes
+from .services import AREA_ICONS, AREA_LABELS, feature_enabled, purposes
 
 #: How long a failed run stays on the list. After that it is history, and the
 #: run list is where history lives.
@@ -78,7 +78,10 @@ def cards(apps):
     return [
         {
             "application": app,
-            "purposes": [AREA_LABELS[purpose] for purpose in purposes(app)],
+            "purposes": [
+                {"key": purpose, "label": AREA_LABELS[purpose], "icon": AREA_ICONS[purpose]}
+                for purpose in purposes(app)
+            ],
             "actions": actions(app),
         }
         for app in apps

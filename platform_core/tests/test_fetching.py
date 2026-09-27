@@ -152,3 +152,76 @@ class FilenameTests(SimpleTestCase):
         self.assertEqual(parsed.scheme, "https")
         self.assertEqual(parsed.hostname, "example.com")
         self.assertEqual(parsed.port, 8080)
+
+
+class AddressFallbackTests(SimpleTestCase):
+    """One dead address in a CDN rotation must not fail every download.
+
+    raw.githubusercontent.com resolves to four addresses; with one of them
+    unreachable, pinning to whichever came first failed every GitHub import
+    whenever the resolver listed that one first.
+    """
+
+    def dial(self, dead):
+        """Patch the socket layer: `dead` addresses refuse, others answer 200."""
+        dialled = []
+
+        class Socket:
+            def __init__(self, *args):
+                pass
+
+            def settimeout(self, value):
+                pass
+
+            def close(self):
+                pass
+
+            def connect(self, address):
+                dialled.append(address[0])
+                if address[0] in dead:
+                    raise TimeoutError("timed out")
+
+        class Response:
+            status = 200
+
+            def getheader(self, name, default=""):
+                return {"Content-Type": "text/plain"}.get(name, default)
+
+            def read(self, limit):
+                return b"hello"
+
+        patches = (
+            patch(
+                "platform_core.fetching.socket.getaddrinfo",
+                return_value=addrinfo("93.184.216.34", "93.184.216.35"),
+            ),
+            patch("platform_core.fetching.socket.socket", Socket),
+            patch("http.client.HTTPConnection.request", lambda *a, **k: None),
+            patch("http.client.HTTPConnection.getresponse", lambda self: Response()),
+        )
+        return dialled, patches
+
+    def fetch(self, dead):
+        from contextlib import ExitStack
+
+        from platform_core.fetching import fetch
+
+        dialled, patches = self.dial(dead)
+        with ExitStack() as stack:
+            for item in patches:
+                stack.enter_context(item)
+            result = fetch("http://example.com/readme.txt")
+        return dialled, result
+
+    def test_an_unreachable_first_address_falls_through_to_the_next(self):
+        dialled, (body, *_rest) = self.fetch({"93.184.216.34"})
+        self.assertEqual(body, b"hello")
+        self.assertEqual(dialled, ["93.184.216.34", "93.184.216.35"])
+
+    def test_a_reachable_first_address_is_the_only_one_dialled(self):
+        dialled, _ = self.fetch(set())
+        self.assertEqual(dialled, ["93.184.216.34"])
+
+    def test_every_address_unreachable_is_still_reported_as_unreachable(self):
+        with self.assertRaisesRegex(FetchError, "could not be reached"):
+            self.fetch({"93.184.216.34", "93.184.216.35"})

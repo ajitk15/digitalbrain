@@ -7,6 +7,11 @@ across pages. The mobile tree has its own bounded scroll area.
 
 ## ServiceOps incident triage: first read-only slice
 
+ServiceOps has three tabs: **Incidents**, **Triage runs** and **Graph**. Graph is the operations
+graph - incidents, changes, components, services, symptoms and the runbook passages that name
+them - built by rules from imported records and never published or generated. It used to be an
+Operations tab inside Knowledge; the old address (`graph?tab=operations`) redirects to it.
+
 The ServiceOps application tab lists up to 100 recent active incident sources imported from a
 ServiceNow incident table or Jira issues typed Incident. Selecting one shows its structured
 context, up to five similar resolved incidents, and verified passages from the published graph.
@@ -93,7 +98,10 @@ cannot expire before it is fetched.
 chose, so the retriever resolves the hostname first and refuses loopback, private, link-local
 (including the `169.254.169.254` cloud metadata endpoint), multicast and reserved addresses. The
 connection is then pinned to the address that was validated, so a second DNS answer cannot
-redirect it. Only `http` and `https` are accepted, redirects are never followed, responses are
+redirect it. When a host resolves to several addresses, all are validated and they are dialled in
+turn until one connects (5 seconds each): one unreachable address in a CDN rotation, such as
+`raw.githubusercontent.com`, used to fail every download whenever it was listed first. Only the
+connection is retried; the request is sent once. Only `http` and `https` are accepted, redirects are never followed, responses are
 capped at 8 MB and 20 seconds, and no credential is ever attached except the application's own
 mounted GitHub token on GitHub requests.
 
@@ -633,10 +641,22 @@ total nodes are shown and when the display limit is reached, so a large graph is
 than silently truncated. Node kinds can be filtered on and off. Dashed orange relationships are
 AI-inferred and source-verified; solid grey relationships are deterministic structure.
 
+### Application appearance
+
+An owner can give an application a recognisable image: the first letter of its name (the
+default), one of a small fixed set of icons, or an uploaded logo. It is offered as an optional
+card on onboarding and can be changed at any time; the Overview cards and the application menu
+show it. A logo is PNG, JPEG or WebP up to 2 MB and 4 megapixels, re-encoded to a fresh PNG so
+metadata and trailing payloads are dropped, and stored in its own table rather than on the
+application row. It is served only to someone with access to the application, from
+`applications/<id>/logo.png`, with an ETag of its digest. Every change is audited.
+
 ### Unified Knowledge area and saved graph versions
 
 The top menu has one Knowledge entry, opening the generated graph. Its local tabs are Graph,
-Sources (converted Markdown/manual notes), Quality, and Versions. Documents remains the original
+Sources (converted Markdown/manual notes), Quality, and Versions. In an Operations-only
+application the same entry is called **Runbooks**: its documents are there for triage to cite, and
+the name follows the application's purpose. Nothing else about the screens or data differs. Documents remains the original
 upload and file-management area. The graph renderer and conversion status polling are served as
 same-origin external scripts; CSP permits script-src self, without inline script or eval permission.
 

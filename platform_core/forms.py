@@ -223,41 +223,89 @@ class BrandingForm(forms.Form):
     logo = forms.FileField(label="New platform logo", help_text="PNG, JPEG or WebP. Up to 2 MB.")
 
     def clean_logo(self):
-        upload = self.cleaned_data["logo"]
-        if upload.size > 2 * 1024 * 1024:
-            raise forms.ValidationError("Logo must be 2 MB or smaller.")
-        raw = upload.read(2 * 1024 * 1024 + 1)
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(io.BytesIO(raw)) as source:
-                    if source.format not in {"PNG", "JPEG", "WEBP"}:
-                        raise forms.ValidationError("Use a PNG, JPEG or WebP image.")
-                    width, height = source.size
-                    if width * height > 4_000_000 or max(width, height) > 4096:
-                        raise forms.ValidationError(
-                            "Logo must be at most 4 MP and 4096 px per side."
-                        )
-                    if getattr(source, "n_frames", 1) != 1:
-                        raise forms.ValidationError("Animated images are not supported.")
-                    source.load()
-                    # Fresh canvas strips metadata and trailing/polyglot payloads, preserving alpha.
-                    clean = Image.new("RGBA", source.size)
-                    clean.paste(source.convert("RGBA"))
-                    output = io.BytesIO()
-                    clean.save(output, format="PNG", optimize=True)
-        except (
-            UnidentifiedImageError,
-            OSError,
-            ValueError,
-            Image.DecompressionBombError,
-            Image.DecompressionBombWarning,
-        ):
-            raise forms.ValidationError("Upload a valid, undamaged image.") from None
-        result = output.getvalue()
-        if len(result) > 4 * 1024 * 1024:
-            raise forms.ValidationError("Decoded logo is too large.")
-        return result
+        return clean_uploaded_logo(self.cleaned_data["logo"])
+
+
+def clean_uploaded_logo(upload, *, thumbnail=False):
+    """Validate a raster image and return a metadata-free PNG."""
+    if upload.size > 2 * 1024 * 1024:
+        raise forms.ValidationError("Logo must be 2 MB or smaller.")
+    raw = upload.read(2 * 1024 * 1024 + 1)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(raw)) as source:
+                if source.format not in {"PNG", "JPEG", "WEBP"}:
+                    raise forms.ValidationError("Use a PNG, JPEG or WebP image.")
+                width, height = source.size
+                if width * height > 4_000_000 or max(width, height) > 4096:
+                    raise forms.ValidationError("Logo must be at most 4 MP and 4096 px per side.")
+                if getattr(source, "n_frames", 1) != 1:
+                    raise forms.ValidationError("Animated images are not supported.")
+                source.load()
+                # Fresh canvas strips metadata and trailing/polyglot payloads, preserving alpha.
+                clean = Image.new("RGBA", source.size)
+                clean.paste(source.convert("RGBA"))
+                if thumbnail:
+                    clean.thumbnail((256, 256), Image.Resampling.LANCZOS)
+                output = io.BytesIO()
+                clean.save(output, format="PNG", optimize=True)
+    except (
+        UnidentifiedImageError,
+        OSError,
+        ValueError,
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+    ):
+        raise forms.ValidationError("Upload a valid, undamaged image.") from None
+    result = output.getvalue()
+    if len(result) > 4 * 1024 * 1024:
+        raise forms.ValidationError("Decoded logo is too large.")
+    return result
+
+
+class ApplicationIdentityForm(forms.Form):
+    style = forms.ChoiceField(
+        label="Application image",
+        choices=[
+            ("letter", "Use the first letter"),
+            ("icon", "Choose an icon"),
+            ("logo", "Upload a logo"),
+        ],
+        widget=forms.RadioSelect,
+    )
+    icon = forms.ChoiceField(
+        label="Icon",
+        required=False,
+        choices=[
+            ("code", "Code"),
+            ("pulse", "Operations"),
+            ("knowledge", "Knowledge"),
+            ("network", "Network"),
+            ("chat", "Conversation"),
+        ],
+    )
+    logo = forms.FileField(
+        label="Logo image",
+        required=False,
+        help_text="PNG, JPEG or WebP. Up to 2 MB; displayed as a small square.",
+    )
+
+    def __init__(self, *args, has_logo=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.has_logo = has_logo
+
+    def clean_logo(self):
+        upload = self.cleaned_data.get("logo")
+        return clean_uploaded_logo(upload, thumbnail=True) if upload else None
+
+    def clean(self):
+        values = super().clean()
+        if values.get("style") == "icon" and not values.get("icon"):
+            self.add_error("icon", "Choose an icon.")
+        if values.get("style") == "logo" and not values.get("logo") and not self.has_logo:
+            self.add_error("logo", "Choose an image to upload.")
+        return values
 
 
 class ChatRetentionForm(forms.ModelForm):

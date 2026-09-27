@@ -125,6 +125,18 @@ def purposes(application):
     ]
 
 
+def knowledge_label(application):
+    """What the Knowledge screens are called in this application.
+
+    An Operations-only application reads its documents for one reason: triage
+    cites the runbook passages that name an incident's component. Calling that
+    "Knowledge" beside ServiceOps made it look like a second product rather than
+    the runbook library ServiceOps is built on. The screens and the data are the
+    same either way; only the name follows the purpose.
+    """
+    return "Runbooks" if purposes(application) == ["operations"] else "Knowledge"
+
+
 def features_for_purpose(purpose):
     """{feature key: enabled} for the engineering and operations features.
 

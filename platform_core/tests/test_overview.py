@@ -68,7 +68,8 @@ class OverviewTests(TestCase):
         body = self.page().content.decode()
         self.assertIn("Triage an incident", body)
         self.assertNotIn("Analyze a ticket", body)
-        self.assertIn('<span class="pill">Operations</span>', body)
+        self.assertIn('class="pill purpose-operations"', body)
+        self.assertIn("Operations</span>", body)
 
     def test_nothing_waiting_says_so(self):
         self.assertContains(self.page(), "Nothing is waiting on you")

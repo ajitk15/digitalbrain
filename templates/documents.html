@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% load icons %}{% load workspace %}{% block content %}{% application_nav %}
-<h1 class="sr-only">Knowledge</h1>
+<h1 class="sr-only">{{ application|knowledge_name }}</h1>
 <div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='documents' %}{% if can_upload %}<a class="button" href="{% url 'source-add' application.pk %}" data-modal>{% icon "upload" %}Add a source</a>{% endif %}</div>
 <h2 class="view-title">Sources</h2>
 <p class="view-note">Uploads, links and connector imports in one place, and what became of each.</p>
