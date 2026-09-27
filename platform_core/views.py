@@ -58,6 +58,7 @@ from .services import (
     audit,
     change_grant,
     feature_enabled,
+    knowledge_labels,
     purposes,
     update_branding,
 )
@@ -441,7 +442,14 @@ def organization(request, pk):
     admin = OrganizationMember.objects.filter(
         organization=org, user=request.user, is_admin=True
     ).exists()
-    accessible = applications_for(request.user).filter(product__portfolio__organization=org)
+    accessible = list(
+        applications_for(request.user).filter(product__portfolio__organization=org)
+    )
+    # Each card names where it opens: Runbooks for an Operations-only
+    # application, as its own menu does. Worked out for the whole list at once.
+    labels = knowledge_labels(accessible)
+    for app in accessible:
+        app.knowledge_label = labels[app.pk]
     return render(
         request,
         "organization.html",
@@ -456,7 +464,7 @@ def organization(request, pk):
             # it, so the structure list names applications this person cannot
             # open. Linking those would send them to a 404; the panel marks them
             # instead, which is the honest reading of the same rule.
-            "accessible_ids": set(accessible.values_list("pk", flat=True)),
+            "accessible_ids": {app.pk for app in accessible},
         },
     )
 

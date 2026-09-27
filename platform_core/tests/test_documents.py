@@ -291,6 +291,26 @@ class DocumentTests(TestCase):
         self.assertContains(response, "Open knowledge")
         self.assertNotContains(response, f'href="{reverse("application", args=[self.other.pk])}"')
 
+    def test_an_operations_card_opens_runbooks_without_a_query_per_card(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from platform_core.models import ApplicationFeature
+
+        url = reverse("organization", args=[self.app.organization_id])
+        with CaptureQueriesContext(connection) as one_card:
+            self.client.get(url)
+        for key in ("code_graph", "code_factory"):
+            ApplicationFeature.objects.create(application=self.app, key=key, enabled=False)
+        ops = Application.objects.create(name="Ops two", product=self.app.product)
+        ApplicationGrant.objects.create(application=ops, user=self.owner, role="owner")
+        ApplicationFeature.objects.create(application=ops, key="service_ops", enabled=False)
+        with CaptureQueriesContext(connection) as two_cards:
+            response = self.client.get(url)
+        self.assertContains(response, "Open runbooks")
+        self.assertContains(response, "Open knowledge")
+        self.assertEqual(len(two_cards), len(one_card))
+
     def test_shared_navigation_on_application_pages(self):
         """Every application screen carries the breadcrumb and the same four tabs."""
         for name in ["graph", "usage", "application-access", "application-features"]:

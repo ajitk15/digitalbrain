@@ -137,6 +137,43 @@ def knowledge_label(application):
     return "Runbooks" if purposes(application) == ["operations"] else "Knowledge"
 
 
+def knowledge_labels(applications):
+    """{application id: knowledge_label} for a list, in two queries however long.
+
+    The same rule as `purposes`, read in bulk: a feature is on unless the
+    deployment cannot offer it, a global switch is off, or the application's
+    own row is off. For a page of cards, where asking each one would be a
+    query per card.
+    """
+    ids = [app.pk for app in applications]
+    keys = [key for keys in PURPOSES.values() for key in keys]
+    off_globally = set(
+        FeatureSwitch.objects.filter(key__in=keys, enabled=False).values_list("key", flat=True)
+    )
+    off_locally = set(
+        ApplicationFeature.objects.filter(
+            application_id__in=ids, key__in=keys, enabled=False
+        ).values_list("application_id", "key")
+    )
+
+    def on(app_id, key):
+        return (
+            feature_available(key)
+            and key not in off_globally
+            and (app_id, key) not in off_locally
+        )
+
+    labels = {}
+    for app_id in ids:
+        serving = [
+            purpose
+            for purpose, purpose_keys in PURPOSES.items()
+            if any(on(app_id, key) for key in purpose_keys)
+        ]
+        labels[app_id] = "Runbooks" if serving == ["operations"] else "Knowledge"
+    return labels
+
+
 def features_for_purpose(purpose):
     """{feature key: enabled} for the engineering and operations features.
 
