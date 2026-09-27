@@ -81,7 +81,7 @@ def items(user, apps):
     the database - live states, a recent window, the latest run per incident -
     rather than loading history and discarding it here.
     """
-    from .workbench import self_approval_allowed
+    from .factory_views import self_approval_allowed
 
     apps = list(apps)
     if not apps:

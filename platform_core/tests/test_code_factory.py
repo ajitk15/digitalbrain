@@ -729,7 +729,7 @@ class SelectiveApprovalTests(TestCase):
         return reviewer
 
     def test_only_the_chosen_items_survive_approval(self):
-        from platform_core.workbench import review_plan
+        from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()
         keep = run.plan.items.order_by("sequence").first()
@@ -748,8 +748,8 @@ class SelectiveApprovalTests(TestCase):
 
     def test_a_rejected_item_reaches_neither_the_files_nor_the_pull_request(self):
         """The whole point: what was not chosen is not built."""
-        from platform_core.code_factory import pull_request_body, target_paths
-        from platform_core.workbench import review_plan
+        from platform_core.code_factory_build import pull_request_body, target_paths
+        from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()
         keep = run.plan.items.order_by("sequence").first()
@@ -771,7 +771,7 @@ class SelectiveApprovalTests(TestCase):
         self.assertEqual(target_paths(run.plan), ["queue.py"])
 
     def test_approving_nothing_is_refused_rather_than_delivered_empty(self):
-        from platform_core.workbench import review_plan
+        from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()
         with self.assertRaises(ValidationError) as refusal:
@@ -790,7 +790,7 @@ class SelectiveApprovalTests(TestCase):
 
     def test_a_caller_that_says_nothing_about_items_keeps_all_of_them(self):
         """The marker tells "none of them" from "never heard of items"."""
-        from platform_core.workbench import review_plan
+        from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()
         review_plan(
@@ -801,7 +801,7 @@ class SelectiveApprovalTests(TestCase):
         )
 
     def test_the_choice_cannot_be_revised_once_the_plan_is_approved(self):
-        from platform_core.workbench import review_plan
+        from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()
         reviewer = self.approver()
@@ -886,7 +886,7 @@ class SelfApprovalTests(TestCase):
     another_ticket = PipelineTests.another_ticket
 
     def review(self, run, **kwargs):
-        from platform_core.workbench import review_plan
+        from platform_core.factory_views import review_plan
 
         return review_plan(
             self.owner, self.app.pk, run.plan.pk, "approved", "Mine, and I stand by it.",
@@ -1218,8 +1218,8 @@ class StageVocabularyTests(TestCase):
         self.assertEqual(states[3], "pending")
 
     def test_an_approved_plan_moves_the_run_to_the_agents(self):
+        from platform_core.factory_views import review_plan
         from platform_core.models import ApplicationGrant, OrganizationMember, User
-        from platform_core.workbench import review_plan
 
         run = self.run_pipeline()
         reviewer = User.objects.create_user("stage-reviewer")
@@ -1339,7 +1339,7 @@ class RefreshAfterTests(TestCase):
 
     def test_declining_is_a_real_answer_and_stops_the_asking(self):
         """"Nobody has decided" and "somebody decided not to" are different."""
-        from platform_core.code_factory import decline_refresh
+        from platform_core.code_factory_build import decline_refresh
 
         run = self.delivered()
         decline_refresh(self.owner, self.app.pk, run.pk)
@@ -1349,7 +1349,7 @@ class RefreshAfterTests(TestCase):
         self.assertEqual(self.state(run), "ok")
 
     def test_the_same_question_is_not_answered_twice(self):
-        from platform_core.code_factory import decline_refresh
+        from platform_core.code_factory_build import decline_refresh
 
         run = self.delivered()
         decline_refresh(self.owner, self.app.pk, run.pk)
@@ -1357,14 +1357,14 @@ class RefreshAfterTests(TestCase):
             decline_refresh(self.owner, self.app.pk, run.pk)
 
     def test_nothing_to_refresh_before_a_pull_request_exists(self):
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
 
         run = self.run_pipeline()
         with self.assertRaises(ValidationError):
             refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
 
     def test_an_empty_choice_is_refused_rather_than_recorded_as_a_yes(self):
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
 
         run = self.delivered()
         with self.assertRaises(ValidationError):
@@ -1374,7 +1374,7 @@ class RefreshAfterTests(TestCase):
 
     def test_a_subset_is_kept_as_a_subset(self):
         """The code moved and the documents did not is a real answer."""
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
 
         run = self.delivered()
         refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
@@ -1384,7 +1384,7 @@ class RefreshAfterTests(TestCase):
 
     def test_choosing_the_knowledge_graph_queues_a_structural_run(self):
         """Structural, so a run that was never asked for cannot bill anything."""
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
         from platform_core.models import KnowledgeGraph
 
         run = self.delivered()
@@ -1398,7 +1398,7 @@ class RefreshAfterTests(TestCase):
     def test_the_published_revision_is_left_alone(self):
         """A rebuild produces a draft. What runs and chat answer from does not
         change until somebody publishes, which is a separate decision."""
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
         from platform_core.graphs import published_revision
 
         run = self.delivered()
@@ -1408,7 +1408,7 @@ class RefreshAfterTests(TestCase):
         self.assertEqual(before.pk, after.pk)
 
     def test_choosing_the_code_graph_queues_the_repository(self):
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
         from platform_core.models import CodeRepository
 
         repository = CodeRepository.objects.create(
@@ -1427,7 +1427,7 @@ class RefreshAfterTests(TestCase):
 
     def test_a_documentation_row_is_never_what_gets_re_indexed(self):
         """Those rows are knowledge origins, not this application's code."""
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
         from platform_core.models import CodeRepository
 
         docs = CodeRepository.objects.create(
@@ -1446,7 +1446,7 @@ class RefreshAfterTests(TestCase):
         self.assertIn("No repository is registered", " ".join(notes))
 
     def test_what_was_asked_for_is_narrated_onto_the_run(self):
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
 
         run = self.delivered()
         refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
@@ -1455,7 +1455,7 @@ class RefreshAfterTests(TestCase):
         self.assertIn(self.owner.get_username(), said)
 
     def test_a_viewer_cannot_answer_it(self):
-        from platform_core.code_factory import refresh_after
+        from platform_core.code_factory_build import refresh_after
         from platform_core.models import ApplicationGrant
 
         run = self.delivered()
@@ -1476,7 +1476,7 @@ class RefreshAfterTests(TestCase):
         self.assertContains(page, "once the pull request has merged")
 
     def test_the_screen_stops_asking_once_it_is_answered(self):
-        from platform_core.code_factory import decline_refresh
+        from platform_core.code_factory_build import decline_refresh
 
         run = self.delivered()
         decline_refresh(self.owner, self.app.pk, run.pk)
@@ -1580,6 +1580,7 @@ class OfflineScreenTests(TestCase):
     another_ticket = PipelineTests.another_ticket
 
     def approved(self):
+        from platform_core.factory_views import review_plan
         from platform_core.models import (
             ApplicationGrant,
             CodeRepository,
@@ -1587,7 +1588,6 @@ class OfflineScreenTests(TestCase):
             OrganizationMember,
             User,
         )
-        from platform_core.workbench import review_plan
 
         run = self.run_pipeline()
         reviewer = User.objects.create_user("offline-reviewer")
@@ -1625,7 +1625,7 @@ class OfflineScreenTests(TestCase):
     def test_with_a_credential_the_repository_is_confirmed_as_before(self):
         run = self.approved()
         # Imported into the view at call time, so it is patched at its source.
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
         self.assertContains(page, "Confirm acme/widgets")
         self.assertNotContains(page, "Working offline")
@@ -1715,7 +1715,7 @@ class StalledRunTests(TestCase):
         return run
 
     def test_a_run_silent_past_the_limit_is_failed_with_the_reason(self):
-        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+        from platform_core.code_factory_build import STALL_AFTER, reclaim_stalled_runs
 
         run = self.silent_for(
             start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60
@@ -1728,7 +1728,8 @@ class StalledRunTests(TestCase):
 
     def test_a_slow_but_talking_run_is_left_alone(self):
         """The clock measures progress, not wall time."""
-        from platform_core.code_factory import STALL_AFTER, note, reclaim_stalled_runs
+        from platform_core.code_factory import note
+        from platform_core.code_factory_build import STALL_AFTER, reclaim_stalled_runs
 
         run = self.silent_for(
             start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60
@@ -1740,7 +1741,7 @@ class StalledRunTests(TestCase):
 
     def test_a_run_waiting_for_a_person_never_stalls(self):
         """Waiting on purpose is not being stuck."""
-        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+        from platform_core.code_factory_build import STALL_AFTER, reclaim_stalled_runs
         from platform_core.models import FactoryRun, RunEvent
 
         run = self.run_pipeline()
@@ -1753,7 +1754,8 @@ class StalledRunTests(TestCase):
 
     def test_the_phase_it_died_in_is_closed_too(self):
         """A phase left "running" makes the record a liar."""
-        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs, start_phase
+        from platform_core.code_factory import start_phase
+        from platform_core.code_factory_build import STALL_AFTER, reclaim_stalled_runs
 
         run = start_run(self.owner, self.app.pk, self.ticket)
         start_phase(run, "analysis")
@@ -1763,7 +1765,7 @@ class StalledRunTests(TestCase):
 
     def test_reclaiming_frees_the_ticket(self):
         """The point: a held ticket blocks everybody else."""
-        from platform_core.code_factory import STALL_AFTER, reclaim_stalled_runs
+        from platform_core.code_factory_build import STALL_AFTER, reclaim_stalled_runs
 
         self.silent_for(
             start_run(self.owner, self.app.pk, self.ticket), STALL_AFTER.total_seconds() + 60

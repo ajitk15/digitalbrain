@@ -186,7 +186,7 @@ class ConnectorUseTests(TestCase):
     def test_code_factory_delivery_reads_its_own_separate_credential(self):
         """github_write stays a different credential from github: setting the
         read token must not grant the ability to push."""
-        from platform_core.code_factory import write_credential
+        from platform_core.code_factory_build import write_credential
 
         set_credential(self.owner, self.app.pk, "github", TOKEN)
         self.assertEqual(write_credential(self.app), "")

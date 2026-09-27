@@ -11,7 +11,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.code_factory import collect_changes, prepare, publish, target_paths
+from platform_core.code_factory_build import collect_changes, prepare, publish, target_paths
 from platform_core.github_write import (
     BRANCH_PREFIX,
     absent_path,
@@ -162,7 +162,7 @@ class DeliveryGateTests(TestCase):
         # a test path when the plan names none; that is switched off here so the
         # replies still reach the agents they were written for, and is covered
         # on its own by DerivedTestPathTests.
-        derivation = patch("platform_core.code_factory.derived_test_paths", return_value=[])
+        derivation = patch("platform_core.code_factory_build.derived_test_paths", return_value=[])
         derivation.start()
         self.addCleanup(derivation.stop)
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
@@ -225,7 +225,7 @@ class DeliveryGateTests(TestCase):
             repository_confirmed=False, status="prepared"
         )
         self.run.refresh_from_db()
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with self.assertRaises(ValidationError) as raised:
                 publish(self.owner, self.app.pk, self.run.pk)
         self.assertIn("Confirm the repository", " ".join(raised.exception.messages))
@@ -238,7 +238,7 @@ class DeliveryGateTests(TestCase):
         """Required to publish, and only to publish."""
         FactoryRun.objects.filter(pk=self.run.pk).update(status="prepared")
         self.run.refresh_from_db()
-        with patch("platform_core.code_factory.write_credential", return_value=""):
+        with patch("platform_core.code_factory_build.write_credential", return_value=""):
             with self.assertRaises(ValidationError) as raised:
                 publish(self.owner, self.app.pk, self.run.pk)
         message = " ".join(raised.exception.messages)
@@ -256,7 +256,7 @@ class DeliveryGateTests(TestCase):
 
     def test_nothing_is_written_when_no_named_file_can_be_read(self):
         """Unreadable is not absent: a file too large or binary is not created over."""
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=None):
                 with patch("platform_core.github_write.absent_path", return_value=None):
                     with patch("platform_core.github_write.create_branch") as branch:
@@ -272,7 +272,7 @@ class DeliveryGateTests(TestCase):
         """A model that abbreviates would otherwise delete the rest of the file."""
         current = {"path": "src/queue.py", "text": "original code", "sha": "sha1"}
         answer = json.dumps({"files": [{"file": "1", "content": "def go():\n    # ... rest of"}]})
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=current):
                 with patch("platform_core.ai.invoke_ai", return_value=answer):
                     with patch("platform_core.github_write.create_branch") as branch:
@@ -288,7 +288,7 @@ class DeliveryGateTests(TestCase):
             {"path": "src/queue.py", "text": "someone else changed it", "sha": "sha2"},
         ]
         answer = json.dumps({"files": [{"file": "1", "content": "new content"}]})
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", side_effect=reads):
                 with patch("platform_core.ai.invoke_ai", return_value=answer):
                     with patch("platform_core.github_write.create_branch") as branch:
@@ -300,7 +300,7 @@ class DeliveryGateTests(TestCase):
     def test_a_clean_change_opens_a_draft_pull_request(self):
         current = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
         answer = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=current):
                 with patch("platform_core.ai.invoke_ai", return_value=answer):
                     with patch("platform_core.github_write.branch_head", return_value="head"):
@@ -327,7 +327,7 @@ class DeliveryGateTests(TestCase):
             {"files": [{"file": "1", "content": "def test_bound(): assert True"}]}
         )
         patches = {
-            "platform_core.code_factory.write_credential": {"return_value": "tok"},
+            "platform_core.code_factory_build.write_credential": {"return_value": "tok"},
             "platform_core.github_write.read_file": {"return_value": None},
             "platform_core.github_write.absent_path": absent,
             "platform_core.ai.invoke_ai": {"return_value": answer},
@@ -378,7 +378,7 @@ class DeliveryGateTests(TestCase):
 
         current = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
         answer = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=current):
                 with patch("platform_core.ai.invoke_ai", return_value=answer):
                     with patch("platform_core.github_write.branch_head", return_value="h"):
@@ -437,7 +437,7 @@ class PreparedChangeTests(DeliveryGateTests):
 
     def write(self):
         """Run the first half with the repository and the model stubbed."""
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
                 with patch("platform_core.ai.invoke_ai", return_value=self.ANSWER):
                     return prepare(self.owner, self.app.pk, self.run.pk)
@@ -463,7 +463,7 @@ class PreparedChangeTests(DeliveryGateTests):
     def test_the_pull_request_writes_exactly_what_was_shown(self):
         """Re-read from the stored change, never taken from the request."""
         self.write()
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
                 with patch("platform_core.github_write.branch_head", return_value="head"):
                     with patch("platform_core.github_write.create_branch"):
@@ -483,7 +483,7 @@ class PreparedChangeTests(DeliveryGateTests):
         """The window the second verification exists for."""
         self.write()
         moved = {"path": "src/queue.py", "text": "somebody else", "sha": "sha2"}
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=moved):
                 with patch("platform_core.github_write.create_branch") as branch:
                     with self.assertRaises(ValidationError) as raised:
@@ -492,17 +492,17 @@ class PreparedChangeTests(DeliveryGateTests):
         self.assertIn("changed in the repository", " ".join(raised.exception.messages))
 
     def test_publishing_without_preparing_is_refused(self):
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with self.assertRaises(ValidationError) as raised:
                 publish(self.owner, self.app.pk, self.run.pk)
         self.assertIn("read its summary first", " ".join(raised.exception.messages))
 
     def test_discarding_leaves_the_approved_plan_and_writes_nothing(self):
-        from platform_core.code_factory import discard
+        from platform_core.code_factory_build import discard
         from platform_core.models import ProposedChange
 
         self.write()
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             discard(self.owner, self.app.pk, self.run.pk)
         self.run.refresh_from_db()
         self.plan.refresh_from_db()
@@ -513,9 +513,9 @@ class PreparedChangeTests(DeliveryGateTests):
         self.assertEqual(self.plan.status, "approved")
 
     def test_discarding_what_was_never_prepared_is_refused(self):
-        from platform_core.code_factory import discard
+        from platform_core.code_factory_build import discard
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with self.assertRaises(ValidationError):
                 discard(self.owner, self.app.pk, self.run.pk)
 
@@ -528,10 +528,10 @@ class QueuedPreparationTests(DeliveryGateTests):
     """
 
     def test_requesting_queues_rather_than_running(self):
-        from platform_core.code_factory import request_preparation
+        from platform_core.code_factory_build import request_preparation
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
-            with patch("platform_core.code_factory.run_implementation") as agent:
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
+            with patch("platform_core.code_factory_build.run_implementation") as agent:
                 request_preparation(self.owner, self.app.pk, self.run.pk)
         agent.assert_not_called()
         self.run.refresh_from_db()
@@ -539,12 +539,12 @@ class QueuedPreparationTests(DeliveryGateTests):
         self.assertEqual(self.run.acting_user, self.owner)
 
     def test_the_worker_runs_it_as_whoever_asked(self):
-        from platform_core.code_factory import process_next_preparation, request_preparation
+        from platform_core.code_factory_build import process_next_preparation, request_preparation
         from platform_core.models import ProposedChange
 
         current = {"path": "src/queue.py", "text": "original", "sha": "sha1"}
         answer = json.dumps({"files": [{"file": "1", "content": "bounded"}]})
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             request_preparation(self.owner, self.app.pk, self.run.pk)
             with patch("platform_core.github_write.read_file", return_value=current):
                 with patch("platform_core.ai.invoke_ai", return_value=answer):
@@ -555,10 +555,10 @@ class QueuedPreparationTests(DeliveryGateTests):
 
     def test_approval_withdrawn_while_it_waited_stops_the_work(self):
         """Re-checked inside the worker call, like every other queued act here."""
-        from platform_core.code_factory import process_next_preparation, request_preparation
+        from platform_core.code_factory_build import process_next_preparation, request_preparation
         from platform_core.models import ApplicationGrant, ProposedChange
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             request_preparation(self.owner, self.app.pk, self.run.pk)
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
             can_approve=False
@@ -571,7 +571,7 @@ class QueuedPreparationTests(DeliveryGateTests):
         self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
 
     def test_an_empty_queue_is_not_work(self):
-        from platform_core.code_factory import process_next_preparation
+        from platform_core.code_factory_build import process_next_preparation
 
         self.assertFalse(process_next_preparation())
 
@@ -614,7 +614,7 @@ class AgentChainTests(DeliveryGateTests):
         return replies
 
     def chain(self, **kwargs):
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
                 with patch("platform_core.ai.invoke_ai", side_effect=self.answers(**kwargs)):
                     return prepare(self.owner, self.app.pk, self.run.pk)
@@ -657,7 +657,7 @@ class AgentChainTests(DeliveryGateTests):
 
         replies = self.answers(tests=False)
         replies[-1] = "The files look fine to me."  # not JSON: nothing to act on
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=self.CURRENT):
                 with patch("platform_core.ai.invoke_ai", side_effect=replies):
                     with self.assertRaises(ValidationError) as raised:
@@ -726,7 +726,7 @@ class PlanNamedTestTests(TestCase):
     def chain(self, test_author):
         from platform_core.models import ProposedChange
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch(
                 "platform_core.github_write.read_file",
                 side_effect=lambda repository, path, ref, token: self.FILES.get(path),
@@ -813,7 +813,7 @@ class CheckRunTests(DeliveryGateTests):
         self.assertEqual(run.stages[5]["state"], "ok")
 
     def test_the_worker_stops_asking_once_every_check_has_concluded(self):
-        from platform_core.code_factory import process_next_checks
+        from platform_core.code_factory_build import process_next_checks
 
         self.delivered([{"name": "tests", "status": "completed", "conclusion": "success"}])
         with patch("platform_core.github_write.check_runs") as asked:
@@ -821,7 +821,7 @@ class CheckRunTests(DeliveryGateTests):
         asked.assert_not_called()
 
     def test_the_worker_reads_and_records_a_conclusion(self):
-        from platform_core.code_factory import process_next_checks
+        from platform_core.code_factory_build import process_next_checks
 
         self.delivered()
         reported = [{"name": "tests", "status": "completed", "conclusion": "failure", "url": ""}]
@@ -851,7 +851,7 @@ class AgentReportTests(DeliveryGateTests):
     """
 
     def report(self, name):
-        from platform_core.workbench import AGENT_ROW, agent_report
+        from platform_core.factory_views import AGENT_ROW, agent_report
 
         phases = {phase.name: phase for phase in self.run.phases.all()}
         label, waiting = next(row[1:] for row in AGENT_ROW if row[0] == name)
@@ -975,7 +975,7 @@ class OfflineChangeTests(DeliveryGateTests):
         return snapshot
 
     def offline(self):
-        with patch("platform_core.code_factory.write_credential", return_value=""):
+        with patch("platform_core.code_factory_build.write_credential", return_value=""):
             with patch("platform_core.ai.invoke_ai", side_effect=self.ANSWERS):
                 with patch("platform_core.github_write.fetch") as reached:
                     result = prepare(self.owner, self.app.pk, self.run.pk)
@@ -1020,7 +1020,7 @@ class OfflineChangeTests(DeliveryGateTests):
         self.assertEqual(self.run.status, "prepared")
 
     def test_no_snapshot_and_no_credential_is_refused_with_both_ways_out(self):
-        with patch("platform_core.code_factory.write_credential", return_value=""):
+        with patch("platform_core.code_factory_build.write_credential", return_value=""):
             with self.assertRaises(ValidationError) as raised:
                 prepare(self.owner, self.app.pk, self.run.pk)
         message = " ".join(raised.exception.messages)
@@ -1040,7 +1040,7 @@ class AnnotatedTargetTests(SimpleTestCase):
     def paths(self, *targets):
         from types import SimpleNamespace
 
-        from platform_core.code_factory import target_paths
+        from platform_core.code_factory_build import target_paths
 
         items = [
             SimpleNamespace(targets=list(targets), sequence=0, status="accepted")
@@ -1073,7 +1073,7 @@ class DerivedTestPathTests(SimpleTestCase):
     """The test file chosen for a changed source file the plan named no test for."""
 
     def paths(self, changed, known=()):
-        from platform_core.code_factory import derived_test_paths
+        from platform_core.code_factory_build import derived_test_paths
 
         return derived_test_paths([{"path": path} for path in changed], list(known))
 
@@ -1117,7 +1117,7 @@ class DerivedTestPathTests(SimpleTestCase):
         self.assertEqual(self.paths(["app/Main.java", "xsrc/main/java/A.java"]), [])
 
     def test_the_test_language_is_read_from_the_paths(self):
-        from platform_core.code_factory import test_language
+        from platform_core.code_factory_build import test_language
 
         self.assertEqual(test_language(["src/test/java/a/BTest.java"]), "java")
         self.assertEqual(test_language(["web/a.test.ts"]), "javascript")
@@ -1157,7 +1157,7 @@ class DerivedTestChainTests(TestCase):
         def read(repository, path, ref, token):
             return dict(self.CURRENT) if path == "src/queue.py" else None
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", side_effect=read):
                 with patch(
                     "platform_core.github_write.absent_path", side_effect=lambda r, p, b, t: p
@@ -1201,7 +1201,7 @@ class DerivedTestChainTests(TestCase):
         def read(repository, path, ref, token):
             return dict(self.CURRENT) if path == "src/queue.py" else None
 
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", side_effect=read):
                 with patch(
                     "platform_core.github_write.absent_path", side_effect=lambda r, p, b, t: p

@@ -15,6 +15,7 @@ DIGITAL_BRAIN_BROWSER_TESTS=0. Run just these with:
     .venv/Scripts/python.exe manage.py test platform_core.tests.test_browser
 """
 
+import json
 import os
 import time
 from types import SimpleNamespace
@@ -210,6 +211,228 @@ class ReadabilityTests(BrowserTestCase):
                 self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
 
 
+#: What a screen reader or a keyboard needs from every page, checked as
+#: rendered. Not a full WCAG audit - no contrast, no reading order - but the
+#: failures here are the ones that make a control unusable rather than awkward.
+ACCESSIBILITY = r"""() => {
+  const found = [];
+  const visible = (el) => {
+    if (el.closest('[hidden], template, dialog:not([open])')) return false;
+    const style = getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  };
+  const describe = (el) => `<${el.tagName.toLowerCase()}${el.id ? ' id=' + el.id : ''}` +
+    `${el.className && typeof el.className === 'string' ? ' class="' + el.className + '"' : ''}` +
+    `${el.name ? ' name=' + el.name : ''}>`;
+  const named = (el) => {
+    if ((el.getAttribute('aria-label') || '').trim()) return true;
+    const by = el.getAttribute('aria-labelledby');
+    const text = (id) => (document.getElementById(id)?.textContent || '').trim();
+    if (by && by.split(/\s+/).some(text)) {
+      return true;
+    }
+    if ((el.getAttribute('title') || '').trim()) return true;
+    return false;
+  };
+  if (!document.documentElement.lang) found.push('no lang on <html>');
+  if (document.querySelectorAll('main').length !== 1) found.push('not exactly one <main>');
+  if (!document.querySelector('h1')) found.push('no <h1>');
+  const ids = {};
+  for (const el of document.querySelectorAll('[id]')) ids[el.id] = (ids[el.id] || 0) + 1;
+  for (const [id, count] of Object.entries(ids)) if (count > 1) found.push(`duplicate id ${id}`);
+  for (const el of document.querySelectorAll('input, select, textarea')) {
+    if (el.type === 'hidden' || !visible(el)) continue;
+    const labelled = named(el) || [...(el.labels || [])].some((l) => l.textContent.trim());
+    if (!labelled) found.push(`unlabelled ${describe(el)}`);
+  }
+  for (const el of document.querySelectorAll('button, a[href], [role="button"], summary')) {
+    if (!visible(el)) continue;
+    const text = (el.innerText || el.textContent || '').trim();
+    const img = [...el.querySelectorAll('img[alt]')].some((i) => i.alt.trim());
+    if (!text && !named(el) && !img) found.push(`unnamed ${describe(el)}`);
+  }
+  for (const el of document.querySelectorAll('img')) {
+    if (!el.hasAttribute('alt')) found.push(`img without alt ${el.src.slice(-40)}`);
+  }
+  for (const el of document.querySelectorAll('svg')) {
+    if (el.closest('[aria-hidden="true"]') || el.getAttribute('aria-hidden') === 'true') continue;
+    if (el.getAttribute('role') === 'img' && named(el)) continue;
+    if (el.closest('a, button') && (el.closest('a, button').textContent || '').trim()) continue;
+    found.push(`svg neither hidden nor named in ${describe(el.parentElement)}`);
+  }
+  let last = 0;
+  const headings = document.querySelectorAll('main :is(h1, h2, h3, h4, h5, h6)');
+  for (const h of headings) {
+    if (!visible(h)) continue;
+    const level = Number(h.tagName[1]);
+    const title = h.textContent.trim().slice(0, 40);
+    if (last && level > last + 1) found.push(`heading jumps h${last} to h${level}: ${title}`);
+    last = level;
+  }
+  return [...new Set(found)];
+}"""
+
+#: The focused element, described, if nothing marks it: no outline and no
+#: box-shadow, on it or - for a visually hidden radio - on its label.
+FOCUS_MARK = """() => {
+  const el = document.activeElement;
+  if (!el || el === document.body) return '';
+  const marked = (node) => {
+    if (!node) return false;
+    const style = getComputedStyle(node);
+    return (style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0)
+      || style.boxShadow !== 'none';
+  };
+  const label = el.labels && el.labels[0];
+  if (marked(el) || marked(label) || marked(label && label.querySelector('span'))) return '';
+  const text = (el.textContent || el.name || '').trim().slice(0, 30);
+  return `<${el.tagName.toLowerCase()} class="${el.className}">${text}`;
+}"""
+
+#: WCAG 2.2 text contrast, computed as rendered: 4.5:1, or 3:1 for large text
+#: (24px, or 18.66px bold). The background is found by walking up to the first
+#: opaque colour, blending each translucent layer on the way, and an ancestor's
+#: opacity fades the text toward it. Text over an image or a gradient is not
+#: judged - there is no single background colour to judge it against - and
+#: neither is a disabled control, which WCAG exempts.
+CONTRAST = r"""() => {
+  const parse = (value) => {
+    const m = value.match(/rgba?\(([^)]+)\)/);
+    if (!m) return null;
+    const p = m[1].split(/[ ,/]+/).filter(Boolean).map(Number);
+    return {r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1};
+  };
+  const over = (top, under) => ({
+    r: top.r * top.a + under.r * (1 - top.a),
+    g: top.g * top.a + under.g * (1 - top.a),
+    b: top.b * top.a + under.b * (1 - top.a), a: 1,
+  });
+  const lum = (c) => {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+  };
+  const background = (el) => {
+    const layers = [];
+    for (let node = el; node; node = node.parentElement) {
+      const style = getComputedStyle(node);
+      if (style.backgroundImage !== 'none') return null;
+      const colour = parse(style.backgroundColor);
+      if (colour && colour.a > 0) { layers.push(colour); if (colour.a >= 1) break; }
+    }
+    let result = {r: 255, g: 255, b: 255, a: 1};
+    for (const layer of layers.reverse()) result = over(layer, result);
+    return result;
+  };
+  const found = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const text = walker.currentNode.textContent.trim();
+    const el = walker.currentNode.parentElement;
+    const unseen = 'svg, [hidden], template, dialog:not([open]), .sr-only';
+    if (!text || !el || el.closest(unseen)) continue;
+    if (el.closest(':disabled, [aria-disabled="true"], option')) continue;
+    const box = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    if (!box.width || !box.height || style.visibility === 'hidden') continue;
+    const bg = background(el);
+    if (!bg) continue;
+    let opacity = 1;
+    for (let node = el; node; node = node.parentElement) {
+      opacity *= Number(getComputedStyle(node).opacity);
+    }
+    const colour = parse(style.color);
+    const fg = over({...colour, a: colour.a * opacity}, bg);
+    const [hi, lo] = [lum(fg), lum(bg)].sort((a, b) => b - a);
+    const ratio = (hi + 0.05) / (lo + 0.05);
+    const size = parseFloat(style.fontSize);
+    const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
+    if (ratio < (large ? 3 : 4.5)) {
+      found.push(`${ratio.toFixed(2)} ${style.color} on rgb(${bg.r|0},${bg.g|0},${bg.b|0}) ` +
+        `<${el.tagName.toLowerCase()} class="${el.className}">${text.slice(0, 30)}`);
+    }
+  }
+  return [...new Set(found)];
+}"""
+
+#: Every screen a person reaches from the navigation.
+AUDITED = (
+    "graph",
+    "documents",
+    "source-add",
+    "chat",
+    "serviceops",
+    "serviceops-runs",
+    "onboarding",
+    "plans",
+    "code-graph",
+    "connectors",
+    "credentials",
+    "application-features",
+    "ai-settings",
+    "usage",
+    "application-access",
+    "api-tokens",
+    "chat-settings",
+)
+
+
+class AccessibilityTests(BrowserTestCase):
+    def test_every_screen_names_its_controls_and_keeps_its_headings_in_order(self):
+        report = {}
+        for name in ("dashboard", *AUDITED):
+            if name == "dashboard":
+                self.page.goto(f"{self.live_server_url}{reverse('dashboard')}")
+            else:
+                self.open(name, self.app.pk)
+            self.page.wait_for_load_state("networkidle")
+            problems = self.page.evaluate(ACCESSIBILITY)
+            if problems:
+                report[name] = problems
+        self.assertEqual(report, {}, json.dumps(report, indent=1))
+
+    def test_text_has_enough_contrast_to_read(self):
+        report = {}
+        for name in ("dashboard", *AUDITED):
+            if name == "dashboard":
+                self.page.goto(f"{self.live_server_url}{reverse('dashboard')}")
+            else:
+                self.open(name, self.app.pk)
+            self.page.wait_for_load_state("networkidle")
+            problems = self.page.evaluate(CONTRAST)
+            if problems:
+                report[name] = problems
+        self.assertEqual(report, {}, json.dumps(report, indent=1))
+
+    def test_every_control_reached_by_tab_shows_where_the_focus_is(self):
+        unmarked = {}
+        for name in ("documents", "source-add", "chat", "serviceops", "onboarding", "ai-settings"):
+            self.open(name, self.app.pk)
+            self.page.wait_for_load_state("networkidle")
+            missing = []
+            for _ in range(40):
+                self.page.keyboard.press("Tab")
+                found = self.page.evaluate(FOCUS_MARK)
+                if found:
+                    missing.append(found)
+            if missing:
+                unmarked[name] = sorted(set(missing))
+        self.assertEqual(unmarked, {}, json.dumps(unmarked, indent=1))
+
+    def test_a_popup_is_usable_from_the_keyboard_alone(self):
+        self.open("documents", self.app.pk)
+        opener = self.page.locator("a[data-modal][href$='/documents/add/']").first
+        opener.focus()
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector("dialog[open] main, dialog[open] h1")
+        inside = self.page.evaluate("!!document.activeElement.closest('dialog[open]')")
+        self.assertTrue(inside, "focus stayed behind the popup")
+        self.page.keyboard.press("Escape")
+        self.assertFalse(self.page.evaluate("!!document.querySelector('dialog[open]')"))
+        back = self.page.evaluate("document.activeElement.getAttribute('href') || ''")
+        self.assertTrue(back.endswith("/documents/add/"), "focus did not return to its opener")
+        self.assertNoScriptErrors()
+
+
 class ChatLayoutTests(BrowserTestCase):
     """Chat's own task fits a laptop window: at 1280x720 the message area had
     100px and Send was below the fold, and a new chat opened on a disabled
@@ -272,6 +495,35 @@ class SettingsTabsTests(BrowserTestCase):
         )
         self.assertGreaterEqual(found["links"], 6)
         self.assertEqual(len(found["tops"]), 1, found)
+        strip = self.page.evaluate(
+            "(() => { const t = document.querySelector('.settings-tabs');"
+            " return [t.scrollWidth, t.clientWidth]; })()"
+        )
+        self.assertLessEqual(strip[0], strip[1], "the strip scrolls at 1280px")
+        self.assertNoScriptErrors()
+
+    def test_a_narrow_window_scrolls_the_tabs_rather_than_wrapping_them(self):
+        """Wrapping cost three rows; a narrow window now scrolls one row, and
+        starts with the current tab in view."""
+        self.page.set_viewport_size({"width": 900, "height": 800})
+        self.open("chat-settings", self.app.pk)
+        found = self.page.evaluate(
+            """() => {
+              const tabs = document.querySelector('.settings-tabs');
+              const links = [...tabs.querySelectorAll('a')];
+              const top = (a) => Math.round(a.getBoundingClientRect().top);
+              const current = tabs.querySelector('[aria-current]').getBoundingClientRect();
+              const strip = tabs.getBoundingClientRect();
+              return {
+                tops: new Set(links.map(top)).size,
+                scrolls: tabs.scrollWidth > tabs.clientWidth,
+                visible: current.left >= strip.left && current.right <= strip.right,
+              };
+            }"""
+        )
+        self.assertEqual(found["tops"], 1, "the tabs wrapped")
+        self.assertTrue(found["scrolls"], "900px was expected to be too narrow for one row")
+        self.assertTrue(found["visible"], "the current tab was scrolled out of view")
         self.assertNoScriptErrors()
 
 

@@ -717,6 +717,46 @@ class ServiceOpsViewTests(TestCase):
         self.assertEqual(run.phases[0]["status"], "failed")
         self.assertIn("server", run.phases[0]["detail"])
 
+    def test_a_database_that_fails_mid_run_and_on_the_failure_still_ends_the_run(self):
+        """Two failures at once: the work raises, and so does writing that it
+        failed. The worker's lane survives it, and the run is not left
+        "running" forever - the stall sweep ends it once the database is back,
+        and the incident can be triaged again."""
+        from datetime import timedelta
+
+        from django.db import OperationalError
+        from django.utils import timezone
+
+        from platform_core import serviceops_triage
+        from platform_core.serviceops_triage import STALL_AFTER, process_next_triage, queue_run
+
+        incident = self.incident("Queue timeout")
+        run = queue_run(self.owner, self.app.pk, incident)
+        locked = OperationalError("database is locked")
+        with (
+            patch.object(serviceops_triage, "_execute", side_effect=locked),
+            patch.object(serviceops_triage, "_fail", side_effect=locked),
+            self.assertRaises(OperationalError),
+        ):
+            process_next_triage()  # run_lane contains this; here it surfaces
+        run.refresh_from_db()
+        self.assertEqual(run.status, "running")  # nothing could record otherwise
+
+        # Not yet stalled: a slow run is not a dead one.
+        self.assertFalse(process_next_triage())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "running")
+
+        TriageRun.objects.filter(pk=run.pk).update(
+            created_at=timezone.now() - STALL_AFTER - timedelta(minutes=1)
+        )
+        self.assertTrue(process_next_triage())
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("server", run.error)
+        again = queue_run(self.owner, self.app.pk, incident)
+        self.assertEqual(again.status, "queued")
+
     # ---- runs you can find again, and popups ----
 
     def test_every_run_is_listed_and_opens_on_its_own_page(self):

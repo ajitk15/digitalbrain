@@ -678,7 +678,7 @@ def _execute(run):
         )
     else:
         from .ai import invoke_ai
-        from .workbench import MODEL_LABELS
+        from .factory_views import MODEL_LABELS
 
         label = MODEL_LABELS.get(config.model, config.model)
         started = time.monotonic()

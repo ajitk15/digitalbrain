@@ -29,6 +29,8 @@ class SafeJsonFormatter(logging.Formatter):
             "status",
             "duration_ms",
             "lane",
+            # Which step of a lane failed: a function name, never data.
+            "step",
             "count",
             "exception_type",
             # A failed Claude CLI result's structured fields: SDK labels and

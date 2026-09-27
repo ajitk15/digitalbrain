@@ -46,12 +46,13 @@
   --c-line-strong: #d9deeb;
   --c-line-dashed: #d6dbe9;
 
-  /* Ink */
+  /* Ink. Muted and faint are text colours, so each keeps 4.5:1 on the page
+     background (#f5f6fa) - the browser tests measure it on every screen. */
   --c-ink: #172037;
   --c-ink-2: #39455e;
   --c-ink-3: #58627a;
-  --c-ink-muted: #6d768c;
-  --c-ink-faint: #858ba0;
+  --c-ink-muted: #666e83;
+  --c-ink-faint: #696d7e;
 
   /* Brand */
   --c-brand: #4145c8;
@@ -65,7 +66,7 @@
   --c-ok: #1d6b45;
   --c-ok-bg: #e4f4ec;
   --c-ok-line: #cde6d7;
-  --c-warn: #a4601b;
+  --c-warn: #9d5c19;
   --c-warn-bg: #fdf0e2;
   --c-warn-line: #f0e0c8;
   --c-bad: #a13e3e;

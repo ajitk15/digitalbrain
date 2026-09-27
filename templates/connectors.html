@@ -21,7 +21,7 @@
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h3>No connectors yet</h3><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></p></div>
+<div class="empty"><span class="empty-icon">{% icon "plug" 28 %}</span><h2>No connectors yet</h2><p>Connect GitHub, Jira or ServiceNow to bring their issues and records into this application's knowledge.</p><p class="section"><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></p></div>
 {% endif %}
 
 <p class="muted section">A connector needs the credential for its system. Set it on <a href="{% url 'credentials' application.pk %}">Credentials</a>, or have an operator mount it as a file named <code>&lt;system&gt;_{{ application.pk }}</code> in the secret directory. Either way it is stored as a file readable only by the service account, never in the database.</p>

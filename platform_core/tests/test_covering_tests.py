@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from platform_core.code_factory import (
+from platform_core.code_factory_build import (
     NEW_FILE,
     covering_tests,
     numbered_files,
@@ -78,7 +78,7 @@ class CoveringTestTests(TestCase):
         verdict = json.dumps(
             {"files": [{"file": "1", "verdict": "ok"}, {"file": "2", "verdict": "ok"}]}
         )
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch(
                 "platform_core.github_write.read_file",
                 side_effect=lambda repo, path, ref, token: current.get(path),

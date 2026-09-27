@@ -14,6 +14,6 @@
   <td><time datetime="{{ row.run.created_at|date:'c' }}" data-local>{{ row.run.created_at|date:"M d, H:i" }} UTC</time></td>
 </tr>{% endfor %}
 </tbody></table></div>
-{% else %}<div class="empty card"><h3>No triage runs yet</h3><p>Open an incident and press Triage. Every run is kept here with its steps and result.</p></div>{% endif %}
+{% else %}<div class="empty card"><h2>No triage runs yet</h2><p>Open an incident and press Triage. Every run is kept here with its steps and result.</p></div>{% endif %}
 </section>
 {% endblock %}

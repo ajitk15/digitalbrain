@@ -98,6 +98,28 @@ class LaneBehaviourTests(SimpleTestCase):
         self.lane("graph", failing, 0.001).join(timeout=3)
         self.assertGreater(len(calls), 3, "the lane stopped after one failure")
 
+    def test_a_step_that_always_fails_does_not_starve_the_steps_after_it(self):
+        """The factory lane reclaims stalled runs before it starts one. If
+        reclaiming raised on every tick - one bad row is enough - the steps
+        shared a single try, and no Code Factory run would ever start again."""
+        healthy = []
+
+        def broken():
+            raise RuntimeError("a row this step cannot read")
+
+        def starts_runs():
+            healthy.append(1)
+            if len(healthy) >= 3:
+                raise Done
+
+        thread = threading.Thread(
+            target=lambda: self.swallow(run_lane, "factory", lambda: (broken, starts_runs), 0.001),
+            daemon=True,
+        )
+        thread.start()
+        thread.join(timeout=3)
+        self.assertEqual(len(healthy), 3, "a failing step starved the one after it")
+
     def test_a_lane_with_work_to_do_does_not_wait_between_items(self):
         """A backlog drains at the speed of the work, not one item per tick."""
         calls = []

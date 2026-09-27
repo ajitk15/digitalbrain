@@ -7,7 +7,7 @@ that such a test goes with its subject, and that a test the plan named stays.
 
 from django.test import SimpleTestCase
 
-from platform_core.code_factory import orphaned_tests, test_subject
+from platform_core.code_factory_build import orphaned_tests, test_subject
 
 
 def change(path, chosen=False):

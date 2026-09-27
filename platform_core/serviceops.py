@@ -555,8 +555,8 @@ FINISHED = {"completed", "evidence"}
 
 def step_model_label(app, run):
     """The model the model step used, or will use: what the badge beside it says."""
+    from .factory_views import MODEL_LABELS
     from .models import AIConfiguration
-    from .workbench import MODEL_LABELS
 
     if run is not None and run.model:
         return MODEL_LABELS.get(run.model, run.model)

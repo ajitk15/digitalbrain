@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 from django.test import SimpleTestCase
 
-from platform_core.code_factory import derived_test_paths, target_paths
+from platform_core.code_factory_build import derived_test_paths, target_paths
 
 
 class Plan:

@@ -11,6 +11,7 @@ from django.urls import reverse
 from platform_core.ai import answer_with_ai
 from platform_core.connector_kinds import GitHubForm
 from platform_core.connectors import sync
+from platform_core.factory_views import review_plan
 from platform_core.models import (
     AIConfiguration,
     AIUsage,
@@ -25,7 +26,7 @@ from platform_core.models import (
     User,
 )
 from platform_core.processing import process_document
-from platform_core.workbench import add_knowledge, review_plan
+from platform_core.workbench import add_knowledge
 from scripts.extract_text import extract
 
 from . import test_documents

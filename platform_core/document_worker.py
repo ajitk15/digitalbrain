@@ -128,10 +128,10 @@ def factory_steps():
     run cannot be in both states at once, so nothing is gained by letting them
     contend.
     """
-    from .code_factory import (
+    from .code_factory import process_next_run
+    from .code_factory_build import (
         process_next_checks,
         process_next_preparation,
-        process_next_run,
         reclaim_stalled_runs,
     )
 
@@ -215,24 +215,33 @@ def run_lane(name, steps_for, idle_seconds):
 
     The loop does not sleep while it is finding work, so a backlog drains at the
     speed of the work rather than one item per tick.
+
+    Each step is contained on its own. The steps once shared one try, so a step
+    that raised on every tick - one row it cannot read is enough - starved every
+    step after it: a broken reclaim would have stopped every Code Factory run.
     """
     steps = steps_for()
     while True:
         worked = False
-        try:
-            close_old_connections()
-            for step in steps:
+        for step in steps:
+            try:
+                close_old_connections()
                 worked = bool(step()) or worked
-        except Exception:
-            # The event name is what makes this findable; the formatter
-            # deliberately keeps the message and traceback out of the log.
-            logger.warning(
-                "worker lane failed",
-                extra={"event": "worker_lane_failed", "lane": name},
-                exc_info=True,
-            )
-        finally:
-            close_old_connections()
+            except Exception as failure:
+                # The event name is what makes this findable; the formatter
+                # deliberately keeps the message and traceback out of the log.
+                logger.warning(
+                    "worker lane failed",
+                    extra={
+                        "event": "worker_lane_failed",
+                        "lane": name,
+                        "step": step.__name__,
+                        "exception_type": type(failure).__name__,
+                    },
+                    exc_info=True,
+                )
+            finally:
+                close_old_connections()
         time.sleep(0 if worked else idle_seconds)
 
 

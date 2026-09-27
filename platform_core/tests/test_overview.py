@@ -182,20 +182,68 @@ class OverviewTests(TestCase):
         self.assertContains(response, f'<span class="count">{MAX_ITEMS + 2}</span>', html=True)
         self.assertContains(response, f"Showing the {MAX_ITEMS} most pressing of {MAX_ITEMS + 2}")
 
-    def test_history_does_not_make_the_overview_slower(self):
+    def test_history_is_never_loaded_to_be_thrown_away(self):
+        """Old failures and superseded triage runs are filtered in the database.
+
+        Counted as rows turned into objects while the page renders - post_init
+        fires once for each - so a query that fetched history and dropped it in
+        Python fails here even when the number of queries stays the same."""
         from django.db import connection
+        from django.db.models.signals import post_init
         from django.test.utils import CaptureQueriesContext
 
-        def queries():
-            with CaptureQueriesContext(connection) as captured:
-                self.page()
-            return len(captured)
+        from platform_core.models import TriageRun
+        from platform_core.workbench import add_knowledge
 
-        before = queries()
-        for number in range(2, 40):
-            self.factory_run("failed", finished=timezone.now() - timedelta(days=60))
-            FactoryRun.objects.filter(number=1).update(number=number)
-        self.assertEqual(queries(), before)
+        incident = add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Incident INC9",
+            "Incident INC9\n\nType: Incident\nNumber: INC9\n\nDown.",
+            source="https://acme.service-now.com/nav_to.do?uri=incident.do%3Fsys_id%3DINC9",
+        )
+
+        def history(count):
+            for _ in range(count):
+                number = FactoryRun.objects.count() + 1
+                FactoryRun.objects.create(
+                    application=self.app,
+                    requested_by=self.owner,
+                    ticket_external_id=f"OLD-{number}",
+                    status="failed",
+                    number=number,
+                    finished_at=timezone.now() - timedelta(days=60),
+                )
+                TriageRun.objects.create(
+                    application=self.app,
+                    incident=incident,
+                    requested_by=self.owner,
+                    number=TriageRun.objects.count() + 1,
+                    status="failed",
+                    incident_digest=incident.digest,
+                    pack_digest="x",
+                )
+
+        def render():
+            loaded = []
+
+            def count(sender, **kwargs):
+                if sender in (FactoryRun, TriageRun):
+                    loaded.append(sender.__name__)
+
+            post_init.connect(count)
+            try:
+                with CaptureQueriesContext(connection) as captured:
+                    self.assertNotContains(self.page(), "OLD-")
+            finally:
+                post_init.disconnect(count)
+            return len(captured), loaded
+
+        history(1)
+        queries, loaded = render()
+        self.assertEqual(loaded, [])
+        history(40)
+        self.assertEqual(render(), (queries, []))
 
     def test_another_applications_work_never_appears(self):
         ApplicationGrant.objects.create(application=self.other, user=self.viewer, role="owner")

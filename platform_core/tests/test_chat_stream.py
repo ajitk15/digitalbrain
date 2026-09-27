@@ -419,6 +419,43 @@ class ChatStreamViewTests(TestCase):
         self.assertEqual(message.provider, "openai")
         self.assertEqual(message.model, "gpt-5.6-luna")
 
+    def test_an_answer_whose_final_write_fails_is_offered_again_not_left_spinning(self):
+        """The model answered, then the database refused the write that closes
+        the message. The stream must still end - a reader waiting on it would
+        otherwise wait forever - and the page must show the answer as
+        unfinished, with Regenerate, rather than a bubble that never fills."""
+        from django.db import OperationalError
+
+        from platform_core.workbench import answer_worker
+
+        payload = self.start().json()
+        session = streaming.open_session(payload["message"])
+        try:
+            with (
+                self.configured(),
+                patch("platform_core.ai.stream_chat_answer", return_value=("Thirty days.", [])),
+                patch(
+                    "platform_core.workbench.finish_answer",
+                    side_effect=OperationalError("database is locked"),
+                ),
+                self.assertRaises(OperationalError),
+            ):
+                answer_worker(
+                    self.owner.pk, self.app.pk, payload["message"], "Refund deadline?", [], session
+                )
+            events = []
+            while not session.events.empty():
+                events.append(session.events.get_nowait())
+            self.assertEqual(events[-1], streaming.END_OF_STREAM, "the stream never ended")
+        finally:
+            streaming.close_session(payload["message"])
+        message = ChatMessage.objects.get(pk=payload["message"])
+        self.assertEqual(message.status, "streaming")
+        page = self.client.get(self.url, {"conversation": message.conversation_id})
+        self.assertContains(page, "This answer did not finish")
+        self.assertContains(page, reverse("chat-regenerate", args=[self.app.pk, message.pk]))
+        self.assertContains(page, "data-resume=")
+
     def test_an_unconfigured_application_fails_closed_with_a_setup_message(self):
         from platform_core.workbench import answer_worker
 

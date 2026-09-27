@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
-from platform_core.code_factory import prepare, reference_files
+from platform_core.code_factory_build import prepare, reference_files
 from platform_core.code_graph_ingest import register
 from platform_core.models import CodeRelationship, FactoryRun, PlanItem
 
@@ -86,7 +86,7 @@ class ReferenceFileTests(TestCase):
         )
         verdict = json.dumps({"files": [{"file": "1", "verdict": "ok", "reason": ""}]})
         current = {"path": "src/queue.py", "text": "from src import clock\n", "sha": "s1"}
-        with patch("platform_core.code_factory.write_credential", return_value="tok"):
+        with patch("platform_core.code_factory_build.write_credential", return_value="tok"):
             with patch("platform_core.github_write.read_file", return_value=current):
                 with patch(
                     "platform_core.ai.invoke_ai", side_effect=[order, implementation, verdict]
@@ -111,7 +111,7 @@ class ReferenceFileTests(TestCase):
 
     def test_test_fixtures_are_part_of_the_reference(self):
         """A test author not shown conftest.py invents fixtures."""
-        from platform_core.code_factory import test_support
+        from platform_core.code_factory_build import test_support
 
         self.snapshot.files.create(
             path="tests/conftest.py", language="python", digest="d", content="def client(): ...\n"

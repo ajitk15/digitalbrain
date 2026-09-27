@@ -3238,8 +3238,12 @@
   .graph-more .graph-filters { margin-top: var(--s-1); }
 
   /* Settings, grouped by goal: AI, integrations, people, advanced. */
-  .settings-tabs[data-grouped] { flex-wrap: wrap; row-gap: var(--s-2); }
-  .settings-group { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); padding-right: var(--s-2); margin-right: var(--s-1); border-right: 1px solid var(--c-line); }
+  /* One row, always. It wrapped to three rows (89px) at 1280px; fitting it
+     with a few pixels to spare only moved the problem to the next long name.
+     Too narrow now means the strip scrolls sideways, as tab strips do, and
+     workspace.js brings the current tab into view. */
+  .settings-tabs[data-grouped] { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .settings-group { display: flex; flex-wrap: nowrap; flex-shrink: 0; white-space: nowrap; align-items: center; gap: var(--s-1); padding-right: var(--s-2); margin-right: var(--s-1); border-right: 1px solid var(--c-line); }
   .settings-group:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
   /* The group label already says what each tab is for, so the icons were a
      second label that cost the strip a row at 1280px. */

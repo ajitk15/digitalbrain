@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
-from platform_core.code_factory import reference_files
+from platform_core.code_factory_build import reference_files
 from platform_core.code_graph_analysis import facts
 from platform_core.code_graph_graphify import analyse
 from platform_core.code_graph_ingest import index_repository, register

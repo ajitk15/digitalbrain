@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
-from platform_core import code_factory
+from platform_core import code_factory, code_factory_build
 
 
 class PhaseTimeoutTests(SimpleTestCase):
@@ -23,4 +23,4 @@ class PhaseTimeoutTests(SimpleTestCase):
     def test_a_healthy_long_call_is_not_mistaken_for_a_dead_run(self):
         """Stall detection counts from the longest phase, or it would reclaim an
         implementation call that is still well within its limit."""
-        self.assertGreaterEqual(code_factory.STALL_AFTER.total_seconds(), 900 * 3)
+        self.assertGreaterEqual(code_factory_build.STALL_AFTER.total_seconds(), 900 * 3)
