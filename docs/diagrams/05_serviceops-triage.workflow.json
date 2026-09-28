@@ -14,7 +14,7 @@
           "similar",
           "context"
         ],
-        "note": "Deterministic and model-free: the pack exists before any model is called, and survives a provider outage."
+        "note": "A live operations-graph walk joins incidents, changes, confirmed causes and published document passages into a model-free pack."
       },
       {
         "id": "reason",
@@ -24,7 +24,7 @@
           "verify",
           "score"
         ],
-        "note": "The model proposes; citations are re-checked; confidence is computed from evidence, never taken from the model."
+        "note": "Exact quotes and a next-step keyword filter gate hypotheses. One run-level score sets the band; it does not prove a cause."
       },
       {
         "id": "learn",
@@ -35,7 +35,7 @@
           "outcome",
           "resolved"
         ],
-        "note": "A person decides. Feedback is recorded; independently confirmed outcomes calibrate the score and reviewed resolutions inform future triage."
+        "note": "Only a selected cited cause can feed future evidence. Verdicts alone do not change scores; their author may retract them."
       }
     ]
   },
@@ -102,8 +102,8 @@
       "col": 0,
       "width": 150,
       "type": "messagebus",
-      "label": "Incident raised",
-      "sublabel": "ServiceNow, Jira or API"
+      "label": "Triage requested",
+      "sublabel": "incident UI or REST"
     },
     {
       "id": "fingerprint",
@@ -111,8 +111,8 @@
       "col": 1,
       "width": 150,
       "type": "backend",
-      "label": "Fingerprint",
-      "sublabel": "service, CI, error signature",
+      "label": "Profile + graph",
+      "sublabel": "live operations layer",
       "tag": "text is data, never instruction"
     },
     {
@@ -121,8 +121,8 @@
       "col": 5,
       "width": 150,
       "type": "database",
-      "label": "Resolution imported",
-      "sublabel": "close notes, postmortem"
+      "label": "Resolution import",
+      "sublabel": "manual or scheduled"
     },
     {
       "id": "similar",
@@ -139,8 +139,8 @@
       "col": 5,
       "width": 150,
       "type": "database",
-      "label": "Outcome label",
-      "sublabel": "accepted or rejected"
+      "label": "Confirmed cause",
+      "sublabel": "optional cited cause"
     },
     {
       "id": "context",
@@ -157,8 +157,8 @@
       "col": 2,
       "width": 150,
       "type": "backend",
-      "label": "Hypotheses",
-      "sublabel": "one bounded model call"
+      "label": "AI or cached result",
+      "sublabel": "can skip to evidence only"
     },
     {
       "id": "verify",
@@ -167,7 +167,7 @@
       "width": 150,
       "type": "security",
       "label": "Citation check",
-      "sublabel": "live source, exact quote"
+      "sublabel": "quotes + step filter"
     },
     {
       "id": "score",
@@ -175,8 +175,8 @@
       "col": 4,
       "width": 150,
       "type": "security",
-      "label": "Confidence score",
-      "sublabel": "computed, never claimed",
+      "label": "Evidence score",
+      "sublabel": "provisional bands only",
       "tag": "abstains below the floor"
     },
     {
@@ -185,8 +185,8 @@
       "col": 4,
       "width": 150,
       "type": "frontend",
-      "label": "Triage brief",
-      "sublabel": "ranked, cited, banded"
+      "label": "Save triage brief",
+      "sublabel": "completed or evidence"
     },
     {
       "id": "decide",
@@ -233,7 +233,7 @@
     {
       "from": "verify",
       "to": "score",
-      "label": "verified claims",
+      "label": "checked quotes",
       "variant": "emphasis"
     },
     {
@@ -256,7 +256,7 @@
     {
       "from": "outcome",
       "to": "score",
-      "label": "calibrates",
+      "label": "cited on later run",
       "role": "return",
       "variant": "dashed"
     },
@@ -272,18 +272,18 @@
       "dot": "cyan",
       "title": "Evidence first, model second",
       "items": [
-        "Past incidents, runbooks and changes are found without a model charge",
-        "The model only ranks and explains evidence that was already retrieved",
-        "Citations have an active source and exact quote; responders judge whether each quote supports its claim"
+        "Profile → evidence → model/cache → verify → score → save",
+        "Handled AI errors yield evidence only; access, stale intake or unexpected errors fail",
+        "No published graph removes document passages, not incident triage"
       ]
     },
     {
       "dot": "amber",
-      "title": "Confidence is computed, not claimed",
+      "title": "One provisional band per run",
       "items": [
-        "Scored from similarity, agreement, change correlation and verified coverage",
-        "Below the floor it abstains and shows the evidence instead of guessing",
-        "Confirmed outcomes calibrate the bands; nothing is executed on the service"
+        "Up to three hypotheses keep model order; no individual confidence scores",
+        "No supported hypothesis or score below 0.35: evidence only; below 0.55: Low; else Medium",
+        "Confirmed causes count only when retrieved and cited on a later run"
       ]
     }
   ]

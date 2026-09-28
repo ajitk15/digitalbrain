@@ -14,7 +14,7 @@
           "codegraph",
           "triage"
         ],
-        "note": "Evidence is a published graph revision and a repository pinned to one commit."
+        "note": "Published knowledge is required. Triage reads the ticket; analysis retrieves graph evidence. A code snapshot is optional."
       },
       {
         "id": "describe",
@@ -38,7 +38,7 @@
           "deliver",
           "refused"
         ],
-        "note": "Approving a description is one decision; writing to a repository is another."
+        "note": "Preparation saves proposed files locally. A separate PR request needs a confirmed repository, write credential and fresh verification."
       }
     ]
   },
@@ -100,9 +100,8 @@
       "col": 0,
       "type": "external",
       "width": 168,
-      "label": "Ticket import",
-      "sublabel": "Jira, GitHub, ServiceNow",
-      "tag": "ticket is data"
+      "label": "Ticket or brief",
+      "sublabel": "import or manual"
     },
     {
       "id": "graph",
@@ -120,7 +119,7 @@
       "type": "cloud",
       "width": 160,
       "label": "Code snapshot",
-      "sublabel": "cloned at a commit"
+      "sublabel": "optional pinned commit"
     },
     {
       "id": "triage",
@@ -154,8 +153,8 @@
       "lane": "factory",
       "col": 4,
       "type": "backend",
-      "label": "Implement",
-      "sublabel": "whole file contents",
+      "label": "Prepare change",
+      "sublabel": "work order, code, tests",
       "width": 160
     },
     {
@@ -175,7 +174,7 @@
       "type": "security",
       "label": "Approval",
       "sublabel": "a pinned ChangePlan",
-      "tag": "a second person",
+      "tag": "permission required",
       "width": 160
     },
     {
@@ -183,8 +182,8 @@
       "lane": "gates",
       "col": 4,
       "type": "security",
-      "label": "Verification",
-      "sublabel": "checked before writing",
+      "label": "Review and verify",
+      "sublabel": "save prepared files",
       "width": 160
     },
     {
@@ -203,15 +202,10 @@
       "type": "messagebus",
       "width": 160,
       "label": "Delivery refused",
-      "sublabel": "no write credential"
+      "sublabel": "gate or check failed"
     }
   ],
   "edges": [
-    {
-      "from": "connectors",
-      "to": "graph",
-      "label": "regenerate"
-    },
     {
       "from": "connectors",
       "to": "triage",
@@ -220,7 +214,7 @@
     },
     {
       "from": "graph",
-      "to": "triage",
+      "to": "analysis",
       "label": "cited evidence"
     },
     {
@@ -248,7 +242,7 @@
     {
       "from": "approve",
       "to": "implement",
-      "label": "approved, repo confirmed",
+      "label": "prepare on request",
       "variant": "emphasis"
     },
     {
@@ -259,7 +253,7 @@
     {
       "from": "verify",
       "to": "deliver",
-      "label": "passes",
+      "label": "PR + recheck",
       "variant": "emphasis"
     },
     {
@@ -282,18 +276,18 @@
       "dot": "amber",
       "title": "The ticket is data, never instruction",
       "items": [
-        "Ticket text is evidence about a want, not a command to obey",
-        "A repository named in a ticket is confirmed by a person first",
-        "Each cited quote is re-checked against the live source"
+        "Triage reads the ticket; analysis retrieves published graph evidence",
+        "Preparation: work order, implementation, test authoring, model review",
+        "Snapshot-only verification cannot check live file staleness"
       ]
     },
     {
       "dot": "emerald",
       "title": "Two gates, both owned by people",
       "items": [
-        "Approval needs a different user holding the approve permission",
-        "Approving a description does not authorise a repository write",
-        "Delivery has its own credential and opens a draft PR on its own branch"
+        "Approval requires can_approve; self-approval is off by default",
+        "Deployment allow_self_approval can permit an audited self-approval",
+        "A separate PR request needs confirmed repository, write credential and rechecks"
       ]
     }
   ]

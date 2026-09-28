@@ -33,7 +33,7 @@
           "answer",
           "pr"
         ],
-        "note": "Two kinds of work consume the same evidence: operations reads it, change proposes against it."
+        "note": "Graph answer and Code Factory use published knowledge. Sources/AI chat and ServiceOps also read active sources directly."
       },
       {
         "id": "loop",
@@ -54,7 +54,7 @@
           "writeup",
           "sources"
         ],
-        "note": "The two dashed arrows are carried by a person today. Nothing else changes."
+        "note": "Write-ups are imported by a person. Code Factory also offers an explicit refresh after delivery; it never auto-publishes knowledge."
       }
     ],
     "legend": {
@@ -168,9 +168,10 @@
       "stage": 3,
       "row": 0,
       "width": 176,
-      "label": "5 · Chat Application",
+      "label": "5 · Graph answer",
       "height": 74,
-      "tag": "read only"
+      "tag": "read only",
+      "sublabel": "chat graph mode"
     },
     {
       "id": "factory",
@@ -179,7 +180,7 @@
       "row": 1,
       "width": 176,
       "label": "5 · Code Factory",
-      "sublabel": "triage to design",
+      "sublabel": "plan, prepare, deliver",
       "height": 74,
       "tag": "gated"
     },
@@ -332,20 +333,20 @@
       "dot": "cyan",
       "title": "Steps 1-4 · building the evidence",
       "items": [
-        "1 · Documents or a repository — neither one is required",
-        "2 · Each becomes an immutable source; code stays separate",
-        "3 · The worker rebuilds the graph whenever a digest changes",
-        "4 · A person publishes a revision; nothing answers until then"
+        "1 · Documents, tickets and repository intake are separate paths",
+        "2 · Source revisions and code snapshots are stored separately",
+        "3 · Source drift queues a structural graph rebuild after intake",
+        "4 · A person publishes; Graph answer and Code Factory require it"
       ]
     },
     {
       "dot": "emerald",
       "title": "Steps 5-7 · using it, and closing the loop",
       "items": [
-        "5 · Chat and Code Factory read that same published revision",
-        "6 · A cited answer, or a draft pull request behind two gates",
-        "7 · What returns: a postmortem, an RFC, a merged pull request",
-        "7 · Dashed = you carry it today; proposed to be automatic"
+        "5 · Sources/AI chat and ServiceOps can read active sources directly",
+        "6 · Code Factory prepares files, then a person requests a draft PR",
+        "7 · Write-ups return by import; repository refresh is user-requested",
+        "7 · A refreshed knowledge draft still needs explicit publication"
       ]
     }
   ]

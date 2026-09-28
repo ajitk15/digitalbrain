@@ -14,7 +14,7 @@
           "graph",
           "code"
         ],
-        "note": "An incident record becomes an immutable source and reaches a published graph revision."
+        "note": "Imports create source revisions. Graph answer uses a published graph; Sources and AI modes can read active sources directly."
       },
       {
         "id": "answer",
@@ -109,7 +109,7 @@
       "width": 160,
       "type": "external",
       "label": "Record import",
-      "sublabel": "bounded, manual pull",
+      "sublabel": "manual or scheduled",
       "tag": "an immutable source"
     },
     {
@@ -135,9 +135,9 @@
       "lane": "evidence",
       "col": 3,
       "width": 160,
-      "type": "cloud",
-      "label": "Code snapshot",
-      "sublabel": "cloned at a commit"
+      "type": "database",
+      "label": "Active sources",
+      "sublabel": "Sources / AI modes"
     },
     {
       "id": "ask",
@@ -213,7 +213,7 @@
     {
       "from": "import",
       "to": "graph",
-      "label": "regenerate",
+      "label": "build + publish",
       "variant": "emphasis"
     },
     {
@@ -230,7 +230,7 @@
     {
       "from": "code",
       "to": "answer",
-      "label": "where in code"
+      "label": "direct retrieval"
     },
     {
       "from": "answer",
@@ -279,18 +279,18 @@
       "dot": "cyan",
       "title": "An incident record is just a source",
       "items": [
-        "ServiceNow, Jira and GitHub imports are bounded and manual, not a mirror",
-        "Each record becomes an immutable source with a SHA-256 digest",
-        "A changed record archives the old revision instead of overwriting it"
+        "Connector pulls are bounded; manual and scheduled imports are supported",
+        "Each changed record creates a new source revision with a SHA-256 digest",
+        "Sources/AI chat can read active records before graph publication"
       ]
     },
     {
       "dot": "amber",
       "title": "The platform never touches the service",
       "items": [
-        "No runbook is executed, no ticket is updated, no action is taken",
-        "REST and MCP callers get the same verified evidence and call no model",
-        "A code change goes back through the Code Factory gates, not around them"
+        "The incident workflow does not execute runbooks or update external tickets",
+        "Graph-search REST and MCP are model-free; chat/triage APIs can use AI",
+        "ServiceOps has its own triage flow; code changes use Code Factory gates"
       ]
     }
   ]

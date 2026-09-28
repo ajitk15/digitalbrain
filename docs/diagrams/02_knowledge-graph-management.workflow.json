@@ -22,14 +22,14 @@
   "phases": [
     {
       "id": "ph_free",
-      "label": "Automatic and free",
+      "label": "Structural, no model",
       "fromCol": 0,
-      "toCol": 2
+      "toCol": 3
     },
     {
       "id": "ph_human",
-      "label": "A human acts",
-      "fromCol": 3,
+      "label": "Publish",
+      "fromCol": 4,
       "toCol": 4,
       "variant": "emphasis"
     }
@@ -67,7 +67,7 @@
       "width": 132,
       "type": "backend",
       "label": "Working graph",
-      "sublabel": "rebuilt on any change"
+      "sublabel": "after intake settles"
     },
     {
       "id": "draft",
@@ -94,7 +94,7 @@
       "width": 132,
       "type": "messagebus",
       "label": "Requested AI run",
-      "sublabel": "the only paid path"
+      "sublabel": "paid graph enrichment"
     },
     {
       "id": "failed",
@@ -112,7 +112,7 @@
       "width": 132,
       "type": "external",
       "label": "Answering from older",
-      "sublabel": "normal, but unsignalled"
+      "sublabel": "drift shown in UI"
     },
     {
       "id": "readers",
@@ -120,8 +120,8 @@
       "col": 3,
       "width": 132,
       "type": "frontend",
-      "label": "Chat, REST and MCP",
-      "sublabel": "retrieval only, no model"
+      "label": "Graph consumers",
+      "sublabel": "published evidence"
     }
   ],
   "edges": [
@@ -189,19 +189,19 @@
       "dot": "emerald",
       "title": "Currency is automatic; publishing is not",
       "items": [
-        "The worker compares a fingerprint over every active source and rebuilds on any change",
-        "A structural rebuild is free and always saves a draft revision",
-        "Only a human promotes a draft, and publish refuses one whose evidence has moved"
+        "Source drift triggers a structural rebuild after pending intake finishes",
+        "Each completed rebuild saves a draft; failed paid calls need an explicit retry",
+        "Publishing checks recorded sources; newly added sources do not block it"
       ]
     },
     {
       "dot": "cyan",
       "title": "Who reads it, and how",
       "items": [
-        "Chat, /graph/search/ and the MCP server all answer from the published revision",
-        "Neither machine surface calls a model, so no caller can spend the AI budget",
-        "A request may pin a version; every response states which one answered",
-        "No published revision is a 409, never a quiet fallback to a draft"
+        "Graph answer and Code Factory require a published revision",
+        "Graph-search REST/MCP are model-free; chat and triage REST may call AI",
+        "Sources/AI chat read active sources without graph publication",
+        "Graph-search returns 409 without a published version; drift is shown in Knowledge"
       ]
     }
   ]
