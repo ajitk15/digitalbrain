@@ -481,6 +481,8 @@ class OpsNode(models.Model):
         ("symptom", "Symptom"),
         ("group", "Assignment group"),
         ("passage", "Document passage"),
+        ("kb", "Knowledge article"),
+        ("automation", "Automation"),
     ]
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
@@ -524,6 +526,12 @@ class OpsEdge(models.Model):
         ("duplicate", "may be the same event as"),
         ("mentions", "mentions"),
         ("confirmed", "was confirmed caused by"),
+        ("covers", "is covered by article"),
+        ("cites", "cites article"),
+        ("targets", "is targeted by automation"),
+        ("remediates", "is remediated by automation"),
+        ("references", "references automation"),
+        ("resolved_by", "was resolved by automation"),
     ]
     #: Relations a person makes. A rebuild never touches these.
     PERSON_MADE = {"confirmed"}
@@ -550,6 +558,42 @@ class OpsEdge(models.Model):
             models.UniqueConstraint(fields=["source", "target", "relation"], name="unique_ops_edge")
         ]
         indexes = [models.Index(fields=["application", "relation"])]
+
+
+class AutomationRun(models.Model):
+    """A simulated run of an automation, for one incident.
+
+    Nothing is executed. The row records who asked, for which incident, and
+    exactly what would have been sent to which platform, so the flow can be
+    demonstrated and audited before anyone wires a real launcher in. `mode` is
+    the switch a real implementation would add a value to; today there is one.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    automation = models.ForeignKey(
+        KnowledgeEntry, on_delete=models.PROTECT, related_name="automation_runs"
+    )
+    incident = models.ForeignKey(
+        KnowledgeEntry,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="incident_automation_runs",
+    )
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    mode = models.CharField(
+        max_length=12, default="simulated", choices=[("simulated", "Simulated")]
+    )
+    platform = models.CharField(max_length=80, blank=True)
+    #: What a real launch would have sent: method, address, inputs.
+    request = models.JSONField(default=dict, blank=True)
+    outcome = models.CharField(max_length=600, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["application", "incident", "created_at"])]
 
 
 class CodeRepository(models.Model):
@@ -931,6 +975,10 @@ CONNECTOR_KINDS = [
     ("github", "GitHub"),
     ("jira", "Jira"),
     ("servicenow", "ServiceNow"),
+    ("awx", "Ansible AWX"),
+    ("rundeck", "Rundeck"),
+    ("azure_automation", "Azure Automation"),
+    ("automation_list", "Automation list"),
 ]
 
 

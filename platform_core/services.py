@@ -49,6 +49,10 @@ FEATURES = {
     "connector_github": ("GitHub connector", True),
     "connector_jira": ("Jira connector", True),
     "connector_servicenow": ("ServiceNow connector", True),
+    "connector_awx": ("Ansible AWX connector", True),
+    "connector_rundeck": ("Rundeck connector", True),
+    "connector_azure_automation": ("Azure Automation connector", True),
+    "connector_automation_list": ("Automation list connector", True),
 }
 
 #: Which part of the product each feature belongs to. The create form and the
@@ -60,6 +64,10 @@ FEATURE_AREAS = {
     "connector_github": "connectors",
     "connector_jira": "connectors",
     "connector_servicenow": "connectors",
+    "connector_awx": "connectors",
+    "connector_rundeck": "connectors",
+    "connector_azure_automation": "connectors",
+    "connector_automation_list": "connectors",
 }
 AREA_LABELS = {
     "engineering": "Engineering",

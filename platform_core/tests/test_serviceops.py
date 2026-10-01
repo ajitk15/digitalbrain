@@ -1,11 +1,13 @@
 """ServiceOps evidence and triage stay verified and application-scoped."""
 
 import json
+import uuid
 from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
 from platform_core.api_auth import issue
 from platform_core.connector_kinds import servicenow_records
@@ -697,7 +699,7 @@ class ServiceOpsViewTests(TestCase):
         page = self.client.get(response["Location"])
         self.assertContains(page, "All runs (2)")
         details = self.client.get(reverse("serviceops-run", args=[self.app.pk, second.pk]))
-        self.assertContains(details, f"Why the evidence strength is {second.band}")
+        self.assertContains(details, "How the confidence score was reached")
         self.assertContains(details, "Same evidence as run #1")
 
     def test_a_run_whose_worker_went_away_is_failed_not_left_spinning(self):
@@ -810,9 +812,45 @@ class ServiceOpsViewTests(TestCase):
         self.assertContains(page, "INC2")
         self.assertNotContains(page, ">Queue timeout<")
         self.assertContains(page, "Needs triage")
-        only_high = self.client.get(self.url, {"priority": "p2"})
+        only_high = self.client.get(self.url, {"priority": "p2", "show": "all"})
         self.assertContains(only_high, "INC1")
         self.assertNotContains(only_high, "Disk full")
+
+    def test_the_list_opens_on_what_needs_triage(self):
+        from platform_core.serviceops_triage import queue_run
+
+        waiting = self.incident("Queue timeout", number="INC1")
+        self.incident("Disk full", number="INC2")
+        queue_run(self.owner, self.app.pk, waiting)
+        page = self.client.get(self.url)
+        self.assertContains(page, ">Disk full<")
+        self.assertNotContains(page, ">Queue timeout<")
+        self.assertContains(page, '?show=untriaged" aria-current="page"')
+        everything = self.client.get(self.url, {"show": "all"})
+        self.assertContains(everything, ">Queue timeout<")
+        self.assertContains(everything, '<a href="?show=all" aria-current="page">')
+
+    def test_a_resolved_incident_never_needs_triage(self):
+        """It is a precedent for the next incident, not a task."""
+        self.incident("Disk full", number="INC2", state="Resolved")
+        self.incident("Queue timeout", number="INC3", state="Closed")
+        self.incident("Login loop", number="INC4", state="Canceled")
+        self.incident("Export 504", number="INC5", state="New")
+        page = self.client.get(self.url)
+        self.assertContains(page, ">Export 504<")
+        for title in ("Disk full", "Queue timeout", "Login loop"):
+            self.assertNotContains(page, f">{title}<")
+        self.assertContains(page, 'Needs triage <span class="count">1</span>')
+        everything = self.client.get(self.url, {"show": "all"})
+        self.assertContains(everything, "Not needed", count=3)
+
+    def test_with_nothing_left_to_triage_the_list_shows_everything(self):
+        from platform_core.serviceops_triage import queue_run
+
+        queue_run(self.owner, self.app.pk, self.incident("Queue timeout", number="INC1"))
+        page = self.client.get(self.url)
+        self.assertContains(page, ">Queue timeout<")
+        self.assertContains(page, '<a href="?show=all" aria-current="page">')
 
     def test_a_newcomer_is_pointed_at_the_guide_and_it_explains_the_steps(self):
         page = self.client.get(self.url)
@@ -910,6 +948,79 @@ class ServiceOpsViewTests(TestCase):
             run=run, rank=1, statement="The worker stalled. It then restarted.", next_step="x"
         )
         self.assertEqual(labelled_hypotheses(self.app, run)[0].headline, "The worker stalled")
+
+    def completed_run(self, incident, pack, ideas, raw=0.62, band="medium"):
+        run = TriageRun.objects.create(
+            application=self.app,
+            incident=incident,
+            requested_by=self.owner,
+            status="completed",
+            incident_digest=incident.digest,
+            pack_digest="p",
+            evidence=pack,
+            band=band,
+            score_components={"raw_score": raw},
+        )
+        for rank, (title, citations) in enumerate(ideas, 1):
+            TriageHypothesis.objects.create(
+                run=run,
+                rank=rank,
+                title=title,
+                statement=f"{title}.",
+                next_step="Inspect queue depth",
+                citations=citations,
+            )
+        return run
+
+    def test_each_idea_carries_its_own_confidence_on_the_runs_scale(self):
+        """The run's scorer applied to one idea's citations: an idea backed by a
+        close precedent and a change an hour before outranks one backed by
+        nothing the evidence pack holds."""
+        from platform_core.serviceops import labelled_hypotheses
+
+        current = self.incident("Queue timeout")
+        now = timezone.now().isoformat()
+        precedent, change, unknown = (str(uuid.uuid4()) for _ in range(3))
+        pack = [
+            {
+                "id": precedent,
+                "kind": "precedent",
+                "reasons": ["same CI", "same service", "symptoms"],
+                "close_code": "Fixed",
+                "as_of": now,
+            },
+            {"id": change, "kind": "change", "hours_before": 1, "as_of": now},
+        ]
+        backed = [{"id": precedent, "quote": "a"}, {"id": change, "quote": "b"}]
+        run = self.completed_run(
+            current,
+            pack,
+            [
+                ("Worker stalled after the deploy", backed),
+                ("Something else", [{"id": unknown, "quote": "c"}]),
+            ],
+        )
+        strong, weak = labelled_hypotheses(self.app, run)
+        self.assertTrue(0 <= weak.confidence < strong.confidence <= 100)
+        self.assertEqual(strong.confidence_label, "Medium")
+        self.assertEqual(weak.confidence_label, "Too weak")
+
+    def test_the_incident_page_leads_with_the_outcome_and_its_confidence(self):
+        current = self.incident("Queue timeout")
+        self.completed_run(current, [], [("Worker stalled", [])], raw=0.62)
+        page = self.client.get(self.url, {"incident": str(current.pk)})
+        self.assertContains(page, 'class="confidence-ring"')
+        self.assertContains(page, 'aria-label="Confidence 62 out of 100, Medium"')
+        self.assertContains(page, "Most likely: Worker stalled")
+        self.assertContains(page, 'class="idea-confidence')
+        # Simple first: once there is a result, the evidence it drew on is folded.
+        self.assertContains(page, '<details class="section evidence-fold">')
+
+    def test_before_any_run_the_evidence_is_open(self):
+        current = self.incident("Queue timeout")
+        page = self.client.get(self.url, {"incident": str(current.pk)})
+        self.assertContains(page, '<details class="section evidence-fold" open>')
+        self.assertNotContains(page, 'class="confidence-ring"')
 
     def test_the_cost_note_uses_what_triage_has_really_cost(self):
         from decimal import Decimal

@@ -19,6 +19,14 @@ Two directories, in this order:
   and browser management is simply unavailable, which is what every existing
   deployment gets until someone provisions a writable volume for it.
 
+A third, `connector_secret_directory`, is the **shared** connector folder: one
+file per connector, named only `jira`, `git_read`, `git_write` and
+`servicenow`, read by every application that has no credential of its own. It
+is consulted last, so a per-application credential always wins, and it is never
+written from the browser. It deliberately gives up "one application cannot read
+another's credential" for connectors - a demonstration choice - and is unset by
+default, which keeps that guarantee.
+
 Names are never taken from a request. The form posts a key from `MANAGEABLE`, and
 the file name is built here as `<key>_<application id>` - so a name cannot escape
 the directory and one application cannot address another's file.
@@ -110,6 +118,35 @@ MANAGEABLE = {
             "The service account password, or the OAuth client secret.",
         ),
         Manageable(
+            "awx",
+            "Ansible AWX",
+            "settings",
+            "Listing job templates as automations for ServiceOps.",
+            "An AWX OAuth2 personal access token with read access to job templates.",
+        ),
+        Manageable(
+            "rundeck",
+            "Rundeck",
+            "refresh",
+            "Listing Rundeck jobs as automations for ServiceOps.",
+            "A Rundeck API token for a user who can read the project's jobs.",
+        ),
+        Manageable(
+            "azure_automation",
+            "Azure Automation",
+            "network",
+            "Listing Automation account runbooks for ServiceOps.",
+            "The client secret of the app registration named on the connector, with Reader "
+            "on the Automation account.",
+        ),
+        Manageable(
+            "automation_list",
+            "Automation list",
+            "document",
+            "Fetching an automation list from a private address. Not needed for a pasted list.",
+            "A bearer token for the address, for example a fine-grained Git token.",
+        ),
+        Manageable(
             "sharepoint",
             "SharePoint",
             "document",
@@ -118,6 +155,34 @@ MANAGEABLE = {
         ),
     )
 }
+
+
+#: Registry key -> file name in the shared connector folder. Connectors only:
+#: model providers stay per application, because AIUsage billing depends on it.
+SHARED_NAMES = {
+    "github": "git_read",
+    "github_write": "git_write",
+    "jira": "jira",
+    "servicenow": "servicenow",
+    "awx": "awx",
+    "rundeck": "rundeck",
+    "azure_automation": "azure_automation",
+    "automation_list": "automation_list",
+}
+
+
+def shared_directory():
+    """The shared connector folder, or None when unconfigured."""
+    directory = getattr(settings, "CONNECTOR_SECRET_DIRECTORY", "")
+    return Path(directory) if directory else None
+
+
+def shared_path(key):
+    """Where the shared copy of one connector credential lives, or None."""
+    directory = shared_directory()
+    if directory is None or key not in SHARED_NAMES:
+        return None
+    return directory / SHARED_NAMES[key]
 
 
 def managed_directory():
@@ -152,11 +217,17 @@ def application_secret(app, key):
             return read_secret(directory, name)
         except ImproperlyConfigured:
             continue
+    shared = shared_path(key)
+    if shared is not None:
+        try:
+            return read_secret(shared.parent, shared.name)
+        except ImproperlyConfigured:
+            pass
     return ""
 
 
 def source_of(app, key):
-    """Where this credential comes from: "operator", "managed" or "" for neither.
+    """Where this credential comes from: "operator", "managed", "shared" or "".
 
     Presence only - the value is never read to answer this, so a screen asking
     what is configured never loads a secret into memory to find out.
@@ -167,6 +238,9 @@ def source_of(app, key):
     directory = managed_directory()
     if directory is not None and (directory / name).is_file():
         return "managed"
+    shared = shared_path(key)
+    if shared is not None and shared.is_file():
+        return "shared"
     return ""
 
 
@@ -276,18 +350,32 @@ def clear_credential(user, app_id, key):
     return app
 
 
+#: Connector kinds whose credential is offered only once such a connector exists.
+AUTOMATION_SOURCES = {"awx", "rundeck", "azure_automation", "automation_list"}
+
+
 def relevant(app, key):
     """Whether this application uses a credential, by what it is set up for.
 
-    Jira and ServiceNow follow the connector kinds its owner chose; GitHub
+    Jira and ServiceNow follow the connector kinds its owner chose, automation
+    sources the connectors that exist; GitHub
     (write) follows Code Factory. GitHub (read) is also how link imports and Code
     Graph authenticate, so it stays. The registry is unchanged - this only
     decides which rows the screen offers.
     """
+    from .models import Connector
     from .services import connector_feature, feature_enabled
 
     if key in {"jira", "servicenow"}:
         return feature_enabled(connector_feature(key), app)
+    # Automation sources appear once a connector of that kind exists: four new
+    # rows on every application's screen, Engineering ones included, would be
+    # four rows nobody there needs.
+    if key in AUTOMATION_SOURCES:
+        return (
+            feature_enabled(connector_feature(key), app)
+            and Connector.objects.filter(application=app, kind=key).exists()
+        )
     if key == "github_write":
         return feature_enabled("code_factory", app)
     return True
@@ -314,7 +402,9 @@ def rows(app):
                 # POSIX, or empty. Reporting that as "not set" sent people looking
                 # for a file that was already there.
                 "usable": bool(source) and bool(application_secret(app, entry.key)),
-                "file": f"{entry.key}_{app.pk}",
+                "file": str(shared_path(entry.key))
+                if source == "shared"
+                else f"{entry.key}_{app.pk}",
                 # Provenance is only shown for the file this platform wrote. A row
                 # left behind by a credential an operator has since mounted over
                 # would otherwise claim authorship of a file it did not write.

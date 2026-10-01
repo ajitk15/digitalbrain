@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from django.core.exceptions import ImproperlyConfigured
 
-from .configuration import ROOT, admin_identity, load_config, read_secret
+from .configuration import ROOT, admin_identity, load_config, read_secret, self_approval_allowed
 
 BASE_DIR = ROOT
 CONFIG = load_config()
@@ -16,9 +16,12 @@ CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not
 #: instance cannot otherwise run the pipeline end to end, because whoever starts
 #: a run authors its plan and may not review their own work. Honoured in every
 #: mode, production included - unlike its neighbours here, it is a deployment's
-#: decision rather than a development-only concession. Off unless written down,
-#: and every plan approved this way records that its author approved it.
-ALLOW_SELF_APPROVAL = bool(CONFIG.get("allow_self_approval", False))
+#: decision rather than a development-only concession. **On unless written
+#: down as false**: most instances are run by one person, who would otherwise
+#: deadlock at the review gate. Every plan approved this way records that its
+#: author approved it; write `allow_self_approval = false` where two people
+#: really do review every change.
+ALLOW_SELF_APPROVAL = self_approval_allowed(CONFIG)
 #: Let a platform administrator empty an organization between demonstrations.
 #: Off unless written down, and `load_config` has already refused it under
 #: production; forced off here as well.
@@ -42,6 +45,11 @@ SECRET_DIRECTORY = CONFIG["secret_directory"]
 #: provisioned no writable volume for it, and the Credentials screen says so
 #: rather than offering a control that cannot work.
 MANAGED_SECRET_DIRECTORY = CONFIG.get("managed_secret_directory", "")
+#: One shared set of connector credentials, named only by connector (`jira`,
+#: `git_read`, `git_write`, `servicenow`) and read by every application that has
+#: no credential of its own. A demonstration convenience, deliberately trading
+#: per-application isolation for one place to put them. Empty means unused.
+CONNECTOR_SECRET_DIRECTORY = CONFIG.get("connector_secret_directory", "")
 SECRET_KEY = read_secret(SECRET_DIRECTORY, "django_secret_key")
 if len(SECRET_KEY) < 50:
     raise ImproperlyConfigured("The signing key must contain at least 50 random characters.")
@@ -164,6 +172,9 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 210
 FILE_UPLOAD_PERMISSIONS = 0o600
 FILE_UPLOAD_DIRECTORY_PERMISSIONS = 0o700
+# Tests must not read the operator's shared connector folder: a file there
+# would make every "not set" assertion depend on the machine running them.
+TEST_RUNNER = "digitalbrain.test_runner.HermeticRunner"
 STATIC_URL = "/static/"
 STATIC_ROOT = ROOT / "staticfiles"
 STATICFILES_DIRS = [ROOT / "static"]

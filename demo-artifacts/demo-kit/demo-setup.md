@@ -280,9 +280,8 @@ Two ways out:
 
 1. **A second account.** Give a second user Code Factory approval on CarePath.
    Start runs as one, approve as the other. Nothing to configure.
-2. **`allow_self_approval = true`** in `config/local.toml`. `load_config`
-   **refuses** it under `mode = "production"`, the screen says you are reviewing
-   your own plan, and the audit record carries `self_approved: true`.
+2. **Nothing** - `allow_self_approval` is on unless `config/local.toml` says
+   `allow_self_approval = false`, and the audit record names the approver.
 
 ---
 

@@ -87,6 +87,22 @@ def owner_access(user, app_id):
     return app, grant
 
 
+#: What an empty result means, for the kinds where it is worth saying. An empty
+#: board or table is rarely what someone configured a connector for, and "ok
+#: with nothing in it" read as working. GitHub is absent: a repository with no
+#: open issues is an ordinary answer.
+EMPTY_RESULT = {
+    "servicenow": (
+        "ServiceNow returned no records. Check the instance, account read access, "
+        "table and filters."
+    ),
+    "jira": (
+        "Jira accepted the credential but returned no issues. Check the JQL filter "
+        "and that the account can browse the project."
+    ),
+}
+
+
 def sync(user, connector_id, app_id):
     """Import one connector's records as knowledge. Returns how many changed.
 
@@ -144,19 +160,8 @@ def sync(user, connector_id, app_id):
                 profile(entry)
             count += 1
         pruned = prune(locked, app, kind, records)
-        empty = locked.kind == "servicenow" and not records
-        finish(
-            locked,
-            "empty" if empty else "ok",
-            count,
-            started,
-            (
-                "ServiceNow returned no records. Check the instance, account read access, "
-                "table and filters."
-                if empty
-                else ""
-            ),
-        )
+        empty = EMPTY_RESULT.get(locked.kind) if not records else None
+        finish(locked, "empty" if empty else "ok", count, started, empty or "")
         audit(
             user,
             "connector.synced",

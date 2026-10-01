@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% load workspace icons %}
 {% block title %}Connectors · {{ application.name }}{% endblock %}
-{% block content %}{% application_nav %}{% settings_nav %}
+{% block content %}{% application_nav %}{% settings_page %}
 <div class="page-heading"><div><h1>Connectors</h1><p class="muted">Import records from external systems as knowledge sources. Imports are read-only: nothing is ever written back.</p></div><a class="button" href="{% url 'connector-new' application.pk %}">{% icon "plus" %}Add connector</a></div>
 
 {% if connectors %}
@@ -25,4 +25,4 @@
 {% endif %}
 
 <p class="muted section">A connector needs the credential for its system. Set it on <a href="{% url 'credentials' application.pk %}">Credentials</a>, or have an operator mount it as a file named <code>&lt;system&gt;_{{ application.pk }}</code> in the secret directory. Either way it is stored as a file readable only by the service account, never in the database.</p>
-{% endblock %}
+{% endsettings_page %}{% endblock %}

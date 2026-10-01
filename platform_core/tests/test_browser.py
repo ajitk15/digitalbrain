@@ -507,55 +507,102 @@ class ChatLayoutTests(BrowserTestCase):
 
 
 class SettingsTabsTests(BrowserTestCase):
-    """Settings categories stay compact while each page remains discoverable."""
+    """Every settings screen is one click away, from a sidebar beside the page."""
 
-    def test_the_settings_categories_fit_without_scrolling_on_a_laptop(self):
+    def sidebar(self):
+        return self.page.evaluate(
+            """() => {
+              const nav = document.querySelector('.settings-sidebar');
+              const body = document.querySelector('.settings-body');
+              return {
+                groups: [...nav.querySelectorAll('.settings-group-title')]
+                  .map(p => p.textContent.trim()),
+                links: [...nav.querySelectorAll('a')].map(a => a.textContent.trim()),
+                current: nav.querySelector('[aria-current]')?.textContent.trim(),
+                beside: nav.getBoundingClientRect().right <= body.getBoundingClientRect().left,
+                pageScrolls: document.documentElement.scrollWidth > window.innerWidth,
+              };
+            }"""
+        )
+
+    def test_every_settings_screen_is_listed_beside_the_page_on_a_laptop(self):
         self.page.set_viewport_size({"width": 1280, "height": 800})
         self.open("ai-settings", self.app.pk)
-        found = self.page.evaluate(
-            """() => {
-              const tabs = document.querySelector('.settings-tabs');
-              const links = [...tabs.querySelectorAll('a')];
-              const top = (a) => Math.round(a.getBoundingClientRect().top);
-              return {
-                labels: links.map(a => a.textContent.trim()),
-                rows: new Set(links.map(top)).size,
-                scrolls: tabs.scrollWidth > tabs.clientWidth,
-              };
-            }"""
-        )
-        self.assertEqual(found["labels"], ["Application", "AI", "Integrations", "Access"])
-        self.assertEqual(found["rows"], 1, found)
-        self.assertFalse(found["scrolls"], found)
-        self.assertEqual(self.page.locator(".settings-section-nav a").all_text_contents(),
-                         ["AI settings", "AI costs"])
-        self.page.get_by_role("link", name="Application", exact=True).click()
+        found = self.sidebar()
+        self.assertEqual(found["groups"], ["Application", "AI", "Integrations", "Access"])
+        for label in ("Appearance", "Features", "Chat history", "AI settings", "AI costs"):
+            self.assertIn(label, found["links"])
+        self.assertEqual(found["current"], "AI settings")
+        self.assertTrue(found["beside"], found)
+        self.assertFalse(found["pageScrolls"], found)
+        self.page.get_by_role("link", name="Appearance", exact=True).click()
         appearance_url = reverse("application-identity", args=[self.app.pk])
-        self.assertEqual(self.page.url.split("?")[0], f"{self.live_server_url}{appearance_url}")
-        self.assertEqual(self.page.locator(".settings-section-nav a").all_text_contents(),
-                         ["Appearance", "Features", "Chat history"])
+        self.page.wait_for_url(f"{self.live_server_url}{appearance_url}*")
+        self.assertEqual(self.sidebar()["current"], "Appearance")
         self.assertNoScriptErrors()
 
-    def test_a_narrow_desktop_window_has_no_settings_scrollbar(self):
-        self.page.set_viewport_size({"width": 900, "height": 800})
+    def test_a_narrow_window_stacks_the_sidebar_without_a_scrollbar(self):
+        self.page.set_viewport_size({"width": 800, "height": 800})
         self.open("chat-settings", self.app.pk)
+        found = self.sidebar()
+        self.assertFalse(found["beside"], found)
+        self.assertFalse(found["pageScrolls"], found)
+        self.assertEqual(found["current"], "Chat history")
+        self.assertNoScriptErrors()
+
+
+class KnowledgeGraphCanvasTests(BrowserTestCase):
+    """The knowledge graph is one live canvas: every node drawn, a node reachable
+    from the keyboard list, and no script or CSP errors along the way."""
+
+    def setUp(self):
+        super().setUp()
+        from platform_core.graphs import rebuild
+
+        add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Configuration",
+            "| Node | Queue |\n| --- | --- |\n| NODE1 | Q1 |\n| NODE2 | Q1 |\n| NODE3 | Q2 |",
+        )
+        rebuild(self.app.pk)
+
+    def test_every_node_is_drawn_and_the_layout_settles(self):
+        self.open("graph", self.app.pk)
+        self.page.wait_for_selector("#graph-canvas[data-state='settled']")
         found = self.page.evaluate(
             """() => {
-              const tabs = document.querySelector('.settings-tabs');
-              const links = [...tabs.querySelectorAll('a')];
-              const top = (a) => Math.round(a.getBoundingClientRect().top);
+              const canvas = document.getElementById('graph-canvas');
+              const data = JSON.parse(document.getElementById('knowledge-graph-data').textContent);
+              const pixels = canvas.getContext('2d')
+                .getImageData(0, 0, canvas.width, canvas.height).data;
+              let painted = 0;
+              for (let i = 3; i < pixels.length; i += 4) if (pixels[i]) painted += 1;
               return {
-                rows: new Set(links.map(top)).size,
-                scrolls: tabs.scrollWidth > tabs.clientWidth,
-                currentSection: document.querySelector(
-                  '.settings-section-nav [aria-current]'
-                )?.textContent.trim(),
+                drawn: Number(canvas.dataset.nodes),
+                edges: Number(canvas.dataset.edges),
+                total: data.nodes.length,
+                painted,
+                count: document.getElementById('graph-count').textContent,
               };
             }"""
         )
-        self.assertEqual(found["rows"], 1, found)
-        self.assertFalse(found["scrolls"], found)
-        self.assertEqual(found["currentSection"], "Chat history")
+        self.assertGreater(found["total"], 2, found)
+        self.assertEqual(found["drawn"], found["total"], found)
+        self.assertGreater(found["edges"], 0, found)
+        self.assertGreater(found["painted"], 100, found)
+        self.assertIn(f"{found['total']} of {found['total']} nodes shown", found["count"])
+        self.assertNoScriptErrors()
+
+    def test_choosing_a_node_from_the_list_inspects_it(self):
+        self.open("graph", self.app.pk)
+        self.page.wait_for_selector("#graph-canvas[data-nodes]")
+        option = self.page.locator("#graph-node option").nth(1)
+        node_id = option.get_attribute("value")
+        label = option.inner_text().split(": ", 1)[1]
+        self.page.select_option("#graph-node", node_id)
+        self.page.wait_for_selector(f"#graph-canvas[data-focus='{node_id}']")
+        self.assertEqual(self.page.inner_text("#graph-inspector h2"), label)
         self.assertNoScriptErrors()
 
 
@@ -781,7 +828,15 @@ class OnboardingTests(BrowserTestCase):
         )
         self.assertEqual(
             rows,
-            {"connector_github": False, "connector_jira": True, "connector_servicenow": True},
+            {
+                "connector_github": False,
+                "connector_jira": True,
+                "connector_servicenow": True,
+                "connector_awx": False,
+                "connector_rundeck": False,
+                "connector_azure_automation": False,
+                "connector_automation_list": False,
+            },
         )
         self.assertNoScriptErrors()
 

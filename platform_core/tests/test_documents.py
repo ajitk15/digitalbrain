@@ -325,9 +325,9 @@ class DocumentTests(TestCase):
                 self.assertContains(response, ">Settings</a>")
 
     def test_settings_screens_share_a_sub_navigation(self):
-        """Every settings screen carries the same categories, and lists the
-        screens of the category it belongs to - so Features is reachable from
-        anywhere in one click, and shown by name inside Application."""
+        """Every settings screen carries the same sidebar, listing every
+        category and every screen in it - so Features is reachable from
+        anywhere in one click, and the current screen is marked."""
         for name, category, section in [
             ("usage", "AI", "AI costs"),
             ("application-access", "Access", "People &amp; access"),
@@ -337,9 +337,11 @@ class DocumentTests(TestCase):
                 response = self.client.get(reverse(name, args=[self.app.pk]))
                 self.assertContains(response, 'aria-label="Settings categories"')
                 for group in ("Application", "AI", "Integrations", "Access"):
-                    self.assertContains(response, f"{group}</a>")
-                self.assertContains(response, f'aria-label="{category} settings"')
+                    self.assertContains(response, f"{group}</p>")
+                self.assertContains(response, '">Features</a>')
                 self.assertContains(response, f'aria-current="page">{section}</a>')
+                current = response.content.decode().split("settings-group is-current")[1]
+                self.assertIn(f"{category}</p>", current.split("</div>")[0])
 
     def test_the_settings_tab_never_advertises_a_section_name(self):
         """A contributor reaching Settings via AI costs must still see "Settings"."""

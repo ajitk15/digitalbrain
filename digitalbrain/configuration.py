@@ -23,6 +23,7 @@ def load_config():
         "csrf_origins",
         "secret_directory",
         "managed_secret_directory",
+        "connector_secret_directory",
         "database",
         "trust_proxy",
         "scanner",
@@ -63,6 +64,16 @@ def load_config():
         raise ImproperlyConfigured(
             "managed_secret_directory must differ from secret_directory."
         )
+    shared = config.get("connector_secret_directory", "")
+    if not isinstance(shared, str):
+        raise ImproperlyConfigured("connector_secret_directory must be a path.")
+    if shared and managed and Path(shared).resolve() == Path(managed).resolve():
+        # The browser writes per-application files into the managed directory;
+        # letting it write into the shared folder too would let one application's
+        # owner replace the credential every other application reads.
+        raise ImproperlyConfigured(
+            "connector_secret_directory must differ from managed_secret_directory."
+        )
     for field in ("sharepoint_tenant", "sharepoint_client_id"):
         value = config.get(field, "")
         if not isinstance(value, str):
@@ -95,17 +106,26 @@ def load_config():
     # `allow_self_approval` is deliberately NOT refused under production, unlike
     # its neighbours above. A single-operator deployment has nobody to ask, and
     # refusing it there left the pipeline unrunnable on exactly the instances
-    # this product is first used on. It stays opt-in and off by default, every
-    # plan it lets through still records that its author approved it, and the
-    # run page still says so on screen - so what was traded is the guarantee,
-    # not the visibility. Grant approval to a second member where two people
-    # really do review every change.
+    # this product is first used on. It is on unless written down as false
+    # (settings.ALLOW_SELF_APPROVAL), and every plan it lets through still
+    # records that its author approved it - so what was traded is the
+    # guarantee, not the visibility. Write `allow_self_approval = false` where
+    # two people really do review every change.
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")
     if not config.get("hosts") or "*" in config["hosts"]:
         raise ImproperlyConfigured("Explicit allowed hosts are required.")
     return config
+
+
+def self_approval_allowed(config):
+    """Whether a plan's author may approve it. Absent means yes.
+
+    Most instances are run by one person, who would otherwise deadlock at the
+    review gate. `allow_self_approval = false` restores two-person review.
+    """
+    return bool(config.get("allow_self_approval", True))
 
 
 def admin_identity():

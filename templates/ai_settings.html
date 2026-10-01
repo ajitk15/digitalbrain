@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace static icons %}{% block title %}AI settings · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}{% settings_nav %}
+{% extends 'base.html' %}{% load workspace static icons %}{% block title %}AI settings · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}{% settings_page %}
 <div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>AI settings</h1><p class="muted">{{ sections|length }} tasks call a model. Each one picks its own provider, model and price, and applies to this application only.</p></div></div>
 
 
@@ -23,4 +23,4 @@
 <p class="muted">{{ pricing_note }}</p>
 <p>Listed models are suggestions from provider documentation; availability depends on your account. Use Custom for any other supported model ID. Estimates charge cached Claude input at the entered input rate and may differ from invoices.</p>
 <p>Both SDKs receive only the bounded conversation and source context this application supplies. File, shell, web and MCP tools are disabled. Chat history is managed under Chat history.</p></details>
-<script src="{% static 'ai-settings.js' %}" defer></script>{% endblock %}
+<script src="{% static 'ai-settings.js' %}" defer></script>{% endsettings_page %}{% endblock %}

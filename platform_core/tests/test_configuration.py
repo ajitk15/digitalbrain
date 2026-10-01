@@ -6,7 +6,12 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
-from digitalbrain.configuration import admin_identity, load_config, read_secret
+from digitalbrain.configuration import (
+    admin_identity,
+    load_config,
+    read_secret,
+    self_approval_allowed,
+)
 
 
 class EventLogTests(SimpleTestCase):
@@ -149,8 +154,8 @@ class SelfApprovalConfigurationTests(SimpleTestCase):
     Deliberately NOT built like claude_use_host_login, which these tests used to
     assert it matched. A single-operator deployment has nobody to ask, and
     refusing this under production left the review gate with no way through -
-    so production accepts it. It stays off unless written down, which is what
-    keeps two-person review the default.
+    so production accepts it. Absent means on; two-person review is
+    `allow_self_approval = false`, written down.
     """
 
     BASE = 'hosts = ["localhost"]\nsecret_directory = "/tmp/secrets"\n'
@@ -161,9 +166,13 @@ class SelfApprovalConfigurationTests(SimpleTestCase):
         config = self.load(f'mode = "development"\n{self.BASE}allow_self_approval = true\n')
         self.assertTrue(config["allow_self_approval"])
 
-    def test_it_defaults_to_absent(self):
-        config = self.load(f'mode = "development"\n{self.BASE}')
-        self.assertNotIn("allow_self_approval", config)
+    def test_absent_means_allowed(self):
+        """A one-person instance must not deadlock at the review gate."""
+        for mode in ("development", "production"):
+            with self.subTest(mode=mode):
+                config = self.load(f'mode = "{mode}"\n{self.BASE}')
+                self.assertNotIn("allow_self_approval", config)
+                self.assertTrue(self_approval_allowed(config))
 
     def test_production_accepts_it(self):
         """The one place this differs from claude_use_host_login and allow_demo_reset.
@@ -175,9 +184,9 @@ class SelfApprovalConfigurationTests(SimpleTestCase):
         config = self.load(f'mode = "production"\n{self.BASE}allow_self_approval = true\n')
         self.assertTrue(config["allow_self_approval"])
 
-    def test_it_stays_off_in_production_unless_written_down(self):
-        config = self.load(f'mode = "production"\n{self.BASE}')
-        self.assertFalse(config.get("allow_self_approval", False))
+    def test_production_can_turn_it_off(self):
+        config = self.load(f'mode = "production"\n{self.BASE}allow_self_approval = false\n')
+        self.assertFalse(self_approval_allowed(config))
 
     def test_it_must_be_a_boolean(self):
         with self.assertRaises(ImproperlyConfigured):

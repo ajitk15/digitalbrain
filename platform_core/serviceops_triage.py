@@ -47,7 +47,11 @@ INSTRUCTIONS = (
     "title is a plain headline of at most 12 words that a newcomer can scan. "
     "Citations are objects with id and quote; quote must be an exact contiguous passage "
     "from the supplied evidence with that id. Explain uncertainty. Do not assert a root "
-    "cause, command a change, or invent a source. next_step must be a read-only check. "
+    "cause, command a change, or invent a source. next_step must be a read-only check: "
+    "inspect, compare, confirm or look up - never restart, run, deploy, apply, update, "
+    "patch, enable, disable, delete, write or execute anything. Automations in the "
+    "evidence are a known fix for the responder to decide on: you may cite one as "
+    "evidence of what fixed a similar incident, but never tell anyone to run it. "
     "If evidence is insufficient, return an empty hypotheses array. No Markdown."
 )
 
@@ -65,7 +69,7 @@ TRIAGE_OUTPUT_LIMIT = 8000
 
 #: Bumped whenever INSTRUCTIONS asks for a different answer, so a cached answer
 #: to the old question is not reused for the new one.
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 #: The run's limitations as a newcomer should read them. The stored strings stay
 #: as they are - they are the record - and are translated for display only.
@@ -74,7 +78,9 @@ PLAIN_LIMITATIONS = {
         "Scores are not calibrated yet: there are not enough recorded outcomes to say how "
         "often a Medium result turns out right."
     ),
-    "No published graph evidence": "No knowledge-graph passage was used as evidence.",
+    "No published graph evidence": (
+        "No runbook passage or knowledge article was used as evidence."
+    ),
     "No published graph available": (
         "No knowledge graph is published for this application, so runbooks and design "
         "documents were not searched."
@@ -215,6 +221,27 @@ def evidence_pack(app, incident, walk=None):
                 title=row["title"],
                 graph_version=row["graph_version"],
             )
+    # Knowledge articles ServiceNow has published, and automations that may
+    # help. An automation is evidence of a known fix, never an instruction: the
+    # model may cite it, and only a person may (simulate) running it.
+    for row in walk.get("articles", []):
+        add(
+            row["entry"],
+            "kb_article",
+            row["excerpt"][:900],
+            row["reasons"],
+            row["path"],
+            title=f"{row['fields'].get('Number', '')} {row['entry'].title}".strip(),
+        )
+    for row in walk.get("automations", []):
+        add(
+            row["entry"],
+            "automation",
+            row["excerpt"][:600],
+            row["reasons"],
+            row["path"],
+            title=f"Automation: {row['entry'].title}",
+        )
     return pack[:40], walk["graph_available"]
 
 
@@ -350,7 +377,7 @@ SCORE_WEIGHTS = {
 }
 #: Bumped whenever the score is computed differently, so a cached run's band
 #: is not reused as if this scorer had given it.
-SCORER_VERSION = "v2"
+SCORER_VERSION = "v3"
 SCORE_LABELS = {
     "history": (
         "Confirmed history",
@@ -399,7 +426,7 @@ def _score(pack, hypotheses):
             0.9
             if row["kind"] == "confirmed_cause"
             else 0.8
-            if row["kind"] == "published_knowledge" or row.get("close_code")
+            if row["kind"] in {"published_knowledge", "kb_article"} or row.get("close_code")
             else 0.6
             if row["kind"] == "precedent"
             else 0.4
@@ -434,7 +461,7 @@ def _score(pack, hypotheses):
         return "insufficient", components, limitations + ["No supported hypothesis"]
     if len(kinds) < 2:
         limitations.append("Only one evidence kind")
-    if not any(row["kind"] == "published_knowledge" for row in pack):
+    if not any(row["kind"] in {"published_knowledge", "kb_article"} for row in pack):
         limitations.append("No published graph evidence")
     if raw < INSUFFICIENT_BELOW:
         return (
@@ -445,6 +472,24 @@ def _score(pack, hypotheses):
     if raw < LOW_BELOW:
         return "low", components, limitations
     return "medium", components, limitations
+
+
+#: How a band reads on the page.
+BAND_LABELS = {"insufficient": "Too weak", "low": "Low", "medium": "Medium"}
+
+
+def idea_confidence(run, citations):
+    """One idea's confidence, out of 100, and its band.
+
+    The run's own scorer applied to this idea's citations alone, against the
+    evidence pack the run stored - so an idea's number and the run's number are
+    the same measure, and an idea backed by a confirmed cause or a change an
+    hour before scores above one backed by a single loose match. Like the run's,
+    it rates the evidence, not the chance the idea is right: there is no high
+    band until verdicts have been collected to calibrate it against.
+    """
+    band, components, _ = _score(run.evidence or [], [{"citations": citations}])
+    return round(components["raw_score"] * 100), band
 
 
 #: The steps every run goes through, in order: (name, label, calls a model).
@@ -468,6 +513,8 @@ EVIDENCE_WORDS = (
     ("change", "recent change", "recent changes"),
     ("related_open", "related open incident", "related open incidents"),
     ("published_knowledge", "graph passage", "graph passages"),
+    ("kb_article", "knowledge article", "knowledge articles"),
+    ("automation", "automation", "automations"),
 )
 
 
@@ -776,7 +823,7 @@ def _execute(run):
         run,
         "score",
         "ok",
-        f"{band.capitalize()} · evidence score {components['raw_score']:.2f}"
+        f"{BAND_LABELS.get(band, band)} · confidence {round(components['raw_score'] * 100)}/100"
         + (" · hypotheses withheld below the threshold" if withheld else ""),
         started,
     )

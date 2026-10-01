@@ -27,14 +27,12 @@ scanner = "/usr/bin/clamscan"
 # How many files one GitHub /tree/ or SharePoint folder import may take.
 import_max_files = 100
 
-# Lets whoever starts a Code Factory run approve the plan it produced. Off
-# unless written down. Separation of duties is still the default: normally a
-# second member holding "May approve Code Factory plans" reviews the plan, and
-# that is what a deployment with more than one person should do. A
-# single-operator instance has nobody to ask and would otherwise deadlock at the
-# review gate, so this is permitted here rather than refused. Every plan it lets
-# through records that its author approved it, and both review screens say so
-# while it is in force.
+# Lets whoever starts a Code Factory run approve the plan it produced. On
+# unless written down as false: a single-operator instance has nobody to ask and
+# would otherwise deadlock at the review gate. A deployment with more than one
+# person should set it to false, so a second member holding "May approve Code
+# Factory plans" reviews every plan. Every plan approved by its author records
+# that in the audit record.
 allow_self_approval = true
 
 # Optional. Lets an application owner set their own provider credentials on the
@@ -43,6 +41,12 @@ allow_self_approval = true
 # credential you project always takes precedence over one typed in a browser.
 # Uncomment only after creating the directory and its volume.
 # managed_secret_directory = "/var/lib/digitalbrain/credentials"
+
+# Optional. One shared set of connector credentials used by every application
+# that has none of its own: files named jira, git_read, git_write, servicenow.
+# Gives up per-application isolation for connectors - leave unset where
+# applications belong to different teams.
+# connector_secret_directory = "/run/connector-secrets"
 
 [database]
 name = "digital_brain"
