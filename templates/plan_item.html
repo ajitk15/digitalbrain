@@ -7,12 +7,18 @@
 <h2>{% icon "search" %}The gap</h2>
 <p>{{ item.explanation }}</p>
 </section>
+{% if item.category == 'stated' and ticket_label %}<section class="card section ticket-says">
+<h2>{% icon "document" %}Where the ticket says this</h2>
+<p class="muted">From {% if run.ticket_url %}<a class="origin-tag origin-ticket" href="{{ run.ticket_url }}" target="_blank" rel="noreferrer noopener">{{ ticket_label }}</a>{% else %}<span class="origin-tag origin-ticket">{{ ticket_label }}</span>{% endif %}. The sentences below share the most words with this gap; the shared words are highlighted. Found by matching words, not by the AI, and checked against the ticket as it stands now.</p>
+{% for passage in ticket_passages %}<blockquote class="ticket-quote">{% for part in passage.parts %}{% if part.hit %}<mark>{{ part.text }}</mark>{% else %}{{ part.text }}{% endif %}{% endfor %}</blockquote>
+{% empty %}<p class="muted">{% if run.ticket_body %}This ticket was typed in on the Code Factory screen, so there is no ticket record to point into.{% else %}No sentence in the ticket shares enough words with this gap to point at. Open the ticket to read it in full.{% endif %}</p>{% endfor %}
+</section>{% endif %}
 
 {% if item.change_summary %}
 <section class="card section">
 <h2>{% icon "code" %}What changes</h2>
 <p>{{ item.change_summary }}</p>
-{% if item.targets %}<h3 class="panel-label">Files this touches</h3><ul class="item-targets">{% for target in item.targets %}<li><code>{{ target }}</code></li>{% endfor %}</ul>
+{% if item.targets %}<h3 class="panel-label">Files this touches</h3><ul class="item-targets">{% for target in item.targets %}<li><code>{{ target }}</code> {% if run.code_snapshot %}{% if target in snapshot_paths %}<span class="origin-tag origin-code_graph" title="In {{ run.code_snapshot.repository.name }} Code Graph snapshot v{{ run.code_snapshot.number }}">Code graph</span>{% else %}<span class="origin-tag origin-system" title="Not in the pinned snapshot: this would be a new file">New file</span>{% endif %}{% endif %}</li>{% endfor %}</ul>
 <p class="muted"><small>Named by the design phase from the pinned code snapshot. Implementation reads these files and nothing else.</small></p>{% endif %}
 </section>
 {% endif %}
@@ -21,7 +27,7 @@
 <h2>{% icon "document" %}Evidence</h2>
 {% if item.citations %}
 <p class="muted">Each quotation was verified against its source before this item was written: the source was active, its digest unchanged, and the excerpt still present in it. Check one against its source before deciding.</p>
-<ul class="item-evidence">{% for citation in item.citations %}<li><strong>{{ citation.title }}</strong><br>{{ citation.excerpt }}</li>{% endfor %}</ul>
+<ul class="item-evidence">{% for citation in item.citations %}<li><span class="origin-tags">{% include "_evidence_origin.html" %}</span><strong>{{ citation.title }}</strong><br>{% if citation.origin == 'code_graph' %}<pre class="source-text">{{ citation.excerpt }}</pre>{% else %}{{ citation.excerpt }}{% endif %}</li>{% endfor %}</ul>
 {% else %}
 <p class="notice notice-warning">{% icon "warning" %}<span>No verifiable evidence supports this item. Treat it as a suggestion rather than a finding, and weigh it accordingly before choosing to implement it.</span></p>
 {% endif %}

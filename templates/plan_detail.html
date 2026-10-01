@@ -9,8 +9,8 @@
 <p><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span></p>
 <p>{{ item.explanation }}</p>
 {% if item.change_summary %}<h4>What changes</h4><p>{{ item.change_summary }}</p>{% endif %}
-{% if item.targets %}<p class="muted"><small>Touches: {% for target in item.targets %}<code>{{ target }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
-{% if item.citations %}<p class="muted"><small>{{ item.citations|length }} verified quotation(s). <a href="{% url 'plan-item' application.pk plan.pk item.pk %}" data-modal>Read the evidence</a></small></p>
+{% if item.targets %}<p class="muted"><small>Touches: {% for target in item.targets %}<code>{{ target }}</code> {% if run.code_snapshot %}{% if target in snapshot_paths %}<span class="origin-tag origin-code_graph" title="In {{ run.code_snapshot.repository.name }} Code Graph snapshot v{{ run.code_snapshot.number }}">Code graph</span>{% else %}<span class="origin-tag origin-system" title="Not in the pinned snapshot: this would be a new file">New file</span>{% endif %}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
+{% if item.citations %}<p class="muted"><small>{{ item.citations|length }} verified quotation(s){% for origin in item.citations|evidence_origins %} <span class="origin-tag origin-{{ origin.key }}">{{ origin.label }} · {{ origin.count }}</span>{% endfor %}. <a href="{% url 'plan-item' application.pk plan.pk item.pk %}" data-modal>Read the evidence</a></small></p>
 {% else %}<p class="notice notice-warning">{% icon "warning" %}<span>No verifiable evidence supports this item. Treat it as a suggestion, not a finding.</span></p>{% endif %}
 {% if item.status == 'rejected' %}<p class="muted"><small>Left out of this plan; nothing will be implemented for it.</small></p>{% endif %}
 </article>

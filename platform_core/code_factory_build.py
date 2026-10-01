@@ -1471,7 +1471,12 @@ def pull_request_body(run, changes=()):
             lines.append(f"\n**What changes:** {item.change_summary}")
         for citation in item.citations:
             lines.append(f"\n> {str(citation.get('excerpt', ''))[:400]}")
-            lines.append(f">\n> -- {citation.get('title', '')}")
+            origin = citation.get("origin_label", "")
+            system = citation.get("system", "")
+            if system and system not in origin:
+                origin = f"{origin} · {system}" if origin else system
+            suffix = f" ({origin})" if origin else ""
+            lines.append(f">\n> -- {citation.get('title', '')}{suffix}")
     lines.append(
         "\n---\nOpened as a draft by Digital Brain. Every quotation above was verified "
         "against its source before this was raised. No build or test suite was run."
