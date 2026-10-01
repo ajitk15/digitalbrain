@@ -197,6 +197,26 @@ def ticket_new(request, pk):
     )
 
 
+def snapshot_paths(run, paths):
+    """Which of these paths the run's pinned Code Graph snapshot holds.
+
+    What tags a file as coming from the code graph: the design phase names
+    files from the snapshot's structure, and offline implementation reads their
+    contents from it. Asked only about the paths on screen - a snapshot can hold
+    thousands of files.
+    """
+    paths = {path for path in paths if path}
+    if run is None or not run.code_snapshot_id or not paths:
+        return set()
+    from .models import CodeFile
+
+    return set(
+        CodeFile.objects.filter(snapshot_id=run.code_snapshot_id, path__in=paths).values_list(
+            "path", flat=True
+        )
+    )
+
+
 @login_required
 @require_http_methods(["GET"])
 def plan_item(request, pk, plan_id, item_id):
@@ -208,13 +228,28 @@ def plan_item(request, pk, plan_id, item_id):
     is a decision about the whole plan and stays on the review form, where it is
     made once.
     """
+    from .code_factory import ticket_label, ticket_passages
+    from .models import FactoryRun
+
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
     item = get_object_or_404(plan.items, pk=item_id)
+    run = FactoryRun.objects.filter(plan=plan).select_related("code_snapshot__repository").first()
     return render(
         request,
         "plan_item.html",
-        {"application": app, "grant": grant, "plan": plan, "item": item},
+        {
+            "application": app,
+            "grant": grant,
+            "plan": plan,
+            "item": item,
+            "run": run,
+            "snapshot_paths": snapshot_paths(run, item.targets),
+            "ticket_label": ticket_label(run),
+            # Only a gap the analysis classed as stated in the ticket is pointed
+            # back into it; the others are found by comparison, not stated.
+            "ticket_passages": ticket_passages(run, item) if item.category == "stated" else [],
+        },
     )
 
 
@@ -393,8 +428,10 @@ def analysis_view(run, phases_by_name, items):
     cards cannot say more than the receipt does.
     """
     from .code_factory import AGENTS, BUILD_A, BUILD_B, language_gap
+    from .code_factory import ticket_label as code_factory_ticket_label
     from .code_graph_analysis import describe_languages
     from .models import ITEM_CATEGORIES
+    from .templatetags.workspace import evidence_origins
 
     triage_phase = phases_by_name.get("triage")
     triage = (triage_phase.output or {}) if triage_phase and triage_phase.status == "ok" else {}
@@ -444,6 +481,14 @@ def analysis_view(run, phases_by_name, items):
             "rejected": analysis_phase.citations_rejected if analysis_phase else 0,
             "snapshot": snapshot,
             "languages": describe_languages(languages) if languages else "",
+            # How many of the gaps' quotations each source supplied, so the
+            # card shows one row per source - not a total beside a breakdown
+            # of the same total, which read as the gap count said twice.
+            "quotes": {
+                row["key"]: row["count"]
+                for row in evidence_origins([c for item in items for c in item.citations])
+            },
+            "ticket": code_factory_ticket_label(run),
         },
         "language_gap": language_gap(snapshot) if snapshot else "",
         "gaps": [
@@ -761,6 +806,7 @@ def run_detail(request, pk, run_id):
     can_retry_analysis = bool(
         run.status == "failed" and run.plan is None and grant.role in {"owner", "contributor"}
     )
+    changes = list(run.changes.all()) if run.status in {"prepared", "delivered"} else []
     return render(
         request,
         "run_detail.html",
@@ -795,7 +841,16 @@ def run_detail(request, pk, run_id):
             "quiet_for": quiet_for,
             "stall_after": int(code_factory_build.STALL_AFTER.total_seconds() // 60),
             "reviewable": reviewable,
-            "changes": run.changes.all() if run.status in {"prepared", "delivered"} else (),
+            "changes": changes,
+            "ticket_label": code_factory.ticket_label(run),
+            # Which shown paths the pinned snapshot holds: a gap's target found
+            # there, or a change whose original was read from it, is tagged as
+            # coming from the code graph.
+            "snapshot_paths": snapshot_paths(
+                run,
+                [target for item in (plan.items.all() if plan else ()) for target in item.targets]
+                + [change.path for change in changes],
+            ),
             # Said on the summary, before anyone opens a pull request: tests that
             # nothing runs are not evidence, and a green PR would not say so.
             "tests_unrun": tests_unrun(phases_by_name.get("tests")),
@@ -950,6 +1005,18 @@ def self_approval_allowed():
 
 
 @transaction.atomic
+def code_source_holds(app, source):
+    """A code citation still stands: the file is in this application's snapshot,
+    unchanged. Snapshots are immutable, so this fails only if one was removed."""
+    from .models import CodeFile
+
+    return CodeFile.objects.filter(
+        pk=source["id"].removeprefix("code:"),
+        digest=source["digest"],
+        snapshot__repository__application=app,
+    ).exists()
+
+
 def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=False):
     """Approve or reject a plan, and say which of its items are in.
 
@@ -991,7 +1058,11 @@ def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=Fal
                 "This plan did not record the digest of its evidence, so it "
                 "cannot be verified. Submit a fresh plan."
             )
-        if any(current.get(s["id"]) != s["digest"] for s in plan.sources):
+        if any(
+            not code_source_holds(app, s) if s["id"].startswith("code:")
+            else current.get(s["id"]) != s["digest"]
+            for s in plan.sources
+        ):
             raise ValidationError("A pinned source was archived or changed. Submit a fresh plan.")
     accepted = plan.items.count()
     if declared:
@@ -1026,7 +1097,7 @@ def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=Fal
 @login_required
 @require_http_methods(["GET", "POST"])
 def plan_detail(request, pk, plan_id):
-    from .code_factory import confirm_repository
+    from .code_factory import confirm_repository, ticket_label
     from .code_factory_build import prepare, publish, write_credential
 
     app, grant = access(request.user, pk, "code_factory")
@@ -1121,6 +1192,10 @@ def plan_detail(request, pk, plan_id):
                 else "You do not hold approval rights on this application."
             ),
             "run": run,
+            "ticket_label": ticket_label(run),
+            "snapshot_paths": snapshot_paths(
+                run, [target for item in plan.items.all() for target in item.targets]
+            ),
             "can_deliver": bool(
                 run and grant.can_approve and plan.status == "approved" and not run.pull_request_url
             ),

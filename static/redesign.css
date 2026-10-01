@@ -3537,3 +3537,32 @@
   .automation-history li { margin-bottom: var(--s-2); }
   .automation-history small { display: block; color: var(--c-ink-3); }
 }
+
+/* Where Code Factory evidence came from: the ticket, the knowledge graph (and
+   the system a passage was imported from), or the code graph. One colour per
+   origin, so a reviewer sees at a glance what an item rests on. */
+@layer redesign {
+  .origin-tags { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-right: var(--s-2); vertical-align: middle; }
+  .origin-tag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 999px; font-size: var(--t-11); font-weight: 600; white-space: nowrap; border: 1px solid transparent; }
+  .origin-knowledge_graph { background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  .origin-code_graph { background: #e6f5f1; color: #185f58; }
+  .origin-ticket { background: #fff4e5; color: #8a4b00; }
+  .origin-github { background: #eef0f4; color: #24292f; }
+  .item-targets .origin-tag, .gap-body .origin-tag { margin-left: 2px; }
+  .origin-system { background: var(--c-surface); border-color: var(--c-line); color: var(--c-ink-2); }
+  .item-evidence .source-text { margin: var(--s-2) 0 0; max-height: 220px; overflow: auto; font-size: var(--t-12); }
+}
+
+/* Where the ticket states a gap: its own sentences, shared words marked. */
+@layer redesign {
+  .ticket-says .origin-tag { text-decoration: none; }
+  .ticket-quote { margin: var(--s-3) 0 0; padding: var(--s-2) var(--s-3); border-left: 3px solid #e8a33a; background: #fffaf2; border-radius: 0 var(--r-md) var(--r-md) 0; color: var(--c-ink); line-height: 1.55; }
+  .ticket-quote mark { background: #ffe2a8; color: inherit; padding: 0 1px; border-radius: 2px; }
+}
+
+/* The Analysis evidence card: one row per source, tagged as everywhere else. */
+@layer redesign {
+  .analysis-note { margin: 0 0 var(--s-2); font-size: var(--t-12); }
+  .evidence-sources dt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  .evidence-sources dt code { font-size: var(--t-11); }
+}

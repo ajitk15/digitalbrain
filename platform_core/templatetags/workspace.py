@@ -433,6 +433,32 @@ def document_steps(doc):
 
 
 @register.filter
+def evidence_origins(citations):
+    """How many pieces of Code Factory evidence came from each place.
+
+    Ticket, knowledge graph, code graph - in that order. A citation stored
+    before evidence was labelled counts as knowledge graph when it carries a
+    graph version, which every one of those did.
+    """
+    from collections import Counter
+
+    from platform_core.code_factory import ORIGINS
+
+    counts, systems = Counter(), {}
+    for citation in citations or []:
+        legacy = "knowledge_graph" if citation.get("graph_version") else ""
+        origin = citation.get("origin") or legacy
+        counts[origin] += 1
+        if origin == "ticket" and citation.get("system"):
+            systems[origin] = f"{citation['system']} ticket"
+    return [
+        {"key": key, "label": systems.get(key, label), "count": counts[key]}
+        for key, label in ORIGINS
+        if counts.get(key)
+    ]
+
+
+@register.filter
 def knowledge_name(application):
     """Knowledge, or Runbooks in an Operations-only application."""
     return knowledge_label(application)
