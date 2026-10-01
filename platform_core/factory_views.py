@@ -946,7 +946,7 @@ def self_approval_allowed():
     """
     from django.conf import settings
 
-    return bool(getattr(settings, "ALLOW_SELF_APPROVAL", False))
+    return bool(getattr(settings, "ALLOW_SELF_APPROVAL", True))
 
 
 @transaction.atomic

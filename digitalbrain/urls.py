@@ -118,6 +118,11 @@ urlpatterns = [
         name="serviceops-verdict",
     ),
     path(
+        "applications/<uuid:pk>/serviceops/automations/<uuid:automation_id>/simulate/",
+        serviceops.automation_simulate,
+        name="serviceops-automation-simulate",
+    ),
+    path(
         "applications/<uuid:pk>/chat/conversations/<uuid:conversation_id>/",
         workbench.chat_conversation,
         name="chat-conversation",

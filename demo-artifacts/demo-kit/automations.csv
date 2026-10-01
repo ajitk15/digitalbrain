@@ -1,0 +1,5 @@
+name,id,platform,ci,service,symptoms,risk,approval,inputs,description
+Raise ingress timeout,awx-ingress-timeout,AWX,carepath-api-green,CAREPATH_OPS,504 gateway timeout,medium,required by a second person,timeout seconds,Raises the ingress timeout on carepath-api-green from 30s to 120s. The workaround used before the paging fix shipped.
+Restart export worker,rd-restart-export,Rundeck,carepath-api-green,CAREPATH_OPS,timeout; slow export,low,not required,,Restarts the FHIR bulk export worker and drains its queue. Safe to run during business hours.
+Flush consent cache,az-flush-consent,Azure Automation,,CAREPATH_OPS,403 forbidden consent refused,low,not required,patient id,Clears cached consent decisions so a regranted consent takes effect immediately.
+Roll back carepath-api-green release,sn-rollback-api,ServiceNow Flow Designer,carepath-api-green,CAREPATH_OPS,500 internal server error; crash,high,change advisory board,release version,Redeploys the previous release of carepath-api-green through the standard change flow.

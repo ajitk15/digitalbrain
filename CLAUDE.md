@@ -72,6 +72,17 @@ them, so offering to set them there would be offering to lock the platform out o
 A name never comes from a request: the form posts a registry key and the file name is
 built from that key and the application id.
 
+**A shared connector folder, for demos.** `connector_secret_directory` (unset by
+default) holds one file per connector named only `jira`, `git_read`, `git_write`
+and `servicenow` (`secrets.SHARED_NAMES`), read by **every** application that has
+no credential of its own. That deliberately gives up "one application cannot read
+another's credential" for connectors, and only for connectors: model providers
+are never read from it, because `AIUsage` billing depends on per-application
+keys. It is consulted **last** - operator mount, then browser-managed, then
+shared - and the browser never writes or clears it. Tests run with it blanked
+(`digitalbrain/test_runner.py`) so a file on the developer's machine cannot
+change what "not set" means.
+
 `scripts/ai_setup.py` (run by `start-all.cmd` on a first run, or `-ConfigureAI`) asks for the
 credential once on a console and writes `<provider>_default`. That file is a **template,
 not a fallback**: `ai.seed_application_ai` *copies* it to `<provider>_<application id>`
@@ -273,9 +284,11 @@ deliberately for the same reason the secrets rule was: an instance with one
 operator deadlocked at the review gate, and there is no way out of it through the
 UI — `change_grant` will not hand out `can_approve` to someone who lacks it, so a
 single owner without the flag cannot even create a reviewer. `allow_self_approval`
-is off unless written down, which keeps two-person review the default, but
-`load_config` now **accepts** it under `mode = "production"` where it used to
-refuse it. It is the one flag of the three that does; `claude_use_host_login` and
+is now **on unless written down as false** (`configuration.self_approval_allowed`) -
+a second deliberate trade, because most instances are run by one person and the
+off default made every new one deadlock first. Two-person review is
+`allow_self_approval = false`. `load_config` **accepts** it under
+`mode = "production"` where it used to refuse it. It is the one flag of the three that does; `claude_use_host_login` and
 `allow_demo_reset` are still refused there, and the difference is intentional —
 those spend somebody else's money and delete somebody else's work, while this one
 only records a weaker fact about a change. It is not silent where it counts:
@@ -283,9 +296,8 @@ only records a weaker fact about a change. It is not silent where it counts:
 record. The review screens used to carry a warning too; **that was removed,
 deliberately**, because on a one-person instance it told the only reviewer the
 same thing on every plan. The audit record is the part that must stay. `deploy/entrypoint.sh`
-renders it **on** for the container image, because that image is deployed
-single-operator; `DIGITAL_BRAIN_SELF_APPROVAL=0` turns it off where two people
-really do review every change.
+renders it explicitly, **on** by default; `DIGITAL_BRAIN_SELF_APPROVAL=0` writes
+`false` where two people really do review every change.
 
 For the same reason the create form's "Grant this owner Code Factory approval
 rights" box starts **ticked**. An owner born without `can_approve` could never hand
@@ -339,7 +351,22 @@ when read. Documents stay publish-gated. Nothing a model says is written to eith
 rebuilds whenever the fingerprint over incident and change ids and digests, plus the published
 knowledge-graph revision, has moved. Runbook passages join it only from the **latest published**
 revision, by exact whole-word component or service name, and a passage from an older version
-is skipped at read. `neighbourhood()` is the one reader: the incident page and the triage
+is skipped at read. **Knowledge articles and automations are operations nodes too** (`ops_graph.link_articles_and_automations`).
+A ServiceNow `kb_knowledge` import joins the graph when **ServiceNow** says Published
+and in date - that review is the gate, deliberately not this platform's publish
+step, because the article was already published where it is written. Every
+workflow state is imported, so an article retired there leaves at the next sync,
+and the day is part of the fingerprint so an expiry takes effect without a record
+changing. Automations come from AWX, Rundeck, Azure Automation, ServiceNow
+`sys_hub_flow` or a team's CSV list, all reduced to one `Type: Automation` header
+(`connector_kinds.automation_record`). Rules join them - covers, cites (a KB number
+in an incident), targets, remediates, references, resolved by (a resolved
+incident's notes name it) - and nothing a model says is written. **An automation
+is never executed.** "Simulate run" (`serviceops.simulate_automation`) records an
+`AutomationRun` with exactly what a launcher would send and sends nothing; a real
+launcher would replace that function's body and keep its checks and audit row.
+
+`neighbourhood()` is the one reader: the incident page and the triage
 evidence pack both use it, so they cannot disagree, and `score_pair` / `same_event` are the one
 definition of "similar" and "same event" for the page, triage, replay and the graph. The only
 edge a person makes is `confirmed` (a verdict's actual cause, chosen from the idea's own

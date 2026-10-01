@@ -164,8 +164,14 @@ function Initialize-Environment {
 
     if (Test-Path -LiteralPath $PythonExecutable) {
         if ($uv) {
+            # --no-python-downloads, not --no-managed-python. Both keep an
+            # ordinary start from fetching a toolchain, but the second also
+            # rejects every uv-managed interpreter - and the first run builds
+            # .venv on one. uv then deleted and rebuilt .venv on every start,
+            # which fails outright with "Access is denied" whenever anything is
+            # running from it (an editor's language server, a test run).
             Invoke-Checked $uv @('--cache-dir', '.runtime/uv-cache', 'sync', '--frozen',
-                '--python', $PythonExecutable, '--no-managed-python')
+                '--python', $PythonExecutable, '--no-python-downloads')
             return
         }
         if ($AllowInstall) { Install-Dependencies }

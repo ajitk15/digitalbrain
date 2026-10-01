@@ -70,6 +70,8 @@ else
         # review every change - the audit record names the approver either way.
         if [ "${DIGITAL_BRAIN_SELF_APPROVAL:-1}" = "1" ]; then
             echo 'allow_self_approval = true'
+        else
+            echo 'allow_self_approval = false'
         fi
         # Coolify terminates TLS and sets X-Forwarded-Proto. Safe only because
         # no port is published, and waitress clears any forwarded header the

@@ -157,14 +157,56 @@ with citations you can open.
 
 ---
 
+## Act 6 — ServiceOps: triage with a knowledge graph behind it ★
+
+*Phase: operations. Application: **CarePathOps**. Feature: ServiceOps.*
+
+**Before you start (2 minutes):** open CarePathOps › ServiceOps, choose
+**All**, open **INC0010010** (*Clinic C export timing out with 504*) and press
+**Triage this incident**. It takes about 30–50 seconds and one AI call
+(~USD 0.04). Do this *before* the audience is watching — past runs are hidden
+because a runbook source they quoted was removed today.
+
+1. **The list opens on what needs doing.** *Needs triage* is the default, and
+   resolved incidents are never in it.
+   **Say:** a resolved incident is not a task — it is a precedent for the next one.
+
+2. **Open INC0010010. Lead with the outcome card.** A confidence ring
+   (e.g. *75/100 · Medium*) and *"Most likely: …"*.
+   **Say:** the score is out of 100, not a percentage — it rates how strongly
+   the evidence supports the ideas, not the odds they are right. There is no
+   "High" until enough responders have recorded outcomes to calibrate it.
+
+3. **The ideas, each with its own confidence.** Open *"Why, and the evidence"*
+   on idea 1 — every quote is checked word for word against its live source.
+   **Say:** the AI is the only step that calls a model; every other step is
+   rules over your own records.
+
+4. **Automations that may help.** Point at *Restart export worker* and *Raise
+   ingress timeout*: each says *why* it was suggested — targets
+   carepath-api-green, remediates timeout — with its risk and approval.
+   Press **Simulate run**.
+   **Say:** nothing was executed. The platform records exactly what a real run
+   would send — the AWX launch address, the incident's details as inputs — and
+   audits it. Running for real is a deliberate later step, not a side effect.
+
+5. **Open the evidence fold, then the Graph tab.** Incidents, changes, KB
+   articles (yellow) and automations (pink), joined by rules.
+   **Say:** ServiceNow's own review is the gate for KB articles — published
+   there, in the graph here on the next sync; retired there, gone. Close an
+   incident after triage and its fix becomes a precedent for the next one.
+   The graph learns from your records, not from what a model says.
+
+---
+
 ## Closing
 
 Four things to leave in the room:
 
 1. **Deny by default.** A user with no grant gets "not found", not "forbidden" — the platform does not confirm an application exists. **Show this rather than saying it:** open *CareBridge*, the second application you have no grant for, and let the room watch it 404.
 2. **Citations are verified against live sources**, before anything is stored or rendered. Active source, unchanged digest, exact quote still present.
-3. **The human gate is not optional.** Code Factory stops in the middle, every time, and a second person approves.
-4. **Per-application isolation.** Credentials are file-mounted per application. One application cannot read another's.
+3. **The human gate is not optional.** Code Factory stops in the middle, every time, and a person approves. *This instance lets the author approve their own plan (single-operator default); the audit record names who approved. Say so if asked — two-person review is one setting.*
+4. **Nothing acts on its own.** Triage suggests and an automation run is simulated; a person decides. *On this demo instance connector credentials are one shared set; per-application credentials are the production setting.*
 
 ---
 
@@ -179,6 +221,15 @@ verification loses its citations, not its honesty — it is shown without them.
 
 **"What about our data?"** Per-application isolation. Credentials mounted per
 application. Outbound fetches are address-checked and pinned.
+
+**"Will it run automations for us?"** Not today, by design. It finds the
+automation that fixed this before and shows what a run would send; running it is
+a person's decision and a later integration.
+
+**"Where do KB articles and automations come from?"** ServiceNow (incidents,
+changes, `kb_knowledge`, Flow Designer), Ansible AWX, Rundeck, Azure Automation,
+or a CSV list your team keeps. Each syncs on a schedule; the graph rebuilds after
+every import.
 
 **"Is CarePath real?"** No — it is a demonstration built for this conversation,
 with synthetic records. The findings in it are real findings in real code, which

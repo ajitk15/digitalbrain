@@ -1,5 +1,6 @@
 from django import template
 from django.db.models import Exists, OuterRef, Q
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from platform_core.models import Application, ApplicationGrant, OrganizationMember, Portfolio
@@ -173,9 +174,40 @@ def application_menu(context):
     return {"application": app, "items": items}
 
 
-@register.inclusion_tag("settings_nav.html", takes_context=True)
-def settings_nav(context):
-    """Sub-navigation across the settings screens, which keep separate URLs."""
+@register.tag("settings_page")
+def settings_page(parser, token):
+    """`{% settings_page %}...{% endsettings_page %}`: a settings screen's frame.
+
+    Every settings screen in one sidebar, grouped by what somebody came to do,
+    with the page beside it. It used to be two rows of tabs under the
+    application's own tab bar - three tiers of tabs, with only the current
+    group's screens visible. Each screen still keeps its own URL and its own
+    permission check; this only draws the frame. Without an application in the
+    context (an organization-level page) it renders the body alone.
+    """
+    nodelist = parser.parse(("endsettings_page",))
+    parser.delete_first_token()
+    return SettingsPageNode(nodelist)
+
+
+class SettingsPageNode(template.Node):
+    def __init__(self, nodelist):
+        self.nodelist = nodelist
+
+    def render(self, context):
+        body = self.nodelist.render(context)
+        if context.get("application") is None:
+            return body
+        navigation = settings_navigation(context)
+        if not navigation["groups"]:
+            return body
+        return render_to_string(
+            "settings_nav.html", {**navigation, "body": body}, request=context.get("request")
+        )
+
+
+def settings_navigation(context):
+    """Every settings screen this person may open, grouped."""
     app = context["application"]
     request = context["request"]
     grant = ApplicationGrant.objects.filter(application=app, user=request.user).first()

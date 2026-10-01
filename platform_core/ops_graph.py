@@ -18,9 +18,11 @@ model says is ever written to it.
 """
 
 import hashlib
+import re
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import KnowledgeEntry, OperationsGraph, OpsEdge, OpsNode
@@ -33,6 +35,7 @@ from .serviceops import (
     parse,
     same_event,
     score_pair,
+    symptom_terms,
     term_weights,
     verified,
 )
@@ -56,6 +59,46 @@ def change_queryset(app):
     )
 
 
+def typed_queryset(app, kind):
+    """Imported records whose header says what they are: "Type: <kind>"."""
+    return KnowledgeEntry.objects.filter(application=app, active=True).filter(
+        Q(content__contains=f"\nType: {kind}\n") | Q(content__contains=f"\nType: {kind}\r\n")
+    )
+
+
+def article_queryset(app):
+    """Knowledge articles imported from ServiceNow's kb_knowledge table."""
+    return typed_queryset(app, "Knowledge article")
+
+
+def automation_queryset(app):
+    """Automations from AWX, Rundeck, Azure Automation, ServiceNow flows or a list."""
+    return typed_queryset(app, "Automation")
+
+
+def article_live(fields, today):
+    """ServiceNow's own review is the gate: Published, and not past its valid-to date.
+
+    Deliberately not this platform's publish step. A KB article has already been
+    reviewed and published where it is written; asking someone to publish it a
+    second time here only delays the article a responder needs. Every workflow
+    state is imported, so an article retired there leaves the graph at the next
+    sync rather than lingering.
+    """
+    if fields.get("State", "").casefold() != "published":
+        return False
+    valid_to = _date(fields.get("Valid to"))
+    return valid_to is None or valid_to.date() >= today
+
+
+#: Automation states that mean it cannot be run as it stands.
+UNUSABLE_STATES = {"inactive", "disabled", "new", "draft"}
+
+
+def automation_usable(fields):
+    return fields.get("State", "").casefold() not in UNUSABLE_STATES
+
+
 def records_fingerprint(app):
     """Over every incident and change the graph is built from, id and digest,
     and which knowledge-graph version is published: publishing a new one
@@ -65,12 +108,20 @@ def records_fingerprint(app):
     rows = sorted(
         {
             (str(pk), digest)
-            for queryset in (incident_queryset(app), change_queryset(app))
+            for queryset in (
+                incident_queryset(app),
+                change_queryset(app),
+                article_queryset(app),
+                automation_queryset(app),
+            )
             for pk, digest in queryset.values_list("pk", "digest")
         }
     )
     published = published_revision(app.pk)
     rows.append(("published", str(published.pk) if published else ""))
+    # An article's valid-to date passes without any record changing, so the day
+    # is part of what the graph was built from.
+    rows.append(("today", timezone.now().date().isoformat()))
     return hashlib.sha256(repr(rows).encode()).hexdigest()
 
 
@@ -285,6 +336,8 @@ def plan(app):
                     match,
                 )
 
+    link_articles_and_automations(app, incidents, keys, nodes, node, edge)
+
     # Documents: published passages that name a component or service by its
     # exact name. The passage points at the thing it names, so incident →
     # component → runbook is a path.
@@ -307,6 +360,138 @@ def plan(app):
         )
         edge(passage["key"], passage["target"], "mentions", 0.0, {"quote": passage["quote"]})
     return nodes, edges
+
+
+#: Shorter automation names would be found inside unrelated close notes.
+MIN_AUTOMATION_NAME = 6
+KB_NUMBER = re.compile(r"\bKB\d{4,}\b", re.IGNORECASE)
+
+
+def whole(name):
+    return re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])", re.IGNORECASE)
+
+
+def link_articles_and_automations(app, incidents, keys, nodes, node, edge):
+    """Knowledge articles and automations, joined by rules to what they are about.
+
+    * An article *covers* the CI its record names, and any component or service
+      whose exact name it uses.
+    * An incident *cites* an article whose number it mentions - usually in its
+      close notes, which is how a resolved incident teaches the next one.
+    * An automation *targets* its CI and service, and *remediates* the symptoms
+      it lists. An article that names it *references* it, and a resolved
+      incident whose notes name it was *resolved by* it.
+
+    Names match whole, never inside a longer word, and nothing a model said is
+    used: the same discipline as every other edge here.
+    """
+    today = timezone.now().date()
+    articles = [
+        record
+        for record in (
+            parse(entry)
+            for entry in article_queryset(app).order_by("-created_at")[:CANDIDATE_LIMIT]
+            if verified(entry)
+        )
+        if article_live(record.fields, today)
+    ]
+    automations = [
+        record
+        for record in (
+            parse(entry)
+            for entry in automation_queryset(app).order_by("-created_at")[:CANDIDATE_LIMIT]
+            if verified(entry)
+        )
+        if automation_usable(record.fields)
+    ]
+    if not articles and not automations:
+        return
+
+    def shared_key(kind, value):
+        value = " ".join(value.split())
+        return node(f"{kind}:{value.casefold()}"[:300], kind, value)
+
+    names = {
+        value["label"].casefold(): key
+        for key, value in nodes.items()
+        if value["kind"] in {"component", "service"} and len(value["label"]) >= MIN_NAME_LENGTH
+    }
+    name_patterns = {name: whole(name) for name in names}
+
+    by_number = {}
+    for record in articles:
+        key = node(
+            f"kb:{record.entry.pk}",
+            "kb",
+            f"{_number(record)} · {record.entry.title}",
+            entry=record.entry,
+            data={
+                "number": record.fields.get("Number", ""),
+                "title": record.entry.title,
+                "state": record.fields.get("State", ""),
+                "category": record.fields.get("Category", ""),
+                "knowledge_base": record.fields.get("Knowledge base", ""),
+                "valid_to": record.fields.get("Valid to", ""),
+            },
+        )
+        if record.fields.get("Number"):
+            by_number[record.fields["Number"].casefold()] = key
+        if record.fields.get("CI"):
+            edge(shared_key("component", record.fields["CI"]), key, "covers", 1.0, {"via": "CI"})
+        text = f"{record.entry.title}\n{record.description}"
+        for name, pattern in name_patterns.items():
+            if pattern.search(text):
+                edge(names[name], key, "covers", 0.5, {"via": "names it"})
+
+    for record in incidents:
+        for number in set(KB_NUMBER.findall(record.entry.content)):
+            target = by_number.get(number.casefold())
+            if target:
+                edge(keys[record.entry.pk], target, "cites", 1.0, {"number": number.upper()})
+
+    for record in automations:
+        key = node(
+            f"automation:{record.entry.pk}",
+            "automation",
+            record.entry.title,
+            entry=record.entry,
+            data={
+                "number": record.fields.get("Number", ""),
+                "title": record.entry.title,
+                "platform": record.fields.get("Platform", ""),
+                "automation_id": record.fields.get("Automation ID", ""),
+                "risk": record.fields.get("Risk", ""),
+                "approval": record.fields.get("Approval", ""),
+                "inputs": record.fields.get("Inputs", ""),
+                "state": record.fields.get("State", ""),
+                "last_run": record.fields.get("Last run", ""),
+                "last_status": record.fields.get("Last status", ""),
+            },
+        )
+        for field, kind in (("CI", "component"), ("Service", "service")):
+            if record.fields.get(field):
+                edge(shared_key(kind, record.fields[field]), key, "targets", 1.0, {"via": field})
+        listed = symptom_terms(record.fields.get("Symptoms", ""), record.description)
+        for term in sorted(listed & CONCEPT_WORDS):
+            symptom = node(f"symptom:{term}", "symptom", term.replace("_", " "))
+            edge(symptom, key, "remediates", 1.0, {"symptom": term.replace("_", " ")})
+        callers = [
+            text
+            for text in (record.entry.title, record.fields.get("Automation ID", ""))
+            if len(text) >= MIN_AUTOMATION_NAME
+        ]
+        patterns = [whole(text) for text in callers]
+        if not patterns:
+            continue
+        for article in articles:
+            if any(pattern.search(article.description) for pattern in patterns):
+                edge(f"kb:{article.entry.pk}", key, "references", 0.5)
+        for incident in incidents:
+            if not is_resolved(incident.fields):
+                continue
+            notes = f"{incident.fields.get('Close notes', '')}\n{incident.description}"
+            if any(pattern.search(notes) for pattern in patterns):
+                edge(keys[incident.entry.pk], key, "resolved_by", 1.0)
 
 
 def rebuild(app, current=None):
@@ -369,7 +554,15 @@ def rebuild(app, current=None):
 
 
 #: How much of each kind a walk returns: the pack stays within its 40-item bound.
-WALK_LIMITS = {"precedents": 5, "changes": 5, "related": 5, "passages": 5, "confirmed": 3}
+WALK_LIMITS = {
+    "precedents": 5,
+    "changes": 5,
+    "related": 5,
+    "passages": 5,
+    "confirmed": 3,
+    "articles": 4,
+    "automations": 4,
+}
 
 
 def _live(entry):
@@ -408,6 +601,8 @@ def neighbourhood(app, incident):
         "related": [],
         "confirmed": [],
         "passages": [],
+        "articles": [],
+        "automations": [],
     }
     passages, result["graph_available"] = graph_rows(app, incident)
     center = OpsNode.objects.filter(application=app, key=f"incident:{incident.pk}").first()
@@ -501,6 +696,10 @@ def neighbourhood(app, incident):
     result["changes"].sort(key=lambda row: (row["hours_before"], str(row["entry"].pk)))
     result["confirmed"] = confirmed_rows(app, center, similar_nodes)
     result["passages"] = passage_rows(app, entities, passages, me)
+    result["articles"] = article_rows(app, center, entities, similar_nodes, me)
+    result["automations"] = automation_rows(
+        app, center, entities, similar_nodes, result["articles"], me
+    )
     for kind, limit in WALK_LIMITS.items():
         result[kind] = result[kind][:limit]
     return result
@@ -553,6 +752,124 @@ def confirmed_rows(app, center, similar_nodes):
             seen.add(row["entry"].pk)
             unique.append(row)
     return unique
+
+
+def article_rows(app, center, entities, similar_nodes, me):
+    """Knowledge articles around an incident, the strongest reason first.
+
+    Cited by this incident; then cited by a similar resolved one (how it was
+    fixed last time); then covering the component or service it is on.
+    """
+    from .serviceops import fields_and_description
+
+    found = {}
+
+    def add(node, rank, why, path):
+        if node.kind != "kb" or not _live(node.entry):
+            return
+        current = found.get(node.pk)
+        if current is None or rank < current["rank"]:
+            fields, description = fields_and_description(node.entry)
+            found[node.pk] = {
+                "entry": node.entry,
+                "fields": fields,
+                "excerpt": description[:900] or node.entry.title,
+                "reasons": [why],
+                "path": path,
+                "rank": rank,
+            }
+        elif why not in current["reasons"]:
+            current["reasons"].append(why)
+
+    for edge in OpsEdge.objects.filter(application=app, relation="cites", source=center):
+        add(edge.target, 0, "cited by this incident", [me, _name(edge.target)])
+    for edge in OpsEdge.objects.filter(
+        application=app, relation="cites", source__in=similar_nodes
+    ).select_related("source", "target__entry"):
+        add(
+            edge.target,
+            1,
+            f"cited when {_name(edge.source)} was resolved",
+            [me, f"similar {_name(edge.source)}", _name(edge.target)],
+        )
+    for edge in OpsEdge.objects.filter(
+        application=app, relation="covers", source__in=list(entities)
+    ).select_related("source", "target__entry"):
+        add(
+            edge.target,
+            2,
+            f"covers {edge.source.label}",
+            [me, edge.source.label, _name(edge.target)],
+        )
+    rows = sorted(found.values(), key=lambda row: (row["rank"], row["entry"].title))
+    return [row for row in rows if row["excerpt"] in row["entry"].content]
+
+
+def automation_rows(app, center, entities, similar_nodes, articles, me):
+    """Automations that may help, the strongest reason first.
+
+    One that resolved a similar incident before outranks one that merely targets
+    the same component; each reason it has is listed, so a responder sees why.
+    Suggestions only: running one is a person's decision, and here only ever
+    simulated.
+    """
+    from .serviceops import fields_and_description
+
+    found = {}
+
+    def add(node, points, why, path):
+        if node.kind != "automation" or not _live(node.entry):
+            return
+        row = found.get(node.pk)
+        if row is None:
+            fields, description = fields_and_description(node.entry)
+            row = found[node.pk] = {
+                "entry": node.entry,
+                "node": node,
+                "fields": fields,
+                "excerpt": description[:600] or node.entry.title,
+                "last_status": fields.get("Last status", ""),
+                "reasons": [],
+                "path": path,
+                "points": 0,
+            }
+        if why not in row["reasons"]:
+            row["reasons"].append(why)
+            row["points"] += points
+
+    for edge in OpsEdge.objects.filter(
+        application=app, relation="resolved_by", source__in=similar_nodes
+    ).select_related("source", "target__entry"):
+        add(
+            edge.target,
+            3,
+            f"resolved {_name(edge.source)} before",
+            [me, f"similar {_name(edge.source)}", edge.target.label],
+        )
+    for edge in OpsEdge.objects.filter(
+        application=app, relation__in=("targets", "remediates"), source__in=list(entities)
+    ).select_related("source", "target__entry"):
+        why = (
+            f"remediates {edge.source.label}"
+            if edge.relation == "remediates"
+            else f"targets {edge.source.label}"
+        )
+        add(edge.target, 2 if edge.relation == "targets" else 1, why,
+            [me, edge.source.label, edge.target.label])
+    article_nodes = OpsNode.objects.filter(
+        application=app, kind="kb", entry__in=[row["entry"] for row in articles]
+    )
+    for edge in OpsEdge.objects.filter(
+        application=app, relation="references", source__in=article_nodes
+    ).select_related("source", "target__entry"):
+        add(
+            edge.target,
+            1,
+            f"named in {_name(edge.source)}",
+            [me, _name(edge.source), edge.target.label],
+        )
+    rows = sorted(found.values(), key=lambda row: (-row["points"], row["entry"].title))
+    return [row for row in rows if row["excerpt"] in row["entry"].content]
 
 
 def passage_rows(app, entities, searched, me):

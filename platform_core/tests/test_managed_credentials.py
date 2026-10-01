@@ -192,3 +192,64 @@ class ConnectorUseTests(TestCase):
         self.assertEqual(write_credential(self.app), "")
         set_credential(self.owner, self.app.pk, "github_write", "write-token")
         self.assertEqual(write_credential(self.app), "write-token")
+
+
+class SharedConnectorFolderTests(CredentialTests):
+    """connector_secret_directory: one set of connector files, named by connector.
+
+    A demonstration convenience that deliberately lets every application read
+    the same connector credential. What must still hold: it is consulted last,
+    model providers never come from it, and the browser never writes into it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.shared = tempfile.TemporaryDirectory()
+        self.addCleanup(self.shared.cleanup)
+        folder = override_settings(CONNECTOR_SECRET_DIRECTORY=self.shared.name)
+        folder.enable()
+        self.addCleanup(folder.disable)
+
+    def share(self, name, value):
+        path = Path(self.shared.name) / name
+        path.write_text(value, encoding="utf-8")
+        if os.name != "nt":
+            path.chmod(0o600)
+
+    def test_files_are_named_only_by_connector(self):
+        for key, name in {
+            "jira": "jira",
+            "servicenow": "servicenow",
+            "github": "git_read",
+            "github_write": "git_write",
+        }.items():
+            with self.subTest(key=key):
+                self.share(name, f"{name}-token")
+                self.assertEqual(application_secret(self.app, key), f"{name}-token")
+                self.assertEqual(source_of(self.app, key), "shared")
+
+    def test_a_per_application_credential_wins(self):
+        self.share("jira", "shared-token")
+        self.save()
+        self.assertEqual(application_secret(self.app, "jira"), TOKEN)
+        self.mount(f"jira_{self.app.pk}", "mounted-token")
+        self.assertEqual(application_secret(self.app, "jira"), "mounted-token")
+
+    def test_model_providers_are_never_shared(self):
+        self.share("claude", "shared-claude")
+        self.share("openai", "shared-openai")
+        self.assertEqual(application_secret(self.app, "claude"), "")
+        self.assertEqual(application_secret(self.app, "openai"), "")
+
+    def test_saving_in_the_browser_never_writes_the_shared_file(self):
+        self.share("jira", "shared-token")
+        self.save()
+        self.client.post(self.url, {"credential": "jira", "action": "clear"})
+        self.assertEqual((Path(self.shared.name) / "jira").read_text(), "shared-token")
+        self.assertEqual(source_of(self.app, "jira"), "shared")
+
+    def test_the_screen_says_where_a_shared_credential_comes_from(self):
+        self.share("servicenow", "shared-token")
+        page = self.client.get(self.url).content.decode()
+        self.assertIn("Shared", page)
+        self.assertNotIn("shared-token", page)

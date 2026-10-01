@@ -350,7 +350,6 @@
 
   /* Settings sub-navigation -------------------------------------------- */
 
-  .settings-tabs { margin-bottom: var(--s-4); }
 
   /* Breadcrumbs, back control and the focus toggle ---------------------- */
 
@@ -610,8 +609,8 @@
   .kb-pane > header h2 { min-width: 0; overflow-wrap: anywhere; }
   .kb-pane-body { flex: 1; min-height: 0; overflow: auto; padding: var(--s-4); }
 
-  /* The canvas must keep its 900x540 aspect: graph.js compares the rendered
-     width to a constant of 900, and a letterboxed SVG desynchronises panning. */
+  /* Inside the knowledge pane the canvas keeps the stage's proportions and
+     never outgrows the pane; graph.js sizes its pixels to whatever this gives. */
   .kb-graph #graph-canvas {
     width: 100%;
     height: auto;
@@ -1442,8 +1441,8 @@
     align-items: center;
     gap: var(--s-2);
   }
-  .settings-tabs a svg, .knowledge-tabs a svg { opacity: 0.75; }
-  .settings-tabs a[aria-current] svg, .knowledge-tabs a[aria-current] svg { opacity: 1; }
+  .knowledge-tabs a svg { opacity: 0.75; }
+  .knowledge-tabs a[aria-current] svg { opacity: 1; }
   .row-lead { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
   .row-lead svg { flex: none; color: var(--c-ink-3); }
   .empty-icon { display: inline-flex; color: var(--c-brand); opacity: 0.55; }
@@ -2137,29 +2136,15 @@
   .kb-graph .generate-card { margin-bottom: var(--s-3); }
   .graph-layout { display: flex; flex-direction: column; gap: var(--s-3); }
   /* The knowledge canvas is a dark stage under a light application, for the same
-     reason the code canvas is: a graph is read as a picture, and both the nodes
-     and the gradient edges carry far more contrast against ink than paper.
-     Colour lives in graph.js, because it lands in SVG presentation attributes
-     where a custom property is not reliably resolvable. */
-  #graph-canvas { border: 1px solid #242b3d; border-radius: var(--r-md); background: #0b0e14; touch-action: none; }
-  #graph-canvas[data-canvas="light"] { border-color: var(--c-line-soft); background: var(--c-well); }
-  .graph-node { cursor: pointer; }
-  /* A label is always in the markup; these rules decide which reach the screen.
-     A halo in the canvas colour keeps one readable where it crosses an edge or
-     another node, and a label is never a hit target - the circle is - so it
-     cannot swallow a click. */
-  .kg-label { pointer-events: none; paint-order: stroke; stroke: #0b0e14; stroke-width: 2.5px; stroke-linejoin: round; }
-  #graph-canvas[data-canvas="light"] .kg-label { stroke: #f2f3f7; }
-  .graph-node:not(.named) .kg-label { display: none; }
-  #graph-canvas.labelled .graph-node .kg-label { display: block; }
-  #graph-canvas.tracing .graph-node.lit .kg-label { display: block; }
-  .graph-node:hover .kg-label, .graph-node:focus .kg-label { display: block; }
-  .graph-node circle { transition: opacity .12s; }
-  .kg-edge { transition: opacity .12s, stroke-width .12s; }
-  /* Hover reads a neighbourhood without committing to a selection. */
-  #graph-canvas.tracing .graph-node:not(.lit) { opacity: .22; }
-  #graph-canvas.tracing .kg-edge:not(.lit) { opacity: .1; }
-  #graph-canvas .kg-edge.lit { stroke-width: 2.4; }
+     reason the code canvas is: a graph is read as a picture, and glowing nodes
+     carry far more contrast against ink than paper. It is a <canvas> drawn by
+     graph.js, Obsidian-style - every node at once under a live simulation - so
+     nothing here styles a node; this is the stage and the cursor. */
+  #graph-canvas { display: block; width: 100%; aspect-ratio: 900 / 540; min-height: 320px; border: 1px solid #242b3d; border-radius: var(--r-md); background: radial-gradient(ellipse at 50% 45%, #121a33 0%, #0a0d17 55%, #06080f 100%); touch-action: none; cursor: grab; }
+  #graph-canvas[data-canvas="light"] { border-color: var(--c-line-soft); background: radial-gradient(ellipse at 50% 45%, #fbfcff 0%, var(--c-well) 80%); }
+  #graph-canvas.hovering { cursor: pointer; }
+  #graph-canvas.panning { cursor: grabbing; }
+  #graph-canvas:focus-visible { outline: 2px solid var(--c-brand); outline-offset: 2px; }
   .graph-stage { position: relative; }
   #graph-minimap { position: absolute; right: 10px; bottom: 10px; width: 148px; height: 89px; background: rgba(11, 14, 20, .78); border: 1px solid #242b3d; border-radius: 8px; cursor: pointer; }
   #graph-canvas[data-canvas="light"] ~ #graph-minimap { background: rgba(236, 238, 244, .85); border-color: var(--c-line-soft); }
@@ -3178,7 +3163,12 @@
 
   /* Newcomer help: filters, what pressing Triage does, what to do next, plain
      notes behind an (i), a first-visit pointer and the guide popup. */
-  .heading-actions { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+  /* The heading's actions: one row, level with the title, never wrapping
+     into a stack that floats beside the description. The help link reads
+     as a link; the primary action is a primary button, as Add connector is. */
+  .serviceops-heading { align-items: flex-start; }
+  .heading-actions { display: flex; flex: none; flex-wrap: nowrap; align-items: center; gap: var(--s-4); margin-top: var(--s-5); }
+  @media (max-width: 700px) { .heading-actions { margin-top: 0; flex-wrap: wrap; } }
   .first-visit { display: flex; align-items: flex-start; gap: var(--s-2); margin: 0 0 var(--s-3); }
   .first-visit > svg { flex: none; margin-top: 3px; }
   .first-visit > span { flex: 1; }
@@ -3241,14 +3231,31 @@
   .graph-more[open] > summary { margin-bottom: var(--s-2); }
   .graph-more .graph-filters { margin-top: var(--s-1); }
 
-  /* Settings: four clear categories, then only the current category's pages. */
-  .settings-tabs { margin-bottom: var(--s-2); gap: var(--s-2); overflow: visible; }
-  .settings-tabs a { gap: var(--s-2); padding-inline: var(--s-3); white-space: nowrap; }
-  .settings-tabs a svg { display: block; }
-  .settings-section-nav { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-bottom: var(--s-5); }
-  .settings-section-nav a { display: inline-flex; align-items: center; min-height: 34px; padding: var(--s-1) var(--s-3); border-radius: var(--r-md); color: var(--c-ink-2); font-size: var(--t-13); }
-  .settings-section-nav a:hover { background: var(--c-surface); }
-  .settings-section-nav a[aria-current] { background: var(--c-brand-tint); color: var(--c-brand-strong); font-weight: 700; }
+  /* Settings: one sidebar holding every screen, grouped by what somebody came
+     to do, beside the page. It replaced two rows of tabs stacked under the
+     application's own tab bar, which hid every group but the current one. */
+  .settings-shell { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s-6, 32px); align-items: start; }
+  .settings-body { min-width: 0; }
+  .settings-body > :first-child { margin-top: 0; }
+  .settings-sidebar { position: sticky; top: var(--s-4); display: grid; gap: var(--s-4); padding: var(--s-4) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-lg); background: var(--c-surface); }
+  .settings-sidebar-title { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: 0 var(--s-2) var(--s-3); border-bottom: 1px solid var(--c-line-soft, var(--c-line)); color: var(--c-ink); font-size: var(--t-14, 14px); font-weight: 700; }
+  .settings-group { display: grid; gap: var(--s-1); }
+  .settings-group-title { display: flex; align-items: center; gap: var(--s-2); margin: 0; padding: 0 var(--s-2); color: var(--c-ink-3); font-size: var(--t-11, 11px); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .settings-group-title svg { opacity: 0.8; }
+  .settings-group.is-current .settings-group-title { color: var(--c-brand-strong); }
+  .settings-group ul { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+  .settings-group a { position: relative; display: flex; align-items: center; min-height: 34px; padding: var(--s-1) var(--s-3) var(--s-1) calc(var(--s-2) + 22px); border-radius: var(--r-md); color: var(--c-ink-2); font-size: var(--t-13); text-decoration: none; }
+  .settings-group a:hover { background: var(--c-subtle, var(--c-canvas)); color: var(--c-ink); }
+  .settings-group a[aria-current] { background: var(--c-brand-tint); color: var(--c-brand-strong); font-weight: 700; }
+  .settings-group a[aria-current]::before { content: ""; position: absolute; left: var(--s-2); top: 8px; bottom: 8px; width: 3px; border-radius: 2px; background: var(--c-brand); }
+  @media (max-width: 900px) {
+    /* Narrow: the groups sit above the page as a compact panel, still all visible. */
+    .settings-shell { grid-template-columns: minmax(0, 1fr); gap: var(--s-4); }
+    .settings-sidebar { position: static; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-3); }
+    .settings-sidebar-title { grid-column: 1 / -1; }
+    .settings-group a { padding-left: var(--s-3); }
+    .settings-group a[aria-current]::before { display: none; }
+  }
 
   /* Chat: the conversation and the composer get the screen. The workspace
      used to be a fixed calc(100dvh - 215px) box with overflow hidden, which
@@ -3432,3 +3439,101 @@
   .sidebar .org-tree .tree-app .tree-symbol img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: inherit; }
   .sidebar .org-tree .tree-app .tree-app-copy { display: grid; gap: 1px; flex: 1; min-width: 0; }
   .sidebar .org-tree .tree-app .tree-purpose { display: block; margin: 0; color: var(--c-ink-3); font-size: var(--t-11); line-height: 1.2; font-weight: 500; }}
+
+/* Incident triage, simple first ------------------------------------------
+   The outcome in one card - a confidence ring and the idea to try first - then
+   the ideas as cards, each with its own confidence meter. Explanations, quotes
+   and the assessment form fold away; the map and the evidence fold into one
+   section below. The ring's arc is an SVG dash computed on the server, because
+   the CSP refuses a style attribute. */
+@layer redesign {
+  .triage-outcome { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--s-5); align-items: center; margin: var(--s-4) 0; padding: var(--s-4) var(--s-5); border: 1px solid var(--c-line); border-radius: var(--r-lg); background: linear-gradient(135deg, var(--c-brand-tint-2, var(--c-subtle)) 0%, var(--c-surface) 60%); }
+  .confidence-ring { position: relative; width: 112px; height: 112px; flex: none; }
+  .confidence-ring svg { display: block; width: 100%; height: 100%; }
+  .ring-track { fill: none; stroke: var(--c-line); stroke-width: 10; }
+  .ring-value { fill: none; stroke: var(--c-ok); stroke-width: 10; stroke-linecap: round; }
+  .outcome-low .ring-value { stroke: var(--c-warn); }
+  .outcome-insufficient .ring-value { stroke: var(--c-ink-3); }
+  .ring-figure { position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center; padding-top: 38px; font-variant-numeric: tabular-nums; }
+  .ring-figure strong { font-size: 30px; line-height: 1; color: var(--c-ink); }
+  .ring-figure small { font-size: var(--t-12); color: var(--c-ink-3); margin-left: 1px; }
+  .outcome-body { min-width: 0; }
+  .outcome-eyebrow { margin: 0 0 var(--s-1); font-size: var(--t-11); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--c-ink-3); }
+  .outcome-band { color: var(--c-ok); }
+  .outcome-low .outcome-band { color: var(--c-warn); }
+  .outcome-insufficient .outcome-band { color: var(--c-ink-3); }
+  .outcome-body h3 { margin: 0 0 var(--s-2); font-size: var(--t-18, 18px); line-height: 1.3; }
+  .outcome-check { margin: 0 0 var(--s-2); color: var(--c-ink-2); font-size: var(--t-13); max-width: var(--measure); }
+  .outcome-check strong { display: block; font-size: var(--t-11); color: var(--c-ink-3); text-transform: uppercase; letter-spacing: .05em; }
+  .outcome-meta { margin: 0 0 var(--s-1); font-size: var(--t-12); color: var(--c-ink-3); }
+  .outcome-about { font-size: var(--t-12); }
+  .outcome-about p, .outcome-about ul { margin: var(--s-2) 0 0; color: var(--c-ink-2); max-width: var(--measure); }
+
+  .idea-list { display: grid; gap: var(--s-3); }
+  .idea-card { border: 1px solid var(--c-line); border-top: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); background: var(--c-surface); }
+  .idea-card:first-child { border-color: var(--c-brand-border, var(--c-line)); box-shadow: var(--e-1); }
+  .idea-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s-2) var(--s-3); align-items: center; margin-bottom: var(--s-2); }
+  .idea-head h3 { margin: 0; font-size: var(--t-15); font-weight: 600; line-height: var(--lh-body); }
+  .idea-confidence { display: inline-flex; align-items: center; gap: var(--s-2); white-space: nowrap; font-size: var(--t-12); color: var(--c-ink-2); }
+  .idea-confidence progress { width: 84px; height: 6px; border: 0; border-radius: 3px; background: var(--c-line); overflow: hidden; appearance: none; }
+  .idea-confidence progress::-webkit-progress-bar { background: var(--c-line); border-radius: 3px; }
+  .idea-confidence progress::-webkit-progress-value { background: var(--c-ok); border-radius: 3px; }
+  .idea-confidence progress::-moz-progress-bar { background: var(--c-ok); border-radius: 3px; }
+  .confidence-low progress::-webkit-progress-value { background: var(--c-warn); }
+  .confidence-low progress::-moz-progress-bar { background: var(--c-warn); }
+  .confidence-insufficient progress::-webkit-progress-value { background: var(--c-ink-3); }
+  .confidence-insufficient progress::-moz-progress-bar { background: var(--c-ink-3); }
+  .idea-score { font-variant-numeric: tabular-nums; }
+  .idea-score strong { font-size: var(--t-15); color: var(--c-ink); }
+  .idea-band { padding: 1px 8px; border-radius: 999px; background: var(--c-ok-bg); color: var(--c-ok); font-weight: 600; }
+  .confidence-low .idea-band { background: var(--c-warn-bg); color: var(--c-warn); }
+  .confidence-insufficient .idea-band { background: var(--c-subtle); color: var(--c-ink-3); }
+  .idea-card .hypothesis-check, .idea-card .verdict { margin-left: 30px; }
+  .idea-folds { display: flex; flex-wrap: wrap; gap: var(--s-1) var(--s-4); margin-left: 30px; }
+  .idea-folds > details { flex: 1 1 100%; }
+  .idea-folds > details:not([open]) { flex: 0 0 auto; }
+  .idea-card .hypothesis-more, .idea-card .verdict-form { margin-left: 0; }
+  .idea-assess > summary { cursor: pointer; font-size: var(--t-13); color: var(--c-brand-strong); }
+  .idea-assess[open] > summary { margin-bottom: var(--s-2); }
+
+  .evidence-fold { border: 1px solid var(--c-line); border-radius: var(--r-lg); background: var(--c-surface); box-shadow: var(--e-1); margin-bottom: var(--s-4); }
+  .evidence-fold > summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1) var(--s-3); padding: var(--s-3) var(--s-5); cursor: pointer; }
+  .evidence-fold-title { display: inline-flex; align-items: center; gap: var(--s-2); font-weight: 700; }
+  .evidence-fold-counts { color: var(--c-ink-3); font-size: var(--t-13); }
+  .evidence-fold[open] > summary { border-bottom: 1px solid var(--c-line-soft); }
+  .evidence-fold > .ops-around, .evidence-fold > .evidence-card { margin: 0; padding: var(--s-4) var(--s-5); border: 0; box-shadow: none; border-radius: 0; background: none; }
+  .evidence-fold > .ops-around + .evidence-card { border-top: 1px solid var(--c-line-soft); }
+
+  @media (max-width: 700px) {
+    .triage-outcome { grid-template-columns: minmax(0, 1fr); justify-items: start; padding: var(--s-4); }
+    .confidence-ring { width: 96px; height: 96px; }
+    .ring-figure { padding-top: 31px; }
+    .idea-head { grid-template-columns: auto minmax(0, 1fr); }
+    .idea-confidence { grid-column: 2; }
+    .idea-card .hypothesis-check, .idea-card .verdict, .idea-folds { margin-left: 0; }
+  }
+}
+
+/* Automations that may help: each a row with why it was suggested and a
+   simulate button. "Simulated runs only" stays visible on the card so nobody
+   mistakes the button for a launcher. */
+@layer redesign {
+  .automation-card { border: 1px solid var(--c-line); border-radius: var(--r-lg); background: var(--c-surface); padding: var(--s-4) var(--s-5); box-shadow: var(--e-1); margin-bottom: var(--s-4); }
+  .automation-mock { background: var(--c-warn-bg); color: var(--c-warn); }
+  .automation-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--s-2) var(--s-4); padding: var(--s-3) 0; border-top: 1px solid var(--c-line-soft); }
+  .automation-row:first-of-type { border-top: 0; }
+  .automation-main { min-width: 0; flex: 1 1 320px; }
+  .automation-main strong { display: inline-block; margin-right: var(--s-2); }
+  .automation-tags { display: inline-flex; flex-wrap: wrap; gap: var(--s-1); vertical-align: middle; }
+  .automation-main small { display: block; margin-top: 2px; color: var(--c-ink-3); }
+  .automation-actions { display: flex; align-items: center; gap: var(--s-3); }
+  .automation-actions form { margin: 0; }
+  .risk-high { background: var(--c-bad-bg); color: var(--c-bad); }
+  .risk-medium { background: var(--c-warn-bg); color: var(--c-warn); }
+  .risk-low { background: var(--c-ok-bg); color: var(--c-ok); }
+  .automation-history { margin-top: var(--s-3); font-size: var(--t-13); }
+  .automation-history > summary { cursor: pointer; color: var(--c-brand-strong); }
+  .automation-history ul { margin: var(--s-2) 0 0; padding-left: var(--s-4); }
+  .automation-history li { margin-bottom: var(--s-2); }
+  .automation-history small { display: block; color: var(--c-ink-3); }
+}

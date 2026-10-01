@@ -1,1 +1,10 @@
-{% load icons %}{% if current_group %}<nav class="tabs settings-tabs" aria-label="Settings categories">{% for group in groups %}<a href="{{ group.url }}"{% if group.name == current_group.name %} class="selected" aria-current="true"{% endif %}>{% icon group.icon 15 %}{{ group.name }}</a>{% endfor %}</nav><nav class="settings-section-nav" aria-label="{{ current_group.name }} settings">{% for item in current_group.items %}<a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a>{% endfor %}</nav>{% endif %}
+{% load icons %}<div class="settings-shell">
+<nav class="settings-sidebar" aria-label="Settings categories">
+<p class="settings-sidebar-title">{% icon "settings" 14 %}Settings</p>
+{% for group in groups %}<div class="settings-group{% if group.name == current_group.name %} is-current{% endif %}">
+<p class="settings-group-title">{% icon group.icon 14 %}{{ group.name }}</p>
+<ul aria-label="{{ group.name }} settings">{% for item in group.items %}<li><a href="{{ item.url }}"{% if item.current %} aria-current="page"{% endif %}>{{ item.label }}</a></li>{% endfor %}</ul>
+</div>{% endfor %}
+</nav>
+<div class="settings-body">{{ body }}</div>
+</div>

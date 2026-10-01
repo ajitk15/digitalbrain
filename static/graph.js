@@ -1,22 +1,25 @@
 /*
- * Interactive knowledge graph explorer.
+ * Interactive knowledge graph explorer, drawn the way Obsidian's graph view is:
+ * every node on one canvas, laid out by a live force simulation you can watch
+ * settle and pull on, with hovering lighting up a node's neighbourhood and
+ * signals running along its connections.
  *
- * No external library: the CSP allows scripts only from this origin, and a graph
- * this size does not need one. Layout is a small force simulation, rendering is
- * plain SVG, and every node label is set with textContent so source-derived text
- * is never interpreted as markup.
- *
- * The old renderer drew a fixed ring of at most 80 nodes and silently dropped the
- * rest. This one starts from a readable overview and lets you expand outwards, so
- * a large graph is navigable rather than arbitrarily truncated.
+ * No external library: the CSP allows scripts only from this origin. The
+ * simulation is d3-force's model - many-body repulsion through a Barnes-Hut
+ * quadtree, springs along edges, a gentle pull towards each theme's region -
+ * written out here. Rendering is Canvas 2D, because thousands of SVG elements
+ * redrawn sixty times a second is more than a browser will do smoothly. Labels
+ * are painted with fillText, so source-derived text is never interpreted as
+ * markup.
  */
 (() => {
   const raw = document.getElementById("knowledge-graph-data");
-  if (!raw) return;
+  const canvas = document.getElementById("graph-canvas");
+  if (!raw || !canvas || !canvas.getContext) return;
+  const ctx = canvas.getContext("2d");
 
   const graph = JSON.parse(raw.textContent);
   const nodes = new Map(graph.nodes.map((n) => [n.id, n]));
-  const canvas = document.getElementById("graph-canvas");
   const select = document.getElementById("graph-node");
   const search = document.getElementById("graph-search");
   const inspector = document.getElementById("graph-inspector");
@@ -27,19 +30,22 @@
   const zoomIn = document.getElementById("graph-zoom-in");
   const zoomOut = document.getElementById("graph-zoom-out");
   const zoomFit = document.getElementById("graph-fit");
+  const minimap = document.getElementById("graph-minimap");
+  const themeButton = document.getElementById("graph-theme");
+  const colourSelect = document.getElementById("graph-colour");
 
-  const NS = "http://www.w3.org/2000/svg";
+  const reducedMotion =
+    !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // Two palettes rather than one lightened: a mid-tone that reads as bright on
   // near-black washes out on paper, so the light values are darkened instead.
-  // These land in SVG presentation attributes and in colour arithmetic for the
-  // edge gradients, where a CSS custom property is not reliably resolvable.
   const PALETTES = {
     dark: {
       document: "#6d7cff",
       record: "#b07cff",
       value: "#35c8a0",
-      section: "#7f8db0",
+      section: "#4fb3d9",
+      other: "#7f8db0",
       entity: "#e0a92e",
       incident: "#6d7cff",
       change: "#e0a92e",
@@ -48,18 +54,25 @@
       symptom: "#ef7a7a",
       group: "#7f8db0",
       passage: "#b8c1d9",
+      kb: "#f2c94c",
+      automation: "#f2789f",
       confirmed: "#4cc38a",
-      edge: "#2c3c60",
       inferred: "#e0a92e",
-      label: "#b8c1d9",
-      focusRing: "#e4e9f2",
-      ground: "#242b3d",
+      edge: "#8a96b8",
+      edgeAlpha: 0.2,
+      accent: "#b49cff",
+      label: "#d4dbec",
+      labelHalo: "#0b0e14",
+      glow: 0.5,
+      blend: "lighter",
+      dim: 0.1,
     },
     light: {
       document: "#4145c8",
       record: "#8a53bc",
       value: "#258777",
-      section: "#7b879b",
+      section: "#1f7fa8",
+      other: "#7b879b",
       entity: "#b45309",
       incident: "#4145c8",
       change: "#b45309",
@@ -68,12 +81,18 @@
       symptom: "#a13e3e",
       group: "#7b879b",
       passage: "#58627a",
+      kb: "#a16207",
+      automation: "#be185d",
       confirmed: "#1d6b45",
-      edge: "#d7dce9",
       inferred: "#b45309",
-      label: "#334155",
-      focusRing: "#1f2937",
-      ground: "#c2c3c8",
+      edge: "#6b7591",
+      edgeAlpha: 0.26,
+      accent: "#6d4bd8",
+      label: "#273142",
+      labelHalo: "#f2f3f7",
+      glow: 0.22,
+      blend: "source-over",
+      dim: 0.14,
     },
   };
   let theme = "dark";
@@ -82,8 +101,7 @@
   // Themes are Graphify's Leiden communities, computed on the server - the same
   // partition the Quality table lists, in the same order. Six colours in a fixed
   // order, validated per canvas for colour-blind separation; every theme past the
-  // sixth folds into "Other" rather than being given a generated hue. On the
-  // light canvas three of them sit under 3:1, so the legend names every one.
+  // sixth folds into "Other" rather than being given a generated hue.
   const THEME_PALETTES = {
     dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"],
     light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
@@ -91,26 +109,29 @@
   const themesRaw = document.getElementById("knowledge-graph-themes");
   const clusters = themesRaw ? JSON.parse(themesRaw.textContent) : null;
   const themeCount = clusters ? clusters.themes.length : 0;
+  const COLOURED = Math.min(themeCount, THEME_PALETTES.dark.length);
   const OTHER = -1;
   const themeOf = (id) => {
     const index = clusters ? clusters.membership[id] : undefined;
     return index === undefined || index >= THEME_PALETTES.dark.length ? OTHER : index;
   };
-  const colourSelect = document.getElementById("graph-colour");
-  let colourBy = themeCount ? "theme" : "kind";
+  // Theme colouring is the default only where the coloured themes cover most of
+  // the graph. A graph of hundreds of small themes would otherwise draw almost
+  // every node in the grey of "Other", and kind says more than that.
+  const themed = graph.nodes.filter((n) => themeOf(n.id) !== OTHER).length;
+  let colourBy = themeCount && themed * 2 >= graph.nodes.length ? "theme" : "kind";
   try {
-    if (themeCount && localStorage.getItem("digital-brain.knowledge.colour") === "kind") {
-      colourBy = "kind";
-    }
+    const stored = localStorage.getItem("digital-brain.knowledge.colour");
+    if (themeCount && (stored === "kind" || stored === "theme")) colourBy = stored;
   } catch (failure) {
     /* no stored preference is the normal case */
   }
   const colourOf = (id) => {
     if (colourBy === "theme") {
       const index = themeOf(id);
-      return index === OTHER ? COLORS.section : THEME_PALETTES[theme][index];
+      return index === OTHER ? COLORS.other : THEME_PALETTES[theme][index];
     }
-    return COLORS[nodes.get(id).kind] || COLORS.section;
+    return COLORS[nodes.get(id).kind] || COLORS.other;
   };
   // The operations layer's kinds follow the knowledge graph's; a filter is
   // offered only for kinds the graph on screen actually has.
@@ -127,11 +148,17 @@
     "symptom",
     "group",
     "passage",
+    "kb",
+    "automation",
   ];
-  const START_NODES = 120;
-  const MAX_NODES = 400;
-  const WIDTH = 900;
-  const HEIGHT = 540;
+
+  //: Everything is drawn at once up to this many nodes, as Obsidian does. A
+  //: larger graph opens on a connected overview of this size and expands.
+  const MAX_NODES = 4000;
+  //: How many of the busiest connections carry an ambient signal.
+  const SIGNALS = 60;
+  //: How many of the busiest nodes keep a label at every zoom.
+  const HUB_LABELS = 14;
 
   // Adjacency once, rather than scanning every edge on each interaction.
   const neighbours = new Map();
@@ -141,27 +168,14 @@
     neighbours.get(e.source).add(e.target);
     neighbours.get(e.target).add(e.source);
   });
-
-  // Degree decides how large a node draws. A uniform dot field says nothing
-  // about which parts of the graph carry weight.
   const degree = new Map();
   graph.nodes.forEach((n) => degree.set(n.id, neighbours.get(n.id).size));
-  const busiest = Math.max(1, ...degree.values());
 
   const hidden = new Set();
   const hiddenThemes = new Set();
   let visible = new Set();
   let focus = null;
-  let layout = new Map();
-  let view = { x: 0, y: 0, k: 1 };
-  let ticking = null;
-
-  const el = (tag, attrs, text) => {
-    const node = document.createElementNS(NS, tag);
-    Object.entries(attrs || {}).forEach(([k, v]) => node.setAttribute(k, v));
-    if (text !== undefined) node.textContent = text;
-    return node;
-  };
+  let hover = null;
 
   const toRgb = (hex) => {
     const value = parseInt(hex.slice(1), 16);
@@ -173,20 +187,19 @@
     const part = (i) => Math.round(left[i] + (right[i] - left[i]) * t);
     return `#${[0, 1, 2].map((i) => part(i).toString(16).padStart(2, "0")).join("")}`;
   };
+  const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
 
   const shown = () =>
     [...visible].filter(
       (id) => !hidden.has(nodes.get(id).kind) && !hiddenThemes.has(themeOf(id))
     );
 
-  // Coloured by theme, the first view is the themes: the largest ones, a
-  // connected slice of each grown from its hub. Starting from the documents
-  // instead showed a screen of mostly "Other" - a real knowledge graph splits
-  // into far more themes than there are colours, and the document-first view
-  // lands in the small ones.
-  function themeOverview() {
-    const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
-    const share = Math.max(1, Math.floor(START_NODES / coloured));
+  /* ---- which nodes start on screen ---- */
+
+  // Coloured by theme, a graph too large to draw whole opens on its themes: a
+  // connected slice of each grown from its hub.
+  function themeOverview(limit) {
+    const share = Math.max(1, Math.floor(limit / Math.max(1, COLOURED)));
     const members = new Map();
     graph.nodes.forEach((n) => {
       const index = themeOf(n.id);
@@ -215,33 +228,680 @@
   }
 
   function overview() {
-    if (colourBy === "theme") return themeOverview();
-    const picked = new Set();
-    const documents = graph.nodes.filter((n) => n.kind === "document");
-    documents.forEach((d) => picked.add(d.id));
-    // Fill outwards from documents so the first view shows real structure.
+    if (graph.nodes.length <= MAX_NODES) return new Set(graph.nodes.map((n) => n.id));
+    const limit = Math.floor(MAX_NODES / 2);
+    if (colourBy === "theme" && COLOURED) return themeOverview(limit);
+    const picked = new Set(graph.nodes.filter((n) => n.kind === "document").map((n) => n.id));
     const queue = [...picked];
-    while (queue.length && picked.size < START_NODES) {
-      const current = queue.shift();
-      for (const next of neighbours.get(current)) {
-        if (picked.size >= START_NODES) break;
+    while (queue.length && picked.size < limit) {
+      for (const next of neighbours.get(queue.shift())) {
+        if (picked.size >= limit) break;
         if (!picked.has(next)) {
           picked.add(next);
           queue.push(next);
         }
       }
     }
-    if (!picked.size) graph.nodes.slice(0, START_NODES).forEach((n) => picked.add(n.id));
+    if (!picked.size) graph.nodes.slice(0, limit).forEach((n) => picked.add(n.id));
     return picked;
+  }
+
+  /* ---- the simulation ---- */
+
+  const ALPHA_MIN = 0.002;
+  const ALPHA_DECAY = 1 - Math.pow(ALPHA_MIN, 1 / 220);
+  const VELOCITY = 0.6;
+  // Spacing for a graph of thousands. A small, dense one - the operations
+  // layer is a few dozen nodes with most of them linked - is spread wider in
+  // rebuild(), or its labels land on top of each other.
+  let LINK_DISTANCE = 30;
+  let CHARGE = -38;
+  const THETA2 = 0.81;
+  const DISTANCE_MAX2 = 600 * 600;
+  const GOLDEN = Math.PI * (3 - Math.sqrt(5));
+
+  let sim = new Map();
+  let bodies = [];
+  let links = [];
+  let pulses = [];
+  let hubs = new Set();
+  let alpha = 1;
+  let alphaTarget = 0;
+
+  // Each theme gets a region on a circle, so the themes bloom apart as
+  // separate galaxies instead of untangling from one knot.
+  function home(id) {
+    const index = colourBy === "theme" ? themeOf(id) : OTHER;
+    if (index === OTHER || !COLOURED) return { x: 0, y: 0 };
+    const spread = 7 * Math.sqrt(Math.max(1, visible.size));
+    const angle = (index / COLOURED) * Math.PI * 2 - Math.PI / 2;
+    return { x: Math.cos(angle) * spread, y: Math.sin(angle) * spread };
+  }
+
+  function bodyFor(id, near) {
+    if (sim.has(id)) return sim.get(id);
+    let x;
+    let y;
+    if (near) {
+      const angle = Math.random() * Math.PI * 2;
+      x = near.x + Math.cos(angle) * 14;
+      y = near.y + Math.sin(angle) * 14;
+    } else {
+      // Phyllotaxis, as d3 seeds: an even disc, nothing on top of anything.
+      const i = sim.size;
+      const radius = 6 * Math.sqrt(0.5 + i);
+      const centre = home(id);
+      x = centre.x * 0.5 + radius * Math.cos(i * GOLDEN);
+      y = centre.y * 0.5 + radius * Math.sin(i * GOLDEN);
+    }
+    const body = { id, x, y, vx: 0, vy: 0, fx: null, fy: null, r: 3, colour: "#888888" };
+    sim.set(id, body);
+    return body;
+  }
+
+  // The arrays the simulation and the renderer walk, rebuilt whenever what is
+  // on screen or how it is coloured changes.
+  function rebuild() {
+    const ids = shown();
+    const set = new Set(ids);
+    bodies = ids.map((id) => bodyFor(id, null));
+    const count = new Map(ids.map((id) => [id, 0]));
+    links = [];
+    edges.forEach((e) => {
+      if (!set.has(e.source) || !set.has(e.target) || e.source === e.target) return;
+      count.set(e.source, count.get(e.source) + 1);
+      count.set(e.target, count.get(e.target) + 1);
+      links.push({ s: sim.get(e.source), t: sim.get(e.target), e });
+    });
+    links.forEach((link) => {
+      const left = count.get(link.s.id);
+      const right = count.get(link.t.id);
+      link.bias = left / (left + right);
+      link.strength = 1 / Math.min(left, right);
+    });
+    bodies.forEach((body) => {
+      // Size carries degree, so the hubs are visible before anything is clicked.
+      body.r = Math.min(16, 2.6 + Math.sqrt(count.get(body.id)) * 1.5);
+      body.colour = colourOf(body.id);
+      const centre = home(body.id);
+      body.tx = centre.x;
+      body.ty = centre.y;
+      body.pull = colourBy === "theme" && themeOf(body.id) !== OTHER ? 0.05 : 0.02;
+    });
+    hubs = new Set(
+      [...ids].sort((a, b) => count.get(b) - count.get(a)).slice(0, HUB_LABELS)
+    );
+    pulses = links
+      .filter((link) => !link.e.inferred)
+      .map((link) => [link, count.get(link.s.id) + count.get(link.t.id)])
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, SIGNALS)
+      .map(([link], i) => ({ link, phase: (i * 0.618) % 1, speed: 0.25 + ((i * 7) % 5) * 0.06 }));
+    const spread = clamp(Math.sqrt(500 / Math.max(1, bodies.length)), 1, 2.6);
+    LINK_DISTANCE = 30 * spread;
+    CHARGE = -38 * spread * spread;
+    canvas.dataset.nodes = String(bodies.length);
+    canvas.dataset.edges = String(links.length);
+  }
+
+  function quadtree(list) {
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    list.forEach((b) => {
+      x0 = Math.min(x0, b.x);
+      y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x);
+      y1 = Math.max(y1, b.y);
+    });
+    const root = cell(x0, y0, Math.max(x1 - x0, y1 - y0) + 1);
+    list.forEach((b) => insert(root, b, 0));
+    accumulate(root);
+    return root;
+  }
+
+  function cell(x, y, s) {
+    return { x, y, s, body: null, extra: null, kids: null, mass: 0, cx: 0, cy: 0 };
+  }
+
+  function insert(c, b, depth) {
+    if (!c.kids) {
+      if (!c.body) {
+        c.body = b;
+        return;
+      }
+      if (depth > 30) {
+        // Coincident points: kept together in one leaf rather than split forever.
+        (c.extra || (c.extra = [])).push(b);
+        return;
+      }
+      const old = c.body;
+      c.body = null;
+      c.kids = [null, null, null, null];
+      place(c, old, depth);
+    }
+    place(c, b, depth);
+  }
+
+  function place(c, b, depth) {
+    const half = c.s / 2;
+    const qx = b.x >= c.x + half ? 1 : 0;
+    const qy = b.y >= c.y + half ? 1 : 0;
+    const k = qy * 2 + qx;
+    if (!c.kids[k]) c.kids[k] = cell(c.x + qx * half, c.y + qy * half, half);
+    insert(c.kids[k], b, depth + 1);
+  }
+
+  // The two functions below run for every node on every tick, so they are
+  // written as plain loops: a closure or a spread array here is a few thousand
+  // allocations a frame for the collector to chase.
+  function accumulate(c) {
+    if (c.kids) {
+      for (let i = 0; i < 4; i += 1) {
+        const kid = c.kids[i];
+        if (!kid) continue;
+        accumulate(kid);
+        c.mass += kid.mass;
+        c.cx += kid.cx * kid.mass;
+        c.cy += kid.cy * kid.mass;
+      }
+    } else {
+      c.mass = 1;
+      c.cx = c.body.x;
+      c.cy = c.body.y;
+      if (c.extra) {
+        for (let i = 0; i < c.extra.length; i += 1) {
+          c.mass += 1;
+          c.cx += c.extra[i].x;
+          c.cy += c.extra[i].y;
+        }
+      }
+    }
+    c.cx /= c.mass;
+    c.cy /= c.mass;
+  }
+
+  function push(b, dx, dy, d2, mass) {
+    const w = (CHARGE * mass * alpha) / Math.max(d2, 1);
+    b.vx += dx * w;
+    b.vy += dy * w;
+  }
+
+  function pushFrom(m, b) {
+    if (m === b) return;
+    let mx = m.x - b.x;
+    let my = m.y - b.y;
+    if (mx === 0 && my === 0) {
+      mx = (Math.random() - 0.5) * 1e-3;
+      my = (Math.random() - 0.5) * 1e-3;
+    }
+    const m2 = mx * mx + my * my;
+    if (m2 < DISTANCE_MAX2) push(b, mx, my, m2, 1);
+  }
+
+  function repel(c, b) {
+    const dx = c.cx - b.x;
+    const dy = c.cy - b.y;
+    const d2 = dx * dx + dy * dy;
+    if (c.kids) {
+      if ((c.s * c.s) / THETA2 < d2) {
+        if (d2 < DISTANCE_MAX2) push(b, dx, dy, d2, c.mass);
+        return;
+      }
+      for (let i = 0; i < 4; i += 1) if (c.kids[i]) repel(c.kids[i], b);
+      return;
+    }
+    pushFrom(c.body, b);
+    if (c.extra) for (let i = 0; i < c.extra.length; i += 1) pushFrom(c.extra[i], b);
+  }
+
+  function tick() {
+    links.forEach((link) => {
+      const { s, t } = link;
+      let x = t.x + t.vx - s.x - s.vx || 1e-6;
+      let y = t.y + t.vy - s.y - s.vy || 1e-6;
+      let length = Math.sqrt(x * x + y * y);
+      length = ((length - LINK_DISTANCE) / length) * alpha * link.strength;
+      x *= length;
+      y *= length;
+      t.vx -= x * link.bias;
+      t.vy -= y * link.bias;
+      s.vx += x * (1 - link.bias);
+      s.vy += y * (1 - link.bias);
+    });
+    if (bodies.length > 1) {
+      const tree = quadtree(bodies);
+      bodies.forEach((b) => repel(tree, b));
+    }
+    bodies.forEach((b) => {
+      b.vx += (b.tx - b.x) * b.pull * alpha;
+      b.vy += (b.ty - b.y) * b.pull * alpha;
+      if (b.fx !== null) {
+        b.x = b.fx;
+        b.y = b.fy;
+        b.vx = 0;
+        b.vy = 0;
+      } else {
+        b.vx *= VELOCITY;
+        b.vy *= VELOCITY;
+        b.x += b.vx;
+        b.y += b.vy;
+      }
+    });
+    alpha += (alphaTarget - alpha) * ALPHA_DECAY;
+  }
+
+  const reheat = (to) => {
+    alpha = Math.max(alpha, to);
+    wake();
+  };
+
+  /* ---- the camera ---- */
+
+  let width = 900;
+  let height = 540;
+  let ratio = 1;
+  // Screen = world * k + (x, y), in CSS pixels.
+  let cam = { x: 450, y: 270, k: 1 };
+  let goal = null;
+  let autoFit = true;
+  let follow = null;
+
+  function fitGoal() {
+    if (!bodies.length) return null;
+    let x0 = Infinity;
+    let y0 = Infinity;
+    let x1 = -Infinity;
+    let y1 = -Infinity;
+    bodies.forEach((b) => {
+      x0 = Math.min(x0, b.x - b.r);
+      y0 = Math.min(y0, b.y - b.r);
+      x1 = Math.max(x1, b.x + b.r);
+      y1 = Math.max(y1, b.y + b.r);
+    });
+    const pad = 40;
+    const k = clamp(
+      Math.min((width - pad * 2) / Math.max(1, x1 - x0), (height - pad * 2) / Math.max(1, y1 - y0)),
+      0.05,
+      1.4
+    );
+    return { k, x: width / 2 - ((x0 + x1) / 2) * k, y: height / 2 - ((y0 + y1) / 2) * k };
+  }
+
+  function centreGoal(body, k) {
+    return { k, x: width / 2 - body.x * k, y: height / 2 - body.y * k };
+  }
+
+  const toWorld = (sx, sy) => ({ x: (sx - cam.x) / cam.k, y: (sy - cam.y) / cam.k });
+
+  function stopCamera() {
+    autoFit = false;
+    follow = null;
+    goal = null;
+  }
+
+  function zoomAt(sx, sy, factor) {
+    stopCamera();
+    const k = clamp(cam.k * factor, 0.05, 8);
+    cam.x = sx - ((sx - cam.x) * k) / cam.k;
+    cam.y = sy - ((sy - cam.y) * k) / cam.k;
+    cam.k = k;
+    wake();
+  }
+
+  function moveCamera() {
+    if (autoFit) goal = fitGoal();
+    else if (follow && sim.has(follow)) goal = centreGoal(sim.get(follow), goal ? goal.k : cam.k);
+    if (!goal) return false;
+    const step = reducedMotion ? 1 : 0.14;
+    cam.k += (goal.k - cam.k) * step;
+    cam.x += (goal.x - cam.x) * step;
+    cam.y += (goal.y - cam.y) * step;
+    const still =
+      Math.abs(goal.k - cam.k) < 0.001 && Math.abs(goal.x - cam.x) + Math.abs(goal.y - cam.y) < 0.5;
+    if (still && !autoFit && !follow) goal = null;
+    return !still;
+  }
+
+  /* ---- drawing ---- */
+
+  // A glow is one pre-rendered sprite per colour, stamped under each node: a
+  // radial gradient per node per frame is what would make this slow.
+  const sprites = new Map();
+  function sprite(colour, strength) {
+    const key = `${colour}|${strength}`;
+    if (sprites.has(key)) return sprites.get(key);
+    const size = 64;
+    const surface = document.createElement("canvas");
+    surface.width = size;
+    surface.height = size;
+    const paint = surface.getContext("2d");
+    const [r, g, b] = toRgb(colour);
+    const gradient = paint.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, `rgba(${r},${g},${b},${strength})`);
+    gradient.addColorStop(0.3, `rgba(${r},${g},${b},${strength * 0.4})`);
+    gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    paint.fillStyle = gradient;
+    paint.fillRect(0, 0, size, size);
+    sprites.set(key, surface);
+    return surface;
+  }
+
+  //: How much of a long label survives, and from which end. Documents imported
+  //: from a folder share their prefix; the filename at the end is what anyone
+  //: recognises, so both ends are kept.
+  const LABEL_MAX = 30;
+  const LABEL_HEAD = 8;
+  function shorten(text) {
+    if (text.length <= LABEL_MAX) return text;
+    return `${text.slice(0, LABEL_HEAD)}…${text.slice(-(LABEL_MAX - LABEL_HEAD - 1))}`;
+  }
+
+  // 0 with nothing hovered or selected, easing to 1 when something is: the
+  // rest of the graph fades rather than snapping out.
+  let highlight = 0;
+
+  function litSet() {
+    const centre = hover || focus;
+    if (!centre || !sim.has(centre)) return null;
+    const set = new Set([centre]);
+    (neighbours.get(centre) || new Set()).forEach((id) => set.add(id));
+    return set;
+  }
+
+  function toCamera(paint) {
+    paint.setTransform(ratio * cam.k, 0, 0, ratio * cam.k, ratio * cam.x, ratio * cam.y);
+  }
+
+  // Signals: a sample of the busiest connections fire continuously; a hovered
+  // or selected node fires along every connection it has.
+  function drawSignals(paint, time, { onScreen, px, lit, centre, fade }) {
+    if (reducedMotion) return;
+    paint.globalCompositeOperation = COLORS.blend;
+    const seconds = time / 1000;
+    const size = 6 * px;
+    const stamp = (from, to, phase, colour) => {
+      const x = from.x + (to.x - from.x) * phase;
+      const y = from.y + (to.y - from.y) * phase;
+      paint.drawImage(sprite(colour, 0.95), x - size, y - size, size * 2, size * 2);
+    };
+    paint.globalAlpha = lit ? 0.25 * fade : 0.9;
+    pulses.forEach(({ link, phase, speed }) => {
+      if (!onScreen(link.s, 50) && !onScreen(link.t, 50)) return;
+      stamp(link.s, link.t, (seconds * speed + phase) % 1, mixHex(link.t.colour, "#ffffff", 0.45));
+    });
+    if (lit) {
+      paint.globalAlpha = highlight;
+      const from = sim.get(centre);
+      links.forEach(({ s, t }, i) => {
+        if (s.id !== centre && t.id !== centre) return;
+        const to = s.id === centre ? t : s;
+        stamp(from, to, (seconds * 0.7 + i * 0.137) % 1, COLORS.accent);
+      });
+    }
+    paint.globalCompositeOperation = "source-over";
+    paint.globalAlpha = 1;
+  }
+
+  function draw(paint, time, inlineSignals) {
+    paint.setTransform(ratio, 0, 0, ratio, 0, 0);
+    paint.clearRect(0, 0, width, height);
+    if (!bodies.length) {
+      paint.fillStyle = COLORS.label;
+      paint.font = "13px system-ui, sans-serif";
+      paint.textAlign = "center";
+      paint.fillText("Nothing to show with these filters.", width / 2, height / 2);
+      return {};
+    }
+    const k = cam.k;
+    const px = 1 / k;
+    toCamera(paint);
+    const left = -cam.x / k;
+    const top = -cam.y / k;
+    const right = (width - cam.x) / k;
+    const bottom = (height - cam.y) / k;
+    const onScreen = (b, margin) =>
+      b.x + margin > left && b.x - margin < right && b.y + margin > top && b.y - margin < bottom;
+
+    const lit = litSet();
+    const centre = lit ? hover || focus : null;
+    const fade = 1 - highlight * (1 - COLORS.dim);
+    const view = { onScreen, px, lit, centre, fade };
+
+    // Edges: one path per colour, tinted by the cluster they belong to, so a
+    // theme reads as a galaxy of its own colour rather than a grey web.
+    const groups = new Map();
+    const mixed = new Path2D();
+    const inferred = new Path2D();
+    const confirmed = new Path2D();
+    const lighted = new Path2D();
+    links.forEach(({ s, t, e }) => {
+      let path;
+      if (lit && (s.id === centre || t.id === centre)) path = lighted;
+      else if (e.confirmed) path = confirmed;
+      else if (e.inferred) path = inferred;
+      else if (s.colour === t.colour) {
+        if (!groups.has(s.colour)) groups.set(s.colour, new Path2D());
+        path = groups.get(s.colour);
+      } else path = mixed;
+      path.moveTo(s.x, s.y);
+      path.lineTo(t.x, t.y);
+    });
+    paint.lineCap = "round";
+    paint.lineWidth = px;
+    paint.globalAlpha = COLORS.edgeAlpha * 1.4 * fade;
+    groups.forEach((path, colour) => {
+      paint.strokeStyle = mixHex(colour, COLORS.edge, 0.35);
+      paint.stroke(path);
+    });
+    paint.globalAlpha = COLORS.edgeAlpha * fade;
+    paint.strokeStyle = COLORS.edge;
+    paint.stroke(mixed);
+    // A guessed relation keeps a flat amber dash: it must not look like the
+    // same thing as a structural fact.
+    paint.globalAlpha = 0.8 * fade;
+    paint.strokeStyle = COLORS.inferred;
+    paint.setLineDash([4 * px, 3 * px]);
+    paint.lineWidth = 1.3 * px;
+    paint.stroke(inferred);
+    paint.setLineDash([]);
+    paint.strokeStyle = COLORS.confirmed;
+    paint.lineWidth = 2.4 * px;
+    paint.stroke(confirmed);
+    if (lit) {
+      paint.globalAlpha = 0.35 + 0.6 * highlight;
+      paint.strokeStyle = COLORS.accent;
+      paint.lineWidth = 1.6 * px;
+      paint.stroke(lighted);
+    }
+
+    // Glows, then the nodes themselves, batched by colour.
+    paint.globalCompositeOperation = COLORS.blend;
+    bodies.forEach((b) => {
+      const glowing = lit ? lit.has(b.id) : true;
+      const reach = b.r * (hubs.has(b.id) || b.id === centre ? 3.6 : 3);
+      // A glow under three pixels across is invisible and still costs a stamp.
+      if (reach * k < 3 || !onScreen(b, reach)) return;
+      paint.globalAlpha = glowing ? 1 : fade;
+      paint.drawImage(sprite(b.colour, COLORS.glow), b.x - reach, b.y - reach, reach * 2, reach * 2);
+    });
+    if (inlineSignals) drawSignals(paint, time, view);
+    paint.globalCompositeOperation = "source-over";
+
+    const fills = new Map();
+    bodies.forEach((b) => {
+      if (!onScreen(b, b.r)) return;
+      const key = `${b.colour}|${lit && !lit.has(b.id) ? "dim" : "lit"}`;
+      if (!fills.has(key)) fills.set(key, new Path2D());
+      const path = fills.get(key);
+      path.moveTo(b.x + b.r, b.y);
+      path.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+    });
+    fills.forEach((path, key) => {
+      const [colour, state] = key.split("|");
+      paint.globalAlpha = state === "dim" ? fade : 1;
+      paint.fillStyle = mixHex(colour, "#ffffff", 0.12);
+      paint.fill(path);
+    });
+    paint.globalAlpha = 1;
+    [focus, hover].forEach((id, index) => {
+      const b = id && sim.get(id);
+      if (!b) return;
+      paint.beginPath();
+      paint.arc(b.x, b.y, b.r + 3 * px, 0, Math.PI * 2);
+      paint.strokeStyle = index === 0 ? COLORS.accent : COLORS.label;
+      paint.lineWidth = (index === 0 ? 2 : 1.2) * px;
+      paint.stroke();
+    });
+
+    // Labels fade in with zoom, bigger nodes first; the busiest few, and
+    // whatever is lit, are always named.
+    paint.font = `${12 * px}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    paint.textAlign = "center";
+    paint.textBaseline = "top";
+    paint.lineJoin = "round";
+    paint.lineWidth = 3 * px;
+    paint.strokeStyle = COLORS.labelHalo;
+    paint.fillStyle = COLORS.label;
+    bodies.forEach((b) => {
+      if (!onScreen(b, 120 * px)) return;
+      let visibility = clamp((b.r * k - 4) / 4, 0, 1);
+      if (hubs.has(b.id)) visibility = Math.max(visibility, 0.9);
+      if (lit) visibility = lit.has(b.id) ? Math.max(visibility, highlight) : visibility * fade;
+      if (b.id === focus) visibility = 1;
+      if (visibility < 0.03) return;
+      const text = shorten(nodes.get(b.id).label);
+      paint.globalAlpha = visibility;
+      paint.strokeText(text, b.x, b.y + b.r + 3 * px);
+      paint.fillText(text, b.x, b.y + b.r + 3 * px);
+    });
+    paint.globalAlpha = 1;
+    return view;
+  }
+
+  function drawMinimap() {
+    if (!minimap || !minimap.getContext) return;
+    const box = minimap.getBoundingClientRect();
+    if (!box.width) return;
+    const paint = minimap.getContext("2d");
+    if (minimap.width !== Math.round(box.width * ratio)) {
+      minimap.width = Math.round(box.width * ratio);
+      minimap.height = Math.round(box.height * ratio);
+    }
+    paint.setTransform(1, 0, 0, 1, 0, 0);
+    paint.clearRect(0, 0, minimap.width, minimap.height);
+    const extent = fitGoal();
+    if (!extent) return;
+    // The minimap is the fitted view, scaled down to its own size.
+    const scale = Math.min(box.width / width, box.height / height);
+    minimap.dataset.k = String(extent.k * scale);
+    minimap.dataset.x = String(extent.x * scale);
+    minimap.dataset.y = String(extent.y * scale);
+    paint.setTransform(ratio * extent.k * scale, 0, 0, ratio * extent.k * scale, ratio * extent.x * scale, ratio * extent.y * scale);
+    const dot = 2 / (extent.k * scale);
+    bodies.forEach((b) => {
+      paint.fillStyle = b.colour;
+      paint.fillRect(b.x - dot / 2, b.y - dot / 2, dot, dot);
+    });
+    const view = { x: -cam.x / cam.k, y: -cam.y / cam.k, w: width / cam.k, h: height / cam.k };
+    paint.strokeStyle = COLORS.accent;
+    paint.lineWidth = 1.5 / (extent.k * scale);
+    paint.strokeRect(view.x, view.y, view.w, view.h);
+  }
+
+  /* ---- the frame loop ---- */
+
+  let frame = null;
+  let frames = 0;
+  let last = 0;
+
+  // Anything that changes the picture calls this; it also marks the cached
+  // scene stale, since a pan or a hover does not move the simulation.
+  let dirty = true;
+  function wake() {
+    dirty = true;
+    if (frame === null) frame = window.requestAnimationFrame(step);
+  }
+
+  // Once the layout is still, the whole scene is painted once into a bitmap
+  // and each later frame is that bitmap plus the moving signals. Without it a
+  // settled graph of thousands of nodes repainted everything thirty times a
+  // second for the sake of a few dozen dots.
+  const scene = document.createElement("canvas");
+  const sceneCtx = scene.getContext("2d");
+  let sceneView = null;
+
+  function step(time) {
+    frame = null;
+    const simulating = alpha >= ALPHA_MIN || alphaTarget > 0;
+    if (simulating) {
+      // Reduced motion: settle in as few frames as the time allows, so the
+      // layout arrives rather than drifts.
+      const started = performance.now();
+      do tick();
+      while (reducedMotion && alpha >= ALPHA_MIN && performance.now() - started < 14);
+    }
+    const panning = moveCamera();
+    const target = hover || focus ? 1 : 0;
+    highlight += (target - highlight) * (reducedMotion ? 1 : 0.18);
+    const easing = Math.abs(target - highlight) > 0.01;
+    const signalling = !reducedMotion && pulses.length > 0;
+    const busy = simulating || panning || easing || !!dragging || dirty;
+    dirty = false;
+    if (busy) {
+      draw(ctx, time, true);
+      sceneView = null;
+      frames += 1;
+      if (frames % 12 === 0) drawMinimap();
+    } else if (!sceneView) {
+      if (scene.width !== canvas.width || scene.height !== canvas.height) {
+        scene.width = canvas.width;
+        scene.height = canvas.height;
+      }
+      sceneView = draw(sceneCtx, time, false);
+      drawMinimap();
+    }
+    if (!busy && sceneView && time - last > 32) {
+      // Signals alone run at half rate: they are atmosphere, and a settled
+      // graph should not cost a laptop its battery.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(scene, 0, 0);
+      if (signalling && bodies.length) {
+        toCamera(ctx);
+        drawSignals(ctx, time, sceneView);
+      }
+      last = time;
+    }
+    canvas.dataset.state = simulating ? "running" : "settled";
+    if (busy || signalling || !sceneView) frame = window.requestAnimationFrame(step);
+  }
+
+  /* ---- what is on screen ---- */
+
+  function count() {
+    counter.textContent =
+      `${bodies.length} of ${graph.nodes.length} nodes shown` +
+      (visible.size >= MAX_NODES ? " · display limit reached" : "");
+    expandButton.disabled =
+      visible.size >= MAX_NODES || visible.size >= graph.nodes.length;
+  }
+
+  function refresh(heat) {
+    rebuild();
+    count();
+    reheat(heat);
   }
 
   function expand(id) {
     let added = 0;
+    const near = sim.get(id) || null;
     for (const next of neighbours.get(id) || []) {
       if (visible.size >= MAX_NODES) break;
       if (!visible.has(next)) {
         visible.add(next);
-        seed(next, layout.get(id));
+        bodyFor(next, near);
         added += 1;
       }
     }
@@ -249,256 +909,43 @@
   }
 
   function expandAll() {
-    let added = 0;
     for (const id of shown()) {
-      added += expand(id);
+      expand(id);
       if (visible.size >= MAX_NODES) break;
     }
-    return added;
   }
 
-  // A node with nowhere to start from starts in its theme's sector, so the
-  // themes open as separate regions instead of untangling from one knot.
-  function home(id) {
-    const index = colourBy === "theme" ? themeOf(id) : OTHER;
-    if (index === OTHER) return { x: WIDTH / 2, y: HEIGHT / 2 };
-    const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
-    const angle = (index / coloured) * Math.PI * 2 - Math.PI / 2;
-    return { x: WIDTH / 2 + Math.cos(angle) * 190, y: HEIGHT / 2 + Math.sin(angle) * 150 };
+  function start() {
+    sim = new Map();
+    focus = null;
+    hover = null;
+    follow = null;
+    canvas.dataset.focus = "";
+    visible = overview();
+    autoFit = true;
+    goal = null;
+    alpha = 1;
+    rebuild();
+    count();
+    wake();
   }
 
-  function seed(id, near) {
-    const angle = Math.random() * Math.PI * 2;
-    const base = near || home(id);
-    layout.set(id, {
-      x: base.x + Math.cos(angle) * 60,
-      y: base.y + Math.sin(angle) * 60,
-      vx: 0,
-      vy: 0,
-      pinned: false,
-    });
-  }
-
-  function ensureLayout() {
-    shown().forEach((id) => {
-      if (!layout.has(id)) seed(id, null);
-    });
-  }
-
-  /* A small spring/repulsion simulation. Deterministic enough to be stable and
-     cheap enough for a few hundred nodes without a library. */
-  function relax(steps) {
-    const ids = shown();
-    const live = ids.map((id) => layout.get(id));
-    const index = new Map(ids.map((id, i) => [id, i]));
-    const active = edges.filter((e) => index.has(e.source) && index.has(e.target));
-    const centreX = WIDTH / 2;
-    const centreY = HEIGHT / 2;
-    // Each node leans towards the middle of its theme, so a theme reads as a
-    // region of the canvas rather than only as a colour. Gentle next to the
-    // springs: it groups, it does not override what the edges say.
-    const groups = themeCount ? ids.map((id) => themeOf(id)) : null;
-    for (let step = 0; step < steps; step += 1) {
-      if (groups) {
-        const sums = new Map();
-        live.forEach((p, i) => {
-          if (groups[i] === OTHER) return;
-          const sum = sums.get(groups[i]) || { x: 0, y: 0, n: 0 };
-          sum.x += p.x;
-          sum.y += p.y;
-          sum.n += 1;
-          sums.set(groups[i], sum);
-        });
-        live.forEach((p, i) => {
-          const sum = sums.get(groups[i]);
-          if (!sum || sum.n < 2) return;
-          p.vx += (sum.x / sum.n - p.x) * 0.02;
-          p.vy += (sum.y / sum.n - p.y) * 0.02;
-        });
-      }
-      for (let i = 0; i < live.length; i += 1) {
-        for (let j = i + 1; j < live.length; j += 1) {
-          const a = live[i];
-          const b = live[j];
-          let dx = b.x - a.x;
-          let dy = b.y - a.y;
-          let distance = Math.hypot(dx, dy) || 0.01;
-          if (distance > 260) continue;
-          const push = 2600 / (distance * distance);
-          dx /= distance;
-          dy /= distance;
-          a.vx -= dx * push;
-          a.vy -= dy * push;
-          b.vx += dx * push;
-          b.vy += dy * push;
-        }
-      }
-      active.forEach((e) => {
-        const a = live[index.get(e.source)];
-        const b = live[index.get(e.target)];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const distance = Math.hypot(dx, dy) || 0.01;
-        const pull = (distance - 90) * 0.012;
-        const ux = (dx / distance) * pull;
-        const uy = (dy / distance) * pull;
-        a.vx += ux;
-        a.vy += uy;
-        b.vx -= ux;
-        b.vy -= uy;
-      });
-      live.forEach((p) => {
-        if (p.pinned) {
-          p.vx = 0;
-          p.vy = 0;
-          return;
-        }
-        p.vx += (centreX - p.x) * 0.004;
-        p.vy += (centreY - p.y) * 0.004;
-        p.vx *= 0.82;
-        p.vy *= 0.82;
-        p.x += Math.max(-25, Math.min(25, p.vx));
-        p.y += Math.max(-25, Math.min(25, p.vy));
-      });
+  function focusOn(id) {
+    focus = id;
+    canvas.dataset.focus = id;
+    if (!visible.has(id)) {
+      visible.add(id);
+      bodyFor(id, null);
     }
-  }
-
-  //: Zoomed past this there is room on screen for every label at once.
-  const LABEL_ALL_ZOOM = 1.6;
-
-  //: How much of a long label survives, and from which end.
-  //
-  // Cutting the tail off assumes the beginning is what tells two labels apart.
-  // For a document imported from a folder that is exactly backwards: every name
-  // carries the same repository and path prefix, and the filename - the only
-  // part anyone recognises - is at the end. A screen of
-  // "digitalbrain-demo-artifac..." is one label drawn forty times.
-  //
-  // Keeping both ends costs a few characters of prefix and returns the
-  // filename. The title element still carries the whole name for hovering.
-  const LABEL_MAX = 30;
-  const LABEL_HEAD = 8;
-
-  function shorten(text) {
-    if (text.length <= LABEL_MAX) return text;
-    return `${text.slice(0, LABEL_HEAD)}…${text.slice(-(LABEL_MAX - LABEL_HEAD - 1))}`;
-  }
-
-  function applyView() {
-    const viewport = canvas.querySelector("#graph-viewport");
-    if (viewport) {
-      viewport.setAttribute(
-        "transform",
-        `translate(${view.x} ${view.y}) scale(${view.k})`
-      );
-    }
-    canvas.classList.toggle("labelled", view.k >= LABEL_ALL_ZOOM);
-  }
-
-  const minimap = document.getElementById("graph-minimap");
-
-  function drawMinimap(ids) {
-    if (!minimap) return;
-    if (!ids.length) {
-      minimap.replaceChildren();
-      return;
-    }
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    ids.forEach((id) => {
-      const point = layout.get(id);
-      minX = Math.min(minX, point.x);
-      minY = Math.min(minY, point.y);
-      maxX = Math.max(maxX, point.x);
-      maxY = Math.max(maxY, point.y);
-    });
-    const pad = 20;
-    minimap.setAttribute(
-      "viewBox",
-      `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`
-    );
-    minimap.replaceChildren();
-    ids.forEach((id) => {
-      const point = layout.get(id);
-      minimap.append(
-        el("circle", {
-          cx: point.x,
-          cy: point.y,
-          r: 5,
-          fill: colourOf(id),
-          opacity: 0.8,
-        })
-      );
-    });
-  }
-
-  if (minimap) {
-    minimap.addEventListener("click", (event) => {
-      const box = minimap.getBoundingClientRect();
-      const parts = (minimap.getAttribute("viewBox") || "0 0 1 1").split(" ").map(Number);
-      const x = parts[0] + ((event.clientX - box.left) / box.width) * parts[2];
-      const y = parts[1] + ((event.clientY - box.top) / box.height) * parts[3];
-      view.x = WIDTH / 2 - x * view.k;
-      view.y = HEIGHT / 2 - y * view.k;
-      applyView();
-    });
-  }
-
-  const themeButton = document.getElementById("graph-theme");
-  if (themeButton) {
-    const applyTheme = () => {
-      COLORS = PALETTES[theme];
-      canvas.setAttribute("data-canvas", theme);
-      themeButton.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
-      const next = theme === "dark" ? "light" : "dark";
-      themeButton.setAttribute("aria-label", `Switch the canvas to ${next}`);
-      themeButton.setAttribute("title", `Switch the canvas to ${next}`);
-      // A redraw is cheap here and the layout is untouched by it: positions
-      // live in `layout`, so the camera and the expansion survive. The legend
-      // swatches carry the palette too, so they are rebuilt with it.
-      buildFilters();
-      render(false);
-    };
-    themeButton.addEventListener("click", () => {
-      theme = theme === "dark" ? "light" : "dark";
-      try {
-        localStorage.setItem("digital-brain.knowledge.canvas", theme);
-      } catch (failure) {
-        /* a private window refusing storage is not a reason to fail the click */
-      }
-      applyTheme();
-    });
-    try {
-      if (localStorage.getItem("digital-brain.knowledge.canvas") === "light") {
-        theme = "light";
-        // The palette has to move with the theme before the first render, or a
-        // remembered preference draws dark nodes onto a light canvas.
-        COLORS = PALETTES[theme];
-      }
-    } catch (failure) {
-      /* no stored preference is the normal case */
-    }
-    canvas.setAttribute("data-canvas", theme);
-  }
-
-  function fit() {
-    const points = shown().map((id) => layout.get(id)).filter(Boolean);
-    if (!points.length) return;
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const minX = Math.min(...xs) - 40;
-    const maxX = Math.max(...xs) + 40;
-    const minY = Math.min(...ys) - 40;
-    const maxY = Math.max(...ys) + 40;
-    const k = Math.max(0.2, Math.min(2.2, Math.min(WIDTH / (maxX - minX), HEIGHT / (maxY - minY))));
-    view = {
-      k,
-      x: WIDTH / 2 - ((minX + maxX) / 2) * k,
-      y: HEIGHT / 2 - ((minY + maxY) / 2) * k,
-    };
-    applyView();
+    expand(id);
+    hidden.delete(nodes.get(id).kind);
+    hiddenThemes.delete(themeOf(id));
+    syncFilters();
+    inspect(id);
+    refresh(0.25);
+    autoFit = false;
+    follow = id;
+    goal = centreGoal(sim.get(id), Math.max(cam.k, 1.6));
   }
 
   function inspect(id) {
@@ -546,7 +993,7 @@
     expandHere.textContent = "Expand neighbours";
     expandHere.addEventListener("click", () => {
       expand(id);
-      render(true);
+      refresh(0.4);
     });
     inspector.append(expandHere);
 
@@ -580,206 +1027,6 @@
     });
   }
 
-  function render(settle) {
-    ensureLayout();
-    if (settle) relax(140);
-
-    const ids = shown();
-    const set = new Set(ids);
-    // The busiest nodes on screen keep a standing label: a hub is what you
-    // navigate by, whatever kind it happens to be.
-    const hubs = new Set(
-      [...ids]
-        .sort((left, right) => (degree.get(right) || 0) - (degree.get(left) || 0))
-        .slice(0, 18)
-    );
-    canvas.replaceChildren();
-
-    const defs = el("defs", {});
-    canvas.append(defs);
-
-    // The dotted ground is one pattern however far you pan, where a grid of
-    // real dots would be thousands of elements.
-    const dots = el("pattern", {
-      id: "kg-dots",
-      width: 24,
-      height: 24,
-      patternUnits: "userSpaceOnUse",
-    });
-    dots.append(el("circle", { cx: 1, cy: 1, r: 1, fill: COLORS.ground }));
-    defs.append(dots);
-    canvas.append(
-      el("rect", { x: -4000, y: -4000, width: 9000, height: 9000, fill: "url(#kg-dots)" })
-    );
-
-    const viewport = el("g", { id: "graph-viewport" });
-    canvas.append(viewport);
-
-    const lines = el("g", { "stroke-linecap": "round" });
-    viewport.append(lines);
-
-    // An edge is a gradient between the two kinds it joins, with the midpoint
-    // pulled most of the way to the edge tone: a fully saturated middle turns a
-    // dense graph into stripes and stops the nodes reading as the subject.
-    const gradients = new Map();
-    const gradientFor = (from, to) => {
-      const key = `${from}|${to}`;
-      if (gradients.has(key)) return gradients.get(key);
-      const id = `kg-edge-${gradients.size}`;
-      const gradient = el("linearGradient", {
-        id,
-        gradientUnits: "objectBoundingBox",
-        x1: "0",
-        y1: "0",
-        x2: "1",
-        y2: "1",
-      });
-      const middle = mixHex(mixHex(from, to, 0.5), COLORS.edge, 0.55);
-      gradient.append(el("stop", { offset: "0", "stop-color": from, "stop-opacity": "0.75" }));
-      gradient.append(el("stop", { offset: "0.5", "stop-color": middle }));
-      gradient.append(el("stop", { offset: "1", "stop-color": to, "stop-opacity": "0.75" }));
-      defs.append(gradient);
-      gradients.set(key, id);
-      return id;
-    };
-
-    edges.forEach((e) => {
-      if (!set.has(e.source) || !set.has(e.target)) return;
-      const a = layout.get(e.source);
-      const b = layout.get(e.target);
-      const from = colourOf(e.source);
-      const to = colourOf(e.target);
-      const line = el("line", {
-        x1: a.x,
-        y1: a.y,
-        x2: b.x,
-        y2: b.y,
-        // An inferred relation keeps a flat amber: guessed evidence must not
-        // look like the same thing as a structural fact.
-        stroke: e.confirmed
-          ? COLORS.confirmed
-          : e.inferred
-            ? COLORS.inferred
-            : `url(#${gradientFor(from, to)})`,
-        "stroke-width": e.confirmed ? 2.6 : e.inferred ? 1.6 : 1.2,
-        "stroke-dasharray": e.inferred ? "4 3" : "",
-        class: "kg-edge",
-      });
-      line.dataset.source = e.source;
-      line.dataset.target = e.target;
-      line.append(el("title", {}, `${e.relation}${e.inferred ? " (AI-inferred)" : ""}`));
-      lines.append(line);
-    });
-
-    ids.forEach((id) => {
-      const node = nodes.get(id);
-      const point = layout.get(id);
-      const group = el("g", {
-        tabindex: 0,
-        role: "button",
-        class: "graph-node",
-        "aria-label": `${node.kind}: ${node.label}`,
-        transform: `translate(${point.x} ${point.y})`,
-      });
-      group.dataset.id = id;
-      // Size carries degree, so the hubs are visible before anything is clicked.
-      const weight = Math.sqrt((degree.get(id) || 0) / busiest);
-      const radius =
-        id === focus ? 13 : Math.max(4.5, (node.kind === "document" ? 7 : 5) + weight * 7);
-      if (id === focus) {
-        group.append(
-          el("circle", {
-            r: radius + 7,
-            fill: "none",
-            stroke: colourOf(id),
-            "stroke-width": 1,
-            opacity: 0.45,
-          })
-        );
-      }
-      group.append(
-        el("circle", {
-          r: radius,
-          fill: colourOf(id),
-          stroke: id === focus ? COLORS.focusRing : "none",
-          "stroke-width": id === focus ? 2 : 0,
-        })
-      );
-      // Every node carries its label and CSS decides which reach the screen, so
-      // hovering or zooming reveals more without redrawing the scene. Drawing
-      // them only for documents left a field of unnamed dots that could be read
-      // one click at a time, which is not a way of reading a graph.
-      const named =
-        id === focus || node.kind === "document" || ids.length <= 45 || hubs.has(id);
-      group.classList.toggle("named", named);
-      group.append(
-        el(
-          "text",
-          {
-            y: radius + 12,
-            "text-anchor": "middle",
-            fill: COLORS.label,
-            "font-size": 10,
-            class: "kg-label",
-          },
-          shorten(node.label)
-        )
-      );
-      group.append(el("title", {}, `${node.label} (${node.kind})`));
-      viewport.append(group);
-    });
-
-    // Hover traces a neighbourhood. At 400 nodes this is most of what makes the
-    // picture explorable without committing to a selection.
-    const lit = (id) => {
-      const near = neighbours.get(id) || new Set();
-      canvas.classList.add("tracing");
-      viewport.querySelectorAll(".graph-node").forEach((group) => {
-        const other = group.dataset.id;
-        group.classList.toggle("lit", other === id || near.has(other));
-      });
-      lines.querySelectorAll(".kg-edge").forEach((line) => {
-        line.classList.toggle(
-          "lit",
-          line.dataset.source === id || line.dataset.target === id
-        );
-      });
-    };
-    const unlit = () => {
-      canvas.classList.remove("tracing");
-      viewport.querySelectorAll(".lit").forEach((node) => node.classList.remove("lit"));
-      lines.querySelectorAll(".lit").forEach((line) => line.classList.remove("lit"));
-    };
-    viewport.querySelectorAll(".graph-node").forEach((group) => {
-      group.addEventListener("pointerenter", () => lit(group.dataset.id));
-      group.addEventListener("pointerleave", unlit);
-      group.addEventListener("focus", () => lit(group.dataset.id));
-      group.addEventListener("blur", unlit);
-    });
-
-    drawMinimap(ids);
-    applyView();
-    counter.textContent =
-      `${ids.length} of ${graph.nodes.length} nodes shown` +
-      (visible.size >= MAX_NODES ? " · display limit reached" : "");
-    expandButton.disabled = visible.size >= MAX_NODES;
-  }
-
-  function focusOn(id) {
-    focus = id;
-    if (!visible.has(id)) {
-      visible.add(id);
-      seed(id, null);
-      expand(id);
-    }
-    hidden.delete(nodes.get(id).kind);
-    hiddenThemes.delete(themeOf(id));
-    syncFilters();
-    inspect(id);
-    render(true);
-    fit();
-  }
-
   /* ---- controls ---- */
 
   // The legend is also the filter, and it follows the colouring: coloured by
@@ -793,7 +1040,7 @@
     Object.assign(box.dataset, data);
     box.addEventListener("change", () => {
       onChange(box.checked);
-      render(true);
+      refresh(0.3);
     });
     const swatch = document.createElement("span");
     swatch.className = "graph-swatch";
@@ -811,8 +1058,7 @@
     filterBox.replaceChildren();
     filterBox.classList.toggle("by-theme", colourBy === "theme");
     if (colourBy === "theme") {
-      const coloured = Math.min(themeCount, THEME_PALETTES.dark.length);
-      for (let index = 0; index < coloured; index += 1) {
+      for (let index = 0; index < COLOURED; index += 1) {
         filterItem(
           clusters.themes[index].label,
           THEME_PALETTES[theme][index],
@@ -822,7 +1068,7 @@
         );
       }
       if (graph.nodes.some((n) => themeOf(n.id) === OTHER)) {
-        filterItem("Other", COLORS.section, !hiddenThemes.has(OTHER), toggle(hiddenThemes, OTHER), {
+        filterItem("Other", COLORS.other, !hiddenThemes.has(OTHER), toggle(hiddenThemes, OTHER), {
           theme: String(OTHER),
         });
       }
@@ -830,7 +1076,7 @@
     }
     KINDS.filter((kind) => graph.nodes.some((n) => n.kind === kind)).forEach((kind) => {
       filterItem(
-        kind === "entity" ? "AI entity" : kind,
+        ({ entity: "AI entity", kb: "KB article" })[kind] || kind,
         COLORS[kind],
         !hidden.has(kind),
         toggle(hidden, kind),
@@ -866,91 +1112,179 @@
       });
   }
 
-  // Pointer: drag a node to pin it, drag the background to pan.
+  function nodeAt(sx, sy) {
+    const point = toWorld(sx, sy);
+    const slack = 4 / cam.k;
+    let best = null;
+    let nearest = Infinity;
+    bodies.forEach((b) => {
+      const dx = b.x - point.x;
+      const dy = b.y - point.y;
+      const d2 = dx * dx + dy * dy;
+      const reach = b.r + slack;
+      if (d2 <= reach * reach && d2 < nearest) {
+        best = b;
+        nearest = d2;
+      }
+    });
+    return best;
+  }
+
+  const local = (event) => {
+    const box = canvas.getBoundingClientRect();
+    return { x: event.clientX - box.left, y: event.clientY - box.top };
+  };
+
+  // Drag a node and its neighbours follow on their springs; drag the
+  // background to pan; click a node to inspect it.
   let dragging = null;
   canvas.addEventListener("pointerdown", (event) => {
-    const group = event.target.closest(".graph-node");
-    const point = { x: event.clientX, y: event.clientY };
-    if (group) {
-      // The node's starting position is captured here, not re-read each move:
-      // see the pointermove handler for why that distinction matters.
-      const node = layout.get(group.dataset.id);
-      dragging = {
-        id: group.dataset.id,
-        start: point,
-        moved: false,
-        origin: node ? { x: node.x, y: node.y } : null,
-      };
+    const at = local(event);
+    const body = nodeAt(at.x, at.y);
+    if (body) {
+      dragging = { body, start: at, moved: false };
+      body.fx = body.x;
+      body.fy = body.y;
     } else {
-      dragging = { pan: true, start: point, origin: { ...view }, moved: false };
+      dragging = { pan: true, start: at, origin: { x: cam.x, y: cam.y }, moved: false };
     }
     canvas.setPointerCapture(event.pointerId);
   });
 
   canvas.addEventListener("pointermove", (event) => {
-    if (!dragging) return;
-    const dx = event.clientX - dragging.start.x;
-    const dy = event.clientY - dragging.start.y;
-    if (Math.abs(dx) + Math.abs(dy) > 3) dragging.moved = true;
-    if (dragging.pan) {
-      view.x = dragging.origin.x + dx;
-      view.y = dragging.origin.y + dy;
-      applyView();
+    const at = local(event);
+    if (!dragging) {
+      const body = nodeAt(at.x, at.y);
+      const next = body ? body.id : null;
+      if (next !== hover) {
+        hover = next;
+        canvas.classList.toggle("hovering", !!hover);
+        wake();
+      }
       return;
     }
-    const node = layout.get(dragging.id);
-    if (!node || !dragging.origin) return;
-    // Absolute from the position the drag started at, exactly like the pan
-    // branch above. It used to add each frame's delta and then re-base
-    // dragging.start, so every move divided a small delta by a fractional
-    // scale - getBoundingClientRect() returns fractional CSS pixels, and at
-    // 125%/150% Windows scaling the ratio never comes out clean. The rounding
-    // error was small per event and compounded over a drag, so the node crept
-    // away from the cursor and appeared to shake.
-    const scale = canvas.getBoundingClientRect().width / WIDTH || 1;
-    node.x = dragging.origin.x + dx / (view.k * scale);
-    node.y = dragging.origin.y + dy / (view.k * scale);
-    node.pinned = true;
-    render(false);
+    const dx = at.x - dragging.start.x;
+    const dy = at.y - dragging.start.y;
+    if (!dragging.moved && Math.abs(dx) + Math.abs(dy) > 3) {
+      dragging.moved = true;
+      if (!dragging.pan) alphaTarget = 0.3;
+    }
+    if (!dragging.moved) return;
+    if (dragging.pan) {
+      stopCamera();
+      canvas.classList.add("panning");
+      cam.x = dragging.origin.x + dx;
+      cam.y = dragging.origin.y + dy;
+    } else {
+      if (autoFit) stopCamera();
+      const point = toWorld(at.x, at.y);
+      dragging.body.fx = point.x;
+      dragging.body.fy = point.y;
+    }
+    wake();
   });
 
-  canvas.addEventListener("pointerup", (event) => {
-    if (dragging && !dragging.moved && !dragging.pan) focusOn(dragging.id);
+  const release = (event) => {
+    if (dragging && !dragging.pan) {
+      dragging.body.fx = null;
+      dragging.body.fy = null;
+      alphaTarget = 0;
+      if (!dragging.moved) focusOn(dragging.body.id);
+    }
     dragging = null;
+    canvas.classList.remove("panning");
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+    wake();
+  };
+  canvas.addEventListener("pointerup", release);
+  canvas.addEventListener("pointercancel", release);
+  canvas.addEventListener("pointerleave", () => {
+    if (hover && !dragging) {
+      hover = null;
+      canvas.classList.remove("hovering");
+      wake();
+    }
   });
 
   canvas.addEventListener(
     "wheel",
     (event) => {
       event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const scale = rect.width / WIDTH || 1;
-      const px = (event.clientX - rect.left) / scale;
-      const py = (event.clientY - rect.top) / scale;
-      const factor = event.deltaY < 0 ? 1.15 : 1 / 1.15;
-      const next = Math.max(0.2, Math.min(4, view.k * factor));
-      view.x = px - ((px - view.x) * next) / view.k;
-      view.y = py - ((py - view.y) * next) / view.k;
-      view.k = next;
-      applyView();
+      const at = local(event);
+      zoomAt(at.x, at.y, Math.exp(-event.deltaY * 0.0015));
     },
     { passive: false }
   );
 
+  // The canvas takes the keyboard too: the node list above is the way to a
+  // node, and these move the view.
   canvas.addEventListener("keydown", (event) => {
-    const group = event.target.closest(".graph-node");
-    if (!group) return;
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      focusOn(group.dataset.id);
-    }
+    const moves = { ArrowLeft: [40, 0], ArrowRight: [-40, 0], ArrowUp: [0, 40], ArrowDown: [0, -40] };
+    if (moves[event.key]) {
+      stopCamera();
+      cam.x += moves[event.key][0];
+      cam.y += moves[event.key][1];
+    } else if (event.key === "+" || event.key === "=") zoomAt(width / 2, height / 2, 1.25);
+    else if (event.key === "-") zoomAt(width / 2, height / 2, 0.8);
+    else if (event.key === "0") {
+      follow = null;
+      autoFit = true;
+    } else if (event.key === "Escape") {
+      focus = null;
+      follow = null;
+      canvas.dataset.focus = "";
+    } else return;
+    event.preventDefault();
+    wake();
   });
 
-  const zoomBy = (factor) => {
-    view.k = Math.max(0.2, Math.min(4, view.k * factor));
-    applyView();
-  };
+  if (minimap) {
+    minimap.addEventListener("click", (event) => {
+      const box = minimap.getBoundingClientRect();
+      const k = Number(minimap.dataset.k || 0);
+      if (!k) return;
+      const x = (event.clientX - box.left - Number(minimap.dataset.x)) / k;
+      const y = (event.clientY - box.top - Number(minimap.dataset.y)) / k;
+      autoFit = false;
+      follow = null;
+      goal = { k: cam.k, x: width / 2 - x * cam.k, y: height / 2 - y * cam.k };
+      wake();
+    });
+  }
+
+  if (themeButton) {
+    const applyTheme = () => {
+      COLORS = PALETTES[theme];
+      canvas.setAttribute("data-canvas", theme);
+      themeButton.setAttribute("aria-pressed", theme === "light" ? "true" : "false");
+      const next = theme === "dark" ? "light" : "dark";
+      themeButton.setAttribute("aria-label", `Switch the canvas to ${next}`);
+      themeButton.setAttribute("title", `Switch the canvas to ${next}`);
+      // Positions live in the simulation, so the camera and the expansion
+      // survive; only the colours are taken again.
+      buildFilters();
+      rebuild();
+      wake();
+    };
+    themeButton.addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem("digital-brain.knowledge.canvas", theme);
+      } catch (failure) {
+        /* a private window refusing storage is not a reason to fail the click */
+      }
+      applyTheme();
+    });
+    try {
+      if (localStorage.getItem("digital-brain.knowledge.canvas") === "light") {
+        theme = "light";
+        COLORS = PALETTES[theme];
+      }
+    } catch (failure) {
+      /* no stored preference is the normal case */
+    }
+    canvas.setAttribute("data-canvas", theme);
+  }
 
   search.addEventListener("input", options);
   select.addEventListener("change", () => {
@@ -958,33 +1292,23 @@
   });
   expandButton.addEventListener("click", () => {
     expandAll();
-    render(true);
+    refresh(0.5);
   });
   resetButton.addEventListener("click", () => {
     search.value = "";
-    focus = null;
     hidden.clear();
     hiddenThemes.clear();
-    layout = new Map();
-    visible = overview();
     syncFilters();
     options();
-    render(true);
-    fit();
+    start();
   });
-  zoomIn.addEventListener("click", () => zoomBy(1.25));
-  zoomOut.addEventListener("click", () => zoomBy(1 / 1.25));
-  zoomFit.addEventListener("click", fit);
-
-  // Keep the simulation warm briefly after a change rather than freezing mid-move.
-  const settle = () => {
-    window.clearTimeout(ticking);
-    ticking = window.setTimeout(() => {
-      relax(40);
-      render(false);
-    }, 60);
-  };
-  canvas.addEventListener("pointerup", settle);
+  zoomIn.addEventListener("click", () => zoomAt(width / 2, height / 2, 1.25));
+  zoomOut.addEventListener("click", () => zoomAt(width / 2, height / 2, 0.8));
+  zoomFit.addEventListener("click", () => {
+    follow = null;
+    autoFit = true;
+    wake();
+  });
 
   if (colourSelect) {
     colourSelect.value = colourBy;
@@ -996,21 +1320,39 @@
         /* a private window refusing storage is not a reason to fail the change */
       }
       // A hidden theme would stay hidden with no checkbox left to show it, and
-      // the first view depends on the colouring, so this starts over.
+      // the regions depend on the colouring, so this starts over.
       hidden.clear();
       hiddenThemes.clear();
-      focus = null;
-      layout = new Map();
-      visible = overview();
       buildFilters();
-      render(true);
-      fit();
+      start();
     });
   }
 
+  // The backing store follows the element's size and the screen's density, so
+  // lines stay one pixel wide on a high-DPI display and in focus mode.
+  function resize() {
+    const box = canvas.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const before = { width, height };
+    width = box.width;
+    height = box.height;
+    // Capped at 2: past that a thousands-of-nodes canvas pays for pixels
+    // nobody can tell apart.
+    ratio = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.round(width * ratio);
+    canvas.height = Math.round(height * ratio);
+    cam.x += (width - before.width) / 2;
+    cam.y += (height - before.height) / 2;
+    wake();
+  }
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+  window.addEventListener("resize", resize);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) wake();
+  });
+
+  resize();
   buildFilters();
-  visible = overview();
   options();
-  render(true);
-  fit();
+  start();
 })();

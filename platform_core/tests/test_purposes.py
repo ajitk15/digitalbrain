@@ -126,10 +126,18 @@ class ConnectorChoiceTests(TestCase):
         )
         self.assertEqual(
             rows,
-            {"connector_github": False, "connector_jira": False, "connector_servicenow": True},
+            {
+                "connector_github": False,
+                "connector_jira": False,
+                "connector_servicenow": True,
+                "connector_awx": False,
+                "connector_rundeck": False,
+                "connector_azure_automation": False,
+                "connector_automation_list": False,
+            },
         )
         # Only what changed from "enabled" is an event; ServiceNow stayed on.
-        self.assertEqual(AuditEvent.objects.filter(action="feature.disabled").count(), 2)
+        self.assertEqual(AuditEvent.objects.filter(action="feature.disabled").count(), 6)
         self.assertFalse(AuditEvent.objects.filter(action="feature.enabled").exists())
 
     def test_it_is_owner_only_and_a_foreign_application_is_not_found(self):

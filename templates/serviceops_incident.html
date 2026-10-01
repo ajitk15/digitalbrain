@@ -14,26 +14,50 @@
   {% if grant.role != 'viewer' %}<p class="muted triage-cost">{% icon "info" 12 %}Triage takes about 30 seconds and makes one AI call{% if model_label and model_label != 'AI off' %} on {{ model_label }}{% endif %}{% if typical_cost %}, typically {{ typical_cost }}{% endif %}. It is free when the evidence has not changed since the last run, and nothing is changed anywhere.</p>{% endif %}
 </section>
 
-{% comment %}2. Triage: the latest run in brief. Every step's result and why it got its strength open in a popup. While it runs the section is followed live by static/documents.js; the Refresh link is the same page without script.{% endcomment %}
+{% comment %}2. Triage, simple first: the outcome - confidence and the idea to try first - then the ideas, each with its own confidence. The steps show only while a run works; every step, and how the score was reached, open in Run details. Followed live by static/documents.js; the Refresh link is the same page without script.{% endcomment %}
 <section class="section triage-run" data-live="triage-run"{% if run_live %} data-live-pending{% endif %}>
   <div class="triage-head"><h2>Triage</h2>
-    {% if run %}<span class="run-number">Run #{{ run.number }}</span>{% include "_run_state.html" with r=run count=hypotheses|length long=True %}{% endif %}
+    {% if run %}<span class="run-number">Run #{{ run.number }}</span>{% include "_run_state.html" with r=run count=hypotheses|length %}{% endif %}
     <span class="triage-links">{% if run %}<a href="{% url 'serviceops-run' application.pk run.pk %}" data-modal>{% icon "info" 13 %}Run details</a>{% endif %}{% if run_count > 1 %}<a href="{% url 'serviceops-runs' application.pk %}?incident={{ selected.pk }}">{% icon "history" 13 %}All runs ({{ run_count }})</a>{% endif %}</span>
   </div>
   {% if run %}
-    {% include "_triage_steps.html" with compact=True %}
+    {% if run_live or run.status == 'failed' %}{% include "_triage_steps.html" with compact=True %}{% endif %}
     {% if run_live %}<p class="muted triage-live"><span class="spinner" aria-hidden="true"></span>Working through the steps — this updates on its own. <a href="?incident={{ selected.pk }}&amp;run={{ run.pk }}">Refresh</a></p>{% endif %}
     {% if run.status == 'failed' %}<p class="notice notice-error">{{ run.error }}</p>{% endif %}
-    {% if score %}
-      <p class="triage-next">{% icon "info" 13 %}<span>{% if hypotheses %}Start with idea 1: run its check, then say whether it was useful. The ideas are suggestions from the evidence below, not a diagnosis.{% else %}The evidence was not strong enough to suggest a cause. Open the evidence below and investigate by hand.{% endif %}</span></p>
-      <div class="muted triage-by">Run by {{ run.requested_by.username }} · <time datetime="{{ run.created_at|date:'c' }}" data-local>{{ run.created_at|date:"M d, H:i" }} UTC</time>{% if notes %}<details class="info-note"><summary>{% icon "info" 12 %}About this result</summary><ul>{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul></details>{% endif %}</div>
-      {% include "_triage_hypotheses.html" %}
+    {% if outcome %}
+      <div class="triage-outcome outcome-{{ outcome.band }}">
+        <div class="confidence-ring" role="img" aria-label="Confidence {{ outcome.value }} out of 100, {{ outcome.label }}">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="52"></circle><circle class="ring-value" cx="60" cy="60" r="52" stroke-dasharray="{{ outcome.dash }} {{ outcome.gap }}" transform="rotate(-90 60 60)"></circle></svg>
+          <span class="ring-figure"><strong>{{ outcome.value }}</strong><small>/100</small></span>
+        </div>
+        <div class="outcome-body">
+          <p class="outcome-eyebrow">Triage outcome · <span class="outcome-band">{{ outcome.label }} confidence</span></p>
+          {% if outcome.top %}<h3>Most likely: {{ outcome.top.headline }}</h3>
+          <p class="outcome-check">Start with idea 1 below: run its check, then record whether it was useful. These are suggestions from the evidence, not a diagnosis.</p>
+          {% else %}<h3>No likely cause found</h3><p class="outcome-check">The evidence was not strong enough to suggest one. Open the evidence below and investigate by hand.</p>{% endif %}
+          <p class="outcome-meta">From {{ outcome.quotes }} verified quote{{ outcome.quotes|pluralize }} in {{ outcome.sources }} source{{ outcome.sources|pluralize }} · run by {{ run.requested_by.username }} · <time datetime="{{ run.created_at|date:'c' }}" data-local>{{ run.created_at|date:"M d, H:i" }} UTC</time></p>
+          <details class="info-note outcome-about"><summary>{% icon "info" 12 %}What the confidence means</summary><p>A score out of 100 for how strongly the evidence supports the ideas: how closely past incidents match, whether they were closed the same way, how recent a change was, and whether every idea is backed by a verified quote. Under 35 no ideas are shown; under 55 it is low; above that, medium. There is no high yet, because it has not been checked against enough real outcomes — the answers you record below are what calibrate it. <a href="{% url 'serviceops-run' application.pk run.pk %}" data-modal>See how this score was reached</a>.</p>{% if notes %}<ul>{% for note in notes %}<li>{{ note }}</li>{% endfor %}</ul>{% endif %}</details>
+        </div>
+      </div>
+      {% if hypotheses %}<h3 class="panel-label">Ideas to check, in order</h3>{% include "_triage_hypotheses.html" %}{% endif %}
     {% endif %}
-  {% else %}<p class="muted">Not triaged yet. Triage looks for similar past incidents and recent changes, asks the AI for up to three ideas only when there is evidence, checks every quote word for word, and rates how strong the evidence is. <a href="{% url 'serviceops-guide' application.pk %}" data-modal>How it works</a></p>{% endif %}
+  {% else %}<p class="muted">Not triaged yet. Triage looks for similar past incidents and recent changes, asks the AI for up to three ideas only when there is evidence, checks every quote word for word, and gives the result a confidence score. <a href="{% url 'serviceops-guide' application.pk %}" data-modal>How it works</a></p>{% endif %}
 </section>
 
+{% comment %}Automations that may help: reached through the graph - one that resolved a similar incident first. Running one is only ever simulated here: the row records what would have been sent, and nothing is.{% endcomment %}
+{% if automations or automation_runs %}<section class="section automation-card" id="automations"><div class="triage-head"><h2>Automations that may help</h2><span class="pill automation-mock" title="Nothing is executed. A simulated run records exactly what a real launcher would send.">Simulated runs only</span></div>
+  {% for row in automations %}<div class="automation-row">
+    <div class="automation-main"><strong>{{ row.entry.title }}</strong><span class="automation-tags">{% if row.fields.Platform %}<span class="pill">{{ row.fields.Platform }}</span>{% endif %}{% if row.fields.Risk %}<span class="pill risk-{{ row.fields.Risk|lower|slugify }}">Risk: {{ row.fields.Risk }}</span>{% endif %}{% if row.fields.Approval %}<span class="pill">Approval: {{ row.fields.Approval }}</span>{% endif %}</span>
+      <small>{{ row.reasons|join:" · " }}{% if row.last_status %} · last run {{ row.last_status }}{% endif %}</small></div>
+    <div class="automation-actions">{% if grant.role != 'viewer' %}<form method="post" action="{% url 'serviceops-automation-simulate' application.pk row.entry.pk %}">{% csrf_token %}<input type="hidden" name="incident" value="{{ selected.pk }}"><button type="submit" class="button secondary">{% icon "play" 13 %}Simulate run</button></form>{% endif %}<a class="link-button" href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>Details</a></div>
+  </div>{% empty %}<p class="muted">No automation is linked to this incident's component, service or symptoms.</p>{% endfor %}
+  {% if automation_runs %}<details class="automation-history"><summary>Simulated runs for this incident ({{ automation_runs|length }})</summary><ul>{% for item in automation_runs %}<li><strong>{{ item.automation.title }}</strong> · {{ item.requested_by.username }} · <time datetime="{{ item.created_at|date:'c' }}" data-local>{{ item.created_at|date:"M d, H:i" }} UTC</time><small>{{ item.outcome }}</small></li>{% endfor %}</ul></details>{% endif %}
+</section>{% endif %}
+
+{% comment %}3 and 4, folded: the map and the evidence are what triage drew on - wanted when checking its work, not to read the result. One summary line says how much there is.{% endcomment %}
+<details class="section evidence-fold"{% if not run %} open{% endif %}><summary><span class="evidence-fold-title">{% icon "search" 14 %}Evidence behind this triage</span><span class="evidence-fold-counts">{{ precedents|length }} similar incident{{ precedents|length|pluralize }} · {{ changes|length }} recent change{{ changes|length|pluralize }} · {{ related_open|length }} open alike{% if articles %} · {{ articles|length }} KB article{{ articles|length|pluralize }}{% endif %}{% if graph_available %} · {{ graph|length }} runbook passage{{ graph|length|pluralize }}{% endif %}{% if confirmed %} · {{ confirmed|length }} confirmed cause{{ confirmed|length|pluralize }}{% endif %}</span></summary>
 {% comment %}3. Around this incident: the operations graph one and two hops out, drawn on the server. Every node that is a record opens it.{% endcomment %}
-{% if map %}<section class="section ops-around"><h2>Around this incident</h2><p class="muted">What the operations graph joins this incident to: the component, service and symptoms it has, and the records reached through them. Built by rules from your records, without any AI.</p>
+{% if map %}<section class="ops-around"><h2>Around this incident</h2><p class="muted">What the operations graph joins this incident to: the component, service and symptoms it has, and the records reached through them. Built by rules from your records, without any AI.</p>
   <svg class="ops-map" viewBox="0 0 {{ map.width }} {{ map.height }}" role="img" aria-label="Map of the records around {{ number|default:'this incident' }}">
     {% for line in map.lines %}<line class="ops-line ops-line-{{ line.kind }}" x1="{{ line.x1 }}" y1="{{ line.y1 }}" x2="{{ line.x2 }}" y2="{{ line.y2 }}"><title>{{ line.label }}</title></line>{% endfor %}
     {% for item in map.items %}{% if item.entry %}<a href="{% if item.incident %}?incident={{ item.entry }}{% else %}{% url 'knowledge-detail' application.pk item.entry %}{% endif %}"{% if not item.incident %} data-modal{% endif %}>{% endif %}<g class="ops-node ops-{{ item.kind }}{% if item.center %} ops-center{% endif %}"><title>{{ item.title }}</title><circle cx="{{ item.x }}" cy="{{ item.y }}" r="{% if item.center %}16{% else %}10{% endif %}"></circle><text x="{{ item.x }}" y="{{ item.ty }}" text-anchor="middle">{{ item.label }}</text></g>{% if item.entry %}</a>{% endif %}{% endfor %}
@@ -42,7 +66,7 @@
 </section>{% endif %}
 
 {% comment %}4. Evidence: what triage drew on, found without any AI, one group per kind, collapsed to a count.{% endcomment %}
-<section class="section evidence-card"><h2>Evidence</h2><p class="muted">Found by walking the operations graph from this incident, without any AI. Each item says how it was reached. Open a group to see it; a match is a lead, not a cause.</p>
+<section class="evidence-card"><h2>Evidence</h2><p class="muted">Found by walking the operations graph from this incident, without any AI. Each item says how it was reached. Open a group to see it; a match is a lead, not a cause.</p>
   {% if confirmed %}<details class="evidence-group" open><summary><strong>Confirmed causes</strong><span class="count">{{ confirmed|length }}</span><small>what people confirmed caused this incident or one like it</small></summary>
     {% for row in confirmed %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>Confirmed by {{ row.confirmed_by }} as the cause of {{ row.cause_of }} · <time datetime="{{ row.confirmed_at|date:'c' }}" data-local>{{ row.confirmed_at|date:"M d, H:i" }} UTC</time>{% if row.note %} · “{{ row.note }}”{% endif %}</small>{% include "_ops_path.html" %}</div>{% endfor %}
   </details>{% endif %}
@@ -58,9 +82,14 @@
     {% for row in related_open %}<div class="evidence-row"><a href="?incident={{ row.entry.pk }}">{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{% if row.same_fingerprint %}Same symptoms{% else %}Shared symptoms: {{ row.shared|join:", " }}{% endif %}</small>{% include "_ops_path.html" %}</div>
     {% empty %}<p class="muted">No other open incident looks like the same event.</p>{% endfor %}
   </details>
+  <details class="evidence-group"><summary><strong>Knowledge articles</strong><span class="count">{{ articles|length }}</span><small>published in ServiceNow and in date: cited by this or a similar incident, or covering its component</small></summary>
+    {% for row in articles %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{{ row.reasons|join:" · " }}{% if row.fields.Category %} · {{ row.fields.Category }}{% endif %}</small>{% include "_ops_path.html" %}<p>{{ row.excerpt|truncatechars:220 }}</p></div>
+    {% empty %}<p class="muted">No published knowledge article covers this incident's component, and none was cited by a similar one. Import ServiceNow's kb_knowledge table to add them.</p>{% endfor %}
+  </details>
   <details class="evidence-group"><summary><strong>Runbooks and design documents</strong><span class="count">{% if graph_available %}{{ graph|length }}{% else %}—{% endif %}</span><small>{% if graph_available %}quote-checked passages from the knowledge graph{% else %}no knowledge graph published yet{% endif %}</small></summary>
     {% for row in graph %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.id %}" data-modal>{{ row.title }}</a><small>Graph version {{ row.graph_version }}{% if row.context %} · {{ row.context }}{% endif %}</small>{% include "_ops_path.html" %}<p>{{ row.excerpt|truncatechars:220 }}</p></div>
     {% empty %}<p class="muted">{% if graph_available %}No passage matches this incident.{% else %}Publish a knowledge graph under Knowledge to add runbook and design passages here.{% endif %}</p>{% endfor %}
   </details>
 </section>
+</details>
 {% endblock %}

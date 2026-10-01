@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% load workspace icons %}
 {% block title %}Application appearance · {{ application.name }}{% endblock %}
-{% block content %}{% application_nav %}{% settings_nav %}
+{% block content %}{% application_nav %}{% settings_page %}
 <p class="eyebrow">{{ application.name }}</p><h1>Application icon or logo</h1>
 <p class="muted">Optional. Give this application a recognizable image in the workspace. Engineering and Operations keep their own labels and colors.</p>
 <section class="card form-card application-identity">
@@ -12,4 +12,4 @@
 <div class="identity-options"><div class="identity-icon-option">{{ form.icon.label_tag }}{{ form.icon.errors }}{{ form.icon }}</div><div class="identity-logo-option">{{ form.logo.label_tag }}{{ form.logo.errors }}{{ form.logo }}<small>{{ form.logo.help_text }}</small>{% if application.logo_digest %}<small>Leave the file empty to keep the current logo.</small>{% endif %}</div></div>
 <div class="actions"><button class="button" type="submit">Save appearance</button><a class="button secondary" href="{% if return_to == 'onboarding' %}{% url 'onboarding' application.pk %}{% else %}{% url 'application' application.pk %}{% endif %}">Cancel</a></div>
 </form></section>
-{% endblock %}
+{% endsettings_page %}{% endblock %}

@@ -152,8 +152,9 @@ class AdapterMappingTests(SimpleTestCase):
 
         with patch("platform_core.connector_kinds.api_json", side_effect=record):
             jira_records({"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok")
-        self.assertEqual(len(calls), 1)
-        self.assertIn("/rest/api/3/search/jql?", calls[0])
+        searches = [url for url in calls if "/search" in url]
+        self.assertEqual(len(searches), 1)
+        self.assertIn("/rest/api/3/search/jql?", searches[0])
 
     def test_jira_falls_back_when_an_instance_lacks_that_endpoint(self):
         """Data Center serves the old endpoint and has no /search/jql."""
@@ -169,8 +170,9 @@ class AdapterMappingTests(SimpleTestCase):
 
         with patch("platform_core.connector_kinds.api_json", side_effect=record):
             jira_records({"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("/rest/api/3/search?", calls[1])
+        searches = [url for url in calls if "/search" in url]
+        self.assertEqual(len(searches), 2)
+        self.assertIn("/rest/api/3/search?", searches[1])
 
     def test_a_rejected_credential_is_reported_rather_than_retried(self):
         """Only "that endpoint is not here" earns a second request. Retrying a
@@ -187,6 +189,48 @@ class AdapterMappingTests(SimpleTestCase):
             with self.assertRaises(ValidationError):
                 jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
                               "account_email": "a@b.com"}, "tok")
+        self.assertEqual(len(calls), 1)
+
+    def test_an_empty_search_with_a_rejected_token_fails_instead_of_importing_nothing(self):
+        """Jira Cloud runs a search with a revoked token anonymously and answers
+        200 with no issues. That used to import nothing and report success."""
+
+        def record(url, headers, *, label):
+            if "/myself" in url:
+                refused = ValidationError("Jira: 401")
+                refused.http_status = 401
+                raise refused
+            return {"issues": []}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            with self.assertRaises(ValidationError) as raised:
+                jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
+                              "account_email": "a@b.com"}, "expired")
+        self.assertIn("rejected the credential", " ".join(raised.exception.messages))
+
+    def test_an_empty_search_with_a_working_token_is_an_empty_result(self):
+        calls = []
+
+        def record(url, headers, *, label):
+            calls.append(url)
+            return {"accountId": "x"} if "/myself" in url else {"issues": []}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            records = jira_records(
+                {"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok"
+            )
+        self.assertEqual(records, [])
+        self.assertTrue(any("/rest/api/2/myself" in url for url in calls))
+
+    def test_a_search_that_returns_issues_asks_nothing_more(self):
+        calls = []
+
+        def record(url, headers, *, label):
+            calls.append(url)
+            return {"issues": [{"key": "OPS-1", "fields": {"summary": "One"}}]}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            jira_records({"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok")
         self.assertEqual(len(calls), 1)
 
     def test_deeply_nested_rich_text_terminates(self):
@@ -374,6 +418,38 @@ class ConnectorManagementTests(TestCase):
         connector.refresh_from_db()
         self.assertEqual(connector.last_status, "failed")
         self.assertIn("not reachable", connector.last_error)
+
+    def test_an_expired_jira_token_marks_the_connector_failed(self):
+        """What a revoked token looked like before: status ok, nothing imported."""
+        connector = self.make()
+
+        def anonymous(url, headers, *, label):
+            if "/myself" in url:
+                refused = ValidationError("Jira: 401")
+                refused.http_status = 401
+                raise refused
+            return {"issues": []}
+
+        with patch("platform_core.connectors.credential", return_value="expired"):
+            with patch("platform_core.connector_kinds.api_json", side_effect=anonymous):
+                with self.assertRaises(ValidationError):
+                    sync(self.owner, connector.pk, self.app.pk)
+        connector.refresh_from_db()
+        self.assertEqual(connector.last_status, "failed")
+        self.assertIn("rejected the credential", connector.last_error)
+
+    def test_an_empty_jira_filter_is_shown_as_no_records(self):
+        connector = self.make()
+
+        def empty(url, headers, *, label):
+            return {"accountId": "x"} if "/myself" in url else {"issues": []}
+
+        with patch("platform_core.connectors.credential", return_value="tok"):
+            with patch("platform_core.connector_kinds.api_json", side_effect=empty):
+                self.assertEqual(sync(self.owner, connector.pk, self.app.pk), 0)
+        connector.refresh_from_db()
+        self.assertEqual(connector.last_status, "empty")
+        self.assertIn("JQL", connector.last_error)
 
     def test_a_viewer_cannot_import(self):
         connector = self.make()
@@ -803,10 +879,26 @@ class ConnectorManagementTests(TestCase):
         self.assertEqual(len(marks), len(set(marks)))
 
     def test_systems_are_named_as_themselves(self):
-        """The list already has a column for what was imported; the name is the system."""
-        self.assertEqual([k.label for k in KINDS.values()], ["GitHub", "Jira", "ServiceNow"])
+        """The list already has a column for what was imported; the name is the system.
+
+        A system's own name may have a space in it - Azure Automation is called
+        that - so the check is for words describing the import, not for spaces.
+        """
+        self.assertEqual(
+            [k.label for k in KINDS.values()],
+            [
+                "GitHub",
+                "Jira",
+                "ServiceNow",
+                "Ansible AWX",
+                "Rundeck",
+                "Azure Automation",
+                "Automation list",
+            ],
+        )
         for kind in KINDS.values():
-            self.assertNotIn(" ", kind.label)
+            for word in ("issues", "tickets", "records", "jobs", "runbooks"):
+                self.assertNotIn(word, kind.label.casefold())
             self.assertTrue(kind.summary, f"{kind.key} has no summary for its card")
 
     def test_the_model_and_the_registry_agree_on_names(self):

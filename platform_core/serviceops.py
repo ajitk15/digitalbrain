@@ -17,7 +17,14 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
-from .models import Connector, KnowledgeEntry, TriageHypothesis, TriageRun, TriageVerdict
+from .models import (
+    AutomationRun,
+    Connector,
+    KnowledgeEntry,
+    TriageHypothesis,
+    TriageRun,
+    TriageVerdict,
+)
 from .services import audit
 from .workbench import access, add_knowledge
 
@@ -159,6 +166,21 @@ STRUCTURED_FIELDS = {
     "Start",
     "End",
     "Change type",
+    # Knowledge articles.
+    "Category",
+    "Knowledge base",
+    "Valid to",
+    "Keywords",
+    # Automations.
+    "Platform",
+    "Automation ID",
+    "Endpoint",
+    "Symptoms",
+    "Risk",
+    "Approval",
+    "Inputs",
+    "Last run",
+    "Last status",
 }
 
 
@@ -354,6 +376,23 @@ def is_resolved(fields):
         or fields.get("Status", "").lower() in {"resolved", "closed", "done"}
         or fields.get("State", "").lower() in {"resolved", "closed"}
     )
+
+
+#: States that end an incident without resolving it. Not part of `is_resolved`,
+#: which also picks precedents: a cancelled ticket explains nothing.
+CANCELLED_STATES = {"canceled", "cancelled", "won't do", "duplicate"}
+
+
+def is_finished(fields):
+    """Resolved, closed or cancelled: nothing left to triage."""
+    state = (fields.get("State") or fields.get("Status", "")).casefold()
+    return is_resolved(fields) or state in CANCELLED_STATES
+
+
+def needs_triage(item):
+    """Still open and never triaged. A resolved incident is a precedent for the
+    next one, not a task; counting it here made the list open on old tickets."""
+    return not item["last_run"] and not item["finished"]
 
 
 def is_open(fields):
@@ -616,7 +655,11 @@ def labelled_hypotheses(app, run):
         fields, _ = fields_and_description(entry)
         number = fields.get("Number", "")
         labels[str(entry.pk)] = (number, entry.title)
+    from .serviceops_triage import BAND_LABELS, idea_confidence
+
     for item in hypotheses:
+        item.confidence, item.confidence_band = idea_confidence(run, item.citations)
+        item.confidence_label = BAND_LABELS.get(item.confidence_band, "")
         # A headline to scan; older hypotheses have none, so their statement's
         # first sentence stands in for one.
         first = item.statement.split(". ")[0].rstrip(".")
@@ -733,18 +776,22 @@ def serviceops(request, pk):
                     "service": incident_fields.get("Service", ""),
                     "last_run": latest.get(entry.pk),
                     "needs_assessment": entry.pk in unassessed,
+                    "finished": is_finished(incident_fields),
                 }
             )
-        show = request.GET.get("show", "")
         priority = request.GET.get("priority", "")
         counts = {
             "all": len(incidents),
-            "untriaged": sum(1 for item in incidents if not item["last_run"]),
+            "untriaged": sum(1 for item in incidents if needs_triage(item)),
             "unassessed": sum(1 for item in incidents if item["needs_assessment"]),
         }
+        # The list opens on what needs doing: incidents nobody has triaged yet.
+        # "All" is an explicit choice (?show=all). With nothing left to triage
+        # the default shows everything rather than an empty list.
+        show = request.GET.get("show") or ("untriaged" if counts["untriaged"] else "all")
         priorities = sorted({item["priority_tone"] for item in incidents} - {"unknown"})
         if show == "untriaged":
-            incidents = [item for item in incidents if not item["last_run"]]
+            incidents = [item for item in incidents if needs_triage(item)]
         elif show == "unassessed":
             incidents = [item for item in incidents if item["needs_assessment"]]
         if priority in priorities:
@@ -757,7 +804,7 @@ def serviceops(request, pk):
                 "grant": grant,
                 "incidents": incidents,
                 "view": "incidents",
-                "show": show if show in {"untriaged", "unassessed"} else "",
+                "show": show if show in {"untriaged", "unassessed"} else "all",
                 "priority": priority if priority in priorities else "",
                 "priorities": priorities,
                 "counts": counts,
@@ -807,6 +854,10 @@ def serviceops(request, pk):
             "confirmed": walk["confirmed"],
             "graph": walk["passages"],
             "graph_available": walk["graph_available"],
+            "articles": walk["articles"],
+            "automations": walk["automations"],
+            "automation_runs": AutomationRun.objects.filter(application=app, incident=selected)
+            .select_related("automation", "requested_by")[:5],
             "map": drawn_map,
             "map_legend": map_legend(drawn_map),
             "origin": origin_link(selected),
@@ -902,13 +953,40 @@ def run_context(app, run, verified_brief=True):
     finished = bool(run and run.status in FINISHED and verified_brief)
     from .serviceops_triage import plain_limitations
 
+    hypotheses = labelled_hypotheses(app, run) if finished else []
     return {
         "run": run,
         "notes": plain_limitations(run) if finished else [],
         "run_live": bool(run and run.status in {"queued", "running"}),
-        "hypotheses": labelled_hypotheses(app, run) if finished else [],
+        "hypotheses": hypotheses,
         "score": score_breakdown(run) if finished else None,
+        "outcome": triage_outcome(run, hypotheses) if finished else None,
         "model_label": step_model_label(app, run),
+    }
+
+
+#: The confidence ring's circumference, for a radius of 52 in a 120 box. The arc
+#: is drawn with a dash length worked out here: a style attribute would be
+#: refused by the CSP, and an SVG presentation attribute is not one.
+RING = 2 * 3.14159265 * 52
+
+
+def triage_outcome(run, hypotheses):
+    """The run's result in one glance: its confidence and the idea to try first."""
+    from .serviceops_triage import BAND_LABELS
+
+    value = round(float((run.score_components or {}).get("raw_score") or 0) * 100)
+    quotes = sum(len(item.citations) for item in hypotheses)
+    sources = len({citation["id"] for item in hypotheses for citation in item.citations})
+    return {
+        "value": value,
+        "band": run.band,
+        "label": BAND_LABELS.get(run.band, run.band),
+        "dash": round(RING * value / 100, 1),
+        "gap": round(RING, 1),
+        "top": hypotheses[0] if hypotheses else None,
+        "quotes": quotes,
+        "sources": sources,
     }
 
 
@@ -1114,3 +1192,127 @@ def triage_verdict(request, pk, hypothesis_id):
             details={"verdict": verdict, "actual_cause": str(cause.pk) if cause else ""},
         )
     return redirect(incident_url(app, run.incident_id, run.pk))
+
+
+def launch_request(fields, incident_fields):
+    """What a real run of this automation would send, per platform.
+
+    Shown and stored; never sent. The inputs are the incident's own facts, so a
+    reader can see exactly which values a launcher would have handed over. A
+    platform's own call is described only when its source gave an address: a
+    row in a pasted list that merely says "AWX" gets the generic run.
+    """
+    platform = fields.get("Platform", "")
+    ident = fields.get("Automation ID", "")
+    endpoint = fields.get("Endpoint", "")
+    inputs = {
+        key: value
+        for key, value in (
+            ("incident", incident_fields.get("Number", "")),
+            ("ci", incident_fields.get("CI", "")),
+            ("service", incident_fields.get("Service", "")),
+        )
+        if value
+    }
+    if endpoint and platform == "AWX":
+        return {
+            "method": "POST",
+            "address": f"{endpoint}/api/v2/job_templates/{ident}/launch/",
+            "body": {"extra_vars": inputs},
+        }
+    if endpoint and platform == "Rundeck":
+        return {
+            "method": "POST",
+            "address": f"{endpoint}/api/41/job/{ident}/run",
+            "body": {"options": inputs},
+        }
+    if endpoint and platform == "Azure Automation":
+        return {
+            "method": "PUT",
+            "address": f"{endpoint}/jobs/<new job id>?api-version=2023-11-01",
+            "body": {"properties": {"runbook": {"name": ident}, "parameters": inputs}},
+        }
+    if endpoint and platform == "ServiceNow Flow Designer":
+        return {
+            "method": "TRIGGER",
+            "address": f"{endpoint} · flow {ident}",
+            "body": {"inputs": inputs},
+        }
+    return {
+        "method": "RUN",
+        "address": f"{platform or 'manual'} · {ident}",
+        "body": {"inputs": inputs},
+    }
+
+
+def simulate_automation(user, app, automation, incident):
+    """Record a simulated run: what would have been sent, sent nowhere.
+
+    The one place an automation is "run", and it does not run one. A real
+    launcher would replace the body of this function and keep its checks: write
+    access to ServiceOps, a live automation and incident, and an audit row.
+    """
+    from .ops_graph import automation_queryset, automation_usable
+
+    fields, _ = fields_and_description(automation)
+    if not automation_usable(fields):
+        raise ValidationError("This automation is not active where it is defined.")
+    incident_fields, _ = fields_and_description(incident)
+    request = launch_request(fields, incident_fields)
+    platform = fields.get("Platform", "")
+    approval = fields.get("Approval", "")
+    outcome = (
+        f"Simulated: nothing was sent to {platform or 'any platform'}. A real run would "
+        f"{request['method']} {request['address']}."
+    )
+    if approval and approval.casefold() not in {"no", "none", "not required", "false"}:
+        outcome += f" Approval: {approval}."
+    with transaction.atomic():
+        if not automation_queryset(app).filter(pk=automation.pk).exists():
+            raise Http404
+        run = AutomationRun.objects.create(
+            application=app,
+            automation=automation,
+            incident=incident,
+            requested_by=user,
+            platform=platform[:80],
+            request=request,
+            outcome=outcome[:600],
+        )
+        audit(
+            user,
+            "automation.simulated",
+            run.pk,
+            app.product.portfolio.organization,
+            details={
+                "automation": str(automation.pk),
+                "incident": str(incident.pk),
+                "platform": platform,
+            },
+        )
+    return run
+
+
+@login_required
+@require_POST
+def automation_simulate(request, pk, automation_id):
+    """Simulate running an automation for an incident, from the incident page."""
+    app, _ = access(request.user, pk, "service_ops", write=True)
+    access(request.user, pk, "knowledge")
+    from .ops_graph import automation_queryset
+
+    automation = get_object_or_404(automation_queryset(app), pk=automation_id)
+    try:
+        incident_id = uuid.UUID(request.POST.get("incident", ""))
+    except ValueError:
+        raise Http404 from None
+    incident = get_object_or_404(incident_queryset(app), pk=incident_id)
+    if not (verified(automation) and verified(incident)):
+        raise Http404
+    try:
+        run = simulate_automation(request.user, app, automation, incident)
+    except ValidationError as failure:
+        messages.error(request, " ".join(failure.messages))
+    else:
+        messages.success(request, run.outcome)
+    return redirect(f"{incident_url(app, incident.pk)}#automations")

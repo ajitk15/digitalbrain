@@ -414,7 +414,7 @@ class TokenManagementTests(TestCase):
     def test_the_client_tabs_do_not_reuse_the_settings_nav_class(self):
         """`tabs` already belongs to the settings sub-nav; sharing it restyles that."""
         body = self.client.get(self.url).content.decode()
-        self.assertIn('class="tabs settings-tabs"', body)
+        self.assertIn('class="settings-sidebar"', body)
         self.assertNotIn('<div class="tabs">', body)
 
     def test_the_page_shows_the_readable_address(self):
