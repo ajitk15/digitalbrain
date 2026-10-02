@@ -1,0 +1,50 @@
+# Development and demo configuration, as used on the CarePath demo machine.
+#
+# config/local.toml is gitignored on purpose: it records this machine's paths,
+# and scripts/init_local.py creates and repairs it on every start. This file is
+# the template for setting up another machine the same way:
+#
+#   1. Clone the repository to C:\Workspace\digitalbrian (or adjust the paths
+#      below to wherever it lives).
+#   2. Copy this file to config/local.toml before the first start.
+#   3. Run start-all.cmd. init_local.py keeps every line here and only rewrites
+#      secret_directory if the folder moved.
+#
+# Nothing secret is in here and nothing secret may be: credentials are files in
+# the directories named below, and they are copied to a new machine by hand,
+# never through git.
+
+mode = "development"
+hosts = ["localhost", "127.0.0.1", "testserver"]
+secret_directory = "C:/Workspace/digitalbrian/.runtime/secrets"
+# Where a credential entered on the Credentials screen is written. Must be a
+# different directory from the one an operator mounts into, because a mounted
+# credential deliberately takes precedence over one entered in the browser.
+managed_secret_directory = "C:/Workspace/digitalbrian/.runtime/secrets-managed"
+# One shared set of connector credentials, outside the codebase, named only by
+# connector: jira, git_read, git_write, servicenow. Read by every application
+# that has no credential of its own - a demo convenience. Copy the files in
+# this folder to the new machine yourself; delete this line to go without.
+connector_secret_directory = "C:/DigitalBrain/secrets"
+# Development only: use this machine's Claude Code login when an
+# application has no mounted Claude credential. Refused in production.
+claude_use_host_login = true
+# Let one person approve a change plan they wrote. On unless written down as
+# false; every plan approved this way says so in the audit record.
+allow_self_approval = true
+# Development only: let a platform administrator empty an organization between
+# demonstrations. Refused in production.
+allow_demo_reset = true
+# Folders on this machine Code Graph may index a repository from ("Add
+# repository" -> "From a folder on this server"). Any owner or contributor can
+# read code anywhere under these, so name the narrowest folder that holds your
+# repositories. Unset means the option is not offered.
+code_graph_local_roots = ["C:/Workspace"]
+# Development only: let Code Factory write an approved, prepared change into
+# the Code Graph folder it read ("Yes, write to the folder"). Refused in
+# production, where a change is delivered as a pull request.
+code_factory_local_write = true
+# Development only: let an approver run a Code Graph folder's own pytest suite
+# (with the folder's .venv) after Code Factory wrote into it. That runs code on
+# this machine. Refused in production, where the repository's CI runs tests.
+code_factory_local_tests = true
