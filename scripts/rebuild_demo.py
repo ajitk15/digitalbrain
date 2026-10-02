@@ -1,5 +1,6 @@
 """Build the CarePath demonstration workspace in one run - and only this:
 
+ 0. Settings: self-approval and demo reset switched on in config/local.toml
  1. Organization ACME
  2. Portfolio Integrated Care
  3. Product Care Coordination
@@ -138,6 +139,34 @@ CREDENTIAL_FILES = (
 
 #: How long to wait for conversion and indexing before leaving it to the server.
 WAIT_SECONDS = 20 * 60
+
+
+#: The two settings a one-person demo needs, written into config/local.toml.
+#: allow_self_approval lets the person who starts a run approve its plan;
+#: allow_demo_reset lets the platform administrator empty ACME between demos.
+DEMO_FLAGS = ("allow_self_approval", "allow_demo_reset")
+
+
+def demo_settings():
+    """Switch the demo's settings on in the configuration file, line by line.
+
+    Rewritten rather than round-tripped through TOML, as init_local.py does,
+    so every other line and comment survives. The server reads the file when it
+    starts, which `start-all.cmd -Demo` does right after this script.
+    """
+    path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config" / "local.toml"))
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for flag in DEMO_FLAGS:
+        found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == flag]
+        if found and lines[found[0]].partition("=")[2].strip() == "true":
+            print(f"found   {flag} = true")
+            continue
+        if found:
+            lines[found[0]] = f"{flag} = true"
+        else:
+            lines.append(f"{flag} = true")
+        print(f"enabled {flag} = true")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def step(number, title):
@@ -336,6 +365,8 @@ def main(argv=None):
         print("Refusing to build the demo on a production instance.")
         return 1
 
+    step(0, "Settings")
+    demo_settings()
     step(1, "Organization")
     org, made = Organization.objects.get_or_create(name="ACME")
     print(f"{'created' if made else 'found  '} organization ACME")

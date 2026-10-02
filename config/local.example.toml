@@ -10,7 +10,8 @@
 #   3. Put the connector credential files in connector_secret_directory below
 #      (C:/DigitalBrain/secrets): a file named jira holding the Atlassian API
 #      token, and one named servicenow holding the digibrain user's password.
-#   4. Run start-all.cmd -Demo. It builds ACME, Integrated Care, Care
+#   4. Run start-all.cmd -Demo. It switches on allow_self_approval and
+#      allow_demo_reset in config/local.toml, then builds ACME, Integrated Care, Care
 #      Coordination, CarePathDev and CarePathOps, user acmeadmin (password
 #      demo123456789), the connectors, knowledge from demo-artifacts/docs,
 #      code from demo-artifacts/carepath, and imports Jira and ServiceNow.

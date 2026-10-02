@@ -44,6 +44,14 @@ class RebuildDemoTests(TestCase):
         storage = override_settings(BASE_DIR=Path(scratch.name))
         storage.enable()
         self.addCleanup(storage.disable)
+        config = Path(scratch.name) / "local.toml"
+        config.write_text(
+            'mode = "development"\n# keep me\nallow_demo_reset = false\n', encoding="utf-8"
+        )
+        self.config = config
+        environment = patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(config)})
+        environment.start()
+        self.addCleanup(environment.stop)
         self.demo = builder()
         for stub in (
             patch.object(self.demo, "build_graphs"),
@@ -74,6 +82,16 @@ class RebuildDemoTests(TestCase):
             sorted(Application.objects.values_list("product__portfolio__name", "product__name")),
             [("Integrated Care", "Care Coordination")] * 2,
         )
+
+    def test_self_approval_and_demo_reset_are_switched_on_in_the_config(self):
+        self.build()
+        lines = self.config.read_text(encoding="utf-8").splitlines()
+        self.assertIn("allow_self_approval = true", lines)
+        self.assertIn("allow_demo_reset = true", lines)
+        self.assertNotIn("allow_demo_reset = false", lines)
+        self.assertIn("# keep me", lines)
+        self.build()
+        self.assertEqual(self.config.read_text(encoding="utf-8").count("allow_demo_reset"), 1)
 
     def test_running_it_again_creates_nothing_and_keeps_the_password(self):
         self.build()
