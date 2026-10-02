@@ -35,7 +35,11 @@ def builder():
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
     DOCUMENT_AUTO_CONVERT=False,
-    CODE_GRAPH_LOCAL_ROOTS=[str(ROOT / "demo-artifacts")],
+    # A new machine: nothing configured for local folders. Step 0 has to
+    # enable them for step 10 to register the code folder in the same run.
+    CODE_GRAPH_LOCAL_ROOTS=[],
+    CODE_FACTORY_LOCAL_WRITE=False,
+    CODE_FACTORY_LOCAL_TESTS=False,
 )
 class RebuildDemoTests(TestCase):
     def setUp(self):
@@ -46,7 +50,10 @@ class RebuildDemoTests(TestCase):
         self.addCleanup(storage.disable)
         config = Path(scratch.name) / "local.toml"
         config.write_text(
-            'mode = "development"\n# keep me\nallow_demo_reset = false\n', encoding="utf-8"
+            'mode = "development"\nhosts = ["localhost"]\n'
+            f'secret_directory = "{Path(scratch.name).as_posix()}/secrets"\n'
+            "# keep me\nallow_demo_reset = false\n",
+            encoding="utf-8",
         )
         self.config = config
         environment = patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(config)})
@@ -84,6 +91,20 @@ class RebuildDemoTests(TestCase):
             sorted(Application.objects.values_list("product__portfolio__name", "product__name")),
             [("Integrated Care", "Care Coordination")] * 2,
         )
+
+    def test_step_zero_writes_every_demo_setting_and_the_config_still_loads(self):
+        from digitalbrain.configuration import load_config
+
+        self.build()
+        lines = self.config.read_text(encoding="utf-8").splitlines()
+        demo_root = (ROOT / "demo-artifacts").resolve().as_posix()
+        self.assertIn(f'code_graph_local_roots = ["{demo_root}"]', lines)
+        self.assertIn("code_factory_local_write = true", lines)
+        self.assertIn("code_factory_local_tests = true", lines)
+        self.assertIn('connector_secret_directory = "C:/DigitalBrain/secrets"', lines)
+        with patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(self.config)}):
+            loaded = load_config()
+        self.assertEqual(loaded["code_graph_local_roots"], [demo_root])
 
     def test_self_approval_and_demo_reset_are_switched_on_in_the_config(self):
         self.build()

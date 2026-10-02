@@ -4,18 +4,23 @@
 # and scripts/init_local.py creates and repairs it on every start. This file is
 # the template for setting up another machine the same way:
 #
-#   1. Clone the repository to C:\Workspace\digitalbrian (or adjust the paths
-#      below to wherever it lives).
-#   2. Copy this file to config/local.toml before the first start.
-#   3. Put the connector credential files in connector_secret_directory below
-#      (C:/DigitalBrain/secrets): a file named jira holding the Atlassian API
-#      token, and one named servicenow holding the digibrain user's password.
-#   4. Run start-all.cmd -Demo. It switches on allow_self_approval and
-#      allow_demo_reset in config/local.toml, then builds ACME, Integrated Care, Care
-#      Coordination, CarePathDev and CarePathOps, user acmeadmin (owner of
-#      ACME) and platform administrator siteadmin@db.com (both with password
-#      demo123456789, so no administrator prompt), the connectors, knowledge from demo-artifacts/docs,
-#      code from demo-artifacts/carepath, and imports Jira and ServiceNow.
+#   1. Clone the repository anywhere.
+#   2. Put the connector credential files in C:/DigitalBrain/secrets: a file
+#      named jira holding the Atlassian API token, and one named servicenow
+#      holding the digibrain user's password.
+#   3. Run start-all.cmd -Demo. Its first step writes the demo's settings into
+#      config/local.toml itself - self-approval, demo reset, Code Graph local
+#      folders for this checkout's demo-artifacts, writing to them, running
+#      their tests, and the credential folder above - so copying this file is
+#      optional. It then builds ACME, Integrated Care, Care Coordination,
+#      CarePathDev and CarePathOps, acmeadmin (owner of ACME) and the platform
+#      administrator siteadmin@db.com (both with password demo123456789), the
+#      connectors, knowledge from demo-artifacts/docs, code from
+#      demo-artifacts/carepath, and imports Jira and ServiceNow.
+#
+# On a machine that has already started once without -Demo, run
+# start-all.cmd -Demo now: it adds the missing settings, and the restart picks
+# them up.
 #
 # Nothing secret is in here and nothing secret may be: credentials are files in
 # the directories named below, and they are copied to a new machine by hand,

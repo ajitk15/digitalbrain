@@ -1,6 +1,8 @@
 """Build the CarePath demonstration workspace in one run - and only this:
 
- 0. Settings: self-approval and demo reset switched on in config/local.toml
+ 0. Settings in config/local.toml: self-approval, demo reset, Code Graph local
+    folders (this checkout's demo-artifacts), writing to them and running their
+    tests, and the shared connector-credential folder if none is set
  1. Organization ACME
  2. Portfolio Integrated Care
  3. Product Care Coordination
@@ -146,31 +148,69 @@ CREDENTIAL_FILES = (
 WAIT_SECONDS = 20 * 60
 
 
-#: The two settings a one-person demo needs, written into config/local.toml.
-#: allow_self_approval lets the person who starts a run approve its plan;
-#: allow_demo_reset lets the platform administrator empty ACME between demos.
-DEMO_FLAGS = ("allow_self_approval", "allow_demo_reset")
+#: The shared connector-credential folder the demo expects, when none is set.
+CONNECTOR_FOLDER = "C:/DigitalBrain/secrets"
+
+
+def wanted_settings(current):
+    """(config key, TOML value, settings name, Python value) the demo needs.
+
+    The folder roots are worked out from where this checkout is, so a clone in
+    any directory reads its own demo-artifacts. Roots already configured are
+    kept and the demo folder is added beside them.
+    """
+    demo_root = CODE_FOLDER.parent.resolve()
+    roots = [str(root) for root in current.get("code_graph_local_roots", [])]
+    if not any(demo_root.is_relative_to(Path(root).resolve()) for root in roots):
+        roots.append(demo_root.as_posix())
+    wanted = [
+        # The person who starts a run may approve its plan.
+        ("allow_self_approval", "true", "ALLOW_SELF_APPROVAL", True),
+        # The platform administrator may empty ACME between demos.
+        ("allow_demo_reset", "true", "ALLOW_DEMO_RESET", True),
+        # Code Graph may read demo-artifacts/carepath ("From a folder on this server").
+        ("code_graph_local_roots", json.dumps(roots), "CODE_GRAPH_LOCAL_ROOTS", roots),
+        # Code Factory may write an approved change into that folder.
+        ("code_factory_local_write", "true", "CODE_FACTORY_LOCAL_WRITE", True),
+        # An approver may run the folder's own tests.
+        ("code_factory_local_tests", "true", "CODE_FACTORY_LOCAL_TESTS", True),
+    ]
+    if not current.get("connector_secret_directory"):
+        wanted.append(
+            (
+                "connector_secret_directory",
+                json.dumps(CONNECTOR_FOLDER),
+                "CONNECTOR_SECRET_DIRECTORY",
+                CONNECTOR_FOLDER,
+            )
+        )
+    return wanted
 
 
 def demo_settings():
-    """Switch the demo's settings on in the configuration file, line by line.
+    """Write the demo's settings into the configuration file, line by line.
 
     Rewritten rather than round-tripped through TOML, as init_local.py does,
-    so every other line and comment survives. The server reads the file when it
+    so every other line and comment survives. They are applied to this run as
+    well, so the steps below can use them; the server reads the file when it
     starts, which `start-all.cmd -Demo` does right after this script.
     """
+    import tomllib
+
     path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config" / "local.toml"))
+    current = tomllib.loads(path.read_text(encoding="utf-8"))
     lines = path.read_text(encoding="utf-8").splitlines()
-    for flag in DEMO_FLAGS:
-        found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == flag]
-        if found and lines[found[0]].partition("=")[2].strip() == "true":
-            print(f"found   {flag} = true")
-            continue
-        if found:
-            lines[found[0]] = f"{flag} = true"
+    for key, value, name, applied in wanted_settings(current):
+        found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == key]
+        if found and lines[found[0]].partition("=")[2].strip() == value:
+            print(f"found   {key} = {value}")
         else:
-            lines.append(f"{flag} = true")
-        print(f"enabled {flag} = true")
+            if found:
+                lines[found[0]] = f"{key} = {value}"
+            else:
+                lines.append(f"{key} = {value}")
+            print(f"set     {key} = {value}")
+        setattr(settings, name, applied)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
