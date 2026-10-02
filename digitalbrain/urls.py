@@ -6,6 +6,7 @@ from platform_core import (
     ai,
     api,
     code_graph,
+    code_knowledge,
     connectors,
     documents,
     factory_views,
@@ -18,6 +19,11 @@ from platform_core import (
 from platform_core.utility import api_chat, api_triage
 
 urlpatterns = [
+    path(
+        "applications/<uuid:pk>/graph/<int:number>/related-code/",
+        code_knowledge.related_code,
+        name="graph-related-code",
+    ),
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
     path(
         "applications/<uuid:pk>/graph/generate/",
@@ -29,6 +35,11 @@ urlpatterns = [
         "applications/<uuid:pk>/code-graph/add/",
         code_graph.repository_add,
         name="code-graph-add",
+    ),
+    path(
+        "applications/<uuid:pk>/code-graph/add/browse/",
+        code_graph.repository_browse,
+        name="code-graph-browse",
     ),
     path(
         "applications/<uuid:pk>/code-graph/files/<uuid:file_id>/",
@@ -168,6 +179,11 @@ urlpatterns = [
     ),
     path("applications/<uuid:pk>/runs/", factory_views.runs, name="runs"),
     path("applications/<uuid:pk>/runs/<uuid:run_id>/", factory_views.run_detail, name="run-detail"),
+    path(
+        "applications/<uuid:pk>/runs/<uuid:run_id>/before-after/",
+        factory_views.run_before_after,
+        name="run-before-after",
+    ),
     path(
         "applications/<uuid:pk>/runs/<uuid:run_id>/agents/<slug:name>/",
         factory_views.run_agent,

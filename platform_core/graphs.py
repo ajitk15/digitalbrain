@@ -727,6 +727,7 @@ def graph_view(request, pk):
             "graph": graph if current else None,
             "graph_status": status,
             "selected_revision": selected,
+            "code_links_enabled": feature_enabled("code_graph", app),
             "knowledge_view": tab,
             "active_version": active_graph.version if active_graph else None,
             "versions": Paginator(

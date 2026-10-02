@@ -178,6 +178,35 @@ def _setup_of(checkout):
     return detect(read, listdir)
 
 
+def select_files(entries):
+    """(files, warnings, complete) from (absolute, relative, size) entries.
+
+    The one place the inclusion, count and byte limits are applied, so a clone
+    and a local folder are held to the same bounds.
+    """
+    files, warnings, complete, total = [], [], True, 0
+    for absolute, relative, size in entries:
+        if not included(relative, min(size, MAX_FILE_BYTES)):
+            continue
+        if len(files) >= MAX_FILES:
+            complete = False
+            warnings.append(f"Only the first {MAX_FILES} supported files were indexed.")
+            break
+        if total + size > MAX_TOTAL_BYTES:
+            complete = False
+            warnings.append("The source-size limit was reached; remaining files were not indexed.")
+            break
+        try:
+            text = absolute.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            complete = False
+            warnings.append(f"{relative} could not be read as UTF-8 text and was left out.")
+            continue
+        total += size
+        files.append((relative, text))
+    return files, warnings, complete
+
+
 def clone_sources(name, ref, token, setup=None, languages=None):
     """Clone one repository and return (commit, branch, files, warnings, complete).
 
@@ -199,7 +228,6 @@ def clone_sources(name, ref, token, setup=None, languages=None):
     recording separately from the indexed files.
     """
     warnings = []
-    complete = True
     with tempfile.TemporaryDirectory(prefix="code-graph-") as scratch_name:
         scratch = Path(scratch_name)
         checkout = scratch / "checkout"
@@ -271,28 +299,8 @@ def clone_sources(name, ref, token, setup=None, languages=None):
         if languages is not None:
             languages.extend(census((relative, size) for _, relative, size in entries))
 
-        files, total = [], 0
-        for absolute, relative, size in entries:
-            if not included(relative, min(size, MAX_FILE_BYTES)):
-                continue
-            if len(files) >= MAX_FILES:
-                complete = False
-                warnings.append(f"Only the first {MAX_FILES} supported files were indexed.")
-                break
-            if total + size > MAX_TOTAL_BYTES:
-                complete = False
-                warnings.append(
-                    "The source-size limit was reached; remaining files were not indexed."
-                )
-                break
-            try:
-                text = absolute.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                complete = False
-                warnings.append(f"{relative} could not be read as UTF-8 text and was left out.")
-                continue
-            total += size
-            files.append((relative, text))
+        files, selected_warnings, complete = select_files(entries)
+        warnings += selected_warnings
 
         if setup is not None:
             setup.update(_setup_of(checkout))

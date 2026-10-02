@@ -32,6 +32,9 @@ def load_config():
         "allow_self_approval",
         "allow_demo_reset",
         "fetch_allow_hosts",
+        "code_graph_local_roots",
+        "code_factory_local_write",
+        "code_factory_local_tests",
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
@@ -46,6 +49,26 @@ def load_config():
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("allow_self_approval", False)) is not bool:
         raise ImproperlyConfigured("allow_self_approval must be a boolean.")
+    if type(config.get("code_factory_local_write", False)) is not bool:
+        raise ImproperlyConfigured("code_factory_local_write must be a boolean.")
+    if config.get("code_factory_local_write") and config.get("mode") == "production":
+        # Reading a folder is opted into by naming roots; writing source files
+        # into one is a stronger power, and a production server's disk is not
+        # where a reviewed change belongs - a pull request is.
+        raise ImproperlyConfigured(
+            "code_factory_local_write is for development and demonstration instances "
+            "and cannot be set in production. Deliver through a pull request instead."
+        )
+    if type(config.get("code_factory_local_tests", False)) is not bool:
+        raise ImproperlyConfigured("code_factory_local_tests must be a boolean.")
+    if config.get("code_factory_local_tests") and config.get("mode") == "production":
+        # Running a folder's tests runs its code - here, code a model just
+        # wrote - with this server's privileges. A pull request's CI runs it in
+        # somebody else's sandbox, which is where it belongs in production.
+        raise ImproperlyConfigured(
+            "code_factory_local_tests is for development and demonstration instances "
+            "and cannot be set in production. Let the repository's CI run the tests."
+        )
     if type(config.get("allow_demo_reset", False)) is not bool:
         raise ImproperlyConfigured("allow_demo_reset must be a boolean.")
     limit = config.get("import_max_files", 100)
@@ -87,6 +110,18 @@ def load_config():
         # An allow-list that allows everything is not an allow-list. Naming each
         # internal host is the whole point of the setting.
         raise ImproperlyConfigured("fetch_allow_hosts cannot contain a wildcard.")
+    roots = config.get("code_graph_local_roots", [])
+    if not isinstance(roots, list) or any(not isinstance(r, str) or not r.strip() for r in roots):
+        raise ImproperlyConfigured("code_graph_local_roots must be a list of folder paths.")
+    for root in roots:
+        folder = Path(root.strip())
+        if not folder.is_absolute():
+            raise ImproperlyConfigured("code_graph_local_roots must be absolute paths.")
+        if folder.resolve() == Path(folder.resolve().anchor):
+            # The same rule as a wildcard host: a drive root lets anyone with a
+            # contributor grant read the whole disk, which is not a choice of
+            # folders at all.
+            raise ImproperlyConfigured("code_graph_local_roots cannot name a drive root.")
     if config.get("claude_use_host_login") and config.get("mode") == "production":
         # Refused outright rather than quietly ignored: a production deployment that
         # believes it is using per-application credentials must not be silently

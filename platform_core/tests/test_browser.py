@@ -594,6 +594,58 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         self.assertIn(f"{found['total']} of {found['total']} nodes shown", found["count"])
         self.assertNoScriptErrors()
 
+    def test_related_code_opens_file_and_returns_to_the_selected_node(self):
+        import hashlib
+
+        from platform_core.graphs import rebuild
+        from platform_core.models import CodeFile, CodeRepository, CodeSnapshot
+
+        add_knowledge(self.owner, self.app.pk, "Consent", "FR-09 uses services/consent.py")
+        rebuild(self.app.pk)
+        revision = GraphRevision.objects.filter(application=self.app).first()
+        revision.published_at = timezone.now()
+        revision.save(update_fields=["published_at"])
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, name="CarePath", status="ready",
+            external_id="acme/care", source_url="https://github.com/acme/care",
+        )
+        snapshot = CodeSnapshot.objects.create(repository=repository, number=1, commit_sha="a" * 40)
+        content = "# FR-09 consent\n"
+        file = CodeFile.objects.create(
+            snapshot=snapshot, path="services/consent.py", content=content,
+            digest=hashlib.sha256(content.encode()).hexdigest(), language="python",
+        )
+        node = next(n["id"] for n in revision.data["nodes"]
+                    if n["kind"] == "section" and "FR-09" in n["label"])
+        self.open("graph", self.app.pk, query=f"?version={revision.number}&node={node}")
+        selector = f"#graph-inspector a[href='{reverse('code-file', args=[self.app.pk, file.pk])}']"
+        self.page.wait_for_selector(selector)
+        self.assertTrue(self.page.locator(".kb-graph-bar #graph-expand-code").is_visible())
+        self.page.get_by_role("button", name="Expand related code", exact=True).click()
+        self.page.wait_for_selector("#graph-canvas[data-code-nodes='1'][data-code-edges='1']")
+        self.assertTrue(self.page.get_by_text("Code reference", exact=True).is_visible())
+        # The path match and identifier match share one file node and one edge.
+        self.page.get_by_role("button", name="Expand related code", exact=True).click()
+        self.page.wait_for_selector("#graph-canvas[data-code-nodes='1'][data-code-edges='1']")
+        code_id = f"code:{snapshot.pk}:{file.pk}"
+        self.page.select_option("#graph-node", code_id)
+        self.page.get_by_role("link", name="Open in Code Graph", exact=True).wait_for()
+        self.assertIn("Shared identifier FR-09", self.page.inner_text("#graph-inspector"))
+        self.page.get_by_role("button", name="Back to knowledge node", exact=True).click()
+        self.page.wait_for_selector(f"#graph-canvas[data-focus='{node}']")
+        self.page.locator("#graph-reset").click()
+        self.page.wait_for_selector("#graph-canvas[data-code-nodes='0'][data-code-edges='0']")
+        self.page.select_option("#graph-node", node)
+        self.page.wait_for_selector(selector)
+        self.page.locator(selector).first.click()
+        self.page.get_by_text("Related knowledge", exact=True).wait_for()
+        self.page.locator("#related-knowledge details summary").first.click()
+        self.page.get_by_text(
+            f"Explore in knowledge graph v{revision.number}", exact=True
+        ).first.click()
+        self.page.wait_for_selector(f"#graph-canvas[data-focus='{node}']")
+        self.assertNoScriptErrors()
+
     def test_choosing_a_node_from_the_list_inspects_it(self):
         self.open("graph", self.app.pk)
         self.page.wait_for_selector("#graph-canvas[data-nodes]")
@@ -603,6 +655,29 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         self.page.select_option("#graph-node", node_id)
         self.page.wait_for_selector(f"#graph-canvas[data-focus='{node_id}']")
         self.assertEqual(self.page.inner_text("#graph-inspector h2"), label)
+        self.assertNoScriptErrors()
+
+    def test_the_legend_is_on_the_canvas_and_matches_the_filters(self):
+        """The filters are folded away, so the colours need a key that is not."""
+        self.open("graph", self.app.pk)
+        self.page.wait_for_selector("#graph-legend-nodes .legend-item")
+        self.assertTrue(self.page.is_visible("#graph-legend-nodes .legend-item"))
+        self.assertFalse(self.page.is_visible("#graph-filters .graph-filter"))
+        read = """() => ({
+          legend: [...document.querySelectorAll('#graph-legend-nodes .legend-item')].map(
+            (item) => [item.textContent, getComputedStyle(item.firstChild).backgroundColor]),
+          filters: [...document.querySelectorAll('#graph-filters .graph-filter')].map(
+            (item) => [item.textContent,
+                       getComputedStyle(item.querySelector('.graph-swatch')).backgroundColor]),
+          edges: document.getElementById('graph-legend-edges').textContent,
+        })"""
+        dark = self.page.evaluate(read)
+        self.assertEqual(dark["legend"], dark["filters"])
+        self.assertIn("Structure", dark["edges"])
+        self.page.click("#graph-theme")
+        light = self.page.evaluate(read)
+        self.assertEqual(light["legend"], light["filters"])
+        self.assertNotEqual(light["legend"], dark["legend"])
         self.assertNoScriptErrors()
 
 
@@ -850,4 +925,107 @@ class OnboardingTests(BrowserTestCase):
         self.assertFalse(approval.is_visible())
         self.page.locator('input[name="purpose"][value="both"]').check()
         self.assertTrue(approval.is_visible())
+        self.assertNoScriptErrors()
+
+
+class BrowseButtonTests(BrowserTestCase):
+    """Browse beside a path or file field, opening the right kind of picker."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        super().setUp()
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        self.root = Path(scratch.name).resolve()
+        (self.root / "service" / "app").mkdir(parents=True)
+        (self.root / "service" / "app" / "main.py").write_text("x = 1\n", encoding="utf-8")
+        roots = override_settings(CODE_GRAPH_LOCAL_ROOTS=[str(self.root)])
+        roots.enable()
+        self.addCleanup(roots.disable)
+
+    def test_a_server_folder_is_chosen_by_browsing_inside_the_popup(self):
+        from platform_core.models import CodeRepository
+
+        self.open("code-graph", self.app.pk)
+        self.page.locator(
+            f'a[data-modal][href="{reverse("code-graph-add", args=[self.app.pk])}"]'
+        ).first.click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("link", name="Browse").click()
+        dialog.get_by_role("heading", name="Choose a folder").wait_for()
+        dialog.get_by_role("link", name="service").click()
+        dialog.get_by_role("link", name="app").wait_for()
+        dialog.get_by_role("button", name="Index this folder").click()
+        self.page.locator("h2", has_text="service").first.wait_for()
+        repository = CodeRepository.objects.get()
+        self.assertEqual((repository.provider, repository.name), ("local", "service"))
+        self.assertNoScriptErrors()
+
+    def test_knowledge_file_fields_have_browse_on_the_right(self):
+        self.open("source-add", self.app.pk)
+        field = self.page.locator("#id_file")
+        browse = self.page.locator('label[for="id_file"].button')
+        self.assertGreater(browse.bounding_box()["x"], field.bounding_box()["x"])
+        with self.page.expect_file_chooser() as chooser:
+            browse.click()
+        self.assertTrue(chooser.value.is_multiple())
+        self.assertNoScriptErrors()
+
+
+class BeforeAfterTests(BrowserTestCase):
+    """A run's Refresh stage fills in its before-and-after once the re-index lands."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        from platform_core.code_factory_build import apply_local, refresh_after
+        from platform_core.code_graph_ingest import index_repository, register_local
+        from platform_core.models import ApplicationGrant, ChangePlan, FactoryRun, ProposedChange
+
+        super().setUp()
+        scratch = tempfile.TemporaryDirectory()
+        self.addCleanup(scratch.cleanup)
+        root = Path(scratch.name).resolve()
+        (root / "service" / "app").mkdir(parents=True)
+        (root / "service" / "app" / "util.py").write_text("X = 1\n", encoding="utf-8")
+        settings_override = override_settings(
+            CODE_GRAPH_LOCAL_ROOTS=[str(root)], CODE_FACTORY_LOCAL_WRITE=True
+        )
+        settings_override.enable()
+        self.addCleanup(settings_override.disable)
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        self.repository = register_local(self.owner, self.app.pk, str(root / "service"))
+        index_repository(self.repository)
+        plan = ChangePlan.objects.create(
+            application=self.app, author=self.owner, title="Fix", proposal="p",
+            validation="v", digest="d", status="approved",
+        )
+        self.run = FactoryRun.objects.create(
+            application=self.app, requested_by=self.owner, plan=plan,
+            ticket_external_id="CARE-1", proposed_repository="service",
+            code_snapshot=self.repository.snapshots.get(), status="prepared",
+        )
+        ProposedChange.objects.create(run=self.run, path="app/util.py", content="X = 2\n")
+        apply_local(self.owner, self.app.pk, self.run.pk)
+        refresh_after(self.owner, self.app.pk, self.run.pk, ["code"])
+
+    def test_the_comparison_appears_in_place_when_the_snapshot_is_ready(self):
+        from platform_core.code_graph_ingest import index_repository
+
+        self.open("run-detail", self.app.pk, self.run.pk)
+        self.page.locator('[data-live="stage-7"] [data-live-pending]').wait_for()
+        self.mark_page()
+        self.repository.refresh_from_db()
+        index_repository(self.repository)
+        stage = self.page.locator('[data-live="stage-7"]:not(:has([data-live-pending]))')
+        stage.wait_for()
+        self.assertSamePage()
+        text = stage.inner_text()
+        self.assertIn("snapshot v2", text)
+        self.assertIn("app/util.py", text)
         self.assertNoScriptErrors()

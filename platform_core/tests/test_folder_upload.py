@@ -7,6 +7,7 @@ whole upload is one source - so demo reset clears it with the link sources.
 """
 
 import json
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -80,6 +81,9 @@ class FolderUploadTests(TestCase):
         page = self.client.get(self.url)
         self.assertContains(page, "webkitdirectory")
         self.assertContains(page, 'name="action" value="folder"')
+        # Browse sits beside each picker, as a label so it needs no script.
+        self.assertContains(page, '<label for="id_folder" class="button secondary"')
+        self.assertContains(page, '<label for="id_file" class="button secondary"')
 
     def test_a_folder_becomes_one_source_with_its_subfolders_in_the_names(self):
         self.assertEqual(self.post().status_code, 302)
@@ -125,3 +129,127 @@ class FolderUploadTests(TestCase):
         demo_reset.reset(self.admin, self.app.product.portfolio.organization, "Example")
         self.assertFalse(KnowledgeSource.objects.exists())
         self.assertFalse(Document.objects.exists())
+
+    def test_a_database_error_part_way_is_a_form_error_and_a_retry_adds_the_rest(self):
+        from django.db import OperationalError
+
+        from platform_core import documents
+
+        real, calls = documents.store_document, []
+
+        def flaky(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 2:
+                raise OperationalError("database is locked")
+            return real(*args, **kwargs)
+
+        with patch.object(documents, "store_document", flaky):
+            response = self.post()
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "uploading the folder again adds only what is missing")
+        self.assertEqual(Document.objects.count(), 1)
+        self.assertEqual(self.post().status_code, 302)
+        self.assertEqual(Document.objects.exclude(status="deleted").count(), 2)
+
+
+class SqliteWriteLockTests(SimpleTestCase):
+    """A read-then-write transaction waits for a worker instead of failing.
+
+    Under WAL a deferred transaction that read before another connection
+    committed cannot upgrade to a writer, and SQLite refuses it at once without
+    applying the busy timeout. That is what stopped a folder upload on its
+    twelfth file while the worker converted the first eleven.
+    """
+
+    def run_race(self, mode):
+        import tempfile
+        import threading
+        from pathlib import Path
+
+        from django.db.backends.sqlite3.base import DatabaseWrapper
+
+        from digitalbrain import settings as project
+
+        options = dict(project.DATABASES["default"].get("OPTIONS", {}))
+        if mode:
+            options["transaction_mode"] = mode
+        else:
+            options.pop("transaction_mode", None)
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        name = str(Path(directory.name) / "race.sqlite3")
+
+        def wrapper():
+            connection = DatabaseWrapper(
+                {
+                    **project.DATABASES["default"],
+                    "NAME": name,
+                    "OPTIONS": options,
+                    "TIME_ZONE": None,
+                    "CONN_MAX_AGE": 0,
+                    "CONN_HEALTH_CHECKS": False,
+                    "AUTOCOMMIT": True,
+                    "ATOMIC_REQUESTS": False,
+                    "TEST": {},
+                },
+                alias=f"race-{mode}",
+            )
+            connection.ensure_connection()
+            return connection
+
+        setup = wrapper()
+        with setup.cursor() as cursor:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("CREATE TABLE item (id INTEGER PRIMARY KEY)")
+        setup.close()
+
+        read, failures = threading.Event(), []
+
+        def request():
+            connection = wrapper()
+            try:
+                with connection.cursor() as cursor:
+                    # What atomic() begins with: plain BEGIN, or BEGIN <mode>.
+                    cursor.execute(f"BEGIN {mode}" if mode else "BEGIN")
+                    cursor.execute("SELECT count(*) FROM item")
+                    read.set()
+                    threading.Event().wait(0.3)
+                    cursor.execute("INSERT INTO item DEFAULT VALUES")
+                    cursor.execute("COMMIT")
+            except Exception as failure:
+                failures.append(failure)
+            finally:
+                read.set()
+                connection.close()
+
+        def worker():
+            read.wait(5)
+            connection = wrapper()
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute("INSERT INTO item DEFAULT VALUES")
+            except Exception as failure:
+                failures.append(failure)
+            finally:
+                connection.close()
+
+        threads = [threading.Thread(target=request), threading.Thread(target=worker)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(30)
+        return failures
+
+    def test_deferred_fails_at_once_which_is_the_bug(self):
+        failures = self.run_race(None)
+        self.assertTrue(failures)
+        self.assertIn("locked", str(failures[0]))
+
+    def test_the_configured_mode_waits_and_both_writes_land(self):
+        from django.conf import settings
+
+        mode = settings.DATABASES["default"].get("OPTIONS", {}).get("transaction_mode")
+        if settings.DATABASES["default"]["ENGINE"] != "django.db.backends.sqlite3":
+            self.skipTest("Only SQLite has this failure.")
+        self.assertEqual(mode, "IMMEDIATE")
+        self.assertEqual(self.run_race(mode), [])

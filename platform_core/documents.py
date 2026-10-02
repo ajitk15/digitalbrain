@@ -11,7 +11,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -422,11 +422,14 @@ def intake(request, pk, can_upload):
                     folder_form.cleaned_data["folder"],
                     folder_form.cleaned_data["paths"],
                 )
-            except (forms.ValidationError, OSError) as failure:
+            except (forms.ValidationError, OSError, DatabaseError) as failure:
+                # Files before the failing one are stored and stay; uploading
+                # the folder again skips them and adds the rest.
                 folder_form.add_error(
                     "folder",
                     " ".join(getattr(failure, "messages", []))
-                    or "A file could not be stored. Anything already uploaded is listed.",
+                    or "A file could not be stored. Anything already uploaded is listed, "
+                    "and uploading the folder again adds only what is missing.",
                 )
             else:
                 parts = [f"{added} document(s) uploaded from {source.name}"]

@@ -2091,14 +2091,17 @@
      file, so it silently won and threw this row into the page corner. */
   .kb-graph-bar {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: var(--s-2);
     margin-bottom: var(--s-3);
   }
   .kb-graph-bar > label { margin: 0; white-space: nowrap; }
-  .kb-graph-bar #graph-search { flex: 1 1 160px; width: auto; min-width: 0; }
-  .kb-graph-bar #graph-node { flex: 0 1 180px; width: auto; min-width: 0; }
+  .kb-graph-bar #graph-search { flex: 1 1 160px; width: auto; min-width: 80px; }
+  .kb-graph-bar #graph-node { flex: 0 1 160px; width: auto; min-width: 100px; }
+  .kb-graph-bar > .button,
+  .kb-graph-bar > .graph-zoom { flex-shrink: 0; white-space: nowrap; }
+  .kb-graph-bar #graph-code-status { flex: 0 1 240px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kb-graph-bar .graph-filters { flex: 0 1 auto; }
   .kb-graph-bar .graph-colour { display: inline-flex; align-items: center; gap: var(--s-1); margin: 0; white-space: nowrap; }
   .kb-graph-bar .graph-colour select { width: auto; }
@@ -2355,6 +2358,19 @@
   .legend-swatch.role-orphan { background: #64748b; }
   .legend-swatch.role-circular { background: #ef4444; }
   .legend-note { display: block; margin-top: 7px; font-size: 9.5px; color: #5c6780; max-width: 34ch; }
+  .legend-line { width: 16px; height: 0; display: inline-block; border-top: 2px solid #8a96b8; }
+  .legend-line.dashed { border-top-style: dashed; }
+  /* The knowledge graph's legend: built by graph.js from the same colours the
+     canvas draws, so it changes with "Colour by" and with the canvas theme. */
+  .kb-legend { top: 10px; right: 10px; max-width: min(260px, 45%); }
+  .kb-legend .legend-group { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .kb-legend .legend-item { max-width: 100%; }
+  .kb-legend .legend-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kb-legend #graph-legend-nodes:not(.by-theme) .legend-item { text-transform: capitalize; }
+  #graph-canvas[data-canvas="light"] ~ .graph-legend { background: rgba(244, 245, 249, .94); border-color: #dde0ea; }
+  #graph-canvas[data-canvas="light"] ~ .graph-legend summary,
+  #graph-canvas[data-canvas="light"] ~ .graph-legend .legend-group b { color: #6b7286; }
+  #graph-canvas[data-canvas="light"] ~ .graph-legend .legend-item { color: #3f4759; }
 
   .graph-minimap { position: absolute; right: var(--s-3); bottom: var(--s-3); width: 172px; height: 108px; background: rgba(11, 14, 20, .78); border: 1px solid #242b3d; border-radius: 8px; cursor: pointer; }
   .mini-node { fill: #323b52; }
@@ -3226,7 +3242,8 @@
   .overview-counts { margin-top: var(--s-4); font-size: var(--t-12); }
   /* The graph explorer's filters and colouring, folded until wanted: finding
      a node and zooming are what most visits need. */
-  .graph-more { flex-basis: 100%; }
+  .graph-more { position: relative; flex: 0 0 auto; white-space: nowrap; }
+  .graph-more-panel { position: absolute; z-index: 20; top: calc(100% + var(--s-2)); right: 0; width: min(360px, 80vw); padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); box-shadow: 0 8px 24px rgb(0 0 0 / 12%); white-space: normal; }
   .graph-more > summary { display: inline-flex; align-items: center; gap: var(--s-1); cursor: pointer; color: var(--c-ink-3); font-size: var(--t-13); font-weight: 600; }
   .graph-more[open] > summary { margin-bottom: var(--s-2); }
   .graph-more .graph-filters { margin-top: var(--s-1); }
@@ -3565,4 +3582,97 @@
   .analysis-note { margin: 0 0 var(--s-2); font-size: var(--t-12); }
   .evidence-sources dt { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
   .evidence-sources dt code { font-size: var(--t-11); }
+}
+
+/* A field with its Browse button on the right: the file inputs on Add a
+   source, and the server-folder path on Add repository. */
+@layer redesign {
+  .file-field, .path-field { display: flex; align-items: center; gap: var(--s-2); }
+  .file-field input[type=file], .path-field input { flex: 1; min-width: 0; }
+  .file-field .button, .path-field .button { flex-shrink: 0; gap: var(--s-1); cursor: pointer; }
+  /* The label beside it is the button; the browser's own would say the same
+     thing in different words, on the wrong side. */
+  .file-field input[type=file]::file-selector-button { display: none; }
+  .file-field input[type=file] { cursor: pointer; color: var(--c-ink-2); }
+  .file-field input[type=file]:focus-visible + .button { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+
+  .folder-browse-here { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); flex-wrap: wrap; margin-bottom: var(--s-3); }
+  .folder-browse-here code { overflow-wrap: anywhere; min-width: 0; }
+  .folder-browse-here form, .folder-browse-list form { margin: 0; }
+  .folder-browse-list { list-style: none; margin: 0 0 var(--s-3); padding: 0; border: 1px solid var(--c-line); border-radius: var(--r-md); max-height: 420px; overflow: auto; }
+  .folder-browse-list li { display: flex; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-3); border-top: 1px solid var(--c-line-soft); font-size: var(--t-12); }
+  .folder-browse-list li:first-child { border-top: 0; }
+  .folder-browse-list li.muted { display: block; }
+  .folder-browse-list a { display: flex; align-items: center; gap: var(--s-2); flex: 1; min-width: 0; color: var(--c-ink); }
+  .folder-browse-list a span { overflow-wrap: anywhere; }
+  .folder-browse-list a svg { flex-shrink: 0; color: var(--c-ink-3); }
+  .folder-browse-list .button { padding: 5px 10px; }
+  .code-folder-path { font-size: var(--t-11); overflow-wrap: anywhere; min-width: 0; }
+}
+
+/* Before and after a Code Factory run, on its Refresh stage. */
+@layer redesign {
+  .before-after { border-top: 1px solid var(--c-line); padding-top: var(--s-4); }
+  .ba-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: var(--s-3); align-items: stretch; margin-bottom: var(--s-4); }
+  .ba-side { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-3); background: var(--c-surface); }
+  .ba-after { border-color: var(--c-ok); background: #f1faf4; }
+  .ba-arrow { display: grid; place-items: center; color: var(--c-ink-3); }
+  .ba-tag { margin: 0 0 var(--s-2); font-size: var(--t-11); font-weight: 700; letter-spacing: .8px; text-transform: uppercase; color: var(--c-ink-3); }
+  .ba-after .ba-tag { color: var(--c-ok); }
+  .ba-side dl { margin: 0; display: grid; gap: var(--s-2); }
+  .ba-side dt { font-size: var(--t-11); color: var(--c-ink-3); }
+  .ba-side dd { margin: 0; font-weight: 600; font-size: var(--t-13); }
+  .ba-side dd small { font-weight: 400; }
+  .ba-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s-4); }
+  .before-after h4 { font-size: var(--t-12); margin: 0 0 var(--s-2); }
+  .before-after ul { margin: 0 0 var(--s-3); padding-left: 18px; font-size: var(--t-12); }
+  .before-after li { margin-bottom: 4px; overflow-wrap: anywhere; }
+  .before-after li small { display: inline; margin-left: 4px; }
+  .ba-links li small { display: block; margin-left: 0; }
+  .ba-gain small { color: var(--c-ok); }
+  .ba-loss small { color: var(--c-bad); }
+  @media (max-width: 700px) {
+    .ba-grid { grid-template-columns: 1fr; }
+    .ba-arrow { transform: rotate(90deg); }
+  }
+}
+
+/* The before/after drawings: one neighbourhood, twice, same positions. */
+@layer redesign {
+  /* Side by side and compact: the drawings are sized in their own units, so
+     they stay legible at half width instead of shrinking their labels. */
+  .ba-pictures { display: grid; grid-template-columns: repeat(2, minmax(0, 420px)); gap: var(--s-3); margin-bottom: var(--s-3); }
+  .ba-figure { margin: 0; border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-3); background: var(--c-surface); min-width: 0; }
+  .ba-figure-after { border-color: var(--c-ok); }
+  .ba-figure figcaption { font-size: var(--t-13); margin-bottom: var(--s-2); }
+  .ba-figure figcaption small { display: inline; margin-left: 6px; }
+  .ba-figure-after figcaption strong { color: var(--c-ok); }
+  .ba-columns { display: grid; grid-template-columns: repeat(3, 1fr); text-align: center; font-size: var(--t-11); color: var(--c-ink-3); letter-spacing: .4px; }
+  .ba-graph { display: block; width: 100%; height: auto; }
+  .ba-edge { fill: none; stroke-width: 1.6; }
+  .ba-edge-code { stroke: #9aa3b8; }
+  .ba-edge-link { stroke: #6b8fd6; stroke-dasharray: 5 4; }
+  .ba-edge-new { stroke: #1f9d55; stroke-width: 3; }
+  .ba-edge-gone { stroke: #c0392b; stroke-width: 2.4; stroke-dasharray: 3 4; }
+  .ba-node rect { stroke-width: 1.2; }
+  .ba-node text { font-size: 12px; fill: var(--c-ink); }
+  .ba-figure { padding: var(--s-2); }
+  .ba-figure figcaption { font-size: var(--t-12); }
+  .ba-node-knowledge rect { fill: #eef2ff; stroke: #8b93e8; }
+  .ba-node-changed rect { fill: #fff7e6; stroke: #e0a43a; }
+  .ba-node-code rect { fill: #ffffff; stroke: #b9c0d0; }
+  .ba-node-created rect { stroke: #1f9d55; stroke-width: 2.4; }
+  .ba-legend { display: flex; flex-wrap: wrap; gap: var(--s-3); list-style: none; padding: 0; margin: 0 0 var(--s-4); font-size: var(--t-11); color: var(--c-ink-2); }
+  .ba-legend li { display: flex; align-items: center; gap: 6px; margin: 0; }
+  .ba-key { display: inline-block; width: 26px; height: 0; border-top: 2px solid #9aa3b8; }
+  .ba-key-link { border-top: 2px dashed #6b8fd6; }
+  .ba-key-new { border-top: 3px solid #1f9d55; }
+  .ba-key-gone { border-top: 2px dashed #c0392b; }
+  @media (max-width: 900px) { .ba-pictures { grid-template-columns: minmax(0, 420px); } }
+  .ba-enlarge { display: block; cursor: zoom-in; border-radius: var(--r-sm); }
+  .ba-enlarge:hover .ba-graph, .ba-enlarge:focus-visible .ba-graph { outline: 2px solid var(--c-brand); outline-offset: 2px; }
+  /* Enlarged: the same two drawings, side by side, as wide as the screen allows. */
+  .ba-large .ba-pictures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .modal:has(.ba-large) { width: min(1280px, calc(100vw - 2 * var(--s-4))); }
+  @media (max-width: 900px) { .ba-large .ba-pictures { grid-template-columns: minmax(0, 1fr); } }
 }

@@ -449,14 +449,14 @@ def steps(app):
     indexed = (
         CodeRepository.objects.filter(
             application=app,
-            provider="github",
+            provider__in=["github", "local"],
             status__in=["ready", "partial"],
             retired_at__isnull=True,
         )
         if code_graph
         else CodeRepository.objects.none()
     )
-    names = list(indexed.values_list("external_id", flat=True)[:5])
+    names = list(indexed.values_list("name", flat=True)[:5])
     with_snapshot = [repo for repo in indexed if repo.snapshots.exists()]
     found.append(
         Step(

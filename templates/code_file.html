@@ -3,6 +3,7 @@
 
 {% comment %}Tabs are radio inputs and labels, not script: this page has to render and be
    usable with JavaScript off, and the inspector panel lifts it as-is.{% endcomment %}
+{% if knowledge_links %}<section id="related-knowledge" class="card section"><h2>Related knowledge</h2><p class="muted">Explicit references, not proof that a requirement is satisfied.</p>{% for link in knowledge_links %}<details><summary>{{ link.node_label }} · {{ link.reason }}</summary><p><a href="{{ link.graph_url }}">Explore in knowledge graph v{{ link.revision }}</a> · <a href="{{ link.source_url }}">{{ link.source_title }} · line {{ link.source_line }}</a></p><pre>{{ link.evidence }}</pre>{% if link.code_evidence %}<pre>Code line {{ link.code_line }}: {{ link.code_evidence }}</pre>{% endif %}</details>{% endfor %}{% if links_limited %}<p class="muted">Reference scan reached its limit; additional links may exist.</p>{% endif %}</section>{% endif %}
 <div class="file-tabs">
 <input type="radio" name="file-tab" id="file-tab-overview" class="tab-radio" checked>
 <input type="radio" name="file-tab" id="file-tab-deps" class="tab-radio">

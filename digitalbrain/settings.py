@@ -29,6 +29,19 @@ ALLOW_DEMO_RESET = bool(CONFIG.get("allow_demo_reset", False)) and not PRODUCTIO
 # Internal hosts an operator permits link import to reach. Everything else is
 # held to the public-internet rule in platform_core/fetching.py.
 FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", [])]
+# Folders on this server that Code Graph may read a repository from, typed in
+# as a path by an owner or contributor. Empty means the option is not offered:
+# a browser user naming server paths is something an operator opts into, the
+# same way fetch_allow_hosts opens internal hosts. See code_graph_local.py.
+CODE_GRAPH_LOCAL_ROOTS = [r.strip() for r in CONFIG.get("code_graph_local_roots", [])]
+# Let Code Factory write an approved, prepared change into the server folder a
+# local Code Graph repository was read from. Off unless written down, and
+# refused under production by load_config; forced off there as well.
+CODE_FACTORY_LOCAL_WRITE = bool(CONFIG.get("code_factory_local_write", False)) and not PRODUCTION
+# Let a person run a folder's own test suite after Code Factory wrote into it,
+# with the folder's own .venv. That executes code on this server, so it is off
+# unless written down and refused under production; forced off there as well.
+CODE_FACTORY_LOCAL_TESTS = bool(CONFIG.get("code_factory_local_tests", False)) and not PRODUCTION
 # How many files one import may take from a directory - a GitHub /tree/ link or
 # a SharePoint folder. A knowledge base is not a mirror of a repository, so the
 # walk stays bounded; the bound is configurable because what counts as a
@@ -119,7 +132,14 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": ROOT / ".runtime/local.sqlite3",
-            "OPTIONS": {"timeout": 20},
+            # IMMEDIATE takes the write lock when a transaction begins. Deferred,
+            # a transaction that reads first (every grant re-check does) and
+            # then writes is refused at once with "database is locked" whenever
+            # a worker lane committed in between: under WAL its snapshot is
+            # stale, and SQLite will not apply the busy timeout to that upgrade.
+            # A 27-file folder upload failed on its twelfth file this way while
+            # the first eleven were already converting.
+            "OPTIONS": {"timeout": 20, "transaction_mode": "IMMEDIATE"},
         }
     }
 AUTH_USER_MODEL = "platform_core.User"

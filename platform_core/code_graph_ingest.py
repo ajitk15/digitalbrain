@@ -1,6 +1,7 @@
-"""Registering GitHub repositories and indexing them from a local clone.
+"""Registering repositories and indexing them from a clone or a local folder.
 
-Acquisition lives in `code_graph_clone`; this module owns registration, the job
+Acquisition lives in `code_graph_clone` (GitHub) and `code_graph_local` (a
+folder on this server); this module owns registration, the job
 lease, and turning one clone into an immutable snapshot. Nothing here fetches a
 user-supplied URL - see that module's note on the fetching invariant.
 """
@@ -27,6 +28,8 @@ from .code_graph_analysis import (
 )
 from .code_graph_clone import clone_sources
 from .code_graph_graphify import analyse as graphify_analyse
+from .code_graph_local import key as folder_key
+from .code_graph_local import local_sources, path_of, resolve_folder
 from .link_sources import github_token
 from .models import CodeFile, CodeRelationship, CodeRepository, CodeSnapshot
 from .services import audit, feature_enabled
@@ -106,6 +109,67 @@ def register(user, app_id, repository, ref=""):
     return repo
 
 
+def register_local(user, app_id, folder_path):
+    """Register a folder on this server, inside the operator's roots."""
+    app, grant = access(user, app_id, "code_graph", write=True)
+    if grant.role not in {"owner", "contributor"}:
+        raise PermissionDenied
+    folder = resolve_folder(folder_path)
+    repo, created = CodeRepository.objects.get_or_create(
+        application=app,
+        provider="local",
+        external_id=folder_key(folder),
+        defaults={
+            "added_by": user,
+            "name": folder.name or str(folder),
+            "source_url": folder.as_uri(),
+            # Filled from the checkout's own HEAD when it is indexed.
+            "default_ref": "",
+            "job_id": uuid.uuid4(),
+        },
+    )
+    if not created:
+        repo.status = "queued"
+        repo.error = ""
+        repo.retired_at = None
+        repo.job_id = uuid.uuid4()
+        repo.save(update_fields=["status", "error", "retired_at", "job_id", "updated_at"])
+    audit(
+        user,
+        "code_repository.queued",
+        repo.pk,
+        app.product.portfolio.organization,
+        {"folder": str(folder)},
+    )
+    return repo
+
+
+def local_folder(repository):
+    """The registered folder, re-checked against today's roots.
+
+    The operator may have shortened the list, or the path may now resolve
+    somewhere else, since this was registered; either is a refusal.
+    """
+    folder = resolve_folder(str(path_of(repository)))
+    if folder_key(folder) != repository.external_id:
+        raise ValidationError("That folder now resolves somewhere else. Register it again.")
+    return folder
+
+
+def acquire(repository, app, setup, languages):
+    """(commit, branch, files, warnings, complete) from wherever it lives."""
+    if repository.provider == "local":
+        return local_sources(local_folder(repository), setup=setup, languages=languages)
+    valid_name(repository.name)
+    return clone_sources(
+        repository.name,
+        repository.default_ref,
+        github_token(app),
+        setup=setup,
+        languages=languages,
+    )
+
+
 def index_repository(repository):
     job_id = repository.job_id
     claimed = CodeRepository.objects.filter(
@@ -122,11 +186,9 @@ def index_repository(repository):
         )
         if grant.role not in {"owner", "contributor"} or not feature_enabled("code_graph", app):
             raise PermissionDenied
-        valid_name(repository.name)
-        token = github_token(app)
         setup, languages = {}, []
-        commit, branch, sources, warnings, complete = clone_sources(
-            repository.name, repository.default_ref, token, setup=setup, languages=languages
+        commit, branch, sources, warnings, complete = acquire(
+            repository, app, setup, languages
         )
         # What was asked for, else what the clone landed on, else the
         # convention. "HEAD" used to be the fallback here and it was wrong in
@@ -134,6 +196,11 @@ def index_repository(repository):
         # a branch GitHub can be asked about, so every drift check failed
         # silently and the repository read as "never checked" forever.
         default_ref = repository.default_ref or branch or "main"
+        if repository.provider == "local":
+            # A working tree has no remote default to ask about; the branch it
+            # is on now is the answer, and a folder that is not a checkout has
+            # none at all.
+            default_ref = branch or "working tree"
         analyzed = [facts(path, content) for path, content in sources]
         if not analyzed:
             found = (
@@ -159,6 +226,10 @@ def index_repository(repository):
                 sort_keys=True,
             ).encode()
         ).hexdigest()
+        if not commit:
+            # A folder that is not a git checkout has no commit to pin; what
+            # was read is the identity, so the same files are the same snapshot.
+            commit = manifest
         app, current_grant = access(
             repository.added_by, repository.application_id, "code_graph", write=True
         )
@@ -327,9 +398,22 @@ def refresh_head(repository):
     from .github_write import branch_head
     from .link_sources import github_token
 
+    fields = {"head_checked_at": timezone.now()}
+    if repository.provider == "local":
+        from .code_graph_local import head_of
+
+        try:
+            commit, _ = head_of(local_folder(repository))
+        except ValidationError:
+            commit = ""
+        # Not a checkout, or no longer readable: nothing to compare, which is
+        # not the same as being in sync.
+        if commit:
+            fields["head_sha"] = commit
+        CodeRepository.objects.filter(pk=repository.pk).update(**fields)
+        return True
     branch = repository.default_ref or "main"
     token = github_token(repository.application)
-    fields = {"head_checked_at": timezone.now()}
     try:
         fields["head_sha"] = branch_head(repository.name, branch, token)
     except ValidationError:
