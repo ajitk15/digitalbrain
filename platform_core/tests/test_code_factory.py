@@ -913,6 +913,18 @@ class SelfApprovalTests(TestCase):
         self.assertEqual(run.plan.status, "approved")
         self.assertEqual(run.plan.reviewed_by, self.owner)
 
+    def test_with_nothing_written_down_the_author_may_approve(self):
+        """The default, end to end: a fresh config/local.toml has no such line."""
+        from django.conf import settings
+
+        run = self.run_pipeline()
+        self.approve_rights()
+        with self.settings():
+            del settings.ALLOW_SELF_APPROVAL
+            self.review(run)
+        run.plan.refresh_from_db()
+        self.assertEqual((run.plan.status, run.plan.reviewed_by), ("approved", self.owner))
+
     @override_settings(ALLOW_SELF_APPROVAL=True)
     def test_approval_rights_are_still_required(self):
         """It relaxes who may review, never whether they may."""

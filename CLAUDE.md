@@ -191,6 +191,43 @@ cannot reach the operator's own git credentials. The token is written to that
 scratch config rather than passed in argv, where the process list would expose
 it. Do not widen this to accept a URL, and do not add a third fetcher.
 
+**A server folder is read only inside roots an operator lists.** Code Graph's
+"From a folder on this server" (`code_graph_local.py`) lets an owner or
+contributor type a path, which is a browser user choosing what part of the
+server's disk to read - so it exists only when `code_graph_local_roots` names
+folders in the config, and is unset by default. `load_config` refuses a drive
+root the way `fetch_allow_hosts` refuses a wildcard. The path is resolved before
+it is judged, so a symlink is held to where it lands; a folder inside any secret
+directory is refused and none is walked into; symlinks, junctions, `SKIP_DIRS`
+and hidden folders are not entered. Its Browse button lists server folders (`repository_browse`) under the same rules, because a browser's own folder picker uploads files and never reveals a path. All of it is checked again when the index
+runs, because the operator can shorten the list. **git is never executed in the
+folder** - a working tree's own config can name programs git would start - so
+the commit is read from `.git/HEAD` and the ref files as text, and a folder that
+is not a checkout is pinned by its manifest digest. It fetches nothing and is
+not a third fetcher. Local repositories are `provider="local"`.
+
+**Code Factory can deliver into that folder instead of a pull request**, beside
+the GitHub path rather than replacing it - the run's pinned snapshot decides
+which. A local run is never handed the GitHub write token (`code_factory_build.gate`),
+so every agent reads the snapshot and nothing contacts GitHub; a test pins that
+with GitHub refused. `apply_local` is the local `publish`: off unless
+`code_factory_local_write = true`, which `load_config` refuses under production;
+approval rights required; every file checked against the snapshot before any is
+written (changed or removed since means nothing is written), paths held inside
+the folder and out of hidden and skipped folders, each file replaced atomically
+with its line endings kept. Nothing is committed - the folder's own git decides.
+`FactoryRun.delivered_to` is the folder, the counterpart of `pull_request_url`,
+and Refresh re-indexes that folder.
+
+**"This platform never runs the code it writes" has one exception, and it is
+opt-in.** A folder has no CI, so `run_local_tests` runs its pytest suite after a
+change was written into it: off unless `code_factory_local_tests = true`
+(refused under production), only on an approver's button press, with the
+folder's own `.venv` interpreter, an environment stripped to PATH and system
+variables, and a five-minute limit. The verdict is stored in `FactoryRun.checks`,
+where a pull request's CI verdict goes, so the Tests stage reads the same. Do not
+run anything automatically, and do not use this server's interpreter.
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

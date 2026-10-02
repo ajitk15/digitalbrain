@@ -50,6 +50,7 @@ from .models import (
     AIConfiguration,
     ChangePlan,
     FactoryRun,
+    GraphRevision,
     PlanItem,
     RunEvent,
     RunPhase,
@@ -642,12 +643,20 @@ def pin_repository(run, named):
         return
     registered = CodeRepository.objects.filter(
         application_id=run.application_id,
-        provider="github",
+        provider__in=["github", "local"],
         status__in=["ready", "partial"],
         retired_at__isnull=True,
     )
     if named:
-        repository = registered.filter(external_id=named.lower()).first()
+        repository = registered.filter(provider="github", external_id=named.lower()).first()
+        if repository is None:
+            # A folder on this server is registered by its folder name, not
+            # owner/name: "acme/carepath" in a ticket means the folder called
+            # carepath. Only when exactly one folder carries that name.
+            folders = list(
+                registered.filter(provider="local", name__iexact=named.rsplit("/", 1)[-1])[:2]
+            )
+            repository = folders[0] if len(folders) == 1 else None
         if repository is None:
             note(
                 run,
@@ -667,7 +676,11 @@ def pin_repository(run, named):
             )
             return
     snapshot = repository.snapshots.first() if repository else None
-    proposed = repository.external_id if repository else named
+    proposed = (
+        (repository.name if repository.provider == "local" else repository.external_id)
+        if repository
+        else named
+    )
     FactoryRun.objects.filter(pk=run.pk).update(
         proposed_repository=proposed, code_snapshot=snapshot
     )
@@ -798,6 +811,8 @@ def relevant_code_files(run, question):
         return [], []
     if run.code_snapshot.repository.application_id != app.pk:
         return [], []
+    if run.code_snapshot.repository.retired_at is not None:
+        return [], []
     terms = code_terms(question)
     condition = Q()
     for term in terms:
@@ -805,6 +820,31 @@ def relevant_code_files(run, question):
     files = list(run.code_snapshot.files.filter(condition).defer("content")[:20]) if terms else []
     if not files:
         files = list(run.code_snapshot.files.defer("content")[:12])
+    from .code_knowledge import links
+
+    try:
+        access(run.requested_by, run.application_id, "knowledge")
+    except (Http404, PermissionDenied):
+        return files, terms
+    revision = GraphRevision.objects.filter(
+        application=app, number=run.graph_version, published_at__isnull=False
+    ).first()
+    if revision:
+        linked, _ = links(revision, run.code_snapshot, question=question)
+        reasons = {}
+        for link in linked:
+            reasons.setdefault(link["file_id"], link)
+        from .models import CodeFile
+
+        prioritized = {str(f.pk): f for f in CodeFile.objects.filter(
+            snapshot=run.code_snapshot, pk__in=reasons
+        ).defer("content")}
+        ordered = []
+        for key, link in reasons.items():
+            file = prioritized[key]
+            file.knowledge_link = link
+            ordered.append(file)
+        files = (ordered + [f for f in files if str(f.pk) not in prioritized])[:20]
     return files, terms
 
 
@@ -848,8 +888,15 @@ def code_citations(run, question):
     snapshot = run.code_snapshot
     label = f"Code graph · {snapshot.repository.name} v{snapshot.number}"
     found = []
-    for item in CodeFile.objects.filter(pk__in=[f.pk for f in files[:CODE_EVIDENCE_FILES]]):
+    content_by_id = {f.pk: f for f in CodeFile.objects.filter(
+        pk__in=[f.pk for f in files[:CODE_EVIDENCE_FILES]]
+    )}
+    for selected in files[:CODE_EVIDENCE_FILES]:
+        item = content_by_id[selected.pk]
         excerpt, line = code_excerpt(item.content, terms)
+        link = getattr(selected, "knowledge_link", None)
+        if link and link["code_evidence"]:
+            excerpt, line = code_excerpt(item.content, [link["code_evidence"].lower()])
         if not excerpt or excerpt not in item.content:
             continue
         found.append(
@@ -861,6 +908,7 @@ def code_citations(run, question):
                 "excerpt": excerpt,
                 "digest": item.digest,
                 "snapshot": str(snapshot.pk),
+                "knowledge_link": link,
             }
         )
     return found
@@ -1066,6 +1114,13 @@ def code_context_for(run, question):
     ]
     lines += languages_context(run.code_snapshot.languages)
     for item in files:
+        link = getattr(item, "knowledge_link", None)
+        if link:
+            lines.append(
+                f"REFERENCE {item.path}: {link['reason']}; knowledge v{link['revision']}, "
+                f"{link['source_title']} line {link['source_line']}. "
+                "A reference is not proof of implementation correctness."
+            )
         symbols = ", ".join(symbol.get("name", "") for symbol in item.symbols[:12])
         description = symbols or "no detected symbols"
         lines.append(
@@ -1502,6 +1557,7 @@ def build_plan(run, triage, items):
                     "id": citation["id"],
                     "title": citation.get("title", ""),
                     "digest": citation.get("digest", ""),
+                    "knowledge_link": citation.get("knowledge_link"),
                 }
                 for item in items
                 for citation in item["citations"]

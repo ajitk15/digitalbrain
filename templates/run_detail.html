@@ -55,11 +55,12 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 {% if run.plan.status == 'approved' %}
-<details class="stage stage-{{ stage_state.4 }}" id="stage-4" data-live="stage-4" {% if not changes %}open{% endif %}><summary><span class="stage-no">{% if stage_state.4 == "ok" %}{% icon "check" 14 %}{% else %}4{% endif %}</span><span class="stage-name">Implementation agents</span><span class="stage-note">{% if changes %}{{ changes|length }} file(s) written, nothing published{% elif run.in_flight %}running{% elif not run.repository_confirmed %}repository not confirmed{% elif not write_credential %}no write credential{% else %}not started{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.4 }}" id="stage-4" data-live="stage-4" {% if not changes %}open{% endif %}><summary><span class="stage-no">{% if stage_state.4 == "ok" %}{% icon "check" 14 %}{% else %}4{% endif %}</span><span class="stage-name">Implementation agents</span><span class="stage-note">{% if changes %}{{ changes|length }} file(s) written, nothing published{% elif run.in_flight %}running{% elif local_repository %}not started{% elif not run.repository_confirmed %}repository not confirmed{% elif not write_credential %}no write credential{% else %}not started{% endif %}</span></summary>
 
 {% if not write_credential and not run.code_snapshot %}<p class="notice notice-warning">{% icon "warning" %}<span>No write credential and no code snapshot, so there is nothing to read the named files from. Index the repository in <a href="{% url 'code-graph' application.pk %}">Code Graph</a>, or add <strong>GitHub (write)</strong> on the <a href="{% url 'credentials' application.pk %}">Credentials screen</a>.</span></p>
 {% else %}
-{% if not write_credential %}<p class="notice">{% icon "info" %}<span><strong>Working offline.</strong> No write credential is mounted, so the agents read <code>{{ run.code_snapshot.repository.name }}</code> snapshot v{{ run.code_snapshot.number }} at <code>{{ run.code_snapshot.commit_sha|slice:':8' }}</code> and produce the files here. <strong>Nothing reaches GitHub</strong>, and no pull request can be opened — take the change away from the summary below.</span></p>
+{% if local_repository %}<p class="notice">{% icon "info" %}<span><strong>Reading a folder on this server.</strong> The agents read <code>{{ local_repository.name }}</code> snapshot v{{ run.code_snapshot.number }} and produce the files here. <strong>Nothing is written to the folder</strong> until you choose to on the summary below.</span></p>
+{% elif not write_credential %}<p class="notice">{% icon "info" %}<span><strong>Working offline.</strong> No write credential is mounted, so the agents read <code>{{ run.code_snapshot.repository.name }}</code> snapshot v{{ run.code_snapshot.number }} at <code>{{ run.code_snapshot.commit_sha|slice:':8' }}</code> and produce the files here. <strong>Nothing reaches GitHub</strong>, and no pull request can be opened — take the change away from the summary below.</span></p>
 {% elif not run.repository_confirmed %}
 <p class="muted">The repository was guessed from the ticket, so somebody confirms it before anything is written. This only decides where a pull request would go.</p>
 <details class="card"><summary>Confirm the repository</summary>
@@ -84,9 +85,12 @@ step is a fact you may want to check, and the current step is work.
 {% endif %}
 
 {% if changes %}
-<details class="stage stage-{{ stage_state.5 }}" id="stage-5" data-live="stage-5" open><summary><span class="stage-no">{% if stage_state.5 == "ok" %}{% icon "check" 14 %}{% else %}5{% endif %}</span><span class="stage-name">Summary</span><span class="stage-note">{{ changes|length }} file(s) · {{ created_count }} new · nothing written yet</span></summary>
-<p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) ready</strong> for <code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>. <strong>Nothing has been written yet.</strong></span></p>
-{% if tests_unrun %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>The new tests will not run on their own.</strong> {{ tests_unrun }} Run them locally before merging, or add a CI workflow, so a green pull request means something.</span></p>{% endif %}
+<details class="stage stage-{{ stage_state.5 }}" id="stage-5" data-live="stage-5" open><summary><span class="stage-no">{% if stage_state.5 == "ok" %}{% icon "check" 14 %}{% else %}5{% endif %}</span><span class="stage-name">Summary</span><span class="stage-note">{{ changes|length }} file(s) · {% if run.delivered_to %}written to the folder{% else %}{{ created_count }} new · nothing written yet{% endif %}</span></summary>
+{% if run.delivered_to %}<p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) written</strong> to <code>{{ local_repository.name|default:run.proposed_repository }}</code> on this server.</span></p>
+{% elif local_repository %}<p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) ready</strong> for the <code>{{ local_repository.name }}</code> folder. <strong>Nothing has been written yet.</strong></span></p>
+{% else %}<p class="notice notice-success">{% icon "success" %}<span><strong>{{ changes|length }} file(s) ready</strong> for <code>{{ run.proposed_repository }}</code> on <code>{{ run.base_branch }}</code>. <strong>Nothing has been written yet.</strong></span></p>{% endif %}
+{% if tests_unrun and local_repository and local_tests %}<p class="notice">{% icon "info" %}<span><strong>No CI runs these tests.</strong> Once the change is written to the folder, run them on the Tests stage below.</span></p>
+{% elif tests_unrun %}<p class="notice notice-warning">{% icon "warning" %}<span><strong>The new tests will not run on their own.</strong> {{ tests_unrun }} Run them locally before merging, or add a CI workflow, so a green pull request means something.</span></p>{% endif %}
 <div class="list-card">{% for change in changes %}
 <div class="list-row"><div><strong><code>{{ change.path }}</code></strong><small>{{ change.size|filesizeformat }}{% if change.base_sha %} · replaces the file read at {{ change.base_sha|slice:':8' }} <span class="origin-tag origin-github" title="Read from the live repository">GitHub · {{ change.base_sha|slice:':8' }}</span>{% elif change.path in snapshot_paths %} · rewrites the file as {{ run.code_snapshot.repository.name }} snapshot v{{ run.code_snapshot.number }} holds it <span class="origin-tag origin-code_graph" title="Read from the pinned Code Graph snapshot at commit {{ run.code_snapshot.commit_sha|slice:':8' }}, not the live repository">Code graph · {{ run.code_snapshot.repository.name }} v{{ run.code_snapshot.number }}</span>{% else %} · this file does not exist yet{% endif %}</small></div><span class="pill{% if not change.base_sha and change.path not in snapshot_paths %} status-high{% endif %}">{% if change.base_sha or change.path in snapshot_paths %}Modified{% else %}New file{% endif %}</span></div>
 {% endfor %}</div>
@@ -94,6 +98,20 @@ step is a fact you may want to check, and the current step is work.
 
 {% if run.pull_request_url %}
 <p class="notice notice-success section">{% icon "success" %}<span>Draft pull request open: <a href="{{ run.pull_request_url }}" target="_blank" rel="noreferrer noopener">{{ run.pull_request_url }}</a></span></p>
+{% elif run.delivered_to %}
+<p class="notice notice-success section">{% icon "success" %}<span>Written to <code>{{ run.delivered_to }}</code>. Nothing was committed: review and commit it with the folder's own tools.</span></p>
+{% elif can_deliver and local_repository %}
+{% if local_write %}
+<h3 class="panel-label">Write it to the folder?</h3>
+<p>This writes {{ changes|length }} file(s) into <code>{{ local_repository.name }}</code> on this server. Every file is checked against snapshot v{{ run.code_snapshot.number }} first, and if any has changed since, nothing is written. Nothing is committed.</p>
+<div class="actions">
+<form method="post" data-confirm="Write {{ changes|length }} file(s) into {{ local_repository.name }} on this server?">{% csrf_token %}<input type="hidden" name="action" value="apply-local"><button class="button" type="submit">{% icon "save" 13 %}Yes, write to the folder</button></form>
+<form method="post" data-confirm="Discard the prepared change? Nothing was written, and the approved plan can be implemented again.">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="button secondary" type="submit">No, discard it</button></form>
+</div>
+{% else %}
+<p class="notice section">{% icon "info" %}<span>Writing to a folder is not enabled on this server. An operator turns it on with <code>code_factory_local_write = true</code>; until then, copy the files above yourself.</span></p>
+<form method="post" data-confirm="Discard the prepared change? The approved plan can be implemented again.">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="button secondary" type="submit">Discard it</button></form>
+{% endif %}
 {% elif can_deliver and not write_credential %}
 <p class="notice section">{% icon "info" %}<span>This change was written offline and cannot be opened as a pull request from here. Copy the files above into a branch yourself, or mount a write credential and implement it again.</span></p>
 <form method="post" data-confirm="Discard the prepared change? The approved plan can be implemented again.">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="button secondary" type="submit">Discard it</button></form>
@@ -108,27 +126,31 @@ step is a fact you may want to check, and the current step is work.
 </details>
 {% endif %}
 
-{% if run.pull_request_url %}
-<details class="stage stage-{{ stage_state.6 }}" id="stage-6" data-live="stage-6" open><summary><span class="stage-no">{% if stage_state.6 == "ok" %}{% icon "check" 14 %}{% else %}6{% endif %}</span><span class="stage-name">Tests</span><span class="stage-note">{% if run.checks %}{{ run.get_checks_label }}{% else %}waiting for the repository's checks{% endif %}</span></summary>
-<p class="muted">The tests were written by the test author agent above and are run by <code>{{ run.proposed_repository }}</code>'s own CI on branch <code>{{ run.branch }}</code>. This platform never runs the code it writes.</p>
+{% if run.pull_request_url or run.delivered_to %}
+<details class="stage stage-{{ stage_state.6 }}" id="stage-6" data-live="stage-6" open><summary><span class="stage-no">{% if stage_state.6 == "ok" %}{% icon "check" 14 %}{% else %}6{% endif %}</span><span class="stage-name">Tests</span><span class="stage-note">{% if run.checks %}{{ run.get_checks_label }}{% elif run.delivered_to %}not run yet{% else %}waiting for the repository's checks{% endif %}</span></summary>
+{% if run.delivered_to %}<p class="muted">The tests were written by the test author agent above and are now in <code>{{ local_repository.name|default:run.proposed_repository }}</code>. There is no CI for a folder: they run on this server, with the folder's own <code>.venv</code>, when somebody asks.</p>
+{% if local_tests and grant.can_approve %}<form method="post" class="section">{% csrf_token %}<input type="hidden" name="action" value="run-tests"><button class="button{% if run.checks %} secondary{% endif %}" type="submit">{% icon "play" 13 %}{% if run.checks %}Run the tests again{% else %}Run the tests{% endif %}</button></form>
+{% elif not local_tests %}<p class="notice section">{% icon "info" %}<span>Running tests on this server is not enabled. An operator turns it on with <code>code_factory_local_tests = true</code>; until then, run <code>pytest</code> in the folder yourself.</span></p>{% endif %}
+{% else %}<p class="muted">The tests were written by the test author agent above and are run by <code>{{ run.proposed_repository }}</code>'s own CI on branch <code>{{ run.branch }}</code>. This platform never runs the code it writes.</p>{% endif %}
 {% if run.checks %}
 <div class="list-card">{% for check in run.checks %}
-<div class="list-row"><div><strong>{% if check.url %}<a href="{{ check.url }}" target="_blank" rel="noreferrer noopener">{{ check.name }}</a>{% else %}{{ check.name }}{% endif %}</strong><small>{% if check.conclusion %}{{ check.conclusion }}{% else %}{{ check.status|default:"queued" }}{% endif %}</small></div><span class="pill{% if check.conclusion == 'success' %} status-ready{% elif check.conclusion == 'failure' or check.conclusion == 'timed_out' %} status-high{% endif %}">{% if check.conclusion %}{{ check.conclusion }}{% else %}running{% endif %}</span></div>
+<div class="list-row"><div><strong>{% if check.url %}<a href="{{ check.url }}" target="_blank" rel="noreferrer noopener">{{ check.name }}</a>{% else %}{{ check.name }}{% endif %}</strong><small>{% if check.summary %}{{ check.summary }}{% elif check.conclusion %}{{ check.conclusion }}{% else %}{{ check.status|default:"queued" }}{% endif %}</small></div><span class="pill{% if check.conclusion == 'success' %} status-ready{% elif check.conclusion == 'failure' or check.conclusion == 'timed_out' %} status-high{% endif %}">{% if check.conclusion %}{{ check.conclusion }}{% else %}running{% endif %}</span></div>
 {% endfor %}</div>
 {% if run.checks_state == 'running' %}<p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Checks are still running. This page refreshes itself.</span></p>{% endif %}
-{% else %}
+{% elif not run.delivered_to %}
 <p class="notice section" role="status">{% icon "info" %}<span><span class="spinner" aria-hidden="true"></span> Asking GitHub about this branch. If the repository has no workflow, nothing will appear here.</span></p>
 {% endif %}
 </details>
 {% endif %}
 
 {% if refresh_stage.state != 'pending' %}
-<details class="stage stage-{{ stage_state.7 }}" id="stage-7" data-live="stage-7" {% if refresh_stage.state == 'current' %}open{% endif %}><summary><span class="stage-no">{% if stage_state.7 == "ok" %}{% icon "check" 14 %}{% else %}7{% endif %}</span><span class="stage-name">Refresh</span><span class="stage-note">{% if run.refresh_choice == 'queued' %}queued: {{ run.refresh_scope|join:", " }}{% elif run.refresh_choice == 'declined' %}left as they are{% else %}waiting on your answer{% endif %}</span></summary>
+<details class="stage stage-{{ stage_state.7 }}" id="stage-7" data-live="stage-7" {% if refresh_stage.state == 'current' or before_after %}open{% endif %}><summary><span class="stage-no">{% if stage_state.7 == "ok" %}{% icon "check" 14 %}{% else %}7{% endif %}</span><span class="stage-name">Refresh</span><span class="stage-note">{% if run.refresh_choice == 'queued' %}queued: {{ run.refresh_scope|join:", " }}{% elif run.refresh_choice == 'declined' %}left as they are{% else %}waiting on your answer{% endif %}</span></summary>
 {% if run.refresh_choice %}
 <p class="muted">{% if run.refresh_choice == 'queued' %}{{ run.refresh_by.username }} asked for this on {{ run.refresh_at|date:"d M Y H:i" }}. Watch each one on its own screen.{% else %}{{ run.refresh_by.username }} left them as they are on {{ run.refresh_at|date:"d M Y H:i" }}.{% endif %}</p>
+{% if before_after %}{% include '_before_after.html' with ba=before_after %}{% endif %}
 {% else %}
 <p class="muted">This change is written and its tests have run. Everything this application knows about that code still describes it as it was &mdash; the graph a later run cites, the documents chat answers from, the snapshot the design reads. Shall I bring them up to date?</p>
-<p class="notice" role="status">{% icon "info" %}<span>Your change is on <code>{{ run.branch }}</code>. These read the default branch, so they are worth running once the pull request has merged.</span></p>
+{% if run.delivered_to %}<p class="notice" role="status">{% icon "info" %}<span>Your change is in <code>{{ run.delivered_to }}</code>, so the code graph can be re-indexed from it now.</span></p>{% else %}<p class="notice" role="status">{% icon "info" %}<span>Your change is on <code>{{ run.branch }}</code>. These read the default branch, so they are worth running once the pull request has merged.</span></p>{% endif %}
 <form method="post" class="refresh-form">{% csrf_token %}<input type="hidden" name="action" value="refresh">
 <ul class="refresh-list">{% for key, label, detail in refresh_targets %}
 <li><label class="refresh-choice"><input type="checkbox" name="target" value="{{ key }}" checked><span><strong>{{ label }}</strong><small>{{ detail }}</small></span></label></li>

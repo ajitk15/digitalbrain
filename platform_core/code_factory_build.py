@@ -233,15 +233,20 @@ def snapshot_targets(run, wanted):
             "nothing to read the named files from. Index the repository in Code "
             "Graph, or mount a write-scoped credential."
         )
-    note(
-        run,
-        f"No write credential is mounted, so the agents read "
-        f"{run.code_snapshot.repository.name} snapshot v{run.code_snapshot.number} "
-        f"at commit {run.code_snapshot.commit_sha[:8]} instead of the live "
-        "repository. Nothing will be written anywhere.",
-        phase="work_order",
-        level="check",
-    )
+    if run.code_snapshot.repository.provider == "local":
+        message = (
+            f"The agents read {run.code_snapshot.repository.name} snapshot "
+            f"v{run.code_snapshot.number}, indexed from a folder on this server. "
+            "GitHub is not contacted, and nothing is written until somebody chooses to."
+        )
+    else:
+        message = (
+            f"No write credential is mounted, so the agents read "
+            f"{run.code_snapshot.repository.name} snapshot v{run.code_snapshot.number} "
+            f"at commit {run.code_snapshot.commit_sha[:8]} instead of the live "
+            "repository. Nothing will be written anywhere."
+        )
+    note(run, message, phase="work_order", level="check")
     held = {item.path: item for item in run.code_snapshot.files.filter(path__in=wanted)}
     files = []
     for path in wanted:
@@ -626,6 +631,10 @@ def run_implementation(run, token, files, order=None, references=None):
             sample=getattr(failure, "sample", ""),
         )
         raise
+    # New means the agents were shown no contents for it, not that it carried
+    # no blob sha: a file read from a snapshot has none, and two edited files
+    # were reported as "2 of them new".
+    existing = {item["path"] for item in files if item.get("text")}
     finish_phase(
         phase,
         "ok",
@@ -637,14 +646,14 @@ def run_implementation(run, token, files, order=None, references=None):
                 {
                     "path": change["path"],
                     "bytes": len(change["content"]),
-                    "new": change["sha"] is None,
+                    "new": change["path"] not in existing,
                 }
                 for change in changes
             ],
         },
         usage=receipt,
     )
-    created = [change["path"] for change in changes if change["sha"] is None]
+    created = [change["path"] for change in changes if change["path"] not in existing]
     note(
         run,
         f"Implementation returned {len(changes)} changed file(s)"
@@ -901,7 +910,16 @@ def run_tests_agent(run, changes, token, references=None):
         f"code as it will be after the change. {framework_line}",
         phase="tests",
     )
-    if setup.get("known") and not setup.get("ci"):
+    from django.conf import settings
+
+    if local_repository(run) is not None and settings.CODE_FACTORY_LOCAL_TESTS:
+        note(
+            run,
+            "Test author: a folder has no CI. Once the change is written, run these "
+            "tests on the Tests stage.",
+            phase="tests",
+        )
+    elif setup.get("known") and not setup.get("ci"):
         note(run, f"Test author: {ci_summary(setup)}", phase="tests", level="problem")
     finished = "\n\n".join(
         f"FILE {change['path']}\n{change['content'][:8000]}" for change in changes
@@ -1516,7 +1534,11 @@ def gate(user, app_id, run_id):
     if run.pull_request_url:
         raise ValidationError("This run already opened a pull request.")
     # Absent is a state, not a failure: without it the agents read the pinned
-    # code snapshot instead of the live repository.
+    # code snapshot instead of the live repository. A run whose code came from a
+    # folder on this server is never handed one: the folder is the repository,
+    # and a GitHub token would send every read to a different one.
+    if local_repository(run) is not None:
+        return app, run, ""
     return app, run, write_credential(app)
 
 
@@ -1623,9 +1645,8 @@ def prepare(user, app_id, run_id):
     run.refresh_from_db()
     note(
         run,
-        f"Implementation agents starting. {run.proposed_repository} is confirmed "
-        "and a write credential is mounted. Nothing is written to the repository "
-        "by this step.",
+        f"Implementation agents starting for {run.proposed_repository}. Nothing is "
+        "written to the repository by this step.",
         level="check",
     )
     try:
@@ -1699,8 +1720,8 @@ def prepare(user, app_id, run_id):
     note(
         run,
         f"{len(changes)} file(s) are ready. Read the summary and decide whether to "
-        "open a pull request. Nothing has been written to "
-        f"{run.proposed_repository} yet.",
+        + ("write them to the folder" if local_repository(run) else "open a pull request")
+        + f". Nothing has been written to {run.proposed_repository} yet.",
         level="result",
     )
     return changes
@@ -1746,6 +1767,525 @@ def publish(user, app_id, run_id):
     )
     FactoryRun.objects.filter(pk=run.pk).update(status="delivered", finished_at=timezone.now())
     return url
+
+
+def local_repository(run):
+    """The server folder this run's code came from, or None for GitHub."""
+    snapshot = run.code_snapshot
+    if snapshot is None or snapshot.repository.provider != "local":
+        return None
+    return snapshot.repository
+
+
+def local_targets(run, folder, changes):
+    """[(absolute path, change)] once every change is safe to write, or a refusal.
+
+    Checked as a whole before anything is written, so a refusal leaves the
+    folder exactly as it was. The same rules a pull request is held to, in the
+    terms a folder has:
+
+    * a path stays inside the folder, and never into a hidden, dependency or
+      build folder - `.git` above all;
+    * a file the agents read from the snapshot must still say what the snapshot
+      says, or somebody changed it since and this would overwrite their work;
+    * a file the agents wrote as new must still be absent, for the same reason.
+    """
+    from .code_graph_local import _skipped
+
+    held = dict(run.code_snapshot.files.values_list("path", "content"))
+    planned, problems = [], []
+    for change in changes:
+        path = change["path"]
+        parts = path.replace("\\", "/").split("/")
+        if (
+            not path
+            or path.startswith(("/", "\\"))
+            or ":" in parts[0]
+            or any(part in ("", ".", "..") for part in parts)
+            or any(_skipped(part) for part in parts[:-1])
+            or parts[-1].startswith(".")
+        ):
+            problems.append(f"{path} is not a path this platform writes.")
+            continue
+        target = folder.joinpath(*parts)
+        try:
+            resolved = target.resolve()
+        except (OSError, RuntimeError):
+            problems.append(f"{path} could not be resolved.")
+            continue
+        if not resolved.is_relative_to(folder) or target.is_symlink():
+            problems.append(f"{path} leads outside {folder}.")
+            continue
+        if target.exists():
+            try:
+                current = target.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                problems.append(f"{path} could not be read to check it.")
+                continue
+            if path not in held:
+                problems.append(
+                    f"{path} exists, but the agents wrote it as a new file without "
+                    "reading it. Writing it would replace a file nobody looked at."
+                )
+            elif current != held[path]:
+                problems.append(
+                    f"{path} has changed since snapshot v{run.code_snapshot.number}. "
+                    "Refresh the index and implement the change again."
+                )
+        elif path in held:
+            problems.append(f"{path} was removed from the folder after the snapshot.")
+        planned.append((target, change))
+    if problems:
+        raise ValidationError(problems)
+    return planned
+
+
+def _write_text(target, content):
+    """Replace one file in a single step, keeping its line endings."""
+    import os
+    import tempfile
+
+    newline = "\n"
+    if target.exists() and b"\r\n" in target.read_bytes()[:65536]:
+        newline = "\r\n"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(dir=target.parent, prefix=".codefactory-")
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline=newline) as handle:
+            handle.write(content)
+        os.replace(temporary, target)
+    except BaseException:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+        raise
+
+
+def apply_local(user, app_id, run_id):
+    """Write a prepared change into the folder its code was read from.
+
+    The local counterpart of `publish`, for a repository Code Graph reads from
+    a folder on this server. Off unless an operator sets
+    `code_factory_local_write`, and refused under production. Like `publish` it
+    re-reads the prepared files rather than taking them from the caller, so what
+    lands is what was shown. Nothing is committed: the folder's own tools
+    decide what happens next, and its git history is untouched.
+    """
+    from django.conf import settings
+
+    from .code_graph_ingest import local_folder
+
+    app, run, _ = gate(user, app_id, run_id)
+    if not settings.CODE_FACTORY_LOCAL_WRITE:
+        raise ValidationError(
+            "Writing to a folder on this server is not enabled. Set "
+            "code_factory_local_write = true in the configuration to allow it."
+        )
+    repository = local_repository(run)
+    if repository is None:
+        raise ValidationError("This run's code was not read from a folder on this server.")
+    if run.delivered:
+        raise ValidationError("This change has already been delivered.")
+    if run.status != "prepared":
+        raise ValidationError("Implement the change and read its summary first.")
+    changes = [{"path": item.path, "content": item.content} for item in run.changes.all()]
+    if not changes:
+        raise ValidationError("This run has no prepared change to write.")
+    folder = local_folder(repository)
+    claimed = FactoryRun.objects.filter(pk=run.pk, status="prepared").update(
+        status="delivering", error=""
+    )
+    if not claimed:
+        raise ValidationError("This run is already being delivered.")
+    run.refresh_from_db()
+    note(run, f"Writing to {folder} approved by {user.get_username()}.", level="check")
+    try:
+        planned = local_targets(run, folder, changes)
+    except ValidationError:
+        note(run, "Nothing was written to the folder.", level="problem")
+        FactoryRun.objects.filter(pk=run.pk).update(status="prepared")
+        raise
+    try:
+        for target, change in planned:
+            _write_text(target, change["content"])
+            note(run, f"Wrote {change['path']}.", phase="delivery")
+    except OSError as failure:
+        note(run, f"Writing stopped: {failure.strerror or failure}.", level="problem")
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="failed", error="A file could not be written. See the run log."
+        )
+        raise ValidationError("A file could not be written. See the run log.") from None
+    FactoryRun.objects.filter(pk=run.pk).update(
+        status="delivered", delivered_to=str(folder)[:500], finished_at=timezone.now()
+    )
+    audit(
+        user,
+        "factory.change_written_to_folder",
+        run.pk,
+        app.product.portfolio.organization,
+        details={"folder": str(folder), "files": len(planned)},
+    )
+    note(
+        run,
+        f"{len(planned)} file(s) written to {folder}. Nothing was committed; review "
+        "and commit them with the folder's own tools.",
+        level="result",
+    )
+    return folder
+
+
+#: How long a folder's own test suite may run before it is stopped.
+LOCAL_TEST_TIMEOUT = 300
+#: What the run's check is called, so it reads as a run here and not as CI.
+LOCAL_TEST_CHECK = "pytest · run on this server"
+
+
+def folder_python(folder):
+    """The folder's own virtual environment's interpreter, or None.
+
+    Its own, never this server's: the tests need the folder's dependencies, and
+    running them under the platform's interpreter would test against ours.
+    """
+    venv = folder / ".venv"
+    for candidate in (venv / "Scripts" / "python.exe", venv / "bin" / "python"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def run_local_tests(user, app_id, run_id):
+    """Run the folder's test suite once a change has been written into it.
+
+    The one place this platform runs code, and it runs it only here: off unless
+    `code_factory_local_tests` is set, refused under production, and only when
+    a person with approval rights presses the button. The suite runs with the
+    folder's own interpreter, a minimal environment - no secrets directory, no
+    credential variables - and a time limit. Its verdict is recorded where a
+    pull request's CI verdict would be, so the Tests stage reads the same.
+    """
+    import os
+    import subprocess
+
+    from django.conf import settings
+
+    from .code_graph_ingest import local_folder
+
+    app, run, _ = gate(user, app_id, run_id)
+    if not settings.CODE_FACTORY_LOCAL_TESTS:
+        raise ValidationError(
+            "Running tests on this server is not enabled. Set "
+            "code_factory_local_tests = true in the configuration to allow it."
+        )
+    repository = local_repository(run)
+    if repository is None or not run.delivered_to:
+        raise ValidationError("Write the change to the folder before running its tests.")
+    folder = local_folder(repository)
+    setup = run.code_snapshot.test_setup or {}
+    if setup.get("python") != "pytest":
+        raise ValidationError(
+            "Only pytest suites can be run here so far, and this folder does not declare one."
+        )
+    python = folder_python(folder)
+    if python is None:
+        raise ValidationError(
+            f"{repository.name} has no .venv to run its tests with. Create one in the "
+            "folder and install its dependencies, then try again."
+        )
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key in {"PATH", "SYSTEMROOT", "SystemRoot", "COMSPEC", "TEMP", "TMP", "LANG"}
+    }
+    environment.update({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"})
+    FactoryRun.objects.filter(pk=run.pk).update(
+        checks=[{"name": LOCAL_TEST_CHECK, "status": "in_progress", "conclusion": None}],
+        checks_read_at=timezone.now(),
+    )
+    note(run, f"{user.get_username()} ran {repository.name}'s tests on this server.", level="check")
+    started = time.monotonic()
+    try:
+        finished = subprocess.run(
+            [str(python), "-m", "pytest", "-q", "-p", "no:cacheprovider", "--color=no"],
+            cwd=folder,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=LOCAL_TEST_TIMEOUT,
+            check=False,
+        )
+        lines = [line for line in (finished.stdout or "").splitlines() if line.strip()]
+        summary = lines[-1].strip("= ").strip() if lines else "pytest reported nothing."
+        conclusion = "success" if finished.returncode == 0 else "failure"
+        tail = "\n".join(lines[-12:])
+    except subprocess.TimeoutExpired:
+        summary = f"Stopped after {LOCAL_TEST_TIMEOUT} seconds."
+        conclusion, tail = "timed_out", ""
+    except OSError as failure:
+        summary = f"The tests could not be started: {failure.strerror or failure}."
+        conclusion, tail = "failure", ""
+    seconds = round(time.monotonic() - started, 1)
+    FactoryRun.objects.filter(pk=run.pk).update(
+        checks=[
+            {
+                "name": LOCAL_TEST_CHECK,
+                "status": "completed",
+                "conclusion": conclusion,
+                "summary": f"{summary} ({seconds}s)"[:300],
+                "url": "",
+            }
+        ],
+        checks_read_at=timezone.now(),
+    )
+    note(
+        run,
+        f"Tests {'passed' if conclusion == 'success' else conclusion}: {summary}"
+        + (f"\n{tail}" if tail and conclusion != "success" else ""),
+        phase="tests",
+        level="result" if conclusion == "success" else "problem",
+    )
+    audit(
+        user,
+        "factory.local_tests_run",
+        run.pk,
+        app.product.portfolio.organization,
+        details={"folder": str(folder), "conclusion": conclusion, "summary": summary[:200]},
+    )
+    return conclusion, summary
+
+
+#: How much one before/after picture draws. Past this it stops being a picture
+#: of the change and becomes the whole graph again.
+PICTURE_KNOWLEDGE = 4
+PICTURE_DEPENDENCIES = 6
+PICTURE_ROW = 40
+#: The drawing's width, and half a node box. Small on purpose: the two drawings
+#: sit side by side, so every unit here is shared by both.
+PICTURE_WIDTH = 480
+HALF_BOX = 60
+
+
+def shown_paths(columns):
+    return [key for column in columns[1:] for _, key, _ in column]
+
+
+def change_picture(read, before, after, touched, was, now, connections):
+    """Two drawings of the same neighbourhood - before the run and after it.
+
+    Three columns: knowledge items on the left, the files the run changed in
+    the middle, the code they depend on on the right. Both drawings share every
+    position, so what moved is the only thing that differs. Coordinates are
+    computed here because a CSP of `style-src 'self'` leaves SVG attributes as
+    the only way to place anything.
+    """
+    from .code_knowledge import links
+
+    changed = touched[:4]
+    seen, chosen = set(), []
+    for row in connections:
+        for item in row["items"]:
+            label = item["node_label"]
+            if item["node_id"] not in seen and label not in {c["label"] for c in chosen}:
+                seen.add(item["node_id"])
+                chosen.append({"id": item["node_id"], "label": label})
+    chosen = chosen[:PICTURE_KNOWLEDGE]
+
+    outgoing = [edge for edge in (was | now) if edge[0] in changed and edge[1] not in changed]
+    linked_paths = {}
+    for node in chosen:
+        for snapshot, key in ((before, "before"), (after, "after")):
+            found, _ = links(read, snapshot, node_id=node["id"])
+            linked_paths.setdefault(node["id"], {})[key] = {item["path"] for item in found}
+    any_linked = set().union(*(set().union(*paths.values()) for paths in linked_paths.values()))
+    ranked = sorted(
+        {edge[1] for edge in outgoing},
+        key=lambda path: (
+            not any(edge[1] == path for edge in now - was),
+            path not in any_linked,
+            path,
+        ),
+    )
+    dependencies = ranked[:PICTURE_DEPENDENCIES]
+
+    def short(text, size=17):
+        text = text.removeprefix("#: ").strip()
+        return text if len(text) <= size else text[: size - 1] + "…"
+
+    columns = (
+        [("knowledge", node["id"], node["label"]) for node in chosen],
+        [("changed", path, path) for path in changed],
+        [("code", path, path) for path in dependencies],
+    )
+    height = max(len(column) for column in columns) * PICTURE_ROW + 12
+    xs = (HALF_BOX + 8, PICTURE_WIDTH // 2, PICTURE_WIDTH - HALF_BOX - 8)
+    existed = set(before.files.filter(path__in=shown_paths(columns)).values_list("path", flat=True))
+    places, nodes = {}, []
+    for column, x in zip(columns, xs, strict=True):
+        top = (height - len(column) * PICTURE_ROW) / 2 + PICTURE_ROW / 2
+        for index, (kind, key, label) in enumerate(column):
+            y = round(top + index * PICTURE_ROW, 1)
+            places[key] = (x, y)
+            name = short(label) if kind == "knowledge" else short(label.rsplit("/", 1)[-1])
+            nodes.append(
+                {
+                    "kind": kind, "x": x, "y": y, "label": name, "title": label,
+                    "box_x": x - HALF_BOX, "box_y": round(y - 14, 1), "text_y": round(y + 4.5, 1),
+                    # A file the run created is drawn only after it.
+                    "created": kind != "knowledge" and key not in existed,
+                }
+            )
+
+    def curve(start, end):
+        (x1, y1), (x2, y2) = places[start], places[end]
+        if x1 == x2:
+            bulge = x1 + HALF_BOX + 35
+            return (
+                f"M{x1 + HALF_BOX},{y1} C{bulge},{y1} {bulge},{y2} {x2 + HALF_BOX},{y2}"
+            )
+        left, right = (
+            (x1 + HALF_BOX, x2 - HALF_BOX) if x1 < x2 else (x1 - HALF_BOX, x2 + HALF_BOX)
+        )
+        middle = (left + right) / 2
+        return f"M{left},{y1} C{middle},{y1} {middle},{y2} {right},{y2}"
+
+    def state(in_before, in_after):
+        return "same" if in_before and in_after else ("new" if in_after else "gone")
+
+    shown = set(changed) | set(dependencies)
+    edges = []
+    for source, target, kind in sorted(was | now):
+        if source in places and target in places and source in changed:
+            edges.append(
+                {
+                    "d": curve(source, target),
+                    "kind": "code",
+                    "label": kind,
+                    "state": state((source, target, kind) in was, (source, target, kind) in now),
+                }
+            )
+    for node in chosen:
+        paths = linked_paths[node["id"]]
+        for path in sorted((paths["before"] | paths["after"]) & shown):
+            edges.append(
+                {
+                    "d": curve(node["id"], path),
+                    "kind": "link",
+                    "label": "shared identifier",
+                    "state": state(path in paths["before"], path in paths["after"]),
+                }
+            )
+    return {
+        "width": PICTURE_WIDTH,
+        "height": height,
+        "nodes": nodes,
+        "before": [edge for edge in edges if edge["state"] != "new"],
+        "after": [edge for edge in edges if edge["state"] != "gone"],
+        "new_count": sum(1 for edge in edges if edge["state"] == "new"),
+        "gone_count": sum(1 for edge in edges if edge["state"] == "gone"),
+    }
+
+
+def before_after(run):
+    """What this application knew before the run, and what it knows now.
+
+    Read from the record, never assumed: the snapshot the run reasoned about
+    against the newest one of the same repository, the knowledge version it read
+    against the newest built, and - per changed file - the knowledge items that
+    are linked to it now and were not before. None until the change has left
+    this platform; `pending` while the re-index it asked for is still running.
+    """
+    from .code_knowledge import links
+    from .models import GraphRevision
+
+    if not run.delivered or run.code_snapshot_id is None:
+        return None
+    before = run.code_snapshot
+    after = before.repository.snapshots.first()
+    revisions = GraphRevision.objects.filter(application_id=run.application_id)
+    read = revisions.filter(number=run.graph_version).first() if run.graph_version else None
+    latest = revisions.first()
+    knowledge = {"before": read, "after": latest if latest and latest != read else None}
+    if after is None or after.pk == before.pk:
+        return {
+            "pending": "code" in (run.refresh_scope or []),
+            "before": before,
+            "knowledge": knowledge,
+        }
+
+    old = dict(before.files.values_list("path", "digest"))
+    new = dict(after.files.values_list("path", "digest"))
+    touched = sorted(path for path, digest in new.items() if old.get(path) != digest)
+
+    def edges(snapshot):
+        return set(
+            snapshot.relationships.values_list("source__path", "target__path", "kind")
+        )
+
+    was, now = edges(before), edges(after)
+    connections = []
+    if read:
+        earlier = dict(before.files.filter(path__in=touched).values_list("path", "pk"))
+        for file in after.files.filter(path__in=touched).only("pk", "path"):
+            found, _ = links(read, after, file_id=file.pk)
+            known = set()
+            if file.path in earlier:
+                earlier_links, _ = links(read, before, file_id=earlier[file.path])
+                known = {item["node_id"] for item in earlier_links}
+            gained = {}
+            for item in found:
+                if item["node_id"] not in known:
+                    gained.setdefault(item["node_id"], item)
+            if gained:
+                # Identifiers first - T-03, BR-05, C-09 - because they are what a
+                # reader recognises; long passages that merely mention one follow.
+                # One row per label, since a table repeats the same cell.
+                ranked = sorted(
+                    gained.values(),
+                    key=lambda item: (len(item["node_label"]) > 24, item["node_label"]),
+                )
+                shown = list({item["node_label"]: item for item in reversed(ranked)}.values())
+                shown.reverse()
+                connections.append(
+                    {
+                        "path": file.path,
+                        "file_id": file.pk,
+                        "count": len(gained),
+                        "items": shown[:8],
+                        "more": max(len(shown) - 8, 0),
+                    }
+                )
+    picture = (
+        change_picture(read, before, after, touched, was, now, connections) if read else None
+    )
+    if picture:
+        newest = knowledge["after"] or read
+        picture["sides"] = [
+            {
+                "key": "before",
+                "title": "Before",
+                "detail": f"code snapshot v{before.number} · knowledge graph v{read.number}",
+                "edges": picture["before"],
+            },
+            {
+                "key": "after",
+                "title": "After",
+                "detail": f"code snapshot v{after.number} · knowledge graph v{newest.number}",
+                "edges": picture["after"],
+            },
+        ]
+    return {
+        "pending": False,
+        "picture": picture,
+        "before": before,
+        "after": after,
+        "knowledge": knowledge,
+        "changed": [path for path in touched if path in old],
+        "added": [path for path in touched if path not in old],
+        "removed": sorted(set(old) - set(new)),
+        "new_edges": sorted(now - was)[:12],
+        "gone_edges": sorted(was - now)[:12],
+        "connections": connections,
+    }
 
 
 #: How long a working run may say nothing before it is presumed dead.
@@ -1923,10 +2463,10 @@ def refresh_gate(user, app_id, run_id):
 
     app, grant = access(user, app_id, "code_factory", write=True)
     run = get_object_or_404(FactoryRun, pk=run_id, application=app)
-    if not run.pull_request_url:
+    if not run.delivered:
         raise ValidationError(
-            "There is nothing to refresh against yet: this run has not opened a "
-            "pull request."
+            "There is nothing to refresh against yet: this run has not delivered "
+            "its change."
         )
     if run.refresh_choice:
         raise ValidationError("That question has already been answered for this run.")
@@ -1984,7 +2524,15 @@ def refresh_after(user, app_id, run_id, scope):
 
     notes = []
     if "documents" in chosen:
-        sources = list(KnowledgeSource.objects.filter(application=app))
+        # A folder upload has no origin to re-read - `resync` refuses it - and
+        # one refusal used to abort the whole refresh, code graph included.
+        uploaded = KnowledgeSource.objects.filter(application=app, provider="folder")
+        if uploaded.exists():
+            notes.append(
+                f"{uploaded.count()} uploaded folder(s) have no origin to re-read; "
+                "upload them again to bring them up to date."
+            )
+        sources = list(KnowledgeSource.objects.filter(application=app).exclude(provider="folder"))
         if not sources:
             notes.append("No linked sources to re-read; documents were left alone.")
         else:
@@ -2010,20 +2558,28 @@ def refresh_after(user, app_id, run_id, scope):
         )
 
     if "code" in chosen:
-        repository = (
-            CodeRepository.objects.filter(
-                application=app, provider="github", retired_at__isnull=True
+        # The folder this run wrote to is the repository that changed; a GitHub
+        # run re-indexes the first registered GitHub repository, as it always has.
+        if run.delivered_to:
+            repository = local_repository(run)
+            if repository is not None and repository.retired_at is not None:
+                repository = None
+        else:
+            repository = (
+                CodeRepository.objects.filter(
+                    application=app, provider="github", retired_at__isnull=True
+                )
+                .exclude(status="documentation")
+                .order_by("created_at")
+                .first()
             )
-            .exclude(status="documentation")
-            .order_by("created_at")
-            .first()
-        )
         if not feature_enabled("code_graph", app):
             notes.append("Code Graph is switched off for this application.")
         elif repository is None:
             notes.append("No repository is registered in Code Graph.")
         else:
-            valid_name(repository.name)
+            if repository.provider == "github":
+                valid_name(repository.name)
             CodeRepository.objects.filter(pk=repository.pk).update(
                 status="queued",
                 error="",
@@ -2038,10 +2594,10 @@ def refresh_after(user, app_id, run_id, scope):
                 app.product.portfolio.organization,
                 {"repository": repository.name, "run": run.number},
             )
+            origin = "the folder" if repository.provider == "local" else repository.default_ref
             notes.append(
-                f"{repository.name} queued for re-indexing from "
-                f"{repository.default_ref}. The current snapshot stays readable "
-                "until the new one is ready."
+                f"{repository.name} queued for re-indexing from {origin}. The current "
+                "snapshot stays readable until the new one is ready."
             )
 
     FactoryRun.objects.filter(pk=run.pk, refresh_choice="").update(

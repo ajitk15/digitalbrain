@@ -1057,6 +1057,10 @@ class FactoryRun(models.Model):
     #: The branch a delivery targets. Confirmed alongside the repository.
     base_branch = models.CharField(max_length=200, default="main")
     pull_request_url = models.URLField(max_length=1000, blank=True)
+    #: The server folder a change was written into, for a repository Code Graph
+    #: reads from a folder rather than GitHub. The local counterpart of
+    #: `pull_request_url`: set once, by `code_factory_build.apply_local`.
+    delivered_to = models.CharField(max_length=500, blank=True)
     #: The branch delivery created, kept so the checks stage knows what to ask
     #: GitHub about without re-reading a phase's output.
     branch = models.CharField(max_length=200, blank=True)
@@ -1161,7 +1165,8 @@ class FactoryRun(models.Model):
         analysed = plan is not None
         decided = bool(plan and plan.status in {"approved", "rejected"})
         approved = bool(plan and plan.status == "approved")
-        written = bool(self.pull_request_url) or self.status == "prepared"
+        delivered = self.delivered
+        written = delivered or self.status == "prepared"
         state = {
             1: "ok" if self.status != "pending" else "pending",
             2: "ok" if analysed else ("failed" if failed else "running"),
@@ -1174,7 +1179,7 @@ class FactoryRun(models.Model):
                 else ("current" if approved else "pending")
             ),
             5: "ok"
-            if self.pull_request_url
+            if delivered
             else (
                 "running" if self.status == "delivering" else ("current" if written else "pending")
             ),
@@ -1187,7 +1192,7 @@ class FactoryRun(models.Model):
             7: "ok"
             if self.refresh_choice
             else (
-                "current" if self.pull_request_url and self.checks_state != "running" else "pending"
+                "current" if delivered and self.checks_state != "running" else "pending"
             ),
         }
         # A failed run stops where it stopped: everything after the failure is
@@ -1197,10 +1202,30 @@ class FactoryRun(models.Model):
                 if state[number] not in {"ok"}:
                     state[number] = "failed"
                     break
+        # A folder run writes to a folder, not a pull request. Told apart without
+        # a query: a GitHub repository is always owner/name, a folder never is.
+        local = bool(self.delivered_to) or bool(
+            self.proposed_repository and "/" not in self.proposed_repository
+        )
         return [
-            {"number": number, "label": label, "state": state[number]}
+            {
+                "number": number,
+                "label": "Write to folder" if local and number == 5 else label,
+                "state": state[number],
+            }
             for number, label in self.STAGES
         ]
+
+    @property
+    def delivered(self):
+        """Whether the change has left this platform: a pull request, or a folder."""
+        return bool(self.pull_request_url or self.delivered_to)
+
+    def get_status_display(self):
+        # "Pull request opened" is untrue of a change written into a folder.
+        if self.status == "delivered" and self.delivered_to:
+            return "Written to folder"
+        return self._get_FIELD_display(self._meta.get_field("status"))
 
     def get_checks_label(self):
         """The checks as one line, for a collapsed stage."""
@@ -1220,7 +1245,7 @@ class FactoryRun(models.Model):
         checks": a repository without CI is not failing, it simply has nothing
         to say, and the screen says that rather than showing an empty stage.
         """
-        if not self.pull_request_url or not self.checks:
+        if not self.delivered or not self.checks:
             return "pending"
         if any(entry.get("conclusion") in {"failure", "timed_out"} for entry in self.checks):
             return "failed"

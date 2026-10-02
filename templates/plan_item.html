@@ -27,7 +27,7 @@
 <h2>{% icon "document" %}Evidence</h2>
 {% if item.citations %}
 <p class="muted">Each quotation was verified against its source before this item was written: the source was active, its digest unchanged, and the excerpt still present in it. Check one against its source before deciding.</p>
-<ul class="item-evidence">{% for citation in item.citations %}<li><span class="origin-tags">{% include "_evidence_origin.html" %}</span><strong>{{ citation.title }}</strong><br>{% if citation.origin == 'code_graph' %}<pre class="source-text">{{ citation.excerpt }}</pre>{% else %}{{ citation.excerpt }}{% endif %}</li>{% endfor %}</ul>
+<ul class="item-evidence">{% for citation in item.citations %}<li><span class="origin-tags">{% include "_evidence_origin.html" %}</span><strong>{{ citation.title }}</strong>{% if citation.knowledge_link %}<p>{{ citation.knowledge_link.reason }} · <a href="{{ citation.knowledge_link.graph_url }}">Knowledge v{{ citation.knowledge_link.revision }}</a> · <a href="{{ citation.knowledge_link.source_url }}">{{ citation.knowledge_link.source_title }} · line {{ citation.knowledge_link.source_line }}</a></p>{% endif %}<br>{% if citation.origin == 'code_graph' %}<pre class="source-text">{{ citation.excerpt }}</pre>{% else %}{{ citation.excerpt }}{% endif %}</li>{% endfor %}</ul>
 {% else %}
 <p class="notice notice-warning">{% icon "warning" %}<span>No verifiable evidence supports this item. Treat it as a suggestion rather than a finding, and weigh it accordingly before choosing to implement it.</span></p>
 {% endif %}

@@ -27,12 +27,23 @@
   const filterBox = document.getElementById("graph-filters");
   const expandButton = document.getElementById("graph-expand");
   const resetButton = document.getElementById("graph-reset");
+  const expandCodeButton = document.getElementById("graph-expand-code");
+  const codeStatus = document.getElementById("graph-code-status");
+  function codeControl(message, action = null) {
+    if (!expandCodeButton) return;
+    expandCodeButton.disabled = !action;
+    expandCodeButton.onclick = action;
+    expandCodeButton.title = message;
+    codeStatus.textContent = message;
+  }
   const zoomIn = document.getElementById("graph-zoom-in");
   const zoomOut = document.getElementById("graph-zoom-out");
   const zoomFit = document.getElementById("graph-fit");
   const minimap = document.getElementById("graph-minimap");
   const themeButton = document.getElementById("graph-theme");
   const colourSelect = document.getElementById("graph-colour");
+  const legendNodes = document.getElementById("graph-legend-nodes");
+  const legendEdges = document.getElementById("graph-legend-edges");
 
   const reducedMotion =
     !!window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -56,6 +67,7 @@
       passage: "#b8c1d9",
       kb: "#f2c94c",
       automation: "#f2789f",
+      code: "#55b9ff",
       confirmed: "#4cc38a",
       inferred: "#e0a92e",
       edge: "#8a96b8",
@@ -83,6 +95,7 @@
       passage: "#58627a",
       kb: "#a16207",
       automation: "#be185d",
+      code: "#0064a8",
       confirmed: "#1d6b45",
       inferred: "#b45309",
       edge: "#6b7591",
@@ -127,6 +140,7 @@
     /* no stored preference is the normal case */
   }
   const colourOf = (id) => {
+    if (nodes.get(id).kind === "code") return COLORS.code;
     if (colourBy === "theme") {
       const index = themeOf(id);
       return index === OTHER ? COLORS.other : THEME_PALETTES[theme][index];
@@ -150,6 +164,7 @@
     "passage",
     "kb",
     "automation",
+    "code",
   ];
 
   //: Everything is drawn at once up to this many nodes, as Obsidian does. A
@@ -342,6 +357,8 @@
     CHARGE = -38 * spread * spread;
     canvas.dataset.nodes = String(bodies.length);
     canvas.dataset.edges = String(links.length);
+    canvas.dataset.codeNodes = String(bodies.filter((b) => nodes.get(b.id).kind === "code").length);
+    canvas.dataset.codeEdges = String(links.filter((link) => link.e.codeReference).length);
   }
 
   function quadtree(list) {
@@ -676,9 +693,11 @@
     const inferred = new Path2D();
     const confirmed = new Path2D();
     const lighted = new Path2D();
+    const codeReferences = new Path2D();
     links.forEach(({ s, t, e }) => {
       let path;
-      if (lit && (s.id === centre || t.id === centre)) path = lighted;
+      if (e.codeReference) path = codeReferences;
+      else if (lit && (s.id === centre || t.id === centre)) path = lighted;
       else if (e.confirmed) path = confirmed;
       else if (e.inferred) path = inferred;
       else if (s.colour === t.colour) {
@@ -715,6 +734,10 @@
       paint.lineWidth = 1.6 * px;
       paint.stroke(lighted);
     }
+    paint.globalAlpha = 0.9;
+    paint.strokeStyle = COLORS.code;
+    paint.lineWidth = 2 * px;
+    paint.stroke(codeReferences);
 
     // Glows, then the nodes themselves, batched by colour.
     paint.globalCompositeOperation = COLORS.blend;
@@ -735,8 +758,12 @@
       const key = `${b.colour}|${lit && !lit.has(b.id) ? "dim" : "lit"}`;
       if (!fills.has(key)) fills.set(key, new Path2D());
       const path = fills.get(key);
-      path.moveTo(b.x + b.r, b.y);
-      path.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      if (nodes.get(b.id).kind === "code") {
+        path.rect(b.x - b.r, b.y - b.r, b.r * 2, b.r * 2);
+      } else {
+        path.moveTo(b.x + b.r, b.y);
+        path.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      }
     });
     fills.forEach((path, key) => {
       const [colour, state] = key.split("|");
@@ -916,6 +943,10 @@
   }
 
   function start() {
+    codeControl("Select a node to find related code.");
+    clearCodeOverlay();
+    buildFilters();
+    options();
     sim = new Map();
     focus = null;
     hover = null;
@@ -949,6 +980,7 @@
   }
 
   function inspect(id) {
+    codeControl("Select a knowledge node to find related code.");
     const node = nodes.get(id);
     inspector.replaceChildren();
     const title = document.createElement("h2");
@@ -959,6 +991,20 @@
     kind.className = "inspector-kind";
     kind.textContent = node.kind;
     inspector.append(kind);
+    if (node.kind === "code") {
+      const open = document.createElement("a");
+      open.href = node.code.url;
+      open.textContent = "Open in Code Graph";
+      const detail = document.createElement("p");
+      detail.textContent = `${node.code.repository} · commit ${node.code.commit.slice(0, 8)}`;
+      inspector.append(open, detail);
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "button secondary";
+      back.textContent = "Back to knowledge node";
+      back.addEventListener("click", () => focusOn(node.knowledgeNode));
+      inspector.append(back);
+    }
 
     if (clusters && clusters.membership[id] !== undefined) {
       const inTheme = document.createElement("p");
@@ -997,6 +1043,7 @@
     });
     inspector.append(expandHere);
 
+    showRelatedCode(id);
     related.slice(0, 30).forEach((e) => {
       const block = document.createElement("div");
       block.className = "graph-evidence";
@@ -1023,15 +1070,201 @@
         quote.textContent = e.evidence;
         block.append(quote);
       }
+      if (e.codeReference) {
+        const explanation = document.createElement("p");
+        explanation.textContent = "Explicit reference; this does not prove the requirement is satisfied.";
+        block.append(explanation);
+        for (const item of e.references) {
+          const proof = document.createElement("pre");
+          proof.textContent = `${item.reason}\n${item.evidence}` +
+            (item.code_evidence ? `\nCode line ${item.code_line}: ${item.code_evidence}` : "");
+          block.append(proof);
+        }
+      }
       inspector.append(block);
     });
   }
 
+  async function showRelatedCode(id) {
+    const endpoint = canvas.dataset.relatedCodeUrl;
+    if (!endpoint || nodes.get(id).kind === "code") return;
+    codeControl("Checking related code…");
+    const panel = document.createElement("section");
+    const heading = document.createElement("h3");
+    heading.textContent = "Related code";
+    const status = document.createElement("p");
+    status.textContent = "Checking explicit references…";
+    panel.append(heading, status);
+    inspector.append(panel);
+    try {
+      const response = await fetch(`${endpoint}?node=${encodeURIComponent(id)}`);
+      if (!panel.isConnected || focus !== id) return;
+      if (response.status === 403 || response.status === 404) {
+        codeControl("Related code is unavailable for this node.");
+        panel.remove();
+        return;
+      }
+      if (!response.ok) throw new Error("Links unavailable");
+      const data = await response.json();
+      if (!panel.isConnected || focus !== id) return;
+      status.textContent = data.links.length
+        ? "Explicit references, not proof that a requirement is satisfied."
+        : "No verified code references found in the indexed snapshots.";
+      if (data.links.length) {
+        codeControl(`${new Set(data.links.map((item) => item.file_id)).size} related code files.`, () => {
+          const shownCount = showCodeOverlay(id, data.links);
+          status.textContent = `${shownCount} code file(s) connected on the canvas. ` +
+            "Showing up to 30 files; references do not prove implementation correctness.";
+          codeStatus.textContent = `${shownCount} code files shown on the canvas.`;
+        });
+      } else {
+        codeControl("No verified code references found for this node.");
+      }
+      for (const item of data.links) {
+        const block = document.createElement("div");
+        block.className = "graph-evidence";
+        const open = document.createElement("a");
+        open.href = item.url;
+        open.textContent = item.path;
+        const reason = document.createElement("p");
+        reason.textContent = `${item.reason} · ${item.repository} · ${item.commit.slice(0, 8)}`;
+        const source = document.createElement("a");
+        source.href = item.source_url;
+        source.textContent = `${item.source_title} · line ${item.source_line} · knowledge v${item.revision}`;
+        const evidence = document.createElement("pre");
+        evidence.textContent = item.evidence;
+        block.append(open, reason, source, evidence);
+        if (item.code_evidence) {
+          const code = document.createElement("pre");
+          code.textContent = `Code line ${item.code_line}: ${item.code_evidence}`;
+          block.append(code);
+        }
+        panel.append(block);
+      }
+      if (data.limited) {
+        const limit = document.createElement("p");
+        limit.textContent = "Reference scan reached its limit; additional links may exist.";
+        panel.append(limit);
+      }
+    } catch {
+      if (panel.isConnected && focus === id) {
+        status.textContent = "Related code could not be loaded. Select the node to retry.";
+        codeControl(status.textContent);
+      }
+    }
+  }
+
+  function clearCodeOverlay() {
+    const codeIds = new Set(graph.nodes.filter((n) => n.kind === "code").map((n) => n.id));
+    if (!codeIds.size) return;
+    for (let i = edges.length - 1; i >= 0; i -= 1) {
+      if (edges[i].codeReference) edges.splice(i, 1);
+    }
+    graph.nodes = graph.nodes.filter((n) => !codeIds.has(n.id));
+    codeIds.forEach((id) => {
+      nodes.delete(id);
+      neighbours.delete(id);
+      degree.delete(id);
+      sim.delete(id);
+      visible.delete(id);
+    });
+    neighbours.forEach((adjacent, id) => {
+      codeIds.forEach((codeId) => adjacent.delete(codeId));
+      degree.set(id, adjacent.size);
+    });
+  }
+
+  function showCodeOverlay(origin, references) {
+    clearCodeOverlay();
+    const grouped = new Map();
+    for (const item of references) {
+      const id = `code:${item.snapshot}:${item.file_id}`;
+      if (!grouped.has(id) && grouped.size >= 30) continue;
+      if (!grouped.has(id)) grouped.set(id, []);
+      grouped.get(id).push(item);
+    }
+    const near = sim.get(origin);
+    grouped.forEach((items, id) => {
+      const item = items[0];
+      const node = { id, kind: "code", label: item.path, code: item, knowledgeNode: origin };
+      nodes.set(id, node);
+      graph.nodes.push(node);
+      neighbours.set(id, new Set([origin]));
+      neighbours.get(origin).add(id);
+      degree.set(id, 1);
+      bodyFor(id, near);
+      edges.push({
+        source: origin, target: id, relation: "references code", codeReference: true,
+        knowledge_id: item.entry_id, line: item.source_line, references: items,
+      });
+    });
+    degree.set(origin, neighbours.get(origin).size);
+    // A small connected view makes the requirement and its code legible together.
+    // Overview restores the original graph; the exported snapshot is never changed.
+    visible = new Set([origin, ...neighbours.get(origin)]);
+    visible.forEach((id) => {
+      hidden.delete(nodes.get(id).kind);
+      hiddenThemes.delete(themeOf(id));
+    });
+    hover = null;
+    focus = origin;
+    follow = null;
+    autoFit = true;
+    buildFilters();
+    options();
+    refresh(0.6);
+    return grouped.size;
+  }
+
   /* ---- controls ---- */
 
-  // The legend is also the filter, and it follows the colouring: coloured by
-  // theme, it lists the themes; coloured by kind, it lists the kinds.
+  // The filter follows the colouring: coloured by theme, it lists the themes;
+  // coloured by kind, it lists the kinds. The filter is folded away, so every
+  // entry is repeated in the legend on the canvas, which stays open.
+  function legendItem(group, text, colour, line) {
+    if (!group) return;
+    const item = document.createElement("span");
+    item.className = "legend-item";
+    item.title = text;
+    const swatch = document.createElement("i");
+    swatch.className = line ? `legend-line${line === "dashed" ? " dashed" : ""}` : "legend-swatch";
+    if (line) swatch.style.borderTopColor = colour;
+    else swatch.style.background = colour;
+    const name = document.createElement("span");
+    name.textContent = text;
+    item.append(swatch, name);
+    group.append(item);
+  }
+
+  function legendHeading(group, text) {
+    if (!group) return;
+    const heading = document.createElement("b");
+    heading.textContent = text;
+    group.append(heading);
+  }
+
+  // What a line means differs by layer: in the knowledge graph a dash is an
+  // AI-inferred relation, in the operations layer green is a person's verdict.
+  function buildEdgeLegend() {
+    if (!legendEdges) return;
+    legendEdges.replaceChildren();
+    legendHeading(legendEdges, "Connections");
+    if (graph.layer === "operations") {
+      legendItem(legendEdges, "Derived by a rule", COLORS.edge, "solid");
+      legendItem(legendEdges, "Confirmed cause", COLORS.confirmed, "solid");
+      return;
+    }
+    legendItem(legendEdges, "Structure", COLORS.edge, "solid");
+    if (edges.some((e) => e.codeReference)) {
+      legendItem(legendEdges, "Code reference", COLORS.code, "solid");
+    }
+    if (edges.some((e) => e.inferred)) {
+      legendItem(legendEdges, "AI-inferred", COLORS.inferred, "dashed");
+    }
+  }
+
   function filterItem(text, colour, checked, onChange, data) {
+    legendItem(legendNodes, text, colour);
     const label = document.createElement("label");
     label.className = "graph-filter";
     const box = document.createElement("input");
@@ -1057,7 +1290,18 @@
   function buildFilters() {
     filterBox.replaceChildren();
     filterBox.classList.toggle("by-theme", colourBy === "theme");
+    if (legendNodes) {
+      legendNodes.replaceChildren();
+      legendNodes.classList.toggle("by-theme", colourBy === "theme");
+      legendHeading(legendNodes, colourBy === "theme" ? "Themes" : "Kinds");
+    }
+    buildEdgeLegend();
     if (colourBy === "theme") {
+      if (graph.nodes.some((n) => n.kind === "code")) {
+        filterItem("Code file", COLORS.code, !hidden.has("code"), toggle(hidden, "code"), {
+          kind: "code",
+        });
+      }
       for (let index = 0; index < COLOURED; index += 1) {
         filterItem(
           clusters.themes[index].label,
@@ -1076,7 +1320,7 @@
     }
     KINDS.filter((kind) => graph.nodes.some((n) => n.kind === kind)).forEach((kind) => {
       filterItem(
-        ({ entity: "AI entity", kb: "KB article" })[kind] || kind,
+        ({ entity: "AI entity", kb: "KB article", code: "Code file" })[kind] || kind,
         COLORS[kind],
         !hidden.has(kind),
         toggle(hidden, kind),
@@ -1355,4 +1599,6 @@
   buildFilters();
   options();
   start();
+  const requestedNode = new URLSearchParams(window.location.search).get("node");
+  if (requestedNode && nodes.has(requestedNode)) focusOn(requestedNode);
 })();

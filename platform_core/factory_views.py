@@ -528,6 +528,24 @@ def agent_report(name, label, waiting, phase, run, configured=None):
     a reader nothing. Each one reports from its own recorded output, which is
     the same output the phase receipt is built from.
     """
+    # A folder run delivers by writing into the folder; the row says so rather
+    # than describing a pull request it will never open.
+    local = bool(run.delivered_to) or bool(
+        run.proposed_repository and "/" not in run.proposed_repository
+    )
+    if name == "delivery" and local:
+        label, waiting = "Write to folder", "Writes the files into the folder, when you say yes"
+        if run.delivered_to:
+            written = run.changes.count()
+            return {
+                "name": name,
+                "label": label,
+                "detail": (
+                    f"Wrote {written} file(s) into {run.delivered_to}. Nothing was committed."
+                ),
+                "status": "ok",
+                "model": agent_model(name, None, configured),
+            }
     if phase is None:
         # A run that has already been through this stage and has no row for an
         # agent never had that agent: it predates it. Saying "waiting" about
@@ -565,21 +583,36 @@ def agent_report(name, label, waiting, phase, run, configured=None):
             )
         elif name == "implementation":
             files = output.get("files", [])
-            created = [item for item in files if item.get("new")]
+            # Runs recorded before "new" meant "shown no contents" counted every
+            # snapshot read as new; the snapshot itself says which existed.
+            held = (
+                set(run.code_snapshot.files.values_list("path", flat=True))
+                if run.code_snapshot_id
+                else set()
+            )
+            created = [item for item in files if item.get("new") and item.get("path") not in held]
             named = ", ".join(item.get("path", "") for item in files[:3])
             detail = f"Wrote {len(files)} file(s)"
             detail += f", {len(created)} of them new" if created else ""
             detail += f": {named}" + ("…" if len(files) > 3 else "") + "."
         elif name == "tests":
+            from django.conf import settings
+
             from .repo_testing import ci_summary
 
             files = output.get("files", [])
-            detail = f"Wrote {len(files)} test file(s): {', '.join(files[:3])}."
+            detail = (
+                f"Wrote {len(files)} test file(s): {', '.join(files[:3])}."
+                if files
+                else "Nothing to add: the implementation already wrote the tests."
+            )
             setup = output.get("setup") or {}
             chosen = setup.get("python") or setup.get("javascript")
             if chosen:
                 detail += f" Framework: {chosen}."
-            if setup.get("known") and not setup.get("ci"):
+            if local and settings.CODE_FACTORY_LOCAL_TESTS:
+                detail += " A folder has no CI: run them on the Tests stage below."
+            elif setup.get("known") and not setup.get("ci"):
                 detail += f" {ci_summary(setup)}"
         elif name == "review":
             kept, rejected = output.get("kept", []), output.get("rejected", [])
@@ -693,15 +726,21 @@ def run_detail(request, pk, run_id):
     plan and confirming the repository are decisions with their own gates, and
     this page links to them rather than growing a second copy of either.
     """
+    from django.conf import settings
+
     from . import code_factory, code_factory_build
     from .code_factory import confirm_repository
     from .code_factory_build import (
         REFRESH_TARGETS,
+        apply_local,
+        before_after,
         decline_refresh,
         discard,
+        local_repository,
         publish,
         refresh_after,
         request_preparation,
+        run_local_tests,
         write_credential,
     )
     from .models import FactoryRun
@@ -747,6 +786,15 @@ def run_detail(request, pk, run_id):
             elif action == "publish":
                 url = publish(request.user, pk, run.pk)
                 messages.success(request, f"Draft pull request opened: {url}")
+            elif action == "apply-local":
+                folder = apply_local(request.user, pk, run.pk)
+                messages.success(request, f"The change was written to {folder}.")
+            elif action == "run-tests":
+                conclusion, summary = run_local_tests(request.user, pk, run.pk)
+                if conclusion == "success":
+                    messages.success(request, f"Tests passed: {summary}")
+                else:
+                    messages.error(request, f"Tests did not pass: {summary}")
             elif action == "discard":
                 discard(request.user, pk, run.pk)
                 messages.success(request, "The prepared change was discarded. Nothing was written.")
@@ -856,18 +904,47 @@ def run_detail(request, pk, run_id):
             "tests_unrun": tests_unrun(phases_by_name.get("tests")),
             "analysis": analysis,
             "can_deliver": bool(
-                plan
-                and plan.status == "approved"
-                and grant.can_approve
-                and not run.pull_request_url
+                plan and plan.status == "approved" and grant.can_approve and not run.delivered
             ),
+            # A repository read from a folder on this server delivers into that
+            # folder rather than to a pull request, when the operator allows it.
+            "local_repository": local_repository(run),
+            "local_write": settings.CODE_FACTORY_LOCAL_WRITE,
+            "local_tests": settings.CODE_FACTORY_LOCAL_TESTS,
             "write_credential": bool(write_credential(app)),
             # Offered once the change exists and its tests have stopped moving.
             # The stage itself decides when to show; this is only the vocabulary
             # it renders, so the list and the wording live in one place.
             "refresh_targets": REFRESH_TARGETS,
+            # Only once somebody asked for the refresh: before that there is no
+            # "after" to show, and the stage is asking a question instead.
+            "before_after": before_after(run) if run.refresh_choice == "queued" else None,
             "refresh_stage": next((stage for stage in run.stages if stage["number"] == 7), None),
         },
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def run_before_after(request, pk, run_id):
+    """The before-and-after drawings at full size, on a page of their own.
+
+    Opened as a popup from the run's Refresh stage by `modal.js`; with script
+    off the small drawing is a plain link here. Nothing is computed that the
+    run page does not already show.
+    """
+    from .code_factory_build import before_after
+    from .models import FactoryRun
+
+    app, _ = access(request.user, pk, "code_factory")
+    run = get_object_or_404(FactoryRun, pk=run_id, application=app)
+    shown = before_after(run) if run.refresh_choice == "queued" else None
+    if not shown or not shown.get("picture"):
+        raise Http404
+    return render(
+        request,
+        "run_before_after.html",
+        {"application": app, "run": run, "picture": shown["picture"]},
     )
 
 
@@ -960,6 +1037,27 @@ def next_action(run, grant, user, reviewable, can_retry_analysis):
             "#stage-4",
             "Run the agents",
         )
+    if run.status == "prepared" and run.code_snapshot_id and (
+        run.code_snapshot.repository.provider == "local"
+    ):
+        if grant.can_approve:
+            return (
+                "attention",
+                "Decide on writing the change",
+                "Read what was written, then write it into the folder - or discard it, "
+                "and nothing is written anywhere.",
+                "#stage-5",
+                "Read the summary",
+            )
+        return ("waiting", "Waiting for an approver to write the change", "", "", "")
+    if run.status == "delivered" and run.delivered_to:
+        return (
+            "done",
+            "Written to the folder",
+            "Bring the knowledge and code graphs up to date with the change.",
+            "#stage-7",
+            "Refresh",
+        )
     if run.status == "prepared":
         if grant.can_approve:
             return (
@@ -987,12 +1085,10 @@ def next_action(run, grant, user, reviewable, can_retry_analysis):
 def self_approval_allowed():
     """Whether one person may approve a plan they wrote.
 
-    Off unless a deployment writes it down. Separation of duties is still the
-    default and still the shape of the product: two people, one who asks and one
-    who agrees. But a single-operator instance has nobody else to ask, and
-    refusing this outright there left the pipeline unrunnable rather than
-    strict - so it is now a deployment's decision in every mode, production
-    included, instead of a development-only concession.
+    On unless a deployment writes `allow_self_approval = false`. Most instances
+    are run by one person, and whoever starts a run authors its plan, so the
+    off default deadlocked every new instance at the review gate. Two-person
+    review is that one line, in every mode, production included.
 
     What did not change is that it is never silent. `ChangePlan` records the
     approver, so a plan approved by its author says so in the audit record; and
@@ -1010,11 +1106,25 @@ def code_source_holds(app, source):
     unchanged. Snapshots are immutable, so this fails only if one was removed."""
     from .models import CodeFile
 
-    return CodeFile.objects.filter(
+    valid = CodeFile.objects.filter(
         pk=source["id"].removeprefix("code:"),
         digest=source["digest"],
         snapshot__repository__application=app,
     ).exists()
+    link = source.get("knowledge_link")
+    if valid and link:
+        from .code_knowledge import links
+        from .models import CodeSnapshot, GraphRevision
+
+        revision = GraphRevision.objects.filter(application=app, number=link["revision"]).first()
+        snapshot = CodeSnapshot.objects.filter(
+            pk=link["snapshot"], repository__application=app
+        ).select_related("repository").first()
+        if not revision or not snapshot:
+            return False
+        current, _ = links(revision, snapshot, node_id=link["node_id"], file_id=link["file_id"])
+        valid = any(item == link for item in current)
+    return valid
 
 
 def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=False):

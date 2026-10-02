@@ -12,8 +12,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from . import code_graph_local
 from .code_graph_analysis import ROLES
-from .code_graph_ingest import refresh_head, register
+from .code_graph_ingest import refresh_head, register, register_local
 from .connectors import credential_location
 from .models import ApplicationGrant, CodeFile, CodeRepository
 from .services import audit
@@ -38,6 +39,17 @@ class RepositoryForm(forms.Form):
         help_text=(
             "Leave blank to use the repository's default branch. The index records "
             "the exact commit."
+        ),
+    )
+
+
+class FolderForm(forms.Form):
+    folder = forms.CharField(
+        max_length=240,
+        label="Folder on this server",
+        help_text=(
+            "The full path of a code folder on the machine this platform runs on. "
+            "It is read in place and never run, and git is not executed in it."
         ),
     )
 
@@ -227,7 +239,7 @@ def selected_repository(app, raw):
 @login_required
 @require_http_methods(["GET", "POST"])
 def repository_add(request, pk):
-    """Register a GitHub repository, on a page of its own.
+    """Register a GitHub repository or a server folder, on a page of its own.
 
     Opened as a popup from Code Graph by `modal.js`, which fetches this URL and
     lifts its `<main>`; with JavaScript off the button navigates here instead.
@@ -235,8 +247,29 @@ def repository_add(request, pk):
     app, grant = access(request.user, pk, "code_graph")
     if not can_manage(grant):
         raise PermissionDenied
-    form = RepositoryForm(request.POST or None)
-    if request.method == "POST":
+    from_folder = request.POST.get("action") == "register_folder"
+    form = RepositoryForm(request.POST if request.method == "POST" and not from_folder else None)
+    folder_form = FolderForm(request.POST if from_folder else None)
+    folder_roots = code_graph_local.roots()
+    if folder_roots:
+        folder_form.fields["folder"].widget.attrs["placeholder"] = str(
+            folder_roots[0] / "my-service"
+        )
+    if request.method == "POST" and from_folder:
+        access(request.user, pk, "code_graph", write=True)
+        if not code_graph_local.enabled():
+            raise PermissionDenied
+        if folder_form.is_valid():
+            try:
+                repository = register_local(request.user, pk, folder_form.cleaned_data["folder"])
+            except ValidationError as failure:
+                folder_form.add_error("folder", " ".join(failure.messages))
+            else:
+                messages.success(request, "Folder queued for indexing.")
+                return redirect(
+                    f"{reverse('code-graph', args=[pk])}?repository={repository.pk}"
+                )
+    elif request.method == "POST":
         access(request.user, pk, "code_graph", write=True)
         if form.is_valid():
             try:
@@ -250,7 +283,66 @@ def repository_add(request, pk):
                 return redirect(
                     f"{reverse('code-graph', args=[pk])}?repository={repository.pk}"
                 )
-    return render(request, "repository_add.html", {"application": app, "form": form})
+    return render(
+        request,
+        "repository_add.html",
+        {
+            "application": app,
+            "form": form,
+            "folder_form": folder_form if code_graph_local.enabled() else None,
+            "folder_roots": folder_roots,
+            "from_folder": from_folder,
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET"])
+def repository_browse(request, pk):
+    """Pick a server folder by walking down from the roots.
+
+    A browser's own folder picker uploads files and never says where they were,
+    so it cannot name a folder that stays on this server; this lists the
+    server's folders instead, inside the operator's roots and under the same
+    rules indexing applies. Each folder offers the ordinary register form, so
+    the page works on its own and inside the Add repository popup alike.
+    """
+    from django.http import Http404
+
+    app, grant = access(request.user, pk, "code_graph")
+    if not can_manage(grant):
+        raise PermissionDenied
+    roots = code_graph_local.roots()
+    if not roots:
+        raise Http404
+    raw = request.GET.get("path", "").strip()
+    folder, error = None, ""
+    if raw or len(roots) == 1:
+        try:
+            folder = code_graph_local.resolve_folder(raw or str(roots[0]))
+        except ValidationError as failure:
+            error = " ".join(failure.messages)
+    if folder:
+        children, more = code_graph_local.list_folders(folder)
+    else:
+        children = [
+            {"name": str(root), "path": str(root), "repository": (root / ".git").exists()}
+            for root in roots
+        ]
+        more = False
+    return render(
+        request,
+        "repository_browse.html",
+        {
+            "application": app,
+            "folder": folder,
+            "parent": code_graph_local.parent_of(folder) if folder else None,
+            "children": children,
+            "more": more,
+            "error": error,
+            "max_listed": code_graph_local.MAX_LISTED,
+        },
+    )
 
 
 @login_required
@@ -263,7 +355,7 @@ def code_graph(request, pk):
         if not can_manage(grant):
             raise PermissionDenied
         action = request.POST.get("action")
-        if action == "register":
+        if action in {"register", "register_folder"}:
             # The form lives on its own page; a failed submission is shown there.
             return repository_add(request, pk)
         elif action == "refresh":
@@ -428,6 +520,12 @@ def code_graph(request, pk):
             # before anyone thinks to look at a connector screen, so the answer
             # belongs on this page too.
             "github_credential": credential_location(app, "github"),
+            "folders_enabled": code_graph_local.enabled(),
+            "repository_folder": (
+                code_graph_local.path_of(repository)
+                if repository and repository.provider == "local"
+                else ""
+            ),
             "connector_url": reverse("connectors", args=[app.pk]),
             "file_count": snapshot.files.count() if snapshot else 0,
             "relationship_count": snapshot.relationships.count() if snapshot else 0,
@@ -448,6 +546,18 @@ def code_file(request, pk, file_id):
     dependents = file.dependents.filter(snapshot=file.snapshot).select_related("source")
     affected = reach(file.snapshot, file.pk, upstream=False)
     rests_on = reach(file.snapshot, file.pk, upstream=True)
+    from .code_knowledge import links
+    from .graphs import published_revision
+
+    knowledge_links, links_limited = [], False
+    try:
+        access(request.user, pk, "knowledge")
+    except PermissionDenied:
+        pass
+    else:
+        revision = published_revision(app.pk)
+        if revision:
+            knowledge_links, links_limited = links(revision, file.snapshot, file_id=file.pk)
     return render(
         request,
         "code_file.html",
@@ -455,6 +565,8 @@ def code_file(request, pk, file_id):
             "application": app,
             "grant": grant,
             "file": file,
+            "knowledge_links": knowledge_links,
+            "links_limited": links_limited,
             "repository": file.snapshot.repository,
             "snapshot": file.snapshot,
             "dependencies": dependencies,

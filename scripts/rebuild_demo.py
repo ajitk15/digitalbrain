@@ -1,39 +1,31 @@
-"""Build the CarePath demonstration workspace in one run.
+"""Build the CarePath demonstration workspace in one run - and only this:
 
-Everything here is derived from demo-artifacts/demo-kit/demo-setup.md, which is
-the runbook a person would follow by hand. Two applications, one per purpose:
+ 0. Settings: self-approval and demo reset switched on in config/local.toml
+ 1. Organization ACME
+ 2. Portfolio Integrated Care
+ 3. Product Care Coordination
+ 4. Engineering application CarePathDev
+ 5. Operations application CarePathOps
+ 6. Users: acmeadmin (owner of ACME and of both applications) and the platform
+    administrator siteadmin@db.com, both with password demo123456789
+ 7. The connectors and their configuration
+ 8. Where the Jira and ServiceNow credential files go, and their names
+ 9. Knowledge from the local folder demo-artifacts/docs, built into a graph
+10. Code from the local folder demo-artifacts/carepath, built into a code graph
+11. Jira tickets imported into CarePathDev
+12. ServiceNow tickets imported into CarePathOps
 
-* CarePathDev - Engineering: Jira tickets, the CarePath repository, Code Factory.
-* CarePathOps - Operations: ServiceNow incidents and changes, ServiceOps triage.
+Run by `start-all.cmd -Demo`, or directly:
 
-Both read the same lifecycle documents, each into its own copy. In order:
+    .venv/Scripts/python.exe scripts/rebuild_demo.py
 
-1. Organization, portfolio, product, both applications, their features and AI
-   configuration - what the create form and onboarding's connector question
-   write.
-2. The carepathdocs knowledge source for each, and the CarePath repository for
-   CarePathDev.
-3. The connectors, configured exactly as the runbook's tables say.
-4. Credentials. Asked for on this console, one at a time, never echoed, and
-   written by `secrets.set_credential` - the same code the Credentials screen
-   runs, so the file, its mode and the audit record are identical. A credential
-   that is already set is never asked for again. Press Enter to skip one.
-5. One sync of every connector whose credential is present.
-6. Document conversion, the structural graph and code indexing, driven here so
-   the server does not have to be running. None of it calls a model.
-7. The newest graph version published, where nothing is published yet - a
-   version somebody published deliberately is left alone.
-
-Idempotent. Run it twice and the second run reports what already existed rather
-than creating a second ACME. Nothing here deletes anything.
-
-    .venv/Scripts/python.exe scripts/rebuild_demo.py            everything
-    .venv/Scripts/python.exe scripts/rebuild_demo.py --no-prompt  never ask for a secret
-    .venv/Scripts/python.exe scripts/rebuild_demo.py --no-wait    stop after syncing
+Idempotent: a second run reports what already exists and creates nothing new.
+A password is set only when its user is created, never reset, and the whole
+script refuses to run on a production instance. Nothing here deletes anything.
+No model is called.
 """
 
-import argparse
-import getpass
+import json
 import os
 import sys
 import time
@@ -50,7 +42,6 @@ from django.conf import settings  # noqa: E402
 from django.core.exceptions import ValidationError  # noqa: E402
 
 from platform_core.models import (  # noqa: E402
-    AIConfiguration,
     Application,
     ApplicationFeature,
     ApplicationGrant,
@@ -69,8 +60,17 @@ from platform_core.services import (  # noqa: E402
     features_for_purpose,
 )
 
-DOCS = "https://github.com/ajitk15/carepathdocs/tree/main"
-CODE = "ajitk15/carepath"
+ROOT = Path(__file__).resolve().parent.parent
+DOCS_FOLDER = ROOT / "demo-artifacts" / "docs"
+CODE_FOLDER = ROOT / "demo-artifacts" / "carepath"
+
+#: The demo's sign-in, for a demonstration instance on this machine only.
+DEMO_USER = "acmeadmin"
+DEMO_PASSWORD = "demo123456789"
+#: The platform administrator, with the same password. Created here so a new
+#: machine needs no interactive bootstrap; .env names it, as bootstrap_admin
+#: requires.
+SITE_ADMIN = "siteadmin@db.com"
 
 #: (name, purpose, the AI purpose its first job needs)
 APPLICATIONS = (
@@ -136,34 +136,59 @@ CONNECTORS = {
     ),
 }
 
-#: What each application needs set, in the order they are asked for.
-CREDENTIALS = {
-    "CarePathDev": ("claude", "jira", "github_write"),
-    "CarePathOps": ("claude", "servicenow"),
-}
+#: Which credential file each application's import needs, and what is in it.
+CREDENTIAL_FILES = (
+    ("CarePathDev", "jira", "the Atlassian API token for ajitk15@gmail.com"),
+    ("CarePathOps", "servicenow", "the password of the ServiceNow user digibrain"),
+)
 
 #: How long to wait for conversion and indexing before leaving it to the server.
 WAIT_SECONDS = 20 * 60
 
 
-def section(title):
+#: The two settings a one-person demo needs, written into config/local.toml.
+#: allow_self_approval lets the person who starts a run approve its plan;
+#: allow_demo_reset lets the platform administrator empty ACME between demos.
+DEMO_FLAGS = ("allow_self_approval", "allow_demo_reset")
+
+
+def demo_settings():
+    """Switch the demo's settings on in the configuration file, line by line.
+
+    Rewritten rather than round-tripped through TOML, as init_local.py does,
+    so every other line and comment survives. The server reads the file when it
+    starts, which `start-all.cmd -Demo` does right after this script.
+    """
+    path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config" / "local.toml"))
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for flag in DEMO_FLAGS:
+        found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == flag]
+        if found and lines[found[0]].partition("=")[2].strip() == "true":
+            print(f"found   {flag} = true")
+            continue
+        if found:
+            lines[found[0]] = f"{flag} = true"
+        else:
+            lines.append(f"{flag} = true")
+        print(f"enabled {flag} = true")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def step(number, title):
     print()
-    print(f"== {title}")
+    print(f"== {number}. {title}")
 
 
-def build(admin, product, name, purpose, ai_purpose):
+def application(owner, product, name, purpose, ai_purpose):
+    """One application, as the create form writes it."""
     from platform_core.ai import seed_application_ai
+    from platform_core.models import AIConfiguration
 
     app, made = Application.objects.get_or_create(name=name, product=product)
-    print(f"{'created' if made else 'found  '} application {name} ({purpose}, {app.pk})")
-    # Owner, and explicitly able to approve, as the create form does. On this
-    # instance allow_self_approval is on, which is what lets one operator run
-    # the pipeline end to end; a real deployment grants a second person.
+    print(f"{'created' if made else 'found  '} application {name} ({purpose})")
     ApplicationGrant.objects.update_or_create(
-        application=app, user=admin, defaults={"role": "owner", "can_approve": True}
+        application=app, user=owner, defaults={"role": "owner", "can_approve": True}
     )
-    # What the create form writes for this purpose, then what onboarding's
-    # connector question writes for its defaults.
     for key, enabled in features_for_purpose(purpose).items():
         ApplicationFeature.objects.update_or_create(
             application=app, key=key, defaults={"enabled": enabled}
@@ -183,37 +208,55 @@ def build(admin, product, name, purpose, ai_purpose):
             "enabled": True,
             "input_rate": 3,
             "output_rate": 15,
-            "configured_by": admin,
+            "configured_by": owner,
         },
     )
-    # What the create form does next: every other purpose configured, and the
-    # console-entered claude_default copied to this application's own file if
-    # there is one. Copied, never read through - see CLAUDE.md.
-    seed_application_ai(admin, app, "claude")
+    seed_application_ai(owner, app, "claude")
     return app
 
 
-def sources(admin, built):
-    from platform_core.code_graph_ingest import register
-    from platform_core.link_sources import submit
-    from platform_core.models import CodeRepository, KnowledgeSource
+def site_admin():
+    """siteadmin@db.com as platform administrator, created once and never reset.
 
-    for app in built.values():
-        if KnowledgeSource.objects.filter(application=app, url=DOCS).exists():
-            print(f"found   {app.name}: knowledge source carepathdocs")
-        else:
-            created = submit(admin, app.pk, DOCS, [])
-            print(f"created {app.name}: knowledge source carepathdocs, {len(created)} queued")
+    Never elevates an account that already exists: bootstrap_admin refuses the
+    same, and a demo build must not be a way round it.
+    """
+    from platform_core.models import AuditEvent
 
-    dev = built["CarePathDev"]
-    if CodeRepository.objects.filter(application=dev, external_id=CODE.lower()).exists():
-        print(f"found   CarePathDev: code repository {CODE}")
+    user = User.objects.filter(username=SITE_ADMIN).first()
+    if user is None:
+        user = User(username=SITE_ADMIN, is_platform_admin=True)
+        user.set_password(DEMO_PASSWORD)
+        user.save()
+        AuditEvent.objects.create(
+            actor=user, action="platform.admin_bootstrapped", resource_id=str(user.pk)
+        )
+        print(f"created platform administrator {SITE_ADMIN}, password {DEMO_PASSWORD}")
+    elif user.is_platform_admin:
+        print(f"found   platform administrator {SITE_ADMIN} (password left as it is)")
     else:
-        repo = register(admin, dev.pk, CODE)
-        print(f"created CarePathDev: code repository {repo.name}, queued for indexing")
+        print(f"skipped {SITE_ADMIN} exists but is not a platform administrator; left as it is")
+    env = ROOT / ".env"
+    if not env.exists():
+        env.write_text(f"SITE_ADMIN_USER_ID={SITE_ADMIN}\n", encoding="utf-8")
+        print(f"created .env naming {SITE_ADMIN} as the site administrator")
 
 
-def connectors(admin, built):
+def demo_user():
+    user = User.objects.filter(username=DEMO_USER).first()
+    if user is not None:
+        print(f"found   user {DEMO_USER} (password left as it is)")
+        return user
+    user = User(username=DEMO_USER)
+    # The demo's published password, set directly rather than through the
+    # platform's password rules.
+    user.set_password(DEMO_PASSWORD)
+    user.save()
+    print(f"created user {DEMO_USER}, password {DEMO_PASSWORD}")
+    return user
+
+
+def load_connectors(owner, built):
     for app_name, definitions in CONNECTORS.items():
         app = built[app_name]
         for kind, name, config, interval, prune in definitions:
@@ -226,115 +269,97 @@ def connectors(admin, built):
                     "enabled": True,
                     "sync_interval_minutes": interval,
                     "prune_missing": prune,
-                    "created_by": admin,
+                    "created_by": owner,
                 },
             )
             print(f"{'created' if made else 'found  '} {app_name}: connector {name}")
 
 
-def credentials(admin, built, prompt):
-    from platform_core.secrets import MANAGEABLE, manageable_here, set_credential, source_of
+def credential_files(built):
+    """Where each file goes, and whether it is there. Returns the ones missing."""
+    from platform_core.connectors import credential
 
-    if prompt and not sys.stdin.isatty():
-        print("Not attached to a console, so no credential will be asked for.")
-        prompt = False
-    if prompt and not manageable_here():
-        print("managed_secret_directory is not configured, so credentials cannot be")
-        print(f"written from here. Put each file in {settings.SECRET_DIRECTORY} instead.")
-        prompt = False
-    # One answer per kind: the same Claude credential serves both applications,
-    # written to each one's own file, so nobody pastes it twice.
-    answers = {}
+    folder = settings.CONNECTOR_SECRET_DIRECTORY
+    if not folder:
+        print("connector_secret_directory is not set in config/local.toml. Set it, for")
+        print('example connector_secret_directory = "C:/DigitalBrain/secrets", and run again.')
     missing = []
-    for app_name, keys in CREDENTIALS.items():
-        app = built[app_name]
-        for key in keys:
-            label = MANAGEABLE[key].label
-            where = source_of(app, key)
-            if where:
-                print(f"found   {app_name}: {label} ({where})")
-                continue
-            if key == "claude" and settings.CLAUDE_USE_HOST_LOGIN and key not in answers:
-                print(f"note    {app_name}: {label} not set; this machine's Claude login")
-                print("        will be used (claude_use_host_login). Enter one to bill it here.")
-            value = answers.get(key)
-            if value is None and prompt:
-                print(f"        {MANAGEABLE[key].hint}")
-                value = getpass.getpass(f"        {label} for {app_name} (Enter to skip): ")
-                answers[key] = value = value.strip()
-            if not value:
-                print(f"skipped {app_name}: {label}")
-                # Host login covers Claude on a development instance, so it is
-                # optional here rather than something still to do.
-                if not (key == "claude" and settings.CLAUDE_USE_HOST_LOGIN):
-                    missing.append((app_name, label))
-                continue
-            try:
-                set_credential(admin, app.pk, key, value)
-            except ValidationError as error:
-                print(f"FAILED  {app_name}: {label}: {' '.join(error.messages)}")
-                missing.append((app_name, label))
-                continue
-            print(f"set     {app_name}: {label}")
+    for app_name, name, holds in CREDENTIAL_FILES:
+        path = Path(folder) / name if folder else Path(name)
+        present = bool(credential(built[app_name], name))
+        print(f"{'found  ' if present else 'MISSING'} {path}")
+        print(f"        one line: {holds}")
+        if not present:
+            missing.append(app_name)
     return missing
 
 
-def sync_all(admin, built):
-    from platform_core.connectors import credential
-    from platform_core.connectors import sync as sync_connector
+def load_docs(owner, built):
+    from django.core.files.uploadedfile import SimpleUploadedFile
 
+    from platform_core.documents import store_folder
+
+    files = sorted(path for path in DOCS_FOLDER.rglob("*") if path.is_file())
+    paths = [path.relative_to(DOCS_FOLDER.parent).as_posix() for path in files]
     for app in built.values():
-        for connector in Connector.objects.filter(application=app, enabled=True):
-            if not credential(app, connector.kind):
-                print(f"skipped {app.name}: {connector.name}, no credential")
-                continue
-            try:
-                count = sync_connector(admin, connector.pk, app.pk)
-            except Exception as error:  # noqa: BLE001 - reported, and the rest still run
-                print(f"FAILED  {app.name}: {connector.name}: {error}")
-                continue
-            print(f"synced  {app.name}: {connector.name}, {count} record(s) changed")
+        uploads = [SimpleUploadedFile(path.name, path.read_bytes()) for path in files]
+        try:
+            _, added, _, unchanged = store_folder(owner, app.pk, uploads, json.dumps(paths))
+        except Exception as error:  # noqa: BLE001 - reported, and the rest still run
+            print(f"FAILED  {app.name}: {DOCS_FOLDER}: {error}")
+            continue
+        print(f"loaded  {app.name}: {added} new document(s), {unchanged} unchanged")
 
 
-def drive(built):
-    """Run the intake, graph and code lanes here until they have nothing left.
+def load_code(owner, dev):
+    from platform_core import code_graph_local
+    from platform_core.code_graph_ingest import register_local
+    from platform_core.models import CodeRepository
 
-    Every claim in those lanes is a guarded update, so a server running the same
-    lanes at the same time takes different work rather than the same work twice.
-    """
+    if CodeRepository.objects.filter(
+        application=dev, provider="local", retired_at__isnull=True
+    ).exists():
+        print(f"found   CarePathDev: {CODE_FOLDER}")
+        return
+    if not code_graph_local.enabled():
+        print("skipped: code_graph_local_roots is not set in config/local.toml. Copy")
+        print("        config/local.example.toml to config/local.toml and run again.")
+        return
+    try:
+        register_local(owner, dev.pk, str(CODE_FOLDER))
+    except ValidationError as error:
+        print(f"FAILED  CarePathDev: {CODE_FOLDER}: {' '.join(error.messages)}")
+        return
+    print(f"loaded  CarePathDev: {CODE_FOLDER}, queued for indexing")
+
+
+def build_graphs(built):
+    """Conversion, the knowledge graph and the code index, then publish."""
     from platform_core.document_worker import code_graph_steps, graph_steps, intake_steps
+    from platform_core.graphs import publish_revision, published_revision
 
     ids = [app.pk for app in built.values()]
     steps = (*intake_steps(), *graph_steps(), *code_graph_steps())
     deadline = time.monotonic() + WAIT_SECONDS
-    reported, said_at = None, 0.0
     while time.monotonic() < deadline:
         worked = False
-        for step in steps:
+        for work in steps:
             try:
-                worked = bool(step()) or worked
+                worked = bool(work()) or worked
             except Exception as error:  # noqa: BLE001 - one bad document must not stop the rest
-                print(f"note    {step.__name__}: {error}")
+                print(f"note    {work.__name__}: {error}")
                 worked = True
         waiting = Document.objects.filter(
             application_id__in=ids, status__in=Document.IN_FLIGHT
         ).count()
-        # Every ten seconds at most: one line per document was fifty-six lines.
-        if waiting != reported and (not waiting or time.monotonic() - said_at >= 10):
-            print(f"        {waiting} document(s) still converting")
-            reported, said_at = waiting, time.monotonic()
         if not worked and not waiting:
-            return True
+            break
         if not worked:
             time.sleep(2)
-    print("Still busy after the wait. The server's worker will finish it; run this")
-    print("again afterwards to publish the graph.")
-    return False
-
-
-def publish(admin, built):
-    from platform_core.graphs import publish_revision, published_revision
-
+    else:
+        print("still busy; the server's worker will finish it. Run this again to publish.")
+        return
+    owner = User.objects.get(username=DEMO_USER)
     for app in built.values():
         current = published_revision(app.pk)
         if current is not None:
@@ -342,78 +367,81 @@ def publish(admin, built):
             continue
         latest = GraphRevision.objects.filter(application=app).order_by("-number").first()
         if latest is None:
-            print(f"waiting {app.name}: no graph version has been generated yet")
+            print(f"waiting {app.name}: no graph version yet")
             continue
         try:
-            publish_revision(admin, app.pk, latest.number)
+            publish_revision(owner, app.pk, latest.number)
         except ValidationError as error:
             print(f"FAILED  {app.name}: {' '.join(error.messages)}")
             continue
         print(f"published {app.name}: graph version {latest.number}")
 
 
-def report(built):
-    from platform_core.readiness import all_steps
+def import_tickets(owner, app, missing):
+    from platform_core.connectors import sync as sync_connector
 
-    for app in built.values():
-        print(f"{app.name}  /applications/{app.pk}/")
-        for step in all_steps(app):
-            mark = "ok " if step.ok else ("-- " if not step.blocking else "XX ")
-            print(f"  {mark} {step.label}: {step.detail}")
+    if app.name in missing:
+        print(f"skipped {app.name}: its credential file is missing (step 8)")
+        return
+    for connector in Connector.objects.filter(application=app, enabled=True):
+        try:
+            count = sync_connector(owner, connector.pk, app.pk)
+        except Exception as error:  # noqa: BLE001 - reported, and the rest still run
+            print(f"FAILED  {app.name}: {connector.name}: {error}")
+            continue
+        print(f"imported {app.name}: {connector.name}, {count} record(s) changed")
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--no-prompt", action="store_true", help="never ask for a credential")
-    parser.add_argument(
-        "--no-wait", action="store_true", help="stop after syncing; leave conversion to the server"
-    )
-    options = parser.parse_args(argv)
-
-    admin = User.objects.filter(is_platform_admin=True, is_active=True).first()
-    if admin is None:
-        print("No platform administrator exists yet. Run this first, and choose")
-        print("a password when it asks:")
-        print()
-        print("    .venv/Scripts/python.exe manage.py bootstrap_admin")
+    if settings.PRODUCTION:
+        print("Refusing to build the demo on a production instance.")
         return 1
-    print(f"administrator: {admin.get_username()}")
 
-    section("Workspace")
+    step(0, "Settings")
+    demo_settings()
+    step(1, "Organization")
     org, made = Organization.objects.get_or_create(name="ACME")
     print(f"{'created' if made else 'found  '} organization ACME")
-    OrganizationMember.objects.get_or_create(
-        organization=org, user=admin, defaults={"is_admin": True}
+    step(2, "Portfolio")
+    portfolio, made = Portfolio.objects.get_or_create(name="Integrated Care", organization=org)
+    print(f"{'created' if made else 'found  '} portfolio Integrated Care")
+    step(3, "Product")
+    product, made = Product.objects.get_or_create(name="Care Coordination", portfolio=portfolio)
+    print(f"{'created' if made else 'found  '} product Care Coordination")
+
+    # The user comes first in the code because the applications need an owner;
+    # it is reported as step 6, where it belongs in the list.
+    owner = demo_user()
+    OrganizationMember.objects.update_or_create(
+        organization=org, user=owner, defaults={"is_admin": True}
     )
-    portfolio, _ = Portfolio.objects.get_or_create(name="Integrated Care", organization=org)
-    product, _ = Product.objects.get_or_create(name="Care Coordination", portfolio=portfolio)
-    built = {
-        name: build(admin, product, name, purpose, ai_purpose)
-        for name, purpose, ai_purpose in APPLICATIONS
-    }
+    built = {}
+    for number, (name, purpose, ai_purpose) in zip((4, 5), APPLICATIONS, strict=True):
+        step(number, f"{purpose.capitalize()} application")
+        built[name] = application(owner, product, name, purpose, ai_purpose)
+    step(6, "Users")
+    print(f"{DEMO_USER} is owner (administrator) of ACME and owns CarePathDev and CarePathOps")
+    site_admin()
 
-    section("Sources")
-    sources(admin, built)
-    section("Connectors")
-    connectors(admin, built)
-    section("Credentials")
-    missing = credentials(admin, built, prompt=not options.no_prompt)
-    section("Import")
-    sync_all(admin, built)
-    if not options.no_wait:
-        section("Conversion, graph and code index (no model is called)")
-        drive(built)
-        section("Publish")
-        publish(admin, built)
-    section("Checklist")
-    report(built)
+    step(7, "Connectors")
+    load_connectors(owner, built)
+    step(8, "Credential files")
+    missing = credential_files(built)
+    step(9, "Knowledge from demo-artifacts/docs")
+    load_docs(owner, built)
+    step(10, "Code from demo-artifacts/carepath")
+    load_code(owner, built["CarePathDev"])
+    step(11, "Jira tickets into CarePathDev")
+    import_tickets(owner, built["CarePathDev"], missing)
+    step(12, "ServiceNow tickets into CarePathOps")
+    import_tickets(owner, built["CarePathOps"], missing)
 
-    if missing:
-        print()
-        print("Still to set, on each application's Settings > Credentials, then run")
-        print("this again to import:")
-        for app_name, label in missing:
-            print(f"  {app_name}: {label}")
+    print()
+    print("== Building the knowledge and code graphs (no model is called)")
+    build_graphs(built)
+    print()
+    print(f"Sign in as {DEMO_USER}. Missing credential files: put them where step 8 says")
+    print("and run this again; it imports what it could not before." if missing else "Done.")
     return 0
 
 
