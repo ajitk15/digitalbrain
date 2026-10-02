@@ -1085,12 +1085,10 @@ def next_action(run, grant, user, reviewable, can_retry_analysis):
 def self_approval_allowed():
     """Whether one person may approve a plan they wrote.
 
-    Off unless a deployment writes it down. Separation of duties is still the
-    default and still the shape of the product: two people, one who asks and one
-    who agrees. But a single-operator instance has nobody else to ask, and
-    refusing this outright there left the pipeline unrunnable rather than
-    strict - so it is now a deployment's decision in every mode, production
-    included, instead of a development-only concession.
+    On unless a deployment writes `allow_self_approval = false`. Most instances
+    are run by one person, and whoever starts a run authors its plan, so the
+    off default deadlocked every new instance at the review gate. Two-person
+    review is that one line, in every mode, production included.
 
     What did not change is that it is never silent. `ChangePlan` records the
     approver, so a plan approved by its author says so in the audit record; and
