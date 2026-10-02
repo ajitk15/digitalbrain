@@ -8,11 +8,16 @@ the runbook a person would follow by hand. Two applications, one per purpose:
 
 Both read the same lifecycle documents, each into its own copy. In order:
 
+0. The demo owner, acmeadmin, with the demo kit's password - created once,
+   never reset, and refused outright on a production instance.
 1. Organization, portfolio, product, both applications, their features and AI
    configuration - what the create form and onboarding's connector question
-   write.
-2. The carepathdocs knowledge source for each, and the CarePath repository for
-   CarePathDev.
+   write. acmeadmin administers ACME and owns both, with approval rights.
+2. Knowledge and code, from this checkout by default: demo-artifacts/docs
+   uploaded as a folder into each application, and demo-artifacts/carepath
+   registered as a Code Graph folder for CarePathDev, with its own .venv so
+   Code Factory's "Run the tests" works. `--github` reads both from GitHub
+   instead (carepathdocs and ajitk15/carepath), as the demo first did.
 3. The connectors, configured exactly as the runbook's tables say.
 4. Credentials. Asked for on this console, one at a time, never echoed, and
    written by `secrets.set_credential` - the same code the Credentials screen
@@ -27,7 +32,8 @@ Both read the same lifecycle documents, each into its own copy. In order:
 Idempotent. Run it twice and the second run reports what already existed rather
 than creating a second ACME. Nothing here deletes anything.
 
-    .venv/Scripts/python.exe scripts/rebuild_demo.py            everything
+    .venv/Scripts/python.exe scripts/rebuild_demo.py            everything, local sources
+    .venv/Scripts/python.exe scripts/rebuild_demo.py --github   docs and code from GitHub
     .venv/Scripts/python.exe scripts/rebuild_demo.py --no-prompt  never ask for a secret
     .venv/Scripts/python.exe scripts/rebuild_demo.py --no-wait    stop after syncing
 """
@@ -71,6 +77,16 @@ from platform_core.services import (  # noqa: E402
 
 DOCS = "https://github.com/ajitk15/carepathdocs/tree/main"
 CODE = "ajitk15/carepath"
+
+ROOT = Path(__file__).resolve().parent.parent
+#: The same documents and code, as this checkout holds them.
+DOCS_FOLDER = ROOT / "demo-artifacts" / "docs"
+CODE_FOLDER = ROOT / "demo-artifacts" / "carepath"
+
+#: The demo's sign-in. A published password for a demonstration instance on
+#: this machine, never for a deployment: `demo_owner` refuses under production.
+DEMO_USER = "acmeadmin"
+DEMO_PASSWORD = "acme123456789"
 
 #: (name, purpose, the AI purpose its first job needs)
 APPLICATIONS = (
@@ -136,11 +152,13 @@ CONNECTORS = {
     ),
 }
 
-#: What each application needs set, in the order they are asked for.
+#: What each application needs set, in the order they are asked for. The
+#: GitHub write credential only matters when the code comes from GitHub.
 CREDENTIALS = {
-    "CarePathDev": ("claude", "jira", "github_write"),
+    "CarePathDev": ("claude", "jira"),
     "CarePathOps": ("claude", "servicenow"),
 }
+GITHUB_CREDENTIALS = {"CarePathDev": ("github_write",)}
 
 #: How long to wait for conversion and indexing before leaving it to the server.
 WAIT_SECONDS = 20 * 60
@@ -149,6 +167,52 @@ WAIT_SECONDS = 20 * 60
 def section(title):
     print()
     print(f"== {title}")
+
+
+def demo_owner():
+    """acmeadmin, created with the demo password the first time and never reset."""
+    if settings.PRODUCTION:
+        raise SystemExit("Refusing to create a demo account with a known password in production.")
+    user = User.objects.filter(username=DEMO_USER).first()
+    if user is not None:
+        print(f"found   user {DEMO_USER} (password left as it is)")
+        return user
+    user = User(username=DEMO_USER)
+    # Set directly rather than through the password validators: it is the demo
+    # kit's published password, chosen for a room, not for this platform's rules.
+    user.set_password(DEMO_PASSWORD)
+    user.save()
+    print(f"created user {DEMO_USER} with the demo password")
+    return user
+
+
+def carepath_environment():
+    """CarePath's own .venv, as its README builds it, so its tests can be run."""
+    import shutil
+    import subprocess
+
+    python = CODE_FOLDER / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if python.is_file():
+        print("found   CarePath test environment (.venv)")
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        print("skipped CarePath test environment: uv is not on PATH. In the folder run:")
+        print("        uv venv .venv")
+        print("        uv pip install --python .venv/Scripts/python.exe -e . pytest httpx")
+        return
+    try:
+        subprocess.run([uv, "venv", ".venv"], cwd=CODE_FOLDER, check=True, capture_output=True)
+        subprocess.run(
+            [uv, "pip", "install", "--python", str(python), "-e", ".", "pytest", "httpx"],
+            cwd=CODE_FOLDER,
+            check=True,
+            capture_output=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as error:
+        print(f"FAILED  CarePath test environment: {error}")
+        return
+    print("created CarePath test environment (.venv)")
 
 
 def build(admin, product, name, purpose, ai_purpose):
@@ -193,6 +257,48 @@ def build(admin, product, name, purpose, ai_purpose):
     return app
 
 
+def local_sources(admin, built):
+    """The docs folder into each application, the code folder into CarePathDev."""
+    import json
+
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from platform_core import code_graph_local
+    from platform_core.code_graph_ingest import register_local
+    from platform_core.documents import store_folder
+    from platform_core.models import CodeRepository
+
+    files = sorted(path for path in DOCS_FOLDER.rglob("*") if path.is_file())
+    paths = [path.relative_to(DOCS_FOLDER.parent).as_posix() for path in files]
+    for app in built.values():
+        uploads = [SimpleUploadedFile(path.name, path.read_bytes()) for path in files]
+        try:
+            source, added, _, unchanged = store_folder(admin, app.pk, uploads, json.dumps(paths))
+        except Exception as error:  # noqa: BLE001 - reported, and the rest still run
+            print(f"FAILED  {app.name}: docs folder: {error}")
+            continue
+        print(f"{'created' if added else 'found  '} {app.name}: knowledge source "
+              f"{source.name}, {added} new, {unchanged} unchanged")
+
+    dev = built["CarePathDev"]
+    if not code_graph_local.enabled():
+        print("skipped CarePathDev: code folder. code_graph_local_roots is not set; copy")
+        print("        config/local.example.toml to config/local.toml and run this again.")
+        return
+    if CodeRepository.objects.filter(
+        application=dev, provider="local", retired_at__isnull=True
+    ).exists():
+        print("found   CarePathDev: code folder carepath")
+    else:
+        try:
+            repo = register_local(admin, dev.pk, str(CODE_FOLDER))
+        except ValidationError as error:
+            print(f"FAILED  CarePathDev: code folder: {' '.join(error.messages)}")
+            return
+        print(f"created CarePathDev: code folder {repo.name}, queued for indexing")
+    carepath_environment()
+
+
 def sources(admin, built):
     from platform_core.code_graph_ingest import register
     from platform_core.link_sources import submit
@@ -232,7 +338,7 @@ def connectors(admin, built):
             print(f"{'created' if made else 'found  '} {app_name}: connector {name}")
 
 
-def credentials(admin, built, prompt):
+def credentials(admin, built, prompt, github=False):
     from platform_core.secrets import MANAGEABLE, manageable_here, set_credential, source_of
 
     if prompt and not sys.stdin.isatty():
@@ -247,6 +353,7 @@ def credentials(admin, built, prompt):
     answers = {}
     missing = []
     for app_name, keys in CREDENTIALS.items():
+        keys = keys + (GITHUB_CREDENTIALS.get(app_name, ()) if github else ())
         app = built[app_name]
         for key in keys:
             label = MANAGEABLE[key].label
@@ -366,25 +473,25 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--no-prompt", action="store_true", help="never ask for a credential")
     parser.add_argument(
+        "--github", action="store_true", help="read docs and code from GitHub, not this checkout"
+    )
+    parser.add_argument(
         "--no-wait", action="store_true", help="stop after syncing; leave conversion to the server"
     )
     options = parser.parse_args(argv)
 
-    admin = User.objects.filter(is_platform_admin=True, is_active=True).first()
-    if admin is None:
-        print("No platform administrator exists yet. Run this first, and choose")
-        print("a password when it asks:")
-        print()
-        print("    .venv/Scripts/python.exe manage.py bootstrap_admin")
-        return 1
-    print(f"administrator: {admin.get_username()}")
+    section("Demo owner")
+    # acmeadmin owns the demo and acts for every step below. A platform
+    # administrator is not needed for any of it, and none is created here.
+    admin = demo_owner()
 
     section("Workspace")
     org, made = Organization.objects.get_or_create(name="ACME")
     print(f"{'created' if made else 'found  '} organization ACME")
-    OrganizationMember.objects.get_or_create(
+    OrganizationMember.objects.update_or_create(
         organization=org, user=admin, defaults={"is_admin": True}
     )
+    print(f"        {DEMO_USER} administers ACME")
     portfolio, _ = Portfolio.objects.get_or_create(name="Integrated Care", organization=org)
     product, _ = Product.objects.get_or_create(name="Care Coordination", portfolio=portfolio)
     built = {
@@ -393,11 +500,14 @@ def main(argv=None):
     }
 
     section("Sources")
-    sources(admin, built)
+    if options.github:
+        sources(admin, built)
+    else:
+        local_sources(admin, built)
     section("Connectors")
     connectors(admin, built)
     section("Credentials")
-    missing = credentials(admin, built, prompt=not options.no_prompt)
+    missing = credentials(admin, built, prompt=not options.no_prompt, github=options.github)
     section("Import")
     sync_all(admin, built)
     if not options.no_wait:
