@@ -1,8 +1,7 @@
 """The one-click demo build, as a new machine runs it.
 
-Network steps are stubbed - the imports from Jira and ServiceNow, and building
-CarePath's .venv - so this checks what the builder creates, not what those
-systems hold.
+The imports from Jira and ServiceNow and the graph build are stubbed, so this
+checks what the builder creates, not what those systems hold.
 """
 
 import importlib.util
@@ -46,18 +45,20 @@ class RebuildDemoTests(TestCase):
         storage.enable()
         self.addCleanup(storage.disable)
         self.demo = builder()
-        for name in ("sync_all", "carepath_environment", "publish"):
-            stub = patch.object(self.demo, name)
+        for stub in (
+            patch.object(self.demo, "build_graphs"),
+            patch("platform_core.connectors.sync", return_value=0),
+        ):
             stub.start()
             self.addCleanup(stub.stop)
 
     def build(self):
-        self.assertEqual(self.demo.main(["--no-prompt", "--no-wait"]), 0)
+        self.assertEqual(self.demo.main(), 0)
 
     def test_a_new_machine_gets_acmeadmin_acme_and_both_applications(self):
         self.build()
         owner = User.objects.get(username="acmeadmin")
-        self.assertTrue(owner.check_password("acme123456789"))
+        self.assertTrue(owner.check_password("demo123456789"))
         self.assertFalse(owner.is_platform_admin)
         org = Organization.objects.get(name="ACME")
         self.assertTrue(OrganizationMember.objects.get(organization=org, user=owner).is_admin)
@@ -69,7 +70,10 @@ class RebuildDemoTests(TestCase):
             self.assertEqual(source.documents.exclude(status="deleted").count(), 27)
         repository = CodeRepository.objects.get(application__name="CarePathDev")
         self.assertEqual((repository.provider, repository.name), ("local", "carepath"))
-        self.demo.carepath_environment.assert_called_once()
+        self.assertEqual(
+            sorted(Application.objects.values_list("product__portfolio__name", "product__name")),
+            [("Integrated Care", "Care Coordination")] * 2,
+        )
 
     def test_running_it_again_creates_nothing_and_keeps_the_password(self):
         self.build()
@@ -85,6 +89,6 @@ class RebuildDemoTests(TestCase):
         self.assertTrue(owner.check_password("changed-by-the-owner"))
 
     def test_production_never_gets_a_known_password(self):
-        with override_settings(PRODUCTION=True), self.assertRaises(SystemExit):
-            self.demo.main(["--no-prompt", "--no-wait"])
+        with override_settings(PRODUCTION=True):
+            self.assertEqual(self.demo.main(), 1)
         self.assertFalse(User.objects.filter(username="acmeadmin").exists())

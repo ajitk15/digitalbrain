@@ -7,14 +7,13 @@
 #   1. Clone the repository to C:\Workspace\digitalbrian (or adjust the paths
 #      below to wherever it lives).
 #   2. Copy this file to config/local.toml before the first start.
-#   3. Run start-all.cmd -Demo. The first run installs everything and asks for a
-#      platform administrator; -Demo then builds the demo with
-#      scripts/rebuild_demo.py: user acmeadmin (password acme123456789) as
-#      ACME's admin and owner, CarePathDev and CarePathOps, the docs folder,
-#      the carepath code folder and its .venv, the connectors, an import and a
-#      published graph. It asks for the Jira and ServiceNow credentials unless
-#      connector_secret_directory below already holds them. init_local.py keeps
-#      every line here and only rewrites secret_directory if the folder moved.
+#   3. Put the connector credential files in connector_secret_directory below
+#      (C:/DigitalBrain/secrets): a file named jira holding the Atlassian API
+#      token, and one named servicenow holding the digibrain user's password.
+#   4. Run start-all.cmd -Demo. It builds ACME, Integrated Care, Care
+#      Coordination, CarePathDev and CarePathOps, user acmeadmin (password
+#      demo123456789), the connectors, knowledge from demo-artifacts/docs,
+#      code from demo-artifacts/carepath, and imports Jira and ServiceNow.
 #
 # Nothing secret is in here and nothing secret may be: credentials are files in
 # the directories named below, and they are copied to a new machine by hand,
