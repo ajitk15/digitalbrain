@@ -12,7 +12,8 @@
     administrator siteadmin@db.com, both with password demo123456789
  7. The connectors and their configuration
  8. Where the Jira and ServiceNow credential files go, and their names
- 9. Knowledge from the local folder demo-artifacts/docs, built into a graph
+ 9. Knowledge from the local folder demo-artifacts/docs, built into a graph -
+    with the model set for Graph generation in AI settings, then published
 10. Code from the local folder demo-artifacts/carepath, built into a code graph
 11. Jira tickets imported into CarePathDev
 12. ServiceNow tickets imported into CarePathOps
@@ -24,7 +25,8 @@ Run by `start-all.cmd -Demo`, or directly:
 Idempotent: a second run reports what already exists and creates nothing new.
 A password is set only when its user is created, never reset, and the whole
 script refuses to run on a production instance. Nothing here deletes anything.
-No model is called.
+The only model call is the one knowledge-graph generation per application
+that step 9 asks for, once; a re-run does not repeat it.
 """
 
 import json
@@ -373,14 +375,8 @@ def load_code(owner, dev):
     print(f"loaded  CarePathDev: {CODE_FOLDER}, queued for indexing")
 
 
-def build_graphs(built):
-    """Conversion, the knowledge graph and the code index, then publish."""
-    from platform_core.document_worker import code_graph_steps, graph_steps, intake_steps
-    from platform_core.graphs import publish_revision, published_revision
-
-    ids = [app.pk for app in built.values()]
-    steps = (*intake_steps(), *graph_steps(), *code_graph_steps())
-    deadline = time.monotonic() + WAIT_SECONDS
+def drive(steps, finished, deadline):
+    """Run worker steps here until `finished()` and nothing is left to do."""
     while time.monotonic() < deadline:
         worked = False
         for work in steps:
@@ -389,32 +385,102 @@ def build_graphs(built):
             except Exception as error:  # noqa: BLE001 - one bad document must not stop the rest
                 print(f"note    {work.__name__}: {error}")
                 worked = True
-        waiting = Document.objects.filter(
-            application_id__in=ids, status__in=Document.IN_FLIGHT
-        ).count()
-        if not worked and not waiting:
-            break
+        if not worked and finished():
+            return True
         if not worked:
             time.sleep(2)
-    else:
+    return False
+
+
+def request_ai_graphs(owner, built):
+    """Ask for one model-enriched graph per application, as Generate does.
+
+    The same request the Generate form makes, through the same function, so the
+    platform's rule holds: the background worker never calls a model on its own,
+    and this is somebody - acmeadmin - asking for it. Asked once: an application
+    that already has an enriched version is not charged again on a re-run.
+    """
+    from platform_core.graphs import claim_generation
+    from platform_core.models import AIConfiguration
+
+    requested = []
+    for app in built.values():
+        done = GraphRevision.objects.filter(application=app).exclude(model="").first()
+        if done is not None:
+            print(f"found   {app.name}: graph version {done.number} built with {done.model}")
+            continue
+        if not Document.objects.filter(application=app, status="ready").exists():
+            print(f"skipped {app.name}: no converted documents to build from")
+            continue
+        config = AIConfiguration.objects.filter(
+            application=app, purpose="graph_generation", enabled=True
+        ).first()
+        if config is None:
+            print(f"skipped {app.name}: Graph generation is off in AI settings")
+            continue
+        claimed, refusal = claim_generation(owner, app, config.provider, config.model)
+        if not claimed:
+            print(f"skipped {app.name}: {refusal}")
+            continue
+        print(f"requested {app.name}: graph generation with {config.model} (charges apply)")
+        requested.append(app)
+    return requested
+
+
+def build_graphs(built):
+    """Conversion and the code index, the graph with the model, then publish."""
+    from platform_core.document_worker import code_graph_steps, graph_steps, intake_steps
+    from platform_core.graphs import publish_revision, published_revision
+    from platform_core.models import KnowledgeGraph
+
+    ids = [app.pk for app in built.values()]
+    deadline = time.monotonic() + WAIT_SECONDS
+
+    def converted():
+        return not Document.objects.filter(
+            application_id__in=ids, status__in=Document.IN_FLIGHT
+        ).exists()
+
+    if not drive((*intake_steps(), *graph_steps(), *code_graph_steps()), converted, deadline):
         print("still busy; the server's worker will finish it. Run this again to publish.")
         return
+
     owner = User.objects.get(username=DEMO_USER)
+    requested = request_ai_graphs(owner, built)
+
+    def enriched():
+        return not KnowledgeGraph.objects.filter(
+            application__in=requested, status__in=["queued", "building"]
+        ).exists()
+
+    if requested and not drive(graph_steps(), enriched, deadline):
+        print("the model is still working; the server's worker will finish it. Run this")
+        print("again afterwards to publish.")
+        return
+    for app in requested:
+        made = GraphRevision.objects.filter(application=app).exclude(model="").first()
+        if made is None:
+            reason = KnowledgeGraph.objects.get(application=app).failure_reason
+            print(f"FAILED  {app.name}: graph generation with the model. {reason}")
+
     for app in built.values():
-        current = published_revision(app.pk)
-        if current is not None:
-            print(f"found   {app.name}: graph version {current.number} published")
-            continue
         latest = GraphRevision.objects.filter(application=app).order_by("-number").first()
         if latest is None:
             print(f"waiting {app.name}: no graph version yet")
+            continue
+        current = published_revision(app.pk)
+        # Left alone when someone published it, unless it is a structural version
+        # and the model-enriched one this build asked for is newer.
+        if current is not None and (current.number == latest.number or current.model):
+            print(f"found   {app.name}: graph version {current.number} published")
             continue
         try:
             publish_revision(owner, app.pk, latest.number)
         except ValidationError as error:
             print(f"FAILED  {app.name}: {' '.join(error.messages)}")
             continue
-        print(f"published {app.name}: graph version {latest.number}")
+        built_with = f" (built with {latest.model})" if latest.model else " (structural)"
+        print(f"published {app.name}: graph version {latest.number}{built_with}")
 
 
 def import_tickets(owner, app, missing):
@@ -477,7 +543,7 @@ def main(argv=None):
     import_tickets(owner, built["CarePathOps"], missing)
 
     print()
-    print("== Building the knowledge and code graphs (no model is called)")
+    print("== Building the knowledge graph (with the model) and the code graph")
     build_graphs(built)
     print()
     print(f"Sign in as {DEMO_USER}. Missing credential files: put them where step 8 says")

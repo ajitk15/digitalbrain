@@ -144,6 +144,48 @@ class RebuildDemoTests(TestCase):
         owner.refresh_from_db()
         self.assertTrue(owner.check_password("changed-by-the-owner"))
 
+    def built(self):
+        self.build()
+        return {app.name: app for app in Application.objects.all()}
+
+    def test_the_knowledge_graph_is_requested_with_the_configured_model(self):
+        from platform_core.models import Document, KnowledgeGraph
+
+        built = self.built()
+        Document.objects.filter(application=built["CarePathDev"]).update(status="ready")
+        owner = User.objects.get(username="acmeadmin")
+        requested = self.demo.request_ai_graphs(owner, built)
+        self.assertEqual([app.name for app in requested], ["CarePathDev"])
+        graph = KnowledgeGraph.objects.get(application=built["CarePathDev"])
+        self.assertEqual(
+            (graph.status, graph.requested_provider, graph.requested_model, graph.requested_by),
+            ("queued", "claude", "claude-sonnet-5", owner),
+        )
+
+    def test_an_enriched_graph_is_never_paid_for_twice(self):
+        from platform_core.models import Document, GraphRevision
+
+        built = self.built()
+        app = built["CarePathDev"]
+        Document.objects.filter(application=app).update(status="ready")
+        GraphRevision.objects.create(
+            application=app, number=1, fingerprint="f", provider="claude", model="claude-sonnet-5"
+        )
+        owner = User.objects.get(username="acmeadmin")
+        self.assertEqual(self.demo.request_ai_graphs(owner, {app.name: app}), [])
+
+    def test_no_model_is_asked_for_when_graph_generation_is_off(self):
+        from platform_core.models import AIConfiguration, Document
+
+        built = self.built()
+        app = built["CarePathDev"]
+        Document.objects.filter(application=app).update(status="ready")
+        AIConfiguration.objects.filter(application=app, purpose="graph_generation").update(
+            enabled=False
+        )
+        owner = User.objects.get(username="acmeadmin")
+        self.assertEqual(self.demo.request_ai_graphs(owner, {app.name: app}), [])
+
     def test_production_never_gets_a_known_password(self):
         with override_settings(PRODUCTION=True):
             self.assertEqual(self.demo.main(), 1)
