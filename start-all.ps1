@@ -123,7 +123,9 @@ try {
     Invoke-Checked $PythonExecutable @('manage.py', 'check', '--fail-level', 'WARNING')
     Invoke-Checked $PythonExecutable @('manage.py', 'migrate', '--noinput')
     # After migrate: the user table has to exist before an administrator can.
-    if ($Install) { Install-Administrator }
+    # A -Demo build creates its own administrator (siteadmin@db.com), so it is
+    # not asked for here as well.
+    if ($Install -and -not $Demo) { Install-Administrator }
     if ($Install -or $ConfigureAI) {
         # Unlike the administrator, an AI provider is optional - the platform runs
         # without one. A person who declines or mistypes should land on a working

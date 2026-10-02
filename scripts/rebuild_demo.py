@@ -6,7 +6,8 @@
  3. Product Care Coordination
  4. Engineering application CarePathDev
  5. Operations application CarePathOps
- 6. User acmeadmin, password demo123456789, owner of both applications
+ 6. Users: acmeadmin (owner of ACME and of both applications) and the platform
+    administrator siteadmin@db.com, both with password demo123456789
  7. The connectors and their configuration
  8. Where the Jira and ServiceNow credential files go, and their names
  9. Knowledge from the local folder demo-artifacts/docs, built into a graph
@@ -19,7 +20,7 @@ Run by `start-all.cmd -Demo`, or directly:
     .venv/Scripts/python.exe scripts/rebuild_demo.py
 
 Idempotent: a second run reports what already exists and creates nothing new.
-The password is set only when acmeadmin is created, never reset, and the whole
+A password is set only when its user is created, never reset, and the whole
 script refuses to run on a production instance. Nothing here deletes anything.
 No model is called.
 """
@@ -66,6 +67,10 @@ CODE_FOLDER = ROOT / "demo-artifacts" / "carepath"
 #: The demo's sign-in, for a demonstration instance on this machine only.
 DEMO_USER = "acmeadmin"
 DEMO_PASSWORD = "demo123456789"
+#: The platform administrator, with the same password. Created here so a new
+#: machine needs no interactive bootstrap; .env names it, as bootstrap_admin
+#: requires.
+SITE_ADMIN = "siteadmin@db.com"
 
 #: (name, purpose, the AI purpose its first job needs)
 APPLICATIONS = (
@@ -208,6 +213,33 @@ def application(owner, product, name, purpose, ai_purpose):
     )
     seed_application_ai(owner, app, "claude")
     return app
+
+
+def site_admin():
+    """siteadmin@db.com as platform administrator, created once and never reset.
+
+    Never elevates an account that already exists: bootstrap_admin refuses the
+    same, and a demo build must not be a way round it.
+    """
+    from platform_core.models import AuditEvent
+
+    user = User.objects.filter(username=SITE_ADMIN).first()
+    if user is None:
+        user = User(username=SITE_ADMIN, is_platform_admin=True)
+        user.set_password(DEMO_PASSWORD)
+        user.save()
+        AuditEvent.objects.create(
+            actor=user, action="platform.admin_bootstrapped", resource_id=str(user.pk)
+        )
+        print(f"created platform administrator {SITE_ADMIN}, password {DEMO_PASSWORD}")
+    elif user.is_platform_admin:
+        print(f"found   platform administrator {SITE_ADMIN} (password left as it is)")
+    else:
+        print(f"skipped {SITE_ADMIN} exists but is not a platform administrator; left as it is")
+    env = ROOT / ".env"
+    if not env.exists():
+        env.write_text(f"SITE_ADMIN_USER_ID={SITE_ADMIN}\n", encoding="utf-8")
+        print(f"created .env naming {SITE_ADMIN} as the site administrator")
 
 
 def demo_user():
@@ -387,8 +419,9 @@ def main(argv=None):
     for number, (name, purpose, ai_purpose) in zip((4, 5), APPLICATIONS, strict=True):
         step(number, f"{purpose.capitalize()} application")
         built[name] = application(owner, product, name, purpose, ai_purpose)
-    step(6, "User")
-    print(f"{DEMO_USER} administers ACME and owns CarePathDev and CarePathOps")
+    step(6, "Users")
+    print(f"{DEMO_USER} is owner (administrator) of ACME and owns CarePathDev and CarePathOps")
+    site_admin()
 
     step(7, "Connectors")
     load_connectors(owner, built)

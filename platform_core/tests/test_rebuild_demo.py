@@ -54,6 +54,8 @@ class RebuildDemoTests(TestCase):
         self.addCleanup(environment.stop)
         self.demo = builder()
         for stub in (
+            # .env is written beside ROOT; never into the real checkout.
+            patch.object(self.demo, "ROOT", Path(scratch.name)),
             patch.object(self.demo, "build_graphs"),
             patch("platform_core.connectors.sync", return_value=0),
         ):
@@ -92,6 +94,21 @@ class RebuildDemoTests(TestCase):
         self.assertIn("# keep me", lines)
         self.build()
         self.assertEqual(self.config.read_text(encoding="utf-8").count("allow_demo_reset"), 1)
+
+    def test_siteadmin_is_the_platform_administrator_with_the_demo_password(self):
+        self.build()
+        admin = User.objects.get(username="siteadmin@db.com")
+        self.assertTrue(admin.is_platform_admin)
+        self.assertTrue(admin.check_password("demo123456789"))
+        env = (self.config.parent / ".env").read_text(encoding="utf-8")
+        self.assertEqual(env, "SITE_ADMIN_USER_ID=siteadmin@db.com\n")
+
+    def test_an_existing_siteadmin_is_never_elevated_or_reset(self):
+        User.objects.create_user("siteadmin@db.com", password="their-own-password")
+        self.build()
+        admin = User.objects.get(username="siteadmin@db.com")
+        self.assertFalse(admin.is_platform_admin)
+        self.assertTrue(admin.check_password("their-own-password"))
 
     def test_running_it_again_creates_nothing_and_keeps_the_password(self):
         self.build()

@@ -12,8 +12,9 @@
 #      token, and one named servicenow holding the digibrain user's password.
 #   4. Run start-all.cmd -Demo. It switches on allow_self_approval and
 #      allow_demo_reset in config/local.toml, then builds ACME, Integrated Care, Care
-#      Coordination, CarePathDev and CarePathOps, user acmeadmin (password
-#      demo123456789), the connectors, knowledge from demo-artifacts/docs,
+#      Coordination, CarePathDev and CarePathOps, user acmeadmin (owner of
+#      ACME) and platform administrator siteadmin@db.com (both with password
+#      demo123456789, so no administrator prompt), the connectors, knowledge from demo-artifacts/docs,
 #      code from demo-artifacts/carepath, and imports Jira and ServiceNow.
 #
 # Nothing secret is in here and nothing secret may be: credentials are files in
