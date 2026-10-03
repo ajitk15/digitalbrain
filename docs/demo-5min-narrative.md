@@ -96,7 +96,7 @@ not a claim that the code implements it - the inspector says so.
 > - **under the The gap it stated that** the export checks permissions never calls the consent service, so a patient's "no" is ignored.
 > - **under the changes it states** the export must ask the consent service before sending anything.
 > - **under the Files section** it stating out what files is part of this gap fix 
-> - **under the Evidence was pulled**  from the knowledge graph, and checked word for word against its source.
+> - ** Evidence was pulled**  from the knowledge graph, by checking word for word against its source.
 >
 > A person reviewed and approved the plan.
 
