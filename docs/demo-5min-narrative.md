@@ -50,12 +50,18 @@ used by graph v3.
 > Let me show how graph traverse, 
 
 > Here's one test finding T-03 show
->    the business requirement it affects,
->    who owns it,
->    how severe it
+>    the business requirement it affects
+
+>    who owns it
+
+>    Severity
+
 >    and the source documents.
+
 > The graph brings that context together in one view, also it links that finding to the actual code files:
+
 >    the consent service,
+
 >    the export routes and its tests.
 
 What the screen shows: T-03 in the middle with *Requirement: BR-05*, *Owner: Engineering* and
