@@ -45,14 +45,18 @@ used by graph v3.
 
 **Screen:** CarePathDev › Knowledge › Graph
 
-**Click:** type `T-03` in *Find a node*, then pick **record: T-03** from the list. **Pick the second
-one** - the one just above *value: #: T-03*. The first *record: T-03* is the release-readiness
-slide, which has no code links. The right one says *04-test/traceability-matrix.xlsx · line 81* in
-the inspector.
+**Click:** type `T-03` 
 
-> Here's one test finding: show the business requirement it affects, who owns it, how severe it, and the source documents.
-> The graph brings that context together in one view.
-> also it links that finding to the actual code files: the consent service, the export routes and its tests.
+> Let me show how graph traverse, 
+
+> Here's one test finding T-03 show
+>    the business requirement it affects,
+>    who owns it,
+>    how severe it
+>    and the source documents.
+> The graph brings that context together in one view, also it links that finding to the actual code files:
+>    the consent service,
+>    the export routes and its tests.
 
 What the screen shows: T-03 in the middle with *Requirement: BR-05*, *Owner: Engineering* and
 *Severity: High*, and six code files as blue squares: `consent.py`, `routes_consent.py`,
