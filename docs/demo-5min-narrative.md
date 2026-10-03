@@ -50,14 +50,9 @@ one** - the one just above *value: #: T-03*. The first *record: T-03* is the rel
 slide, which has no code links. The right one says *04-test/traceability-matrix.xlsx · line 81* in
 the inspector.
 
-> Here's one test finding: no test checks that the export consults consent. Its connections show
-> the business requirement it affects, who owns it, how severe it is, and the source document. The
-> graph brings that context together in one view.
-
-**Click:** **Expand related code**.
-
-> And with one click, it links that finding to the actual code files: the consent service, and -
-> since the fix - the export route and its tests.
+> Here's one test finding: show the business requirement it affects, who owns it, how severe it, and the source documents.
+> The graph brings that context together in one view.
+> also it links that finding to the actual code files: the consent service, the export routes and its tests.
 
 What the screen shows: T-03 in the middle with *Requirement: BR-05*, *Owner: Engineering* and
 *Severity: High*, and six code files as blue squares: `consent.py`, `routes_consent.py`,
@@ -74,50 +69,44 @@ not a claim that the code implements it - the inspector says so.
 
 **Pre-checks** (point at *Pre-checks: All 7 passed*)
 
-> First, it makes sure it has what it needs: a published knowledge graph, the code, and the ticket.
+> First, it makes sure it has what it needs: a knowledge graph, the code graph, and the ticket.
 > All checks passed.
 
 **Analysis** (open the plan, point at the two lines at the top: *published graph version 2* and
 *carepath, Code Graph snapshot v1*)
 
-> In analysis, it first reads the ticket to understand what's being asked. Then it pulls the
-> connected, verified facts from the knowledge graph and the relevant code, compares them to find
+> In analysis, it first reads the ticket to understand what's being asked.
+> Then it pulls the connected, verified facts from the knowledge graph and the relevant code, compares them to find
 > the gaps, and designs a fix for each one.
 
 **One gap** (open *Export path has zero consent enforcement today*)
 
-> Let's look at one of the gaps it found.
+> Let's look at one of the gaps it found, mainly there are four sections under each gap
 >
-> - **The gap:** the export checks permissions, but never calls the consent service, so a
->   patient's "no" is ignored.
-> - **What changes:** the export must ask the consent service before sending anything.
-> - **Files:** the two exact files, `routes_fhir.py` and `consent.py`, taken from the code graph.
-> - **Evidence:** pulled from the knowledge graph, and checked word for word against its source.
+> - **under the The gap it stated that** the export checks permissions never calls the consent service, so a patient's "no" is ignored.
+> - **under the changes it states** the export must ask the consent service before sending anything.
+> - **under the Files section** it stating out what files is part of this gap fix 
+> - **under the Evidence was pulled**  from the knowledge graph, and checked word for word against its source.
 >
-> A person reviewed and approved the plan: five of the eight items. The other three were questions
-> for the product owner, not code.
+> A person reviewed and approved the plan.
 
 **Implementation** (back to the run, point at *Implementation agents*, then *Write to folder* and
 *Tests*)
 
 > Once approved, the implementation agents take over. They turn each gap into a change, write the
-> code and tests, review the result, and re-check the files before anything is written. A person
-> then said yes, and the fix was written into the project folder - nothing was committed. The
-> project's own tests ran: 115 passed, including four new consent tests.
+> code and tests, review the result, and re-check the files before anything is written.
+
+>  A person then review and approve, and the fix was written into the project folder - nothing was committed.
 
 **Refresh** (open *Refresh*, point at the two drawings, then click one to enlarge)
 
-> Finally, it refreshes the knowledge and code graphs, so the next ticket starts from up-to-date
-> knowledge. Here is the before and after. Before, the export route had no link to the consent
-> service, and T-03 pointed only at the consent code. After, in green: the export now calls the
+> Finally, it refreshes the knowledge and code graphs, so the next ticket starts from up-to-date knowledge.
+> Here is the before and after. Before, the export route had no link to the consent
+> service, and tests pointed only at the consent code. After, in green: the export now calls the
 > consent service, and the requirement and the test finding are linked to the export route and its
 > tests.
 
 ## 5. ServiceOps (3:45–4:40)
-
-> **Not ready.** The ACME resets on 2 Oct cleared CarePathOps' imported incidents, changes and
-> graph: INC0010010 does not exist there now. Rebuild it before presenting (see the checklist), or
-> cut this section and close after section 4.
 
 **Screen:** CarePathOps › ServiceOps › INC0010010 → *Evidence behind this triage* → *Around this
 incident*
