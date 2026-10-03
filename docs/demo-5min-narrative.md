@@ -26,7 +26,9 @@ refreshed both graphs.
 
 > In the interest of time, I won't generate the graphs or run a defect fix live. Instead, I'll walk
 > you through a pre-run example to show how the knowledge graph supports the entire process.
->
+
+**on screen move to sources** 
+
 > We collected our project documents and imported Jira tickets through connectors. The documents
 > are converted into Markdown and used to build the knowledge graph.
 
