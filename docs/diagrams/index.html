@@ -443,7 +443,7 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
       </div>
     </figure>
 
-    <p class="band" style="border-left-color:var(--rose)"><strong>Neither admin role carries application access.</strong> A platform administrator and an organization administrator both get <code>404</code> — not <code>403</code> — on an application they hold no grant for, and creating an application does not grant one. <strong>Approval is a separate flag</strong>, not a fourth role: it can sit on any grant, and self-approval is refused by default; a deployment can explicitly enable audited self-approval with <code>allow_self_approval</code>.</p>
+    <p class="band" style="border-left-color:var(--rose)"><strong>Neither admin role carries application access.</strong> A platform administrator and an organization administrator both get <code>404</code> — not <code>403</code> — on an application they hold no grant for, and creating an application does not grant one. <strong>Approval is a separate flag</strong>, not a fourth role: it can sit on any grant, and self-approval is allowed by default and recorded on the plan; a deployment that wants two-person review writes <code>allow_self_approval = false</code>.</p>
   </section>
 
   <!-- ═══ A · TECHNOLOGY ═══ -->
