@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 
 from carepath.fhir import bundle_for, encounter_resource, patient_resource
-from carepath.schemas import EncounterIn, ObservationIn
-from carepath.services import encounters
+from carepath.schemas import ConsentIn, EncounterIn, ObservationIn
+from carepath.services import consent, encounters
 
 from .conftest import CLINICIAN, PARTNER
 
@@ -78,7 +78,14 @@ class TestBundle:
 
 
 class TestApi:
-    def test_a_partner_may_export(self, client, patient):
+    def test_a_partner_may_export(self, connection, principal, client, patient):
+        """Regression: granted consent still produces the bundle unchanged."""
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=True),
+        )
         response = client.get(
             f"/fhir/Patient/{patient['id']}/$everything", headers=PARTNER
         )
@@ -94,3 +101,75 @@ class TestApi:
     def test_an_export_of_an_unknown_patient_is_a_404(self, client):
         response = client.get("/fhir/Patient/nobody/$everything", headers=PARTNER)
         assert response.status_code == 404
+
+
+class TestConsentGate:
+    """FR-10, BR-05: export is refused when consent is withheld or absent."""
+
+    def test_export_is_permitted_when_consent_is_granted(
+        self, connection, principal, client, patient
+    ):
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=True),
+        )
+        response = client.get(
+            f"/fhir/Patient/{patient['id']}/$everything", headers=PARTNER
+        )
+        assert response.status_code == 200
+        assert response.json()["resourceType"] == "Bundle"
+
+    def test_export_is_refused_when_consent_is_withdrawn(
+        self, connection, principal, client, patient
+    ):
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=True),
+        )
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=False),
+        )
+        response = client.get(
+            f"/fhir/Patient/{patient['id']}/$everything", headers=PARTNER
+        )
+        assert response.status_code == 403
+
+    def test_export_is_refused_when_never_asked(self, client, patient):
+        response = client.get(
+            f"/fhir/Patient/{patient['id']}/$everything", headers=PARTNER
+        )
+        assert response.status_code == 403
+
+    def test_export_is_permitted_after_consent_is_regranted(
+        self, connection, principal, client, patient
+    ):
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=True),
+        )
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=False),
+        )
+        consent.record_decision(
+            connection,
+            principal,
+            patient["id"],
+            ConsentIn(purpose="data-exchange", granted=True),
+        )
+        response = client.get(
+            f"/fhir/Patient/{patient['id']}/$everything", headers=PARTNER
+        )
+        assert response.status_code == 200
+        assert response.json()["resourceType"] == "Bundle"
