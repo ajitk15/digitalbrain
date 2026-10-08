@@ -129,14 +129,35 @@ def knowledge_detail(request, pk, entry_id):
             audit(request.user, "knowledge.archived", entry.pk, app.product.portfolio.organization)
         messages.success(request, "Source archived. New answers will exclude it.")
         return redirect("knowledge", pk=pk)
-    from .source_library import graph_usage
+    from .source_library import entry_origin, graph_usage, ticket_quality
+    from .ticket_quality import parse as parse_ticket
 
+    origin = entry_origin(app, entry) if not entry.document_id else None
+    quality = ticket_quality(entry, origin) if origin else None
+    # A scored ticket is shown as a ticket: its Jira fields as chips and its
+    # description as text, rather than the raw stored record.
+    fields, description = parse_ticket(entry.content) if quality else ({}, "")
     return render(
         request,
         "knowledge_detail.html",
         {
             "application": app,
             "entry": entry,
+            "origin": origin,
+            "quality": quality,
+            "ticket_fields": [
+                (label, fields[key])
+                for key, label in (
+                    ("type", "Type"), ("status", "Status"),
+                    ("priority", "Priority"), ("labels", "Labels"),
+                )
+                if fields.get(key)
+            ],
+            "ticket_key": fields.get("key", ""),
+            "ticket_description": description,
+            "source_link": entry.source
+            if entry.source.startswith(("https://", "http://"))
+            else "",
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
             "grant": grant,
         },

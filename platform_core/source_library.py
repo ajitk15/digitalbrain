@@ -5,8 +5,20 @@ from urllib.parse import urlparse
 from django.core.paginator import Paginator
 from django.db.models import CharField, Count, Prefetch, Q, Value
 
-from .models import CodeRepository, Document, GraphRevision, KnowledgeEntry, KnowledgeSource
+from .models import (
+    CodeRepository,
+    Connector,
+    Document,
+    GraphRevision,
+    KnowledgeEntry,
+    KnowledgeSource,
+)
 from .services import feature_enabled
+from .ticket_quality import assess
+
+#: Connector kinds whose records are tickets someone will work from, and so
+#: worth scoring for readiness. ServiceNow incidents and automations are not.
+SCORED_KINDS = {"jira"}
 
 
 def repository_of(url):
@@ -22,6 +34,69 @@ def repository_of(url):
         return ""
     parts = [part for part in (parsed.path or "").split("/") if part]
     return f"{parts[0]}/{parts[1]}".lower() if len(parts) >= 2 else ""
+
+
+def connector_index(app):
+    """Every connector's record prefix, longest first, for `connector_of`.
+
+    KnowledgeEntry deliberately has no connector - knowledge outlives the
+    connector that brought it in - so the source URL is matched against each
+    connector's namespace, the same test `connectors.prune` uses to decide
+    which knowledge is a connector's own.
+    """
+    from .code_factory import connector_prefix
+    from .connector_kinds import KINDS
+
+    by_prefix = {}
+    for connector in Connector.objects.filter(application=app):
+        prefix = connector_prefix(connector)
+        if prefix and connector.kind in KINDS:
+            by_prefix.setdefault(prefix, []).append(connector)
+    return sorted(
+        ((prefix, connectors) for prefix, connectors in by_prefix.items()),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    )
+
+
+def connector_of(source, index):
+    """(kind, connector or None) for the connector a source URL came from.
+
+    The connector is None when two connectors share the namespace - two
+    filters onto one Jira - because naming either would be a guess. A source
+    no connector claims, or whose connector has been removed, is (None, None).
+    """
+    from .connector_kinds import KINDS
+
+    for prefix, connectors in index:
+        if source and source.startswith(prefix):
+            return KINDS[connectors[0].kind], (connectors[0] if len(connectors) == 1 else None)
+    return None, None
+
+
+def imported_label(kind, connector):
+    """"Imported from Jira", plus the connector's name when it says more."""
+    if kind is None:
+        return "Imported record"
+    label = f"Imported from {kind.label}"
+    if connector and connector.name and connector.name.strip().lower() != kind.label.lower():
+        label += f" · {connector.name}"
+    return label
+
+
+def entry_origin(app, entry, index=None):
+    """What the Sources table and the record page say about a standalone entry."""
+    if not entry.source:
+        return {"label": "Knowledge record", "kind": None, "connector": None}
+    kind, connector = connector_of(entry.source, connector_index(app) if index is None else index)
+    return {"label": imported_label(kind, connector), "kind": kind, "connector": connector}
+
+
+def ticket_quality(entry, origin, content=None):
+    """The readiness score for an imported ticket, or None for anything else."""
+    if origin["kind"] is None or origin["kind"].key not in SCORED_KINDS:
+        return None
+    return assess(entry.title, entry.content if content is None else content)
 
 
 def graph_usage(app, entries):
@@ -91,6 +166,27 @@ def library_context(app, request):
     by_document = {entry.document_id: entry for entry in page_entries if entry.document_id}
     by_id = {entry.pk: entry for entry in page_entries}
     usage = graph_usage(app, page_entries)
+    # Read only when this page lists an imported record, so a library of
+    # uploaded files pays no query for connectors it does not show.
+    connectors = (
+        connector_index(app)
+        if any(entry.source and not entry.document_id for entry in page_entries)
+        else []
+    )
+    origins_of = {
+        entry.pk: entry_origin(app, entry, connectors)
+        for entry in page_entries
+        if not entry.document_id
+    }
+    # Content is deferred for the page, so the tickets being scored have theirs
+    # read in one query rather than one per row.
+    scored = [
+        pk for pk, origin in origins_of.items()
+        if origin["kind"] and origin["kind"].key in SCORED_KINDS
+    ]
+    contents = dict(
+        KnowledgeEntry.objects.filter(pk__in=scored).values_list("pk", "content")
+    ) if scored else {}
     code_repositories = (
         {
             repository.external_id.lower(): repository
@@ -113,11 +209,17 @@ def library_context(app, request):
             if doc and doc.origin == "github"
             else None
         )
+        origin = origins_of.get(entry.pk) if entry and not doc else None
         return {
             "document": doc, "entry": entry,
             "title": doc.name if doc else entry.title,
             "origin": doc.get_origin_display() if doc else (
-                "Imported record" if entry.source else "Knowledge record"
+                origin["label"] if origin else "Knowledge record"
+            ),
+            "quality": (
+                ticket_quality(entry, origin, contents[entry.pk])
+                if origin and entry.pk in contents
+                else None
             ),
             "created_at": created_at,
             "versions": usage.get(str(entry.pk), []) if entry else [],
@@ -131,6 +233,9 @@ def library_context(app, request):
         entry = by_document.get(pk) if doc else by_id.get(pk)
         rows.append(build_row(doc, entry, created_at))
     page.object_list = rows
+    # Only a page that holds a scored ticket gets the column, so a library of
+    # uploaded files is not given a column of dashes.
+    quality_column = any(row["quality"] for row in rows)
 
     origins = list(
         KnowledgeSource.objects.filter(application=app)
@@ -195,5 +300,6 @@ def library_context(app, request):
         # rows that happen to share a prefix.
         "origins": origins,
         "knowledge_enabled": enabled,
+        "quality_column": quality_column,
         "conversion_pending": documents.filter(status__in=Document.IN_FLIGHT).exists(),
     }

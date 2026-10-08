@@ -3676,3 +3676,51 @@
   .modal:has(.ba-large) { width: min(1280px, calc(100vw - 2 * var(--s-4))); }
   @media (max-width: 900px) { .ba-large .ba-pictures { grid-template-columns: minmax(0, 1fr); } }
 }
+
+/* Ticket quality: a readiness score for imported Jira tickets. The score has
+   its own column in the Sources table; on the ticket page it is one collapsed
+   line above the ticket, so the ticket itself stays near the top. */
+@layer redesign {
+  .quality-score { display: inline-flex; flex-direction: column; line-height: 1.2; }
+  .quality-score:hover { text-decoration: none; }
+  .quality-score strong { font-size: var(--t-15); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .quality-score small { margin: 0; font-size: var(--t-11); color: var(--c-ink-3); }
+  .quality-good strong { color: var(--c-ok); }
+  .quality-fair strong { color: var(--c-warn); }
+  .quality-poor strong { color: var(--c-bad); }
+
+  .ticket-quality { padding: var(--s-3) var(--s-4); margin: 0 0 var(--s-4); }
+  .ticket-quality > summary { display: flex; align-items: center; gap: var(--s-3); list-style: none; flex-wrap: wrap; }
+  .ticket-quality > summary::-webkit-details-marker { display: none; }
+  .ticket-quality > summary::before {
+    content: ""; width: 6px; height: 6px; flex: none;
+    border-right: 2px solid var(--c-ink-3); border-bottom: 2px solid var(--c-ink-3);
+    transform: rotate(-45deg); transition: transform .15s;
+  }
+  .ticket-quality[open] > summary::before { transform: rotate(45deg); }
+  .ticket-quality-title { font-size: var(--t-13); font-weight: 700; color: var(--c-ink); }
+  .ticket-quality-hint { margin: 0; color: var(--c-ink-3); font-weight: 500; font-size: var(--t-12); }
+  .ticket-quality-body { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--c-line-soft); }
+  .ticket-quality-body > p.muted { font-size: var(--t-11); margin-bottom: var(--s-3); }
+  .ticket-quality h3 { margin: var(--s-3) 0 var(--s-2); font-size: var(--t-12); text-transform: uppercase; letter-spacing: .6px; color: var(--c-ink-3); }
+  .ticket-quality ol, .ticket-quality ul.quality-good { margin: 0; padding-left: var(--s-5); font-size: var(--t-12); color: var(--c-ink-2); }
+  .ticket-quality li { margin-bottom: var(--s-2); }
+  .ticket-quality li small { display: block; margin-top: 2px; }
+  .ticket-quality details.section { margin-top: var(--s-3); font-size: var(--t-12); }
+  .ticket-quality td small { margin-top: 2px; }
+  .quality-gain { font-weight: 700; color: var(--c-brand); }
+  .quality-state { font-weight: 600; }
+  .quality-state-good { color: var(--c-ok); }
+  .quality-state-partial { color: var(--c-warn); }
+  .quality-state-missing { color: var(--c-bad); }
+
+  /* The ticket itself: its Jira fields as chips, then the description. */
+  .ticket-card { padding: var(--s-4) var(--s-5); }
+  .ticket-fields { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: 0 0 var(--s-4); padding: 0; list-style: none; }
+  .ticket-fields li { margin: 0; font-size: var(--t-11); color: var(--c-ink-2); background: var(--c-canvas); border-radius: var(--r-pill); padding: 3px 10px; }
+  .ticket-fields li span { color: var(--c-ink-3); margin-right: 4px; }
+  .ticket-description { font-size: var(--t-13); line-height: 1.65; color: var(--c-ink); max-width: 860px; overflow-wrap: anywhere; }
+  .ticket-description p { margin: 0 0 var(--s-3); }
+  .ticket-usage { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-4); font-size: var(--t-12); color: var(--c-ink-3); }
+  .ticket-usage .muted { margin: 0; }
+}
