@@ -1,0 +1,29 @@
+{
+  "about": "Labelled text for the personal-data scan (platform_core/sensitivity.py). Each sample says which kinds it holds; an empty list means it holds none and must not be flagged. Synthetic values only.",
+  "samples": [
+    {"text": "Contact the patient at jane.okafor@example.org about the referral.", "kinds": ["email address"]},
+    {"text": "Escalations go to oncall@carepath.example before 18:00.", "kinds": ["email address"]},
+    {"text": "Call the ward on +44 20 7946 0958 if the export fails.", "kinds": ["telephone number"]},
+    {"text": "Patient telephone: (020) 7946 0321.", "kinds": ["telephone number"]},
+    {"text": "Reach the clinic at 555-123-4567.", "kinds": ["telephone number"]},
+    {"text": "SSN on file: 123-45-6789.", "kinds": ["social security number"]},
+    {"text": "Member SSN 987-65-4320 must be masked.", "kinds": ["social security number"]},
+    {"text": "Card used for the co-pay: 4111 1111 1111 1111.", "kinds": ["payment card number"]},
+    {"text": "Refund to card 5555-5555-5555-4444.", "kinds": ["payment card number"]},
+    {"text": "Date of birth: 12/04/1961, admitted yesterday.", "kinds": ["date of birth"]},
+    {"text": "DOB 1984-03-09 per the intake form.", "kinds": ["date of birth"]},
+    {"text": "Born on 3 March 1979 in Leeds.", "kinds": ["date of birth"]},
+    {"text": "Patient Ada Lovelace, DOB 10/12/1815, phone +44 20 7946 0111, ada@example.org.", "kinds": ["date of birth", "telephone number", "email address"]},
+    {"text": "Release 1.0.1 shipped on 2026-08-14 at 14:02 UTC.", "kinds": []},
+    {"text": "GET /patients?family_name=A&limit=100000 returned 5xx.", "kinds": []},
+    {"text": "Order 1234 5678 9012 3456 is not a valid card number.", "kinds": []},
+    {"text": "The service listens on port 8080 and the database on 5432.", "kinds": []},
+    {"text": "Availability for August fell to 99.83%, below the 99.9% objective.", "kinds": []},
+    {"text": "NFR-06 requires every collection endpoint to clamp its page size to 100.", "kinds": []},
+    {"text": "Ticket CARE-412 is linked to incident INC-2026-0814 and risk R-04.", "kinds": []},
+    {"text": "Version 2.10.3 replaces 2.9.14; see ADR-0002.", "kinds": []},
+    {"text": "The audit trail retains events for 2190 days.", "kinds": []},
+    {"text": "Build 20261009.3 passed 1759 tests in 386 seconds.", "kinds": []},
+    {"text": "Use the email template in docs/templates, not an address.", "kinds": []}
+  ]
+}

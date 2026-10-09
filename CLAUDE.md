@@ -5,14 +5,35 @@ waitress. SQLite locally, PostgreSQL in production.
 
 ## Verify before calling anything done
 
-All four must be clean:
+All five must be clean:
 
 ```bash
 .venv/Scripts/ruff.exe check digitalbrain platform_core scripts manage.py
 .venv/Scripts/python.exe manage.py makemigrations --check --dry-run
 .venv/Scripts/python.exe manage.py test
 .venv/Scripts/python.exe scripts/production_preflight.py
+.venv/Scripts/python.exe manage.py scorecard --check
 ```
+
+**The scorecard is the fifth gate** (`platform_core/scorecard.py`, about 90 seconds).
+It builds its own workspace from files in this repository - the CarePath documents
+through `scripts/extract_text.py`, the Jira export through the real Jira connector
+code, `benchmarks/*.json` - in a throwaway database with stable ids, calls no model,
+and measures retrieval, citation integrity, Code Factory's evidence against the
+planted-bug answer key, the ontology, personal data and leaks, HIPAA §164.312 probes,
+AI cost control and speed. `--check` fails on any score worse than
+`benchmarks/baseline.json` past its tolerance; leak counts and safeguard probes must
+match exactly. Raise the baseline (`--set-baseline`) only in the commit that earned
+it, and `--record` each release into `benchmarks/history/`. `--replay <commit>`
+re-runs the ranking of an older commit on today's corpus, for the day-one comparison.
+
+**LLM drift is measured, not assumed** (`platform_core/drift.py`,
+`manage.py llm_drift <app> --as <user> --record`). It sends the frozen
+`benchmarks/drift-pack.json` to the application's configured models - about ten paid
+calls, receipted and budgeted as usual - scores extraction with `graph_ai.judge` and
+answers by their citation markers, and compares with that model's first and latest
+recorded runs. Run it after changing a model, a prompt or a provider, and on a
+schedule. Never rebuild the pack casually: a new pack starts a new reference.
 
 `manage.py test` includes **browser tests** (`platform_core/tests/test_browser.py`):
 Playwright (dev dependency) drives the installed Chrome against a live test server, with

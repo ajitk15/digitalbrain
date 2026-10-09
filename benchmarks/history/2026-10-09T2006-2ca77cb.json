@@ -1,0 +1,473 @@
+{
+ "generated_at": "2026-10-09T20:06:29+00:00",
+ "commit": "2ca77cb",
+ "corpus": {
+  "sources": 34,
+  "questions": 16
+ },
+ "metrics": {
+  "graph_found": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: right source found",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 15
+  },
+  "graph_top3": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: right source in top 3",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 12
+  },
+  "graph_mrr": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: ranking quality (MRR)",
+   "unit": "",
+   "better": "higher",
+   "tolerance": 0.005,
+   "value": 0.702
+  },
+  "keyword_found": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: right source found",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 14
+  },
+  "keyword_top3": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: right source in top 3",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 12
+  },
+  "keyword_mrr": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: ranking quality (MRR)",
+   "unit": "",
+   "better": "higher",
+   "tolerance": 0.005,
+   "value": 0.674
+  },
+  "citations_verified": {
+   "aspect": "Citation integrity",
+   "label": "Citations that re-verify against their source",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "stale_citations": {
+   "aspect": "Citation integrity",
+   "label": "Citations still given after their source changed",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
+  "seeded_evidence_recall": {
+   "aspect": "Agentic evidence",
+   "label": "Planted-bug identifiers in the evidence",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": 76.0
+  },
+  "seeded_tickets_self_cited": {
+   "aspect": "Agentic evidence",
+   "label": "Tickets whose evidence cites the ticket itself",
+   "unit": "of 6",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 6
+  },
+  "ontology_typing_accuracy": {
+   "aspect": "Ontology",
+   "label": "Relationship phrasings typed or refused correctly",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "ontology_prompt_coverage": {
+   "aspect": "Ontology",
+   "label": "Types and relations the extraction prompt states",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "merge_precision": {
+   "aspect": "Ontology",
+   "label": "Name merges that are right",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "merge_recall": {
+   "aspect": "Ontology",
+   "label": "Same-thing names that merge",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "phi_recall": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Personal data found by the scan",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": 100.0
+  },
+  "phi_precision": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Scan findings that are real",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": 100.0
+  },
+  "restricted_leaks": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Restricted sources reaching any AI path",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
+  "permission_leaks": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Records shown to someone their system denies",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
+  "hipaa_controls_passed": {
+   "aspect": "HIPAA safeguards",
+   "label": "Safeguard probes passing",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "ai_calls_unchanged_rerun": {
+   "aspect": "AI cost control",
+   "label": "Model calls re-running unchanged sources",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
+  "ai_calls_one_change": {
+   "aspect": "AI cost control",
+   "label": "Model calls after one source changes",
+   "unit": "",
+   "better": "lower",
+   "tolerance": 0,
+   "value": 1
+  },
+  "paid_calls_over_budget": {
+   "aspect": "AI cost control",
+   "label": "Model calls started past the monthly budget",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
+  "graph_p50_ms": {
+   "aspect": "Speed",
+   "label": "Graph answer, median",
+   "unit": "ms",
+   "better": "lower",
+   "tolerance": 15.0,
+   "value": 8.0
+  },
+  "keyword_p50_ms": {
+   "aspect": "Speed",
+   "label": "Keyword answer, median",
+   "unit": "ms",
+   "better": "lower",
+   "tolerance": 15.0,
+   "value": 4.8
+  }
+ },
+ "details": {
+  "questions": [
+   {
+    "question": "Is patient consent checked before a FHIR export?",
+    "expected": "KAN-4",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Why can a partner download records of people who said no?",
+    "expected": "KAN-4",
+    "graph_rank": 3,
+    "keyword_rank": null
+   },
+   {
+    "question": "What limits the page size of patient search?",
+    "expected": "KAN-5",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Why did the service fail on 14 August?",
+    "expected": "incident-2026-08-14",
+    "graph_rank": 6,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Which log line leaks the patient name and date of birth?",
+    "expected": "KAN-6",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Are referral status changes written to the audit trail?",
+    "expected": "KAN-7",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "What should an auditor see when reading a patient record?",
+    "expected": "KAN-8",
+    "graph_rank": 1,
+    "keyword_rank": 4
+   },
+   {
+    "question": "How is login protected against credential stuffing?",
+    "expected": "KAN-9",
+    "graph_rank": 4,
+    "keyword_rank": 3
+   },
+   {
+    "question": "Which deployment names does the operations runbook use?",
+    "expected": "operations-runbook",
+    "graph_rank": 3,
+    "keyword_rank": 2
+   },
+   {
+    "question": "How is a release deployed and rolled back?",
+    "expected": "deployment-runbook",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Why was SQLite chosen for release one?",
+    "expected": "0001-sqlite",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "How are API tokens issued and rotated?",
+    "expected": "0002-static-token",
+    "graph_rank": null,
+    "keyword_rank": 5
+   },
+   {
+    "question": "Which HIPAA controls are not implemented?",
+    "expected": "hipaa-control-matrix",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "What availability target does the service commit to?",
+    "expected": "service-level-objectives",
+    "graph_rank": 1,
+    "keyword_rank": 2
+   },
+   {
+    "question": "What does minimum necessary disclosure require?",
+    "expected": "regulatory-requirements",
+    "graph_rank": 1,
+    "keyword_rank": 1
+   },
+   {
+    "question": "Which risks are still open?",
+    "expected": "risk-register",
+    "graph_rank": 7,
+    "keyword_rank": null
+   }
+  ],
+  "integrity": {
+   "changed_source": "CARE-401 - Patient consent is not checked before a record is exported to a partner",
+   "was_cited": true
+  },
+  "seeded_tickets": [
+   {
+    "ticket": "CARE-401",
+    "expected": [
+     "BR-05",
+     "T-03",
+     "W-01",
+     "C-09",
+     "F-01",
+     "R-01"
+    ],
+    "found": [
+     "BR-05",
+     "T-03",
+     "C-09",
+     "R-01"
+    ]
+   },
+   {
+    "ticket": "CARE-412",
+    "expected": [
+     "NFR-06",
+     "T-01",
+     "R-04",
+     "INC-2026-0814"
+    ],
+    "found": [
+     "NFR-06",
+     "T-01"
+    ]
+   },
+   {
+    "ticket": "CARE-418",
+    "expected": [
+     "NFR-04",
+     "T-02",
+     "TC-3",
+     "R-03"
+    ],
+    "found": [
+     "NFR-04",
+     "T-02",
+     "TC-3",
+     "R-03"
+    ]
+   },
+   {
+    "ticket": "CARE-425",
+    "expected": [
+     "NFR-03",
+     "T-04",
+     "C-03",
+     "R-02"
+    ],
+    "found": [
+     "NFR-03",
+     "T-04",
+     "C-03",
+     "R-02"
+    ]
+   },
+   {
+    "ticket": "CARE-431",
+    "expected": [
+     "REG-03",
+     "C-08",
+     "F-03"
+    ],
+    "found": [
+     "REG-03",
+     "C-08"
+    ]
+   },
+   {
+    "ticket": "CARE-437",
+    "expected": [
+     "NFR-12",
+     "ADR-0002",
+     "T-05",
+     "R-05"
+    ],
+    "found": [
+     "NFR-12",
+     "T-05",
+     "R-05"
+    ]
+   }
+  ],
+  "ontology": {
+   "typing_errors": [],
+   "merge_errors": []
+  },
+  "personal_data": {
+   "phi_misses": [],
+   "owner_still_sees_limited": true,
+   "restricted_sources": 3
+  },
+  "hipaa": [
+   {
+    "control": "164.312(a)(1)",
+    "probe": "No grant reads as not found",
+    "passed": true
+   },
+   {
+    "control": "164.312(a)(1)",
+    "probe": "A viewer cannot add knowledge",
+    "passed": true
+   },
+   {
+    "control": "164.312(a)(1)",
+    "probe": "Another application's source reads as not found",
+    "passed": true
+   },
+   {
+    "control": "164.312(b)",
+    "probe": "Every source added is audited",
+    "passed": true
+   },
+   {
+    "control": "164.312(c)(1)",
+    "probe": "Citations re-verify against their source",
+    "passed": true
+   },
+   {
+    "control": "164.312(c)(1)",
+    "probe": "A changed source is no longer cited",
+    "passed": true
+   },
+   {
+    "control": "164.312(d)",
+    "probe": "Passwords hashed with Argon2",
+    "passed": true
+   },
+   {
+    "control": "164.312(d)",
+    "probe": "Repeated failed sign-ins lock out",
+    "passed": true
+   },
+   {
+    "control": "164.312(d)",
+    "probe": "Sessions expire within 30 minutes",
+    "passed": true
+   },
+   {
+    "control": "164.312(e)(1)",
+    "probe": "Session cookies are HTTP-only",
+    "passed": true
+   },
+   {
+    "control": "164.312(e)(1)",
+    "probe": "Strict content security policy",
+    "passed": true
+   },
+   {
+    "control": "164.502(b)",
+    "probe": "Restricted sources never reach AI",
+    "passed": true
+   },
+   {
+    "control": "164.502(b)",
+    "probe": "Records limited by their source system stay limited",
+    "passed": true
+   }
+  ],
+  "cost": {
+   "first_run_calls": 25
+  }
+ }
+}

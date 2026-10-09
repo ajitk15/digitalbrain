@@ -1,0 +1,43 @@
+{
+  "about": "Labelled cases for the ontology (platform_core/ontology.py). `relations`: a model's subject type, relation phrasing and object type, and the canonical relation it should become, or null where it must be refused. `merges`: two entity names of one type, and whether they are the same thing.",
+  "relations": [
+    {"subject": "Component", "relation": "depends on", "object": "Component", "expected": "depends on"},
+    {"subject": "Component", "relation": "uses", "object": "Component", "expected": "depends on"},
+    {"subject": "service", "relation": "relies on", "object": "database", "expected": "depends on"},
+    {"subject": "Component", "relation": "sends messages to", "object": "Component", "expected": "depends on"},
+    {"subject": "Ticket", "relation": "violates", "object": "Requirement", "expected": "violates"},
+    {"subject": "bug", "relation": "breaches", "object": "regulation", "expected": "violates"},
+    {"subject": "Requirement", "relation": "is implemented in", "object": "Code", "expected": "implemented in"},
+    {"subject": "Control", "relation": "implemented by", "object": "file", "expected": "implemented in"},
+    {"subject": "Runbook", "relation": "documents", "object": "Component", "expected": "covers"},
+    {"subject": "Incident", "relation": "occurred on", "object": "Component", "expected": "is on"},
+    {"subject": "Change", "relation": "deploys", "object": "Component", "expected": "modifies"},
+    {"subject": "Ticket", "relation": "resolves", "object": "Incident", "expected": "fixes"},
+    {"subject": "Code", "relation": "tests", "object": "Requirement", "expected": "verifies"},
+    {"subject": "Runbook", "relation": "mentions", "object": "Ticket", "expected": "references"},
+    {"subject": "Requirement", "relation": "mandated by", "object": "Control", "expected": "required by"},
+    {"subject": "Requirement", "relation": "violates", "object": "Ticket", "expected": null},
+    {"subject": "Code", "relation": "covers", "object": "Component", "expected": null},
+    {"subject": "Person", "relation": "owns", "object": "Component", "expected": null},
+    {"subject": "Team", "relation": "depends on", "object": "Component", "expected": null},
+    {"subject": "Component", "relation": "is owned by", "object": "Component", "expected": null},
+    {"subject": "Component", "relation": "loves", "object": "Component", "expected": null},
+    {"subject": "Incident", "relation": "is on", "object": "Requirement", "expected": null}
+  ],
+  "merges": [
+    {"type": "Component", "a": "Referrals API", "b": "referrals-api", "merge": true},
+    {"type": "Component", "a": "CarePath API Green", "b": "carepath_api_green", "merge": true},
+    {"type": "Component", "a": "Notification service", "b": "Notifications service", "merge": true},
+    {"type": "Component", "a": "Authentication gateway", "b": "Authentcation gateway", "merge": true},
+    {"type": "Requirement", "a": "BR-05", "b": "br-05", "merge": true},
+    {"type": "Component", "a": "The audit log", "b": "Audit log", "merge": true},
+    {"type": "Component", "a": "carepath-api", "b": "carepath-api-green", "merge": false},
+    {"type": "Component", "a": "carepath-api-blue", "b": "carepath-api-green", "merge": false},
+    {"type": "Ticket", "a": "CARE-401", "b": "CARE-412", "merge": false},
+    {"type": "Requirement", "a": "NFR-03", "b": "NFR-06", "merge": false},
+    {"type": "Component", "a": "API", "b": "APIs", "merge": false},
+    {"type": "Component", "a": "Patient search", "b": "Patient service", "merge": false},
+    {"type": "Code", "a": "routes_patients.py", "b": "routes_referrals.py", "merge": false},
+    {"type": "Requirement", "a": "Audit trail", "b": "Audit trail", "type_b": "Component", "merge": false}
+  ]
+}

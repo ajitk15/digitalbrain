@@ -1,0 +1,217 @@
+{
+ "generated_at": "2026-10-09T20:06:48+00:00",
+ "commit": "18dee62",
+ "replayed": true,
+ "corpus": {
+  "sources": 34,
+  "questions": 16
+ },
+ "metrics": {
+  "graph_found": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: right source found",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 12
+  },
+  "graph_top3": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: right source in top 3",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 11
+  },
+  "graph_mrr": {
+   "aspect": "Retrieval",
+   "label": "Graph answers: ranking quality (MRR)",
+   "unit": "",
+   "better": "higher",
+   "tolerance": 0.005,
+   "value": 0.484
+  },
+  "keyword_found": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: right source found",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 10
+  },
+  "keyword_top3": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: right source in top 3",
+   "unit": "of 16",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 7
+  },
+  "keyword_mrr": {
+   "aspect": "Retrieval",
+   "label": "Keyword answers: ranking quality (MRR)",
+   "unit": "",
+   "better": "higher",
+   "tolerance": 0.005,
+   "value": 0.322
+  },
+  "citations_verified": {
+   "aspect": "Citation integrity",
+   "label": "Citations that re-verify against their source",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "stale_citations": {
+   "aspect": "Citation integrity",
+   "label": "Citations still given after their source changed",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not replayed"
+  },
+  "seeded_evidence_recall": {
+   "aspect": "Agentic evidence",
+   "label": "Planted-bug identifiers in the evidence",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": 52.0
+  },
+  "seeded_tickets_self_cited": {
+   "aspect": "Agentic evidence",
+   "label": "Tickets whose evidence cites the ticket itself",
+   "unit": "of 6",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 6
+  },
+  "ontology_typing_accuracy": {
+   "aspect": "Ontology",
+   "label": "Relationship phrasings typed or refused correctly",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "ontology_prompt_coverage": {
+   "aspect": "Ontology",
+   "label": "Types and relations the extraction prompt states",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "merge_precision": {
+   "aspect": "Ontology",
+   "label": "Name merges that are right",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "merge_recall": {
+   "aspect": "Ontology",
+   "label": "Same-thing names that merge",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "phi_recall": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Personal data found by the scan",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": null,
+   "note": "not built yet"
+  },
+  "phi_precision": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Scan findings that are real",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0.5,
+   "value": null,
+   "note": "not built yet"
+  },
+  "restricted_leaks": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Restricted sources reaching any AI path",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "permission_leaks": {
+   "aspect": "Personal data (PHI/PII)",
+   "label": "Records shown to someone their system denies",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "hipaa_controls_passed": {
+   "aspect": "HIPAA safeguards",
+   "label": "Safeguard probes passing",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not replayed"
+  },
+  "ai_calls_unchanged_rerun": {
+   "aspect": "AI cost control",
+   "label": "Model calls re-running unchanged sources",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "ai_calls_one_change": {
+   "aspect": "AI cost control",
+   "label": "Model calls after one source changes",
+   "unit": "",
+   "better": "lower",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "paid_calls_over_budget": {
+   "aspect": "AI cost control",
+   "label": "Model calls started past the monthly budget",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": null,
+   "note": "not built yet"
+  },
+  "graph_p50_ms": {
+   "aspect": "Speed",
+   "label": "Graph answer, median",
+   "unit": "ms",
+   "better": "lower",
+   "tolerance": 15.0,
+   "value": 19.8
+  },
+  "keyword_p50_ms": {
+   "aspect": "Speed",
+   "label": "Keyword answer, median",
+   "unit": "ms",
+   "better": "lower",
+   "tolerance": 15.0,
+   "value": 18.0
+  }
+ },
+ "details": {}
+}

@@ -49,17 +49,22 @@ EXTRACTION_INSTRUCTIONS = (
     "source_id must be the evidence id; quote must be the shortest exact contiguous excerpt of "
     f"that source (at most {MAX_QUOTE_CHARACTERS} characters) that supports both named entities "
     "and the relationship. "
-    "Use entity names exactly as written in the quote. Do not infer missing facts. "
+    # Measured by `manage.py llm_drift`: with a second sentence asking for "the
+    # most specific entity name available", 21 of 22 refusals were a subject the
+    # quote did not contain - the model named the thing better than the text did.
+    "subject and object must each be copied character for character from inside the quote, "
+    "so that both appear in it verbatim: never a ticket key, document title or fuller name "
+    "the quote itself does not contain. If the quote does not name a subject, choose a "
+    "longer quote that does, or skip the relationship. Do not infer missing facts. "
     + ontology_prompt()
     + " Prefer relationships a reader would care about: what a ticket affects or violates, "
     "what code implements a requirement, what a component depends on, what a runbook covers. "
     "Skip restatements of document structure, which is already captured. "
-    "Use the most specific entity name available and keep it consistent across items. "
     "Return an empty relationships array if no supported relationships exist."
 )
 
 
-def extract_relationships(app_id, config, citation):
+def extract_relationships(app_id, config, citation, receipt=None):
     """Relationships the model finds in ONE source.
 
     Extraction runs per source rather than once over the whole corpus. A single
@@ -84,6 +89,7 @@ def extract_relationships(app_id, config, citation):
         # Still a background job: generous, but now it is a ceiling rather than
         # the thing every run runs into.
         timeout=EXTRACTION_TIMEOUT,
+        receipt=receipt,
     )
     try:
         payload = json.loads(
@@ -95,6 +101,51 @@ def extract_relationships(app_id, config, citation):
     except (ValueError, KeyError, TypeError):
         raise ValidationError("Graph model returned an invalid relationship structure.") from None
     return found
+
+
+#: Why an extracted relationship was refused, in the order they are checked.
+REJECTIONS = (
+    "malformed",
+    "unknown source",
+    "quote too long",
+    "quote not in source",
+    "name too long",
+    "subject not in quote",
+    "object not in quote",
+    "outside the ontology",
+)
+
+
+def judge(item, sources):
+    """((subject type, relation, object type), None) or (None, why it is refused).
+
+    The quote is checked first and still decides: a type is a filter on
+    verified relationships, never a reason to accept one. One function, so
+    graph generation and the LLM drift check refuse for the same reasons.
+    """
+    if not isinstance(item, dict) or any(
+        not isinstance(item.get(k), str) or not item[k].strip()
+        for k in ("subject", "relation", "object", "source_id", "quote")
+    ):
+        return None, "malformed"
+    source = sources.get(item["source_id"])
+    quote = item["quote"]
+    if not source:
+        return None, "unknown source"
+    if len(quote) > MAX_QUOTE_CHARACTERS:
+        return None, "quote too long"
+    if quote not in source["excerpt"]:
+        return None, "quote not in source"
+    if any(len(item[k]) > 120 for k in ("subject", "relation", "object")):
+        return None, "name too long"
+    if item["subject"].casefold() not in quote.casefold():
+        return None, "subject not in quote"
+    if item["object"].casefold() not in quote.casefold():
+        return None, "object not in quote"
+    kinds = typed(item.get("subject_type"), item["relation"], item.get("object_type"))
+    if kinds is None:
+        return None, "outside the ontology"
+    return kinds, None
 
 
 def reusable(app_id, entries):
@@ -205,32 +256,15 @@ def enrich_graph(app_id, config, entries, data, quality):
     data["edges"].extend(reused_edges)
     seen = set()
     accepted = rejected = untyped = 0
+    reasons = {}
     for item in relationships:
-        if not isinstance(item, dict) or any(
-            not isinstance(item.get(k), str) or not item[k].strip()
-            for k in ("subject", "relation", "object", "source_id", "quote")
-        ):
+        kinds, reason = judge(item, sources)
+        if reason:
             rejected += 1
+            untyped += reason == "outside the ontology"
+            reasons[reason] = reasons.get(reason, 0) + 1
             continue
-        source = sources.get(item["source_id"])
-        quote = item["quote"]
-        if (
-            not source
-            or len(quote) > MAX_QUOTE_CHARACTERS
-            or quote not in source["excerpt"]
-            or any(len(item[k]) > 120 for k in ("subject", "relation", "object"))
-            or item["subject"].casefold() not in quote.casefold()
-            or item["object"].casefold() not in quote.casefold()
-        ):
-            rejected += 1
-            continue
-        # The quote is checked first and still decides: a type is a filter on
-        # verified relationships, never a reason to accept one.
-        kinds = typed(item.get("subject_type"), item["relation"], item.get("object_type"))
-        if kinds is None:
-            rejected += 1
-            untyped += 1
-            continue
+        source, quote = sources[item["source_id"]], item["quote"]
         subject_type, relation, object_type = kinds
         signature = (item["subject"], relation, item["object"], item["source_id"], quote)
         if signature in seen:
@@ -246,6 +280,7 @@ def enrich_graph(app_id, config, entries, data, quality):
         ]
         if len(nodes) + sum(node_id not in nodes for node_id in set(ids)) > MAX_NODES:
             rejected += 1
+            reasons["graph full"] = reasons.get("graph full", 0) + 1
             continue
         entry = source_entries[item["source_id"]]
         line = entry.content[: entry.content.index(quote)].count("\n") + 1
@@ -311,6 +346,8 @@ def enrich_graph(app_id, config, entries, data, quality):
             "semantic_relationships": accepted,
             "rejected_relationships": rejected,
             "outside_ontology": untyped,
+            # Why each refused relationship was refused, so a high count can be read.
+            "rejection_reasons": reasons,
             "merged_entities": merged,
             "ontology": ONTOLOGY_VERSION,
             "semantic_sources": len(citations),
