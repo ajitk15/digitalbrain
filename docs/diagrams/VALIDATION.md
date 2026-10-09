@@ -99,3 +99,30 @@ Checked the orchestration, operations-graph walk, parser, scoring, brief reads, 
 Evidence: [serviceops_triage.py](../../platform_core/serviceops_triage.py) (`queue_run`, `execute_run`, `_execute`, `_parsed_hypotheses`, `_score`, `run_still_verified`, `process_next_triage`); [ops_graph.py](../../platform_core/ops_graph.py) (`neighbourhood`, `passage_rows`, `confirm_cause`); [serviceops.py](../../platform_core/serviceops.py) (`serviceops`, `triage_verdict`); [api_triage.py](../../platform_core/utility/api_triage.py).
 
 The revised diagram passed 9/9 showcase checks with zero errors/warnings, four desktop browser checks and light/dark visual review. Documentation links, iframe dimensions and documented constants were checked from source. No application runtime tests or provider calls were run. Application code and PDF remain unchanged.
+
+## Agentic AI by component (2026-10-09)
+
+Added `06_agentic-ai.architecture.json`, its generated `06_agentic-ai.html`, and index section 1.1. The "Where AI is used" table gained a ServiceOps triage row and now says that streamed AI and Graph answer chats both run the tool-using loop. Checked against the working tree, including uncommitted changes:
+
+| Claim | Application evidence |
+| --- | --- |
+| Chat is the only model-directed loop: `search_knowledge` and `fetch_source`, at most 4 turns, 8 tool calls, 120 s, seeded with retrieved evidence | [claude_runtime.py](../../platform_core/agent_runtime/claude_runtime.py): `MAX_TURNS`, `RUN_TIMEOUT`, `ALLOWED_TOOLS`; [openai_runtime.py](../../platform_core/agent_runtime/openai_runtime.py); [tools.py](../../platform_core/agent_runtime/tools.py): `MAX_TOOL_CALLS`, `CitationRecorder.seed`; [ai.py](../../platform_core/ai.py): `stream_chat_answer` |
+| Graph answer streams through the same loop, seeded from the published graph | [workbench.py](../../platform_core/workbench.py): `answer_worker` |
+| Tools are bound to one application and user, with access re-checked on each call; citations re-verified before storage | [tools.py](../../platform_core/agent_runtime/tools.py): `ToolScope`, `_scoped_application`, `verify_citations` |
+| Every other model call is single-turn and tool-free | [claude_agents.py](../../platform_core/claude_agents.py) and [llm_agents.py](../../platform_core/llm_agents.py): `tools=[]`, `max_turns=1` |
+| Code Factory: seven model phases (triage, analysis, design, work order, implementation, tests, review), verification and delivery mechanical; the reviewer drops rejected files | [code_factory.py](../../platform_core/code_factory.py): `BUILD_A`, `BUILD_B`, `AGENTS`, `ask`, `collect_items`; [code_factory_build.py](../../platform_core/code_factory_build.py): `run_review`, `run_verification` |
+| Enrichment: one call per source, ≤12 relationships per source, ≤60 per run, 300-character quotes, ≤25 sources | [graph_ai.py](../../platform_core/graph_ai.py): `extract_relationships`, `enrich_graph` |
+| Triage: one call, 120 s, 8,000 tokens, at most three hypotheses, skipped or reused, deny-listed next steps | [serviceops_triage.py](../../platform_core/serviceops_triage.py): `INSTRUCTIONS`, `TRIAGE_TIMEOUT`, `TRIAGE_OUTPUT_LIMIT`, `_execute` |
+| Conversation titles are a separate 32-token purpose | [ai.py](../../platform_core/ai.py): `generate_title`; [workbench.py](../../platform_core/workbench.py): `retitle` |
+| MCP exposes `search_knowledge_graph` and `triage_brief` with no model call | [api.py](../../platform_core/api.py): `TOOLS`, `mcp` |
+| Automations are simulated, never executed | [serviceops.py](../../platform_core/serviceops.py): `simulate_automation` |
+| Worker lanes | [document_worker.py](../../platform_core/document_worker.py): `LANES` |
+
+Source discrepancy, not changed here: `serviceops_triage.SCORER_VERSION` is now `"v3"` while sections 6.2 and earlier notes say scorer v2. The eight weights and the 0.35/0.55 thresholds still match.
+
+### 06_agentic-ai.html
+
+- Type: `architecture`
+- Specification SHA-256: `49f6beebd146f9b3108f48f938f1f0ffec604e885a799268704fb972614ed4ab`
+- HTML SHA-256: `aed00ce244b3bd8b5910437b17924b3104957ba2ccbc76dabd1fc1cf49cbf023`
+- Validation: 9/9 showcase, zero errors and warnings; automated browser check passed at 1440x900, 1600x1000, 1920x1080 and 2048x1320 in light and dark; light and dark screenshots reviewed visually. No application tests or provider calls were run.
