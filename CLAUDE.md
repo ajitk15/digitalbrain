@@ -417,10 +417,13 @@ own source, digest and quote. Untyped entities in older versions are left alone.
 
 **Retrieval walks two hops, typed edges only.** `graph_ai.walk` goes breadth-first from the
 best-ranked AI relationships along other AI relationships (`MAX_HOPS`), stops at hubs
-(`MAX_FANOUT`), and its finds take at most `PATH_SLOTS` places ahead of weaker direct
-matches, each saying "Reached by:". Structural edges are never walked - a value node such
-as "Status: Done" joins hundreds of records. Every walked citation is verified like any
-other. On a structural-only graph it changes nothing (CarePath v4 benchmark unchanged).
+(`MAX_FANOUT`), and its finds (at most `MAX_WALKED`) come **after every direct match**,
+each saying "Reached by:". They used to take places ahead of weaker direct matches; on an
+AI-enriched CarePath version that cost a benchmark question (14/16, MRR 0.678), and after
+them it is 15/16, 0.691 - the walk only fills a place a direct match left empty.
+`test_the_walk_never_displaces_a_direct_match` pins it. Structural edges are never walked
+- a value node such as "Status: Done" joins hundreds of records. Every walked citation is
+verified like any other.
 
 **Published graphs are prepared once per process** (`graph_ai.prepared`, LRU of
 `CACHE_SIZE`): parsed data, relationship texts and the BM25 index. Safe because a

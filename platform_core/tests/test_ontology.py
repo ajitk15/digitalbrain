@@ -285,6 +285,20 @@ class TypedGraphTests(TestCase):
         self.assertIn("Reached by: CARE-425 affects Referrals API", walked["excerpt"])
         self.assertEqual(walked["quote"], "NFR-03 is implemented in referrals.py")
 
+    def test_the_walk_never_displaces_a_direct_match(self):
+        """Measured: ahead of direct matches it cost a benchmark question."""
+        data, _ = self.enrich()
+        question = "What does CARE-425 affect?"
+        walked = citations_from(self.app.pk, data, 1, question)
+        with patch.object(graph_ai, "MAX_HOPS", 0):
+            unwalked = citations_from(self.app.pk, data, 1, question)
+        # Sources, as the benchmark and an answer rank them: every source found
+        # without the walk keeps its place, and what the walk adds comes after.
+        before = list(dict.fromkeys(c["id"] for c in unwalked))
+        after = list(dict.fromkeys(c["id"] for c in walked))
+        self.assertEqual(after[: len(before)], before)
+        self.assertEqual(after[len(before) :], [str(self.requirements.pk)])
+
     def test_one_hop_alone_does_not_reach_it(self):
         data, _ = self.enrich()
         with patch.object(graph_ai, "MAX_HOPS", 1):
