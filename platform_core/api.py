@@ -100,7 +100,7 @@ def search(user, app_id, question, version):
             raise ApiError("version must be a positive integer.", code="invalid_request")
     try:
         _, number = graph_snapshot(app_id, version)
-        citations = graph_citations(app_id, question, version=version)
+        citations = graph_citations(app_id, question, version=version, user=user)
     except ValidationError as failure:
         raise ApiError(" ".join(failure.messages), status=409, code="graph_unavailable") from None
     return {

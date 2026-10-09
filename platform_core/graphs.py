@@ -269,6 +269,32 @@ def rebuild(app_id):
                 pk=graph.pk, fingerprint=before, status="building"
             ).update(status="failed", stage="Generation failed", failure_reason=reason)
             raise
+        from . import embeddings
+
+        if embeddings.configuration(app_id):
+            # Only in a run someone requested, like extraction: a background
+            # rebuild never spends. Unchanged texts are already stored and cost
+            # nothing. A failure here costs the version its vectors, never the
+            # relationships it has already paid for.
+            set_stage(app_id, "Embedding for search")
+            try:
+                quality["embeddings"] = embeddings.index(
+                    graph.requested_by or config.configured_by,
+                    entries[0].application,
+                    data,
+                    entries,
+                )
+            except Exception as failure:
+                logger.warning("embedding_failed", extra={"event": "embedding_failed"})
+                quality["warnings"].append(
+                    " ".join(failure.messages)
+                    if isinstance(failure, ValidationError)
+                    else "Embedding stopped unexpectedly. See the server log."
+                )
+                quality["warnings"].append(
+                    "This version has no new search embeddings; questions rank by words "
+                    "and by any vectors already stored."
+                )
     set_stage(app_id, "Saving version")
     with transaction.atomic():
         locked = KnowledgeGraph.objects.select_for_update().get(pk=graph.pk)
@@ -297,6 +323,12 @@ def rebuild(app_id):
             provider=config.provider if config else "",
             model=config.model if config else "",
         )
+        # Every saved version is scored against the benchmark questions. After
+        # commit, so a failed benchmark can never undo the save, and free: it
+        # calls no model.
+        from .benchmark import run_after_save
+
+        transaction.on_commit(lambda pk=revision.pk: run_after_save(pk))
         locked.data, locked.quality = data, quality
         locked.fingerprint = before
         locked.version = revision.pk
@@ -718,6 +750,16 @@ def graph_view(request, pk):
                 graph_themes = node_themes(graph.data)
             except Exception:
                 logger.warning("graph_themes_failed", extra={"event": "graph_themes_failed"})
+    versions = Paginator(
+        GraphRevision.objects.filter(application=app).defer("data"), 20
+    ).get_page(request.GET.get("page"))
+    if tab == "versions":
+        # One query for the page's scores, not one per row.
+        from .benchmark import latest_runs
+
+        scores = latest_runs(app, list(versions.object_list))
+        for revision in versions.object_list:
+            revision.benchmark = scores.get(revision.pk)
     return render(
         request,
         "graph.html",
@@ -730,9 +772,7 @@ def graph_view(request, pk):
             "code_links_enabled": feature_enabled("code_graph", app),
             "knowledge_view": tab,
             "active_version": active_graph.version if active_graph else None,
-            "versions": Paginator(
-                GraphRevision.objects.filter(application=app).defer("data"), 20
-            ).get_page(request.GET.get("page")),
+            "versions": versions,
             "source_count": sources_for(pk).count(),
             "published": published,
             "latest_revision": latest_revision,

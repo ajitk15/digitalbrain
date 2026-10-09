@@ -1500,6 +1500,7 @@ AI_PURPOSES = [
     ("graph_generation", "Graph generation"),
     ("graph_retrieval", "Graph retrieval"),
     ("conversation_title", "Conversation titles"),
+    ("embeddings", "Search embeddings"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -1634,3 +1635,103 @@ class GraphRevision(models.Model):
     @property
     def updated_at(self):
         return self.created_at
+
+
+class BenchmarkQuestion(models.Model):
+    """A question this application's graph should answer, and what it should cite.
+
+    `expected` is text the cited source's title or URL must contain - a ticket
+    key such as "KAN-4", a document name such as "deployment-runbook" - rather
+    than a source id, because a source that is re-imported gets a new id and a
+    question should keep meaning the same thing across versions.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    question = models.CharField(max_length=500)
+    expected = models.CharField(max_length=200)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+
+
+class BenchmarkRun(models.Model):
+    """How one graph version did on the benchmark questions it was run against.
+
+    Retrieval only: the questions go through the same ranking and citation
+    verification an answer uses, and no model is called, so a run is free and
+    can be repeated on every version. `results` keeps each question's outcome,
+    so a score can be explained rather than taken on trust.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    revision = models.ForeignKey(GraphRevision, on_delete=models.CASCADE)
+    questions = models.PositiveIntegerField()
+    #: The expected source was among the citations an answer would receive.
+    found = models.PositiveIntegerField()
+    #: ...and among the first three, which an answer leans on most.
+    top_three = models.PositiveIntegerField()
+    #: Mean reciprocal rank: 1.0 when every expected source is cited first.
+    reciprocal_rank = models.FloatField()
+    results = models.JSONField(default=list)
+    TRIGGERS = [
+        ("saved", "When the version was saved"),
+        ("button", "From Knowledge"),
+        ("console", "From the console"),
+    ]
+    trigger = models.CharField(max_length=8, choices=TRIGGERS, default="saved")
+    #: Who pressed Run; empty for the automatic and console runs.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["application", "revision", "-created_at"])]
+
+
+class Embedding(models.Model):
+    """A text's meaning as a vector, for finding where to start looking.
+
+    Content-addressed: `digest` is the SHA-256 of the exact text embedded, so a
+    relationship or passage that has not changed is never paid for twice, and
+    a graph version rebuilt from the same sources reuses every vector. Scoped
+    to one application - texts are that application's content, and one
+    application's spend must never serve another.
+
+    A vector only ever chooses starting points. It is never evidence: what is
+    cited is still a relationship or passage verified against its live source.
+    `entry` and `offset` locate a passage so it can be re-read and re-checked;
+    they are empty for graph relationships and questions.
+    """
+
+    KINDS = [("relation", "Graph relationship"), ("passage", "Passage"), ("question", "Question")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    model = models.CharField(max_length=160)
+    dimensions = models.PositiveSmallIntegerField()
+    digest = models.CharField(max_length=64)
+    kind = models.CharField(max_length=8, choices=KINDS)
+    #: Unit-length float32, little-endian: a dot product is the cosine.
+    vector = models.BinaryField()
+    entry = models.ForeignKey(
+        KnowledgeEntry, null=True, blank=True, on_delete=models.CASCADE, related_name="+"
+    )
+    offset = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "model", "dimensions", "digest"],
+                name="unique_embedding_text",
+            )
+        ]
+        indexes = [models.Index(fields=["application", "model", "dimensions", "kind"])]

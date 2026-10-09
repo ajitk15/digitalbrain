@@ -380,6 +380,73 @@ evidence shows on every item it produces.
 Neither path checks the live fingerprint — answering from a published snapshot is the point.
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
 
+**Retrieval changes are measured, not asserted.** `benchmark.py` scores every saved graph
+version against an owner's questions (Knowledge → Benchmark, `manage.py benchmark`): is the
+expected source among the citations, in the top three, and at what rank. It calls
+`graph_ai.citations_from` - the ranking and verification an answer uses - and no model, so it
+is free and runs automatically after each version is saved. It may score a **draft**: measuring
+is not answering, and which graph answers is still `graph_snapshot`'s decision, which refuses
+drafts. Change ranking only with a before/after benchmark run; CarePath's questions are in
+`demo-artifacts/demo-kit/benchmark-questions.json`.
+
+Ranking is `ranking.py`: texts holding more of the question's terms first, BM25 second, then
+`spread` - each source's best citation before any source's second. Both the graph path and
+the keyword path (`workbench.retrieve`) use it. On CarePath v4 it took the benchmark from
+11/16 found (MRR 0.53) to 15/16 (MRR 0.61). BM25 alone did not help; the spread did most of
+it. Graphify's own scorer was not reused: it is private API tuned for code-symbol nodes.
+`serviceops.stem` is `ranking.stem`, moved not changed - incident fingerprints depend on it.
+Three later fixes removed every question that ranked worse than the old word count: an
+identifier is its words (`max_page_size` → page, size), `ranking.term` folds a long
+"-ment" ending (requirement → require) **outside `stem`**, so fingerprints are untouched,
+and "against" is filler. Measured against HEAD 18dee62 on CarePath v4: graph 11/16 → 15/16
+found, MRR 0.53 → 0.69; keyword 8/16 → 14/16, MRR 0.26 → 0.67; no question worse on
+either path. Keyword search keeps each source's passage terms (`workbench.passage_counts`,
+keyed by digest, title and length) and `term`/`stem` are memoised: 10 ms per question at
+HEAD, 23 ms with BM25 alone, 4.4 ms now.
+
+**AI extraction is typed by `ontology.py`**, a closed registry like `services.FEATURES`:
+eight types and twelve relations, each relation with the types allowed at each end and the
+phrasings it absorbs ("uses", "relies on" → `depends on`). The prompt is written from the
+registry and the validator enforces it, so they cannot drift; a relationship outside it is
+rejected and counted (`quality["outside_ontology"]`) like an unverified quote, and the
+quote check still runs first - a type is a filter, never evidence. `merge_entities` then
+joins typed entities across sources only on the same type and the same words (stem- or
+long-typo-equal, word by word, numbers exact): whole-string similarity merged
+`carepath-api` with `carepath-api-green`, which is CARE-444's mistake. Each edge keeps its
+own source, digest and quote. Untyped entities in older versions are left alone.
+
+**Retrieval walks two hops, typed edges only.** `graph_ai.walk` goes breadth-first from the
+best-ranked AI relationships along other AI relationships (`MAX_HOPS`), stops at hubs
+(`MAX_FANOUT`), and its finds take at most `PATH_SLOTS` places ahead of weaker direct
+matches, each saying "Reached by:". Structural edges are never walked - a value node such
+as "Status: Done" joins hundreds of records. Every walked citation is verified like any
+other. On a structural-only graph it changes nothing (CarePath v4 benchmark unchanged).
+
+**Published graphs are prepared once per process** (`graph_ai.prepared`, LRU of
+`CACHE_SIZE`): parsed data, relationship texts and the BM25 index. Safe because a
+revision's data never changes after it is saved; a `post_save` drops it anyway. Callers of
+`graph_snapshot` must not mutate what it returns. ServiceOps runbook linking matches a
+component name however it is punctuated (`ops_graph.name_pattern`) and also under names
+the knowledge graph merged (`ontology.aliases_for`); `RULES_VERSION` rebuilds every
+operations graph when a rule changes. The plan for the rest is
+`docs/retrieval-roadmap-plan.md`.
+
+**Embeddings choose starting points, never citations.** `embeddings.py` (purpose
+`embeddings`, OpenAI only - Anthropic has no endpoint - and **off unless an owner turns it
+on**). A vector's nearest relationships or passages are fused with the BM25 order
+(`fuse`); every one is then verified exactly as a word match is, and a passage found by
+meaning is re-read and re-hashed against the text that was embedded. With no vector the
+order is exactly the word order. Spend follows the extraction rule: relationships,
+passages and benchmark questions are embedded only in a **requested** AI graph run or by
+`manage.py embed --as`, never by a background rebuild; a question is embedded when asked
+and charged to whoever asked (`user=` on `graph_citations`/`retrieve`), and a caller with
+no user gets stored vectors only. Vectors are content-addressed per application
+(`models.Embedding`), so nothing is paid for twice and one application never uses
+another's. A failed question embedding answers by words and logs `embedding_unavailable`;
+a failed indexing step warns on the version and keeps the relationships. Search is
+in-process numpy over unit float32 - pgvector was deliberately left out until a library
+outgrows memory, so the production database did not change.
+
 **The operations layer is the one exception, and it is deliberate.** The operations layer
 (incidents, changes and what connects them) is live, not publish-gated: it is rebuilt by rules
 from imported records whenever they change, and every edge is re-verified against its records

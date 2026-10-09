@@ -25,6 +25,7 @@ from .models import (
     TriageRun,
     TriageVerdict,
 )
+from .ranking import stem
 from .services import audit
 from .workbench import access, add_knowledge
 
@@ -242,25 +243,6 @@ CONCEPTS = (
 )
 _CONCEPT_PATTERNS = tuple((word, re.compile(pattern)) for word, pattern in CONCEPTS)
 CONCEPT_WORDS = frozenset(word for word, _ in CONCEPTS)
-
-
-def stem(word):
-    """A light, predictable stem: plural and tense endings only.
-
-    "exports" and "export" were two terms, as were "refused" and "refuses".
-    Deliberately crude rather than clever: a stemmer that sometimes merges the
-    wrong words would be worse than one that merges too few.
-    """
-    if "_" in word:
-        return word
-    if len(word) > 4 and word.endswith("ies"):
-        return word[:-3] + "y"
-    for ending in ("ing", "ed", "es"):
-        if len(word) > len(ending) + 3 and word.endswith(ending):
-            return word[: -len(ending)]
-    if len(word) > 3 and word.endswith("s") and not word.endswith(("ss", "us", "is")):
-        return word[:-1]
-    return word
 
 
 def symptom_terms(title, description):

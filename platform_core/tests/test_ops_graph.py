@@ -485,6 +485,33 @@ class GraphUseTests(Fixtures, TestCase):
         rebuild(self.app)
         self.assertFalse(OpsEdge.objects.filter(relation="mentions").exists())
 
+    def test_a_runbook_may_punctuate_the_name_its_own_way(self):
+        self.scenario()
+        self.runbook("# Deploy\nMove traffic to the API Green pool, then drain.\nEnd.")
+        rebuild(self.app)
+        self.assertEqual(OpsEdge.objects.get(relation="mentions").target.label, "api-green")
+
+    def test_a_name_the_knowledge_graph_merged_is_looked_for_too(self):
+        from platform_core.models import GraphRevision
+
+        self.scenario()
+        self.runbook("# Deploy\nMove traffic to the green-api pool, then drain.\nEnd.")
+        rebuild(self.app)
+        self.assertFalse(OpsEdge.objects.filter(relation="mentions").exists())
+        revision = GraphRevision.objects.get()
+        revision.data["nodes"].append(
+            {
+                "id": "m",
+                "kind": "entity",
+                "type": "Component",
+                "label": "api-green",
+                "aliases": ["api-green", "green-api"],
+            }
+        )
+        revision.save()
+        rebuild(self.app)
+        self.assertEqual(OpsEdge.objects.get(relation="mentions").target.label, "api-green")
+
     def test_an_unpublished_or_changed_runbook_is_never_used(self):
         from platform_core.models import GraphRevision, KnowledgeEntry
         from platform_core.ops_graph import neighbourhood

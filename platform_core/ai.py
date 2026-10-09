@@ -17,6 +17,8 @@ from django.views.decorators.http import require_http_methods
 
 from .llm_agents import completion
 from .model_catalog import (
+    DEFAULT_EMBEDDING_MODEL,
+    EMBEDDING_CHOICES,
     GRAPH_GENERATION_ADVICE,
     LIST_PRICES,
     MODEL_CHOICES,
@@ -33,9 +35,16 @@ from .workbench import access
 class AIForm(forms.ModelForm):
     model_choice = forms.ChoiceField(choices=MODEL_CHOICES, label="Model", initial="custom")
 
-    def __init__(self, *args, limit_default=None, **kwargs):
+    def __init__(self, *args, limit_default=None, purpose=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["model"].required = False
+        self.embeddings = purpose == "embeddings"
+        if self.embeddings:
+            # Embeddings are OpenAI's; offering a chat model or Claude here would
+            # be offering a setting that can only fail.
+            self.fields["model_choice"].choices = EMBEDDING_CHOICES
+            self.fields["provider"].choices = [("openai", "OpenAI")]
+            self.fields["output_rate"].help_text = "Embeddings bill input only; leave at 0."
         # Code Factory only: one output cap for all of its agents. Blank means the
         # default, so an owner who never sets it keeps whatever the default becomes.
         if limit_default is None:
@@ -59,7 +68,11 @@ class AIForm(forms.ModelForm):
             )
         if self.instance.pk:
             selected = f"{self.instance.provider}:{self.instance.model}"
-            known = {value for _, group in MODEL_CHOICES for value, _ in group}
+            known = {
+                value
+                for _, group in (EMBEDDING_CHOICES if self.embeddings else MODEL_CHOICES)
+                for value, _ in group
+            }
             self.initial["model_choice"] = selected if selected in known else "custom"
 
     def clean(self):
@@ -76,6 +89,10 @@ class AIForm(forms.ModelForm):
             self.add_error("model", "Claude models require the Claude provider.")
         if values.get("provider") == "claude" and model and not model.startswith("claude-"):
             self.add_error("model", "Use a Claude model ID with the Claude provider.")
+        if self.embeddings and model and not model.startswith("text-embedding-"):
+            self.add_error(
+                "model", "Use an OpenAI embedding model, such as text-embedding-3-small."
+            )
         return values
 
     class Meta:
@@ -185,6 +202,23 @@ def seed_application_ai(user, app, provider=None):
     model = DEFAULT_MODELS[provider]
     listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
     for purpose, _ in AI_PURPOSES:
+        if purpose == "embeddings":
+            # Always OpenAI, whatever setup chose, and seeded off: it needs an
+            # OpenAI credential the application may not have, and it spends on
+            # every question once switched on. An owner turns it on.
+            AIConfiguration.objects.get_or_create(
+                application=app,
+                purpose=purpose,
+                defaults={
+                    "provider": "openai",
+                    "model": DEFAULT_EMBEDDING_MODEL,
+                    "configured_by": user,
+                    "enabled": False,
+                    "input_rate": Decimal("0"),
+                    "output_rate": Decimal("0"),
+                },
+            )
+            continue
         AIConfiguration.objects.get_or_create(
             application=app,
             purpose=purpose,
@@ -474,7 +508,18 @@ def ai_settings(request, pk):
             instance=config,
             prefix=purpose,
             limit_default=code_factory_default() if purpose == "plan_drafting" else None,
-            initial={"enabled": False, "input_rate": 0, "output_rate": 0, "provider": "openai"}
+            purpose=purpose,
+            initial={
+                "enabled": False,
+                "input_rate": 0,
+                "output_rate": 0,
+                "provider": "openai",
+                **(
+                    {"model_choice": f"openai:{DEFAULT_EMBEDDING_MODEL}"}
+                    if purpose == "embeddings"
+                    else {}
+                ),
+            }
             if config is None
             else None,
         )

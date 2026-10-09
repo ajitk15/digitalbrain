@@ -62,6 +62,7 @@ from .documents import document_path
 from .graphs import fingerprint
 from .models import (
     Application,
+    BenchmarkRun,
     ChangePlan,
     ChatConversation,
     CodeFile,
@@ -118,7 +119,9 @@ ORDER = (
     (CodeFile, "snapshot__repository__application_id__in"),
     (CodeSnapshot, "repository__application_id__in"),
     (CodeRepository, "application_id__in"),
-    # The knowledge graph.
+    # The knowledge graph. Benchmark runs score its versions and go with them;
+    # the questions are configuration and stay for the next build.
+    (BenchmarkRun, "application_id__in"),
     (GraphRevision, "application_id__in"),
     (KnowledgeGraph, "application_id__in"),
 )

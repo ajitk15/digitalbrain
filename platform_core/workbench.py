@@ -4,6 +4,7 @@ import hashlib
 import re
 import threading
 import uuid
+from collections import OrderedDict
 from datetime import timedelta
 
 from django import forms
@@ -74,28 +75,116 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
     return entry
 
 
-def retrieve(app, question):
-    # Bounded, deterministic lexical retrieval. No provider or semantic-search claims.
-    terms = list(dict.fromkeys(re.findall(r"\w{3,}", question.lower())))[:20]
-    terms = [
-        t for t in terms if t not in {"the", "what", "how", "are", "does", "and", "for", "this"}
-    ]
-    if not terms:
+#: Passages are windows this long, starting this far apart, so a sentence on a
+#: boundary is whole in one of them. Search embeddings index the same windows.
+PASSAGE_LENGTH = 1400
+PASSAGE_STEP = 1200
+#: Sources whose passages' terms are kept, least recently used dropped first.
+#: Splitting and stemming every passage on every question was four fifths of a
+#: keyword search's time, for text that had not changed since the last one.
+PASSAGE_CACHE = 2000
+_passage_terms = OrderedDict()
+_passage_lock = threading.Lock()
+
+
+def passage_counts(entry):
+    """Each passage's (term counts, length), for BM25, cached per source text.
+
+    Keyed by the source's digest, title and length together, so an edited
+    source is split again rather than ranked by what it used to say.
+    """
+    from collections import Counter
+
+    from .ranking import terms
+
+    key = (entry.pk, entry.digest, entry.title, len(entry.content))
+    with _passage_lock:
+        found = _passage_terms.get(key)
+        if found is not None:
+            _passage_terms.move_to_end(key)
+            return found
+    found = []
+    for offset in range(0, len(entry.content), PASSAGE_STEP):
+        split = terms(f"{entry.title} {entry.content[offset : offset + PASSAGE_LENGTH]}")
+        found.append((Counter(split), len(split)))
+    with _passage_lock:
+        _passage_terms[key] = found
+        while len(_passage_terms) > PASSAGE_CACHE:
+            _passage_terms.popitem(last=False)
+    return found
+
+
+def retrieve(app, question, user=None):
+    """Up to five passages: word matches by BM25, fused with the nearest by meaning.
+
+    Deterministic and lexical unless the application switched on search
+    embeddings, and then the question's vector only adds candidates: each one
+    is re-read from its source, and skipped unless the passage still reads
+    exactly as it did when it was embedded. `user` is who a new question
+    vector is charged to; without one only a stored vector is used.
+    """
+    from .embeddings import digest as text_digest
+    from .embeddings import fuse, nearest, passage_matrix, passage_text, question_vector
+    from .ranking import BM25, query_terms, spread, term, words
+
+    query = query_terms(question)
+    vector, model = question_vector(user, app.pk, question)
+    if not query and vector is None:
         return []
-    condition = Q()
-    for term in terms:
-        condition |= Q(content__icontains=term) | Q(title__icontains=term)
-    entries = KnowledgeEntry.objects.filter(application=app, active=True).filter(condition)[:100]
-    ranked = []
-    for entry in entries:
-        for offset in range(0, len(entry.content), 1200):
-            passage = entry.content[offset : offset + 1400]
-            words = set(re.findall(r"\w+", passage.lower()))
-            score = sum(term in words for term in terms)
-            if score:
-                ranked.append((score, entry, passage))
-    ranked.sort(key=lambda item: item[0], reverse=True)
-    return ranked[:5]
+    passages = []
+    if query:
+        # The database narrows by the term where it is a prefix of the word, so
+        # "checked" also finds "checks" and "requirements" finds "require";
+        # ranking below compares terms throughout.
+        condition = Q()
+        for word in list(dict.fromkeys(words(question)))[:20]:
+            needle = term(word) if word.startswith(term(word)) else word
+            condition |= Q(content__icontains=needle) | Q(title__icontains=needle)
+        entries = KnowledgeEntry.objects.filter(application=app, active=True).filter(condition)[
+            :100
+        ]
+        passages = [
+            (entry, offset)
+            for entry in entries
+            for offset in range(0, len(entry.content), PASSAGE_STEP)
+        ]
+    by_meaning = []
+    if vector is not None:
+        rows, matrix = passage_matrix(app.pk, model)
+        hits = [rows[row] for row in nearest(matrix, vector)]
+        live = {
+            entry.pk: entry
+            for entry in KnowledgeEntry.objects.filter(
+                application=app, active=True, pk__in={entry_id for entry_id, _, _ in hits}
+            )
+        }
+        known = {(entry.pk, offset): position for position, (entry, offset) in enumerate(passages)}
+        for entry_id, offset, key in hits:
+            entry = live.get(entry_id)
+            if entry is None or text_digest(passage_text(entry, offset)) != key:
+                continue
+            if (entry.pk, offset) not in known:
+                known[(entry.pk, offset)] = len(passages)
+                passages.append((entry, offset))
+            by_meaning.append(known[(entry.pk, offset)])
+    texts = [entry.content[offset : offset + PASSAGE_LENGTH] for entry, offset in passages]
+    # The same ranking the graph uses - passages holding more of the question
+    # first, then BM25 - and the same spread: five passages from one document
+    # are one source, so each document's best passage comes before its second.
+    split = {}
+    for entry, _ in passages:
+        if entry.pk not in split:
+            split[entry.pk] = passage_counts(entry)
+    index = BM25(counts=[split[entry.pk][offset // PASSAGE_STEP] for entry, offset in passages])
+    scored = index.rank_covering(query) if query else []
+    scores = {position: score for score, position in scored}
+    order = [position for _, position in scored]
+    if by_meaning:
+        order = fuse(order, by_meaning)
+    ranked = [
+        (scores.get(position, 0.0), passages[position][0], texts[position]) for position in order
+    ]
+    return spread(ranked, key=lambda item: item[1].pk, limit=5)
 
 
 @login_required
@@ -148,16 +237,16 @@ def knowledge_detail(request, pk, entry_id):
             "ticket_fields": [
                 (label, fields[key])
                 for key, label in (
-                    ("type", "Type"), ("status", "Status"),
-                    ("priority", "Priority"), ("labels", "Labels"),
+                    ("type", "Type"),
+                    ("status", "Status"),
+                    ("priority", "Priority"),
+                    ("labels", "Labels"),
                 )
                 if fields.get(key)
             ],
             "ticket_key": fields.get("key", ""),
             "ticket_description": description,
-            "source_link": entry.source
-            if entry.source.startswith(("https://", "http://"))
-            else "",
+            "source_link": entry.source if entry.source.startswith(("https://", "http://")) else "",
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
             "grant": grant,
         },
@@ -477,10 +566,10 @@ def retrieval_query(question, history):
     return question
 
 
-def lexical_citations(app, question):
+def lexical_citations(app, question, user=None):
     return [
         {"id": str(entry.pk), "title": entry.title, "digest": entry.digest, "excerpt": passage}
-        for _, entry, passage in retrieve(app, question)
+        for _, entry, passage in retrieve(app, question, user)
     ]
 
 
@@ -501,7 +590,7 @@ def answer_question(
     first_exchange = conversation is None
     history = conversation_context(conversation, app, user, before=trim_from)
     query = retrieval_query(question, history)
-    citations = lexical_citations(app, query)
+    citations = lexical_citations(app, query, user)
     answer = readable_evidence(citations)
     if mode in {"ai", "graph"}:
         from .ai import answer_with_ai, invoke_ai
@@ -509,7 +598,7 @@ def answer_question(
         if mode == "graph":
             from .graph_ai import graph_citations
 
-            citations = graph_citations(app.pk, query, version=graph_version)
+            citations = graph_citations(app.pk, query, version=graph_version, user=user)
             answer = invoke_ai(
                 user, app.pk, "graph_retrieval", question, citations, history=history
             )
@@ -976,9 +1065,9 @@ def answer_worker(
         if mode == "graph":
             from .graph_ai import graph_citations
 
-            citations_seed = graph_citations(app.pk, query, version=graph_version)
+            citations_seed = graph_citations(app.pk, query, version=graph_version, user=user)
         else:
-            citations_seed = lexical_citations(app, query)
+            citations_seed = lexical_citations(app, query, user)
         body, citations = stream_chat_answer(
             user, app, config, token, question, citations_seed, history, session
         )
