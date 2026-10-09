@@ -198,8 +198,11 @@ class ManualIncidentForm(forms.Form):
 
 
 def incident_queryset(app):
-    """Only active incident sources inside the already-authorized application."""
-    return KnowledgeEntry.objects.filter(application=app, active=True).filter(
+    """Only active incident sources inside the already-authorized application.
+
+    Answerable: a restricted incident is in neither the operations graph nor
+    any triage pack, so no model reads it."""
+    return KnowledgeEntry.objects.filter(application=app).answerable().filter(
         Q(source__icontains="incident.do")
         | Q(content__icontains="\nType: Incident\n")
         | Q(content__icontains="\nType: Incident\r\n")

@@ -61,8 +61,13 @@ def change_queryset(app):
 
 def typed_queryset(app, kind):
     """Imported records whose header says what they are: "Type: <kind>"."""
-    return KnowledgeEntry.objects.filter(application=app, active=True).filter(
-        Q(content__contains=f"\nType: {kind}\n") | Q(content__contains=f"\nType: {kind}\r\n")
+    return (
+        KnowledgeEntry.objects.filter(application=app)
+        .answerable()
+        .filter(
+            Q(content__contains=f"\nType: {kind}\n")
+            | Q(content__contains=f"\nType: {kind}\r\n")
+        )
     )
 
 
@@ -873,8 +878,12 @@ def automation_rows(app, center, entities, similar_nodes, articles, me):
             if edge.relation == "remediates"
             else f"targets {edge.source.label}"
         )
-        add(edge.target, 2 if edge.relation == "targets" else 1, why,
-            [me, edge.source.label, edge.target.label])
+        add(
+            edge.target,
+            2 if edge.relation == "targets" else 1,
+            why,
+            [me, edge.source.label, edge.target.label],
+        )
     article_nodes = OpsNode.objects.filter(
         application=app, kind="kb", entry__in=[row["entry"] for row in articles]
     )

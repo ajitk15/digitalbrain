@@ -24,6 +24,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--graph-version", type=int, help="Graph version number (default: latest)"
         )
+        parser.add_argument(
+            "--rerank",
+            action="store_true",
+            help="Also rerank with the application's reranking model (charges apply; needs --as)",
+        )
+        parser.add_argument("--as", dest="actor", help="Username a reranked run is charged to")
 
     def handle(self, *args, **options):
         app = Application.objects.filter(pk=options["application"]).first()
@@ -39,7 +45,17 @@ class Command(BaseCommand):
         )
         if revision is None:
             raise CommandError("That application has no such graph version.")
-        result = run(app, revision, trigger="console")
+        reranker = None
+        if options["rerank"]:
+            from platform_core import rerank
+            from platform_core.models import User
+
+            reranker = User.objects.filter(username=options["actor"] or "", is_active=True).first()
+            if reranker is None:
+                raise CommandError("--rerank needs --as naming an active user, who is charged.")
+            if rerank.configuration(app.pk) is None:
+                raise CommandError("Switch on Answer reranking in AI settings first.")
+        result = run(app, revision, trigger="console", reranker=reranker)
         if result is None:
             raise CommandError("The application has no benchmark questions. Use --load.")
         for item in result.results:
@@ -48,6 +64,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"\nVersion {revision.number}: found {result.found}/{result.questions}, "
             f"top {TOP} {result.top_three}/{result.questions}, MRR {result.reciprocal_rank:.2f}"
+            + (" (reranked)" if reranker else "")
         )
 
     def load(self, app, path):

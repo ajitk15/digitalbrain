@@ -89,7 +89,8 @@ def search_knowledge(scope, args):
 
 def fetch_source(scope, args):
     """A bounded window of one source the model has already found."""
-    from ..models import KnowledgeEntry
+    from ..models import KnowledgeEntry, User
+    from ..permissions import permitted
 
     app = _scoped_application(scope)
     try:
@@ -98,7 +99,9 @@ def fetch_source(scope, args):
         return ToolResult(NOT_FOUND, [])
     # The application filter is not negotiable; the model only chooses which of
     # this application's sources to read.
-    entry = KnowledgeEntry.objects.filter(application=app, active=True, pk=entry_id).first()
+    entry = KnowledgeEntry.objects.filter(application=app, pk=entry_id).answerable().first()
+    if entry is not None and not permitted(entry, User.objects.get(pk=scope.user_id)):
+        entry = None
     if entry is None:
         return ToolResult(NOT_FOUND, [])
     offset = args.get("offset", 0)
@@ -184,15 +187,19 @@ class CitationRecorder:
 
     def verified_citations(self):
         """Drop anything the database no longer backs, then renumber."""
-        return verify_citations(self.scope.app_id, self._citations)[:MAX_CITATIONS]
+        from ..models import User
+
+        viewer = User.objects.filter(pk=self.scope.user_id).first()
+        return verify_citations(self.scope.app_id, self._citations, viewer)[:MAX_CITATIONS]
 
 
-def verify_citations(app_id, candidates):
+def verify_citations(app_id, candidates, viewer=None):
     """Keep only citations whose source is still active, unchanged and quoting truly.
 
     Generalizes the check graph enrichment already applies to extracted quotes.
     """
     from ..models import KnowledgeEntry
+    from ..permissions import permitted
 
     if not candidates:
         return []
@@ -214,8 +221,9 @@ def verify_citations(app_id, candidates):
     entries = {
         str(entry.pk): entry
         for entry in KnowledgeEntry.objects.filter(
-            application_id=app_id, active=True, pk__in=ids
-        ).only("id", "title", "content", "digest")
+            application_id=app_id, pk__in=ids
+        ).answerable().only("id", "title", "content", "digest", "access_principals")
+        if permitted(entry, viewer)
     }
     verified = []
     seen = set()

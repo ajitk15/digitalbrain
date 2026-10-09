@@ -17,10 +17,10 @@ tests and the four verification gates in `CLAUDE.md`. They are not calendar time
 | 1 Ontology | 3 Typed graph | 2-3 d | None | None (same call) | **Done** |
 | 2 Merge names | 4 Merged names, runbook aliases | 2-3 d | None | None | **Done** |
 | 3 Multi-hop | 6 Traversal (2 hops, typed) | 2-3 d | None | None | **Done** |
-| 4 Speed | Cached published graphs, Postgres full-text | 2-3 d | None (index migration) | None | Cache **done**; full-text next |
+| 4 Speed | Cached published graphs, Postgres full-text | 2-3 d | None (index migration) | None | **Done** - full-text not run on PostgreSQL here |
 | 5 Embeddings | 5 Vector starting points | 6-8 d | OpenAI credential (pgvector later) | **Yes** | **Done** - not yet measured |
-| 6 Spend and rerank | Spend caps, reranker | 3-5 d | Optional reranking model | Yes (reranker) | After 5 |
-| 7 Enterprise | Labels, incremental updates, source permissions, shared queue | 20-29 d | Redis; per-connector permission sync | Optional | Separate project |
+| 6 Spend and rerank | Spend caps, reranker | 3-5 d | None (reranker uses the app's model) | Yes (reranker, opt-in) | **Done** |
+| 7 Enterprise | Labels, incremental updates, source permissions, shared streams | 20-29 d | None (database lease, not Redis) | Auto-refresh only, opt-in | **Done** - Jira permissions only; not run against live Jira |
 
 Phases 0-4 need no new infrastructure and no new spend: **about 11-16 days**. With 5 and 6,
 **about 20-29 days**. Phase 7 is a separate project of roughly another month.
@@ -122,9 +122,8 @@ builds the same structure once per run instead of once per question. Measured on
 CarePathDev v4 (2,974 relationships): **54 ms → 6.6 ms per question**, plus the ~60 ms read
 and parse of the graph that is no longer repeated.
 
-Next (1-2 d): a Postgres `GIN` full-text index on `KnowledgeEntry(title, content)` for
-`workbench.retrieve`, replacing the 100-record `icontains` scan on Postgres only; SQLite
-keeps the scan. Benchmark must not drop.
+Keyword search also caches each source's passage terms: 22.9 ms → 4.4 ms per question.
+Postgres full-text search is phase 4b below.
 
 ## Phase 5 - Embeddings (done: OpenAI `text-embedding-3-small`)
 
@@ -169,18 +168,42 @@ relationship or passage verified against its live source.
   `manage.py embed <app> --as <owner>` and `manage.py benchmark <app>` give the before/after
   (cost on CarePathDev is a fraction of a cent).
 
-## Phase 6 - Spend caps and reranking (3-5 d)
+## Phase 6 - Spend caps and reranking (done)
 
-- Per-application monthly budget (`AIConfiguration` field), checked before every paid call
-  including embeddings; refusal is an error with the reason, never a silent skip. (2 d)
-- Optional reranker over the verified top 20 → top 8, through the application credential,
-  off by default, enabled per application only after a benchmark run shows it helps. (2-3 d)
+- **Monthly budget** (`budget.py`, `AIBudget`, migration 0069). An owner sets it in AI
+  settings; Usage shows it. Checked before every paid call at the three choke points
+  (`invoke_ai`, `chat_configuration`, `embeddings.embed`), refusing with the month's figures.
+  It caps *starting* spend from receipts at the entered rates: a call in flight finishes, so a
+  month can end one call over, and a purpose priced at 0 counts as free. Graph extraction
+  that hits the cap keeps what it already paid for and says why it stopped.
+- **Reranker** (`rerank.py`, purpose "Answer reranking", migration 0072, seeded off). Reorders
+  the top 20 verified citations to the best 8 (keyword: 5) through the application's own
+  Claude or OpenAI model. It can only reorder: unknown, repeated or non-numeric answers are
+  dropped, and any failure keeps the original order. `manage.py benchmark --rerank --as
+  <user>` is the one benchmark that spends, so it is switched on because it was measured.
+  Not measured on CarePath (paid).
 
-## Phase 7 - Enterprise hardening (separate project, 20-29 d)
+## Phase 4b - Postgres full-text (done, not run on PostgreSQL here)
 
-| Item | Effort | Infrastructure |
+`workbench.candidate_sources` asks PostgreSQL's full-text index (GIN, migration 0073,
+`to_tsvector('english', left(title || ' ' || content, 200000))`) for the 100 best-matching
+sources by `ts_rank`, instead of the first 100 that contain any word. Questions become
+prefix tsqueries from letters and digits only, so nothing typed becomes tsquery syntax.
+SQLite keeps the substring scan. The PostgreSQL test skips here (no PostgreSQL on this
+machine) and says so; run the suite against PostgreSQL before relying on it.
+
+## Phase 7 - Enterprise hardening (done)
+
+| Item | What was built | Not covered |
 |---|---|---|
-| Sensitivity labels per source, filtered at retrieval | 3-4 d | None |
-| Incremental graph updates for a changed source + stale alert | 4-5 d | Worker job |
-| Source-system permissions on answers (Jira, ServiceNow, delegated SharePoint) | 10-15 d | Permission sync per connector |
-| Shared queue for streaming and Stop across processes | 3-5 d | Redis |
+| Sensitivity labels | `sensitivity.py`, `KnowledgeEntry.sensitivity`/`personal_data` (0070). Restricted sources are out of every AI path via `answerable()`, including already-published versions. Personal-data scan (email, phone, SSN, Luhn-valid cards, dates of birth) is a suggestion on the source page; `manage.py scan_personal_data` backfills. | No automatic labelling - deliberate. |
+| Incremental updates + stale alert | `graph_ai.reusable`: AI runs reuse unchanged sources and work through large libraries run by run. Opt-in auto-refresh (0071) charged to the owner who enabled it, grant re-checked. Notices count sources *added* since the published version, not only changed ones. | Publishing stays manual - the gate is an invariant. |
+| Source-system permissions | `permissions.py` (0075): Jira "can browse" per member and issue, fail-closed, enforced on every answer path; `manage.py link_identity` for hidden emails. | ServiceNow and SharePoint (need delegated per-user access). Sources list and graph explorer still show titles to members. Not run against a live Jira. |
+| Multiple server processes | `StreamLease` (0074), `shared_streams = true`: Stop and `is_live` across processes through a polled lease, no Redis. | One process remains the default and needs nothing. |
+
+Measured after phases 4b-7 on a migrated copy of the local database (CarePathDev v4, 16
+questions, no model): graph 15/16 found, MRR 0.693, and keyword 14/16, MRR 0.674 -
+identical to before them, since nothing there is restricted or permission-checked. The
+added checks cost 2-3 ms a question: graph 6.8 -> 8.8 ms, keyword 4.4 -> 7.1 ms median,
+still under the original 22.2 and 10.4 ms.
+

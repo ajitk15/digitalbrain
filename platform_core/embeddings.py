@@ -156,10 +156,14 @@ def embed(user, app, items, write=False):
     missing = [(key, *value) for key, value in wanted.items() if key not in have][:MAX_INDEX]
     if not missing:
         return 0
+    from .budget import check as check_budget
+
     token = provider_credential(config, app)
     created = 0
     for start in range(0, len(missing), BATCH):
         batch = missing[start : start + BATCH]
+        # Per request, not once: a large index can cross the cap part way.
+        check_budget(app.pk)
         try:
             vectors, request_id, tokens = request(token, config.model, [row[1] for row in batch])
         except (OpenAIError, OSError, ValueError, TypeError):

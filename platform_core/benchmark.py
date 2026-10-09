@@ -64,15 +64,22 @@ def matches(entry, expected):
     return needle in entry.title.casefold() or needle in (entry.source or "").casefold()
 
 
-def score(app, revision, questions):
+def score(app, revision, questions, reranker=None):
     """Each question's outcome against one version, in the order asked.
 
     The rank counts distinct sources, not citations: three relationships from
     one ticket are one source an answer was shown, and counting them three
     times would let a source crowd its own rank.
+
+    `reranker` is the person a reranked run is charged to. Only the console
+    passes one (`manage.py benchmark --rerank --as`): it is the one benchmark
+    that spends, and it exists so reranking is switched on because it was
+    measured to help.
     """
+    from . import rerank
     from .embeddings import question_vector
     from .graph_ai import citations_from, prepare
+    from .permissions import EVERYONE
 
     # Built once for every question: a version's relationships are the same for each.
     ready = prepare(revision.data)
@@ -88,9 +95,18 @@ def score(app, revision, questions):
             ready,
             vector=vector,
             model=model,
+            limit=rerank.CANDIDATES if reranker else 8,
+            # A measurement of the whole corpus, shown to the people who
+            # maintain it; it answers nobody, so no one's permissions apply.
+            viewer=EVERYONE,
         )
         for question, (vector, model) in zip(questions, vectors, strict=True)
     ]
+    if reranker is not None:
+        cited = [
+            rerank.rerank(reranker, app.pk, question.question, citations, 8)
+            for question, citations in zip(questions, cited, strict=True)
+        ]
     ids = {citation["id"] for citations in cited for citation in citations}
     entries = {
         str(entry.pk): entry
@@ -117,17 +133,18 @@ def score(app, revision, questions):
                 "cited": [entries[s].title for s in sources if s in entries],
                 # Whether meaning took part, so a score can say what produced it.
                 "vector": vector is not None,
+                "reranked": reranker is not None,
             }
         )
     return results
 
 
-def run(app, revision, user=None, trigger="saved"):
+def run(app, revision, user=None, trigger="saved", reranker=None):
     """Score a version against this application's questions; None if it has none."""
     questions = list(BenchmarkQuestion.objects.filter(application=app)[:MAX_QUESTIONS])
     if not questions:
         return None
-    results = score(app, revision, questions)
+    results = score(app, revision, questions, reranker=reranker)
     ranks = [result["rank"] for result in results]
     return BenchmarkRun.objects.create(
         application=app,

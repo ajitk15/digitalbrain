@@ -97,11 +97,77 @@ def extract_relationships(app_id, config, citation):
     return found
 
 
+def reusable(app_id, entries):
+    """What the latest AI version already extracted from sources that have not changed.
+
+    Returns (edges, entity nodes, {source id: digest}). Only from a version
+    extracted under the same ontology, and only for a source whose id and
+    digest both match: the same text, so the same quotes, and every quote is
+    verified again when cited anyway. A source extracted with nothing to find
+    counts too - it is not asked about again.
+    """
+    previous = (
+        GraphRevision.objects.filter(application_id=app_id)
+        .exclude(model="")
+        .order_by("-number")
+        .first()
+    )
+    if previous is None or previous.data.get("ontology") != ONTOLOGY_VERSION:
+        return [], {}, {}
+    current = {str(e.pk): e.digest for e in entries}
+    done = {
+        source_id: digest
+        for source_id, digest in previous.data.get("ai_sources", {}).items()
+        if current.get(source_id) == digest
+    }
+    if not done:
+        return [], {}, {}
+    old = {node["id"]: node for node in previous.data.get("nodes", [])}
+    edges = [
+        dict(edge)
+        for edge in previous.data.get("edges", [])
+        if edge.get("knowledge_id") in done
+        and (edge.get("inferred") or edge.get("relation") == "mentions entity")
+    ]
+    nodes = {}
+    for edge in edges:
+        for end in (edge["source"], edge["target"]):
+            node = old.get(end)
+            if node and node.get("kind") == "entity":
+                nodes.setdefault(end, dict(node))
+    # A node merged across sources may have been merged with one that has since
+    # changed: it answers only for the sources carried with it now.
+    for node_id, node in nodes.items():
+        if "knowledge_ids" in node:
+            kept = sorted(
+                {
+                    edge["knowledge_id"]
+                    for edge in edges
+                    if node_id in (edge["source"], edge["target"])
+                }
+            )
+            node["knowledge_ids"] = kept
+            if len(kept) == 1:
+                node["knowledge_id"] = kept[0]
+            else:
+                node.pop("knowledge_id", None)
+    return edges, nodes, done
+
+
 def enrich_graph(app_id, config, entries, data, quality):
+    """Typed, quote-checked AI relationships on top of the structural graph.
+
+    Incremental: a source whose text has not changed since the latest AI
+    version keeps what was extracted from it, at no cost, and only new or
+    changed sources are sent to the model - up to `MAX_EXTRACTION_SOURCES` a
+    run, so successive runs also work through a library larger than that.
+    """
     from .graphs import MAX_NODES
 
     if not config.configured_by_id:
         raise ValidationError("Save graph generation settings as an application owner first.")
+    reused_edges, reused_nodes, done = reusable(app_id, entries)
+    pending = [entry for entry in entries if str(entry.pk) not in done]
     citations = [
         {
             "id": str(e.pk),
@@ -109,19 +175,34 @@ def enrich_graph(app_id, config, entries, data, quality):
             "excerpt": e.content[:MAX_SOURCE_CHARACTERS],
             "digest": e.digest,
         }
-        for e in entries[:MAX_EXTRACTION_SOURCES]
+        for e in pending[:MAX_EXTRACTION_SOURCES]
     ]
-    if not citations:
+    if not citations and not done:
         return data, quality
-    relationships = []
+    from .budget import BudgetExceeded
+
+    relationships, stopped, completed = [], None, {}
     for citation in citations:
         if len(relationships) >= MAX_RELATIONSHIPS:
             break
-        relationships.extend(extract_relationships(app_id, config, citation))
-    relationships = relationships[:MAX_RELATIONSHIPS]
+        try:
+            found = extract_relationships(app_id, config, citation)
+        except BudgetExceeded as failure:
+            # What was extracted is paid for: keep it and say why the rest is not.
+            if not relationships and not done:
+                raise
+            stopped = " ".join(failure.messages)
+            break
+        room = MAX_RELATIONSHIPS - len(relationships)
+        relationships.extend(found[:room])
+        if len(found) <= room:
+            # Only a source whose answer was kept whole is reused next time.
+            completed[citation["id"]] = citation["digest"]
     sources = {c["id"]: c for c in citations}
     source_entries = {str(e.pk): e for e in entries}
     nodes = {n["id"]: n for n in data["nodes"]}
+    nodes.update(reused_nodes)
+    data["edges"].extend(reused_edges)
     seen = set()
     accepted = rejected = untyped = 0
     for item in relationships:
@@ -220,6 +301,9 @@ def enrich_graph(app_id, config, entries, data, quality):
     data["nodes"] = list(nodes.values())
     merged = merge_entities(app_id, data)
     data["ontology"] = ONTOLOGY_VERSION
+    # Which sources this version has a complete extraction for, so the next AI
+    # run can reuse them rather than pay for them again.
+    data["ai_sources"] = {**done, **completed}
     quality.update(
         {
             "nodes": len(data["nodes"]),
@@ -230,6 +314,9 @@ def enrich_graph(app_id, config, entries, data, quality):
             "merged_entities": merged,
             "ontology": ONTOLOGY_VERSION,
             "semantic_sources": len(citations),
+            "reused_sources": len(done),
+            "reused_relationships": sum(1 for edge in reused_edges if edge.get("inferred")),
+            "pending_sources": max(len(pending) - len(completed), 0),
             "method": f"Markdown structure + {config.provider} / {config.model}",
             "semantic_accuracy": "Not measured; exact quote and entity presence validated.",
             "provider": config.provider,
@@ -244,6 +331,13 @@ def enrich_graph(app_id, config, entries, data, quality):
         f"{MAX_QUOTE_CHARACTERS} characters. "
         "Quotes are verified; relationship meaning still needs human review."
     )
+    if stopped:
+        quality["warnings"].append(f"Extraction stopped early. {stopped}")
+    if quality["pending_sources"]:
+        quality["warnings"].append(
+            f"{quality['pending_sources']} source(s) are not extracted yet; the next AI run "
+            "continues with them and reuses everything unchanged."
+        )
     if rejected:
         quality["warnings"].append(
             f"{rejected} unsupported or invalid AI relationship(s) were excluded"
@@ -378,10 +472,22 @@ def graph_citations(app_id, question, version=None, user=None):
 
     revision = snapshot_revision(app_id, version)
     graph = prepared(revision)
+    from . import rerank
+
     vector, model = question_vector(user, app_id, question)
-    return citations_from(
-        app_id, graph.data, revision.number, question, graph, vector=vector, model=model
+    wide = user is not None and rerank.configuration(app_id) is not None
+    found = citations_from(
+        app_id,
+        graph.data,
+        revision.number,
+        question,
+        graph,
+        vector=vector,
+        model=model,
+        limit=rerank.CANDIDATES if wide else 8,
+        viewer=user,
     )
+    return rerank.rerank(user, app_id, question, found, 8) if wide else found
 
 
 #: How far a question may walk along typed relationships from where it starts.
@@ -452,7 +558,9 @@ def walk(data, ranked):
     return reached
 
 
-def citations_from(app_id, data, number, question, ready=None, vector=None, model=None):
+def citations_from(
+    app_id, data, number, question, ready=None, vector=None, model=None, limit=8, viewer=None
+):
     """Verified citations for a question, from one graph's data.
 
     Separate from `graph_citations` so the benchmark can measure a draft before
@@ -463,6 +571,7 @@ def citations_from(app_id, data, number, question, ready=None, vector=None, mode
     """
     from .embeddings import fuse, nearest, relation_matrix
     from .graphs import sources_for
+    from .permissions import permitted
     from .ranking import query_terms, spread
 
     ready = ready or prepare(data)
@@ -499,7 +608,13 @@ def citations_from(app_id, data, number, question, ready=None, vector=None, mode
                     (edge, f"{start['label']} {edge['relation']} {end['label']}", 1, None)
                 )
     source_ids = [s["id"] for s in graph.data.get("sources", [])]
-    active = {str(e.pk): e for e in sources_for(app_id).filter(pk__in=source_ids)}
+    # Who is asking decides what may be cited, where a source system says so;
+    # no viewer sees only sources no system restricts (`permissions.py`).
+    active = {
+        str(e.pk): e
+        for e in sources_for(app_id).filter(pk__in=source_ids)
+        if permitted(e, viewer)
+    }
 
     def verified():
         seen = set()
@@ -532,4 +647,4 @@ def citations_from(app_id, data, number, question, ready=None, vector=None, mode
 
     # Eight citations, each source's best one before any source's second: eight
     # relationships from one document are one source shown eight times.
-    return spread(verified(), key=lambda citation: citation["id"], limit=8)
+    return spread(verified(), key=lambda citation: citation["id"], limit=limit)

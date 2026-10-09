@@ -48,6 +48,11 @@ allow_self_approval = true
 # applications belong to different teams.
 # connector_secret_directory = "/run/connector-secrets"
 
+# Only when more than one server process serves this instance. Each streamed
+# chat answer then holds a database lease, so Stop and "is this answer still
+# being written?" reach every process. One process (the default) needs nothing.
+# shared_streams = true
+
 [database]
 name = "digital_brain"
 user = "digital_brain_app"

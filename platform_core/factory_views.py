@@ -102,7 +102,7 @@ def plans(request, pk):
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
-            "tickets": ticket_choices(app),
+            "tickets": ticket_choices(app, viewer=request.user),
             "connectors": connectors,
             # The queue an analysis runs against defaults to the connector that
             # imported most recently - the one whose tickets are on screen -

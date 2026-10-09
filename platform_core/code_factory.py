@@ -964,9 +964,11 @@ def ticket_citation(run):
     if not run.ticket_url or run.ticket_body:
         return []
     entry = KnowledgeEntry.objects.filter(
-        application_id=run.application_id, source=run.ticket_url, active=True
-    ).first()
-    if entry is None:
+        application_id=run.application_id, source=run.ticket_url
+    ).answerable().first()
+    from .permissions import permitted
+
+    if entry is None or not permitted(entry, run.requested_by):
         return []
     _, description = fields_and_description(entry)
     excerpt = (description or entry.content)[:1500].rstrip()
@@ -997,8 +999,8 @@ def ticket_entry(run):
     if not run or not run.ticket_url or run.ticket_body:
         return None
     return KnowledgeEntry.objects.filter(
-        application_id=run.application_id, source=run.ticket_url, active=True
-    ).first()
+        application_id=run.application_id, source=run.ticket_url
+    ).answerable().first()
 
 
 def ticket_label(run):
@@ -1405,6 +1407,13 @@ def start_run(user, app_id, entry=None, connector=None, *, title="", body=""):
     app, _ = access(user, app_id, "code_factory", write=True)
     access(user, app_id, "knowledge")
     manual = entry is None
+    if entry is not None and entry.sensitivity == "restricted":
+        raise ValidationError("This ticket is restricted from AI use, so it cannot be analysed.")
+    from .permissions import permitted
+
+    if entry is not None and not permitted(entry, user):
+        # Reads as absent: the source system does not let this person open it.
+        raise ValidationError("That ticket is not available.")
     title, body = title.strip(), body.strip()
     if manual and not (title and body):
         raise ValidationError("A ticket needs a title and a description.")
@@ -1480,8 +1489,8 @@ def execute(run):
     # source would otherwise match any free-text note.
     entry = (
         KnowledgeEntry.objects.filter(
-            application_id=run.application_id, source=run.ticket_url, active=True
-        ).first()
+            application_id=run.application_id, source=run.ticket_url
+        ).answerable().first()
         if run.ticket_url and not run.ticket_body
         else None
     )
@@ -1659,7 +1668,7 @@ def process_next_run():
     return execute(run)
 
 
-def ticket_choices(app, connector=None):
+def ticket_choices(app, connector=None, viewer=None):
     """Imported tickets that could be analysed, newest first.
 
     A ticket is a KnowledgeEntry that came from a connector, which is what the
@@ -1667,13 +1676,14 @@ def ticket_choices(app, connector=None):
     too, but they are not something anyone raised.
     """
     from .models import KnowledgeEntry
+    from .permissions import only_permitted
 
-    entries = KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="")
+    entries = KnowledgeEntry.objects.filter(application=app).answerable().exclude(source="")
     if connector is not None:
         prefix = connector_prefix(connector)
         if prefix:
             entries = entries.filter(source__startswith=prefix)
-    return entries.order_by("-created_at")[:100]
+    return only_permitted(entries.order_by("-created_at")[:100], viewer)
 
 
 def connector_prefix(connector):

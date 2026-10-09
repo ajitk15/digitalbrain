@@ -30,6 +30,7 @@ from django.views.decorators.http import require_http_methods
 
 from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, MAX_RECORDS, kind_for
 from .models import Connector, KnowledgeEntry
+from .permissions import SUPPORTED, enforce
 from .services import audit, feature_enabled
 from .workbench import access, add_knowledge
 
@@ -151,9 +152,17 @@ def sync(user, connector_id, app_id):
             )
             if existing.filter(digest=digest).exists():
                 continue
+            previous = existing.values_list("access_principals", flat=True).first()
             # Prior revisions stay immutable for plan hashes and audit evidence.
             existing.update(active=False)
             entry = add_knowledge(user, app_id, record.title, content, source=record.url)
+            if locked.enforce_permissions:
+                # Closed until checked: who could open the last revision, or
+                # nobody, and checked again below.
+                KnowledgeEntry.objects.filter(pk=entry.pk).update(
+                    access_principals=previous if previous is not None else [],
+                    access_checked_at=None,
+                )
             if locked.kind == "servicenow" and locked.config.get("table") == "incident":
                 from .serviceops_triage import profile
 
@@ -174,6 +183,11 @@ def sync(user, connector_id, app_id):
                 "pruned": pruned,
             },
         )
+    # Who may open what: after the commit, because it asks the source system
+    # once per member and issue and must not hold the import's locks meanwhile.
+    from .permissions import check_after_sync
+
+    check_after_sync(locked, app, secret)
     if count or pruned:
         # After the commit, so a slow build never holds the import's locks.
         from .ops_graph import ensure_current
@@ -343,18 +357,26 @@ def connector_form(request, pk, connector_id=None):
             connector.config = config
             connector.sync_interval_minutes = schedule["interval"]
             connector.prune_missing = schedule["prune"]
+            was_enforcing = connector.enforce_permissions
+            connector.enforce_permissions = schedule["enforce"] and key in SUPPORTED
             try:
                 connector.full_clean(exclude=["created_by"])
                 connector.save()
             except ValidationError as failure:
                 messages.error(request, " ".join(failure.messages))
                 return redirect("connectors", pk=pk)
+            if connector.enforce_permissions != was_enforcing:
+                enforce(connector, app, connector.enforce_permissions)
             audit(
                 request.user,
                 "connector.saved",
                 connector.pk,
                 app.product.portfolio.organization,
-                details={"kind": key, "name": connector.name},
+                details={
+                    "kind": key,
+                    "name": connector.name,
+                    "enforce_permissions": connector.enforce_permissions,
+                },
             )
         messages.success(request, f"{connector.name} saved.")
         return redirect("connectors", pk=pk)
@@ -369,6 +391,7 @@ def connector_form(request, pk, connector_id=None):
             "connector": connector,
             "name_field": name_field,
             "schedule": schedule,
+            "permissions_supported": key in SUPPORTED,
             "secret_name": f"{key}_{app.pk}",
             "credential": bool(credential(app, key)),
             "location": credential_location(app, key),
@@ -391,12 +414,15 @@ def forms_schedule(request, connector):
         if interval not in dict(SYNC_INTERVALS):
             interval = 0
         prune_missing = request.POST.get("prune") == "on"
+        enforce = request.POST.get("enforce") == "on"
     else:
         interval = connector.sync_interval_minutes if connector else 0
         prune_missing = connector.prune_missing if connector else False
+        enforce = connector.enforce_permissions if connector else False
     return {
         "interval": interval,
         "prune": prune_missing,
+        "enforce": enforce,
         "choices": [
             {"value": value, "label": label, "selected": value == interval}
             for value, label in SYNC_INTERVALS

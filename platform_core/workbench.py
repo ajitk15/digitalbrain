@@ -16,6 +16,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import (
     Http404,
+    HttpResponse,
     HttpResponseNotAllowed,
     JsonResponse,
     StreamingHttpResponse,
@@ -59,7 +60,16 @@ class QuestionForm(forms.Form):
 
 @transaction.atomic
 def add_knowledge(user, app_id, title, content, source="", document=None):
+    from .sensitivity import RESTRICTED, STANDARD, scan
+
     app, _ = access(user, app_id, "knowledge", write=True)
+    # A restriction follows the record: the next import of the same ticket must
+    # not quietly make it usable again.
+    inherited = bool(source) and (
+        KnowledgeEntry.objects.filter(
+            application=app, source=source, sensitivity=RESTRICTED
+        ).exists()
+    )
     entry = KnowledgeEntry(
         application=app,
         author=user,
@@ -68,6 +78,8 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         source=source,
         document=document,
         digest=hashlib.sha256(content.encode()).hexdigest(),
+        personal_data=scan(f"{title}\n{content}"),
+        sensitivity=RESTRICTED if inherited else STANDARD,
     )
     entry.full_clean()
     entry.save()
@@ -114,7 +126,67 @@ def passage_counts(entry):
     return found
 
 
-def retrieve(app, question, user=None):
+#: Sources keyword search ranks per question.
+CANDIDATE_SOURCES = 100
+#: PostgreSQL's full-text expression - identical to the index migration 0073
+#: creates, or the planner will not use the index. The first 200,000 characters:
+#: a tsvector holds at most 1 MB, and a source past that is a log, not prose.
+FULL_TEXT = "to_tsvector('english', left(title || ' ' || content, 200000))"
+
+
+def full_text_query(question):
+    """A PostgreSQL tsquery for a question: each word as a prefix, any may match.
+
+    Built from `ranking.words`, which are letters, digits and nothing else, so
+    nothing in a question can become tsquery syntax.
+    """
+    from .ranking import term, words
+
+    needles = []
+    for word in list(dict.fromkeys(words(question)))[:20]:
+        needle = term(word) if word.startswith(term(word)) else word
+        if needle.isalnum():
+            needles.append(f"{needle}:*")
+    return " | ".join(needles)
+
+
+def candidate_sources(app, question):
+    """The sources keyword search ranks: the best 100 by full text on PostgreSQL.
+
+    On PostgreSQL the GIN index chooses them, ordered by its own rank, so a
+    library of thousands still offers the hundred most likely - the cap used
+    to be the first hundred that matched any word. SQLite keeps the substring
+    scan, which is what local development and the tests run.
+    """
+    from django.db import connection
+
+    from .ranking import term, words
+
+    entries = KnowledgeEntry.objects.filter(application=app).answerable()
+    if connection.vendor == "postgresql":
+        query = full_text_query(question)
+        if not query:
+            return []
+        return list(
+            entries.extra(
+                select={"text_rank": f"ts_rank({FULL_TEXT}, to_tsquery('english', %s))"},
+                select_params=[query],
+                where=[f"{FULL_TEXT} @@ to_tsquery('english', %s)"],
+                params=[query],
+                order_by=["-text_rank"],
+            )[:CANDIDATE_SOURCES]
+        )
+    # The database narrows by the term where it is a prefix of the word, so
+    # "checked" also finds "checks" and "requirements" finds "require";
+    # ranking compares terms throughout.
+    condition = Q()
+    for word in list(dict.fromkeys(words(question)))[:20]:
+        needle = term(word) if word.startswith(term(word)) else word
+        condition |= Q(content__icontains=needle) | Q(title__icontains=needle)
+    return list(entries.filter(condition)[:CANDIDATE_SOURCES])
+
+
+def retrieve(app, question, user=None, limit=5):
     """Up to five passages: word matches by BM25, fused with the nearest by meaning.
 
     Deterministic and lexical unless the application switched on search
@@ -125,7 +197,8 @@ def retrieve(app, question, user=None):
     """
     from .embeddings import digest as text_digest
     from .embeddings import fuse, nearest, passage_matrix, passage_text, question_vector
-    from .ranking import BM25, query_terms, spread, term, words
+    from .permissions import only_permitted, permitted
+    from .ranking import BM25, query_terms, spread
 
     query = query_terms(question)
     vector, model = question_vector(user, app.pk, question)
@@ -133,16 +206,7 @@ def retrieve(app, question, user=None):
         return []
     passages = []
     if query:
-        # The database narrows by the term where it is a prefix of the word, so
-        # "checked" also finds "checks" and "requirements" finds "require";
-        # ranking below compares terms throughout.
-        condition = Q()
-        for word in list(dict.fromkeys(words(question)))[:20]:
-            needle = term(word) if word.startswith(term(word)) else word
-            condition |= Q(content__icontains=needle) | Q(title__icontains=needle)
-        entries = KnowledgeEntry.objects.filter(application=app, active=True).filter(condition)[
-            :100
-        ]
+        entries = only_permitted(candidate_sources(app, question), user)
         passages = [
             (entry, offset)
             for entry in entries
@@ -155,13 +219,17 @@ def retrieve(app, question, user=None):
         live = {
             entry.pk: entry
             for entry in KnowledgeEntry.objects.filter(
-                application=app, active=True, pk__in={entry_id for entry_id, _, _ in hits}
-            )
+                application=app, pk__in={entry_id for entry_id, _, _ in hits}
+            ).answerable()
         }
         known = {(entry.pk, offset): position for position, (entry, offset) in enumerate(passages)}
         for entry_id, offset, key in hits:
             entry = live.get(entry_id)
-            if entry is None or text_digest(passage_text(entry, offset)) != key:
+            if (
+                entry is None
+                or not permitted(entry, user)
+                or text_digest(passage_text(entry, offset)) != key
+            ):
                 continue
             if (entry.pk, offset) not in known:
                 known[(entry.pk, offset)] = len(passages)
@@ -184,7 +252,7 @@ def retrieve(app, question, user=None):
     ranked = [
         (scores.get(position, 0.0), passages[position][0], texts[position]) for position in order
     ]
-    return spread(ranked, key=lambda item: item[1].pk, limit=5)
+    return spread(ranked, key=lambda item: item[1].pk, limit=limit)
 
 
 @login_required
@@ -212,12 +280,43 @@ def knowledge_detail(request, pk, entry_id):
     entry = get_object_or_404(KnowledgeEntry, pk=entry_id, application=app, active=True)
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
+        action = request.POST.get("action", "archive")
+        if action in {"restrict", "unrestrict"}:
+            from .sensitivity import RESTRICTED, STANDARD
+
+            # Anyone who may change knowledge may restrict; only an owner may
+            # lift it, the direction that hands the source back to a model.
+            if action == "unrestrict" and grant.role != "owner":
+                raise PermissionDenied
+            with transaction.atomic():
+                # Every revision of the record, so an older one that a
+                # published graph still points at is covered as well.
+                KnowledgeEntry.objects.filter(
+                    application=app,
+                    **({"source": entry.source} if entry.source else {"pk": entry.pk}),
+                ).update(sensitivity=RESTRICTED if action == "restrict" else STANDARD)
+                audit(
+                    request.user,
+                    f"knowledge.{action}ed",
+                    entry.pk,
+                    app.product.portfolio.organization,
+                )
+            messages.success(
+                request,
+                "Restricted: AI will no longer read or cite this source."
+                if action == "restrict"
+                else "AI may use this source again.",
+            )
+            return redirect("knowledge-detail", pk=pk, entry_id=entry.pk)
+        if action != "archive":
+            return HttpResponse("Unknown action.", status=400)
         with transaction.atomic():
             entry.active = False
             entry.save(update_fields=["active"])
             audit(request.user, "knowledge.archived", entry.pk, app.product.portfolio.organization)
         messages.success(request, "Source archived. New answers will exclude it.")
         return redirect("knowledge", pk=pk)
+    from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
     from .ticket_quality import parse as parse_ticket
 
@@ -248,6 +347,7 @@ def knowledge_detail(request, pk, entry_id):
             "ticket_description": description,
             "source_link": entry.source if entry.source.startswith(("https://", "http://")) else "",
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
+            "personal_data": personal_summary(entry.personal_data),
             "grant": grant,
         },
     )
@@ -297,6 +397,8 @@ def conversation_context(conversation, app, user, before=None):
             role="user", sequence__in=[answer.sequence - 1 for answer in answers]
         )
     }
+    from .permissions import permitted
+
     # Never resend excerpts/answers backed by a removed or changed source. Look up
     # only the cited sources rather than every source in the application.
     cited = {c.get("id") for answer in answers for c in answer.citations}
@@ -304,8 +406,10 @@ def conversation_context(conversation, app, user, before=None):
         {
             str(e.pk): e.digest
             for e in KnowledgeEntry.objects.filter(
-                application=app, active=True, pk__in=[c for c in cited if c]
-            ).only("id", "digest")
+                application=app, pk__in=[c for c in cited if c]
+            ).answerable().only("id", "digest", "access_principals")
+            # Nor anything its source system no longer lets this person open.
+            if permitted(e, user)
         }
         if cited
         else {}
@@ -567,10 +671,16 @@ def retrieval_query(question, history):
 
 
 def lexical_citations(app, question, user=None):
-    return [
+    from . import rerank
+
+    wide = user is not None and rerank.configuration(app.pk) is not None
+    found = [
         {"id": str(entry.pk), "title": entry.title, "digest": entry.digest, "excerpt": passage}
-        for _, entry, passage in retrieve(app, question, user)
+        for _, entry, passage in retrieve(
+            app, question, user, limit=rerank.CANDIDATES if wide else 5
+        )
     ]
+    return rerank.rerank(user, app.pk, question, found, 5) if wide else found
 
 
 def answer_question(
@@ -669,7 +779,7 @@ def chat(request, pk):
         application=app, purpose="graph_retrieval", enabled=True
     ).exists()
     graph_versions = graph_version_choices(app.pk) if graph_ai_enabled else []
-    from .graphs import published_revision, revision_drift
+    from .graphs import published_revision, revision_added, revision_drift
 
     published = published_revision(app.pk)
     published_graph = published.number if published else None
@@ -691,6 +801,7 @@ def chat(request, pk):
     # How far that revision has moved from its sources. Shown, never
     # enforced: reproducibility is why answers come from a snapshot.
     published_changed, published_total = revision_drift(answering, app.pk) if answering else (0, 0)
+    published_added = revision_added(answering, app.pk) if answering else 0
     # Mode is a property of the conversation. A new conversation may be started in a
     # chosen mode; sending a message can never change it, so a paid mode is never
     # entered by accident.
@@ -796,7 +907,7 @@ def chat(request, pk):
         # producing: its request was lost, or the server restarted mid-answer.
         # chat.js resumes it; without script, Regenerate is offered.
         message.stranded = (
-            message.status == "streaming" and streaming.get_session(message.pk) is None
+            message.status == "streaming" and not streaming.is_live(message.pk)
         )
     return render(
         request,
@@ -818,6 +929,7 @@ def chat(request, pk):
             "retention_days": retention_days(app),
             "published_graph": published_graph,
             "published_changed": published_changed,
+            "published_added": published_added,
             "published_total": published_total,
             # A fresh key per rendered composer; chat.js makes a new one after
             # each send it completes without reloading the page.
@@ -1287,7 +1399,7 @@ def chat_regenerate(request, pk, message_id):
     )
     if not question:
         raise Http404
-    if answer.status == "streaming" and streaming.get_session(answer.pk) is not None:
+    if answer.status == "streaming" and streaming.is_live(answer.pk):
         # Still being written by a live stream: replacing it now would race the
         # worker that owns the row.
         messages.info(request, "That answer is still being written. Wait for it to finish.")

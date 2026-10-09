@@ -299,13 +299,21 @@ def merge_entities(app_id, data):
         if len(members) < 2:
             continue
         identity = hashlib.sha256(f"{app_id}:entity:{kind}:{key}".encode()).hexdigest()[:24]
-        labels = sorted({m["label"] for m in members})
+        # A member may itself be a node merged by an earlier version and carried
+        # forward by an incremental run: keep the names and sources it had.
+        labels = sorted(
+            {m["label"] for m in members}
+            | {alias for m in members for alias in m.get("aliases", [])}
+        )
         # The name most sources used, then the shortest: a stable choice.
         label = min(
-            labels,
+            {m["label"] for m in members},
             key=lambda text: (-sum(m["label"] == text for m in members), len(text), text),
         )
-        sources = sorted({m["knowledge_id"] for m in members if m.get("knowledge_id")})
+        sources = sorted(
+            {m["knowledge_id"] for m in members if m.get("knowledge_id")}
+            | {source for m in members for source in m.get("knowledge_ids", [])}
+        )
         survivor = {
             "id": identity,
             "kind": "entity",
