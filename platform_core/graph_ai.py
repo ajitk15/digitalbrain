@@ -498,8 +498,9 @@ WALK_SEEDS = 5
 #: A node with more typed relationships than this is a hub: walking through it
 #: would connect everything to everything, so the walk stops there.
 MAX_FANOUT = 25
-#: Of the eight citations, how many a walk may claim ahead of plain matches.
-PATH_SLOTS = 3
+#: Walked relationships considered per question. They come after every direct
+#: match, so they only take a place a direct match left empty.
+MAX_WALKED = 6
 
 
 def walk(data, ranked):
@@ -594,10 +595,13 @@ def citations_from(
     # question about a ticket can reach the requirement it breaks and the code
     # that implements it without either sharing a word with the question.
     paths = walk(graph.data, ranked)
-    ordered = [(edge, text, 0, None) for edge, text in ranked]
-    # The best direct matches still come first; the walk's nearest finds come
-    # next, ahead of weaker direct matches, and only a few of them.
-    ordered = ordered[:PATH_SLOTS] + paths[: PATH_SLOTS * 2] + ordered[PATH_SLOTS:]
+    # Every direct match first, then the walk's nearest finds. The walk used to
+    # take places ahead of weaker direct matches; measured on the CarePath
+    # benchmark with an AI-enriched version, that pushed three expected sources
+    # down and one out of the eight (14/16, MRR 0.678, against 15/16 without).
+    # After the direct matches it still reaches a source no word leads to, when
+    # the direct matches leave room, and displaces nothing.
+    ordered = [(edge, text, 0, None) for edge, text in ranked] + paths[:MAX_WALKED]
     # One-hop graph expansion from the highest-ranked relationship endpoints.
     seeds = {edge[k] for edge, _ in ranked[:3] for k in ("source", "target")}
     for edge in graph.data.get("edges", []):

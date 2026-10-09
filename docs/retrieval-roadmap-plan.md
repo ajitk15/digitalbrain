@@ -101,9 +101,16 @@ best-ranked AI relationships, along other AI relationships.
   "Status: Done" is shared by hundreds of records, and walking through it connects
   everything to everything. The existing one-hop structural expansion is unchanged.
 - A hub with more than `MAX_FANOUT = 25` typed relationships is not walked through.
-- Walked finds take at most `PATH_SLOTS = 3` places ahead of weaker direct matches (hop 1
-  before hop 2), carry `hops`, and say "Reached by: CARE-425 affects Referrals API -> ...".
-  Every one is verified exactly as before, so a further hop can only add verified evidence.
+- Walked finds (at most `MAX_WALKED = 6`, hop 1 before hop 2) come after every direct
+  match, carry `hops`, and say "Reached by: CARE-425 affects Referrals API -> ...". Every
+  one is verified exactly as before, so a further hop can only add verified evidence.
+- Corrected 2026-10-10 after the live test. The first version let walked finds take up to
+  three places ahead of weaker direct matches. On the first AI-enriched CarePath versions
+  that pushed three expected sources down and one out of the eight: v4 14/16, MRR 0.678.
+  After the direct matches instead: v2 15/16 (0.693), v3 15/16 (0.692), v4 15/16 (0.691).
+  The walk now fills only places a direct match left empty; the benchmark's single-document
+  questions cannot show its gain, relationship questions ("which requirement does CARE-425
+  break?") are where it adds a source.
 - Measured: CarePathDev v4 (structural only) unchanged at 15/16 found, top-3 10/16,
   MRR 0.61 - no regression. The gain needs an AI-enriched version; the test fixture shows
   CARE-425 → Referrals API → referrals.py ← NFR-03 cited with no word shared with the
