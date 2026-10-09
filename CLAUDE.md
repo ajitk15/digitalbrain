@@ -447,6 +447,56 @@ a failed indexing step warns on the version and keeps the relationships. Search 
 in-process numpy over unit float32 - pgvector was deliberately left out until a library
 outgrows memory, so the production database did not change.
 
+**A monthly AI budget is checked before every paid call** (`budget.py`, `AIBudget`, owner
+sets it in AI settings; no row means no cap). The three choke points are `ai.invoke_ai`,
+`ai.chat_configuration` and `embeddings.embed` - a new paid path must call `budget.check`
+too. It caps *starting* spend from recorded receipts at the entered rates: a call in flight
+is never cut off, and graph extraction that hits the cap keeps what it already paid for.
+
+**A restricted source is never read or cited by AI** (`sensitivity.py`). Every path that
+hands a source to a model or verifies a citation goes through
+`KnowledgeEntry.objects.answerable()` (active and not restricted) - graph builds via
+`graphs.sources_for`, keyword and vector search, the chat tools, ServiceOps' record layers,
+Code Factory intake and history resend. Because citations verify against `sources_for`,
+restricting takes a source out of already-published versions at once. People with access
+still read it. Personal data (`sensitivity.scan`) is only a suggestion on the source page;
+a person decides. Anyone who may change knowledge can restrict; only an owner lifts it; a
+re-import of the same record stays restricted.
+
+**AI graph runs are incremental** (`graph_ai.reusable`). A source whose id and digest match
+the latest AI version under the same ontology keeps its relationships at no cost; only new
+or changed sources go to the model, up to `MAX_EXTRACTION_SOURCES` a run.
+`data["ai_sources"]` records which sources have a complete extraction (one cut short by
+`MAX_RELATIONSHIPS` is asked again). **Automatic refresh is the one standing request**
+(`graphs.arm_auto_refresh`): owner-only and off by default, it turns a source change into
+an incremental AI run charged to whoever switched it on, re-checking their grant first -
+losing it stops the refresh and says why - like a connector schedule. It produces drafts;
+the publish gate is untouched.
+
+**Answer reranking is opt-in and can only reorder** (`rerank.py`, purpose `reranking`,
+seeded off). It sees verified citations and returns their numbers; anything else is
+dropped and any failure keeps the original order. Measure it first with
+`manage.py benchmark --rerank --as <user>` - the one benchmark run that spends.
+
+**Keyword candidates come from full text on PostgreSQL** (`workbench.candidate_sources`,
+GIN index from migration 0073, the expression must match `FULL_TEXT`); SQLite keeps the
+substring scan. Its test skips outside PostgreSQL and says so.
+
+**Shared streams** (`shared_streams = true`, `StreamLease`) let Stop and `is_live` reach
+every process when there is more than one. Only those two cross processes - a stream and
+its worker always share one - so a polled lease row, written by a keeper thread and never
+by the SSE generator, replaces the Redis the roadmap assumed.
+
+**Source-system permissions on answers** (`permissions.py`, connector "Enforce source
+permissions", Jira only). Each record from an enforcing connector carries the platform
+users Jira lets browse it (`access_principals`); every answer path filters by the asker
+with `permissions.permitted`, and **fails closed**: unchecked records, members with no
+matched account, and callers with no user see nothing restricted. Members are matched by
+email (`ExternalIdentity`) or set by `manage.py link_identity`. The benchmark measures as
+`EVERYONE` because it answers nobody. The Sources list and graph explorer still show
+titles to members - this governs answers. ServiceNow and SharePoint are not supported:
+both need delegated per-user access.
+
 **The operations layer is the one exception, and it is deliberate.** The operations layer
 (incidents, changes and what connects them) is live, not publish-gated: it is rebuilt by rules
 from imported records whenever they change, and every edge is re-verified against its records

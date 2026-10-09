@@ -62,6 +62,12 @@ PURPOSE_NOTES = {
     ),
     "conversation_title": "Names each conversation from its first exchange. A short, cheap call.",
     "plan_drafting": "Drafts Code Factory change plans from a ticket and the knowledge graph.",
+    "reranking": (
+        "Reorders the twenty best verified citations so the most useful come first, for graph "
+        "answers, Code Factory evidence and keyword search. A paid call on every question - "
+        "switch it on only after `manage.py benchmark --rerank` shows it helps. It can only "
+        "reorder evidence that was already verified, never add to it."
+    ),
     "embeddings": (
         "Finds where to start looking by meaning, so a question worded differently from the "
         "source still reaches it. Relationships and passages are embedded when an AI graph run "

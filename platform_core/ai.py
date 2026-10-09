@@ -119,6 +119,46 @@ class AIForm(forms.ModelForm):
         }
 
 
+class BudgetForm(forms.Form):
+    monthly_limit = forms.DecimalField(
+        label="Monthly budget (USD)",
+        required=False,
+        min_value=0,
+        max_digits=12,
+        decimal_places=2,
+        help_text="Leave blank for no cap. Every paid call is refused once this month's "
+        "recorded spend reaches it; it resets on the 1st (UTC).",
+    )
+
+
+def save_budget(request, app):
+    """The budget half of AI settings: set, change or remove the cap."""
+    from .models import AIBudget
+
+    form = BudgetForm(request.POST, prefix="budget")
+    if not form.is_valid():
+        return form
+    limit = form.cleaned_data["monthly_limit"]
+    with transaction.atomic():
+        if limit is None:
+            AIBudget.objects.filter(application=app).delete()
+        else:
+            AIBudget.objects.update_or_create(
+                application=app, defaults={"monthly_limit": limit, "set_by": request.user}
+            )
+        audit(
+            request.user,
+            "ai.budget_set",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"monthly_limit": str(limit) if limit is not None else None},
+        )
+    messages.success(
+        request, "Monthly budget removed." if limit is None else f"Monthly budget set to ${limit}."
+    )
+    return None
+
+
 def provider_credential(config, app):
     """The mounted credential for this application and provider.
 
@@ -154,8 +194,9 @@ DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 #: out deliberately: enabling it only makes enrichment *available* - a paid call
 #: still needs someone to request an enriched run and name a model (see
 #: `graphs.requested_configuration`), and the structural rebuild never makes one. An
-#: owner can still switch it off in AI settings. Kept as the mechanism.
-SEEDED_DISABLED = set()
+#: owner can still switch it off in AI settings. Reranking is here: it is a
+#: paid call on every question, worth it only once the benchmark says so.
+SEEDED_DISABLED = {"reranking"}
 
 
 def configured_providers():
@@ -253,6 +294,10 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         access(user, app_id, "code_factory", write=True)
     elif purpose == "serviceops_triage":
         access(user, app_id, "service_ops", write=True)
+    elif purpose == "reranking":
+        # Reorders evidence already verified for this user; knowledge access,
+        # checked above, is what reading it needs.
+        pass
     else:
         raise ValidationError("Unsupported AI purpose.")
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
@@ -262,6 +307,9 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         )
     if not citations and purpose not in {"chat", "conversation_title", "plan_drafting"}:
         return "No matching evidence was found. No AI request was made."
+    from .budget import check as check_budget
+
+    check_budget(app.pk)
     token = provider_credential(config, app)
     adapter = completion
     if config.provider == "claude":
@@ -404,6 +452,9 @@ def chat_configuration(user, app_id, mode="ai"):
         )
     if config.provider not in {"openai", "claude"}:
         raise ValidationError("Unsupported AI provider.")
+    from .budget import check as check_budget
+
+    check_budget(app.pk)
     token = provider_credential(config, app)
     return app, config, token
 
@@ -496,8 +547,19 @@ def ai_settings(request, pk):
     app, grant = application_for(request.user, pk)
     if grant.role != "owner":
         raise PermissionDenied
+    from .budget import status as budget_status
+    from .models import AIBudget
+
     selected_purpose = request.POST.get("purpose")
-    if request.method == "POST" and selected_purpose not in dict(AI_PURPOSES):
+    existing = AIBudget.objects.filter(application=app).first()
+    budget_form = BudgetForm(
+        prefix="budget", initial={"monthly_limit": existing.monthly_limit if existing else None}
+    )
+    if request.method == "POST" and selected_purpose == "budget":
+        budget_form = save_budget(request, app)
+        if budget_form is None:
+            return redirect("ai-settings", pk=pk)
+    elif request.method == "POST" and selected_purpose not in dict(AI_PURPOSES):
         raise PermissionDenied("Unknown AI purpose.")
     sections = []
     for purpose, label in AI_PURPOSES:
@@ -571,6 +633,8 @@ def ai_settings(request, pk):
         {
             "application": app,
             "sections": sections,
+            "budget_form": budget_form,
+            "budget": budget_status(app.pk),
             "price_rows": price_reference(),
             "pricing_note": PRICING_NOTE,
             "openai_secret": f"openai_{app.pk}",

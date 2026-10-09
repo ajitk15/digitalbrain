@@ -343,7 +343,19 @@ class Document(models.Model):
         indexes = [models.Index(fields=["application", "created_at"])]
 
 
+class KnowledgeEntryQuerySet(models.QuerySet):
+    def answerable(self):
+        """Active sources AI may read and cite: not archived, not restricted.
+
+        Every path that hands a source to a model, or verifies a citation,
+        starts here. See `sensitivity.py`.
+        """
+        return self.filter(active=True).exclude(sensitivity="restricted")
+
+
 class KnowledgeEntry(models.Model):
+    objects = KnowledgeEntryQuerySet.as_manager()
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.PROTECT)
     author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
@@ -353,6 +365,21 @@ class KnowledgeEntry(models.Model):
     source = models.CharField(max_length=300, blank=True)
     digest = models.CharField(max_length=64)
     active = models.BooleanField(default=True)
+    #: "restricted" keeps the source out of everything AI reads and cites.
+    sensitivity = models.CharField(
+        max_length=12,
+        choices=[("standard", "Standard"), ("restricted", "Restricted - never used by AI")],
+        default="standard",
+    )
+    #: What `sensitivity.scan` found when the source was added: {kind: count}.
+    #: A suggestion for a person, never a label by itself.
+    personal_data = models.JSONField(default=dict, blank=True)
+    #: Who the source system lets open this record, as platform user ids. None
+    #: means its system is not checked and every member may see it in answers;
+    #: a list - empty until the first check - limits answers to those users.
+    #: See `permissions.py`.
+    access_principals = models.JSONField(null=True, blank=True)
+    access_checked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1460,6 +1487,9 @@ class Connector(models.Model):
     #: in the last 30 days" - absence means nothing of the sort, which is why the
     #: owner has to state that their filter is complete.
     prune_missing = models.BooleanField(default=False)
+    #: Answers cite a record only for members the source system lets open it.
+    #: Opt-in; Jira only for now. See `permissions.py`.
+    enforce_permissions = models.BooleanField(default=False)
     # blank=True as well as null=True: a connector that has never run has no
     # date, and full_clean refuses a null in a field that is not also blank -
     # which made every new connector unsaveable through the form.
@@ -1501,6 +1531,7 @@ AI_PURPOSES = [
     ("graph_retrieval", "Graph retrieval"),
     ("conversation_title", "Conversation titles"),
     ("embeddings", "Search embeddings"),
+    ("reranking", "Answer reranking"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -1597,6 +1628,19 @@ class KnowledgeGraph(models.Model):
     # Why the last run failed, in the sanitized wording the user may see. Kept so
     # the page can say what to do instead of only that something went wrong.
     failure_reason = models.TextField(blank=True)
+    #: Who asked for AI relationships to be kept current, and pays for it. When
+    #: set, a change to the sources queues an incremental AI run as this person,
+    #: re-checking their grant first - revoking it stops the refresh, with no
+    #: code that knows about refreshes. Empty means off, the default.
+    auto_refresh_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    #: Why automatic refresh last stopped by itself, for the owner to read.
+    auto_refresh_note = models.CharField(max_length=300, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 
@@ -1735,3 +1779,63 @@ class Embedding(models.Model):
             )
         ]
         indexes = [models.Index(fields=["application", "model", "dimensions", "kind"])]
+
+
+class AIBudget(models.Model):
+    """An application's monthly cap on recorded AI spend. No row means no cap.
+
+    Checked by `budget.check` before every paid call; see `budget.py` for what
+    it guarantees and what it does not.
+    """
+
+    application = models.OneToOneField(Application, on_delete=models.CASCADE)
+    monthly_limit = models.DecimalField(max_digits=12, decimal_places=2)
+    set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(monthly_limit__gte=0), name="nonnegative_ai_budget"
+            )
+        ]
+
+
+class StreamLease(models.Model):
+    """A chat answer being streamed, visible to every server process.
+
+    Only written when `settings.SHARED_STREAMS` is on. The process streaming the
+    answer renews `heartbeat_at`; any process may set `stop_requested`, which
+    the streaming process polls. A lease whose heartbeat has gone quiet belongs
+    to a process that died, and is treated as gone.
+    """
+
+    message = models.OneToOneField("ChatMessage", primary_key=True, on_delete=models.CASCADE)
+    owner = models.CharField(max_length=64)
+    heartbeat_at = models.DateTimeField()
+    stop_requested = models.BooleanField(default=False)
+
+
+class ExternalIdentity(models.Model):
+    """Which account a platform user is in one external system.
+
+    Found by email the first time a permission check needs it, or set by an
+    operator (`manage.py link_identity`) where the system hides email
+    addresses. One per user, system and site.
+    """
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    system = models.CharField(max_length=20)
+    site = models.CharField(max_length=200)
+    #: The system's own id: a Jira Cloud accountId, a Data Center username. Empty
+    #: when the lookup found nobody, so the miss is not repeated every sync.
+    account = models.CharField(max_length=200, blank=True)
+    method = models.CharField(max_length=8, choices=[("email", "By email"), ("manual", "Set")])
+    resolved_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "system", "site"], name="unique_identity")
+        ]

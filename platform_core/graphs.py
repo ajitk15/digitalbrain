@@ -32,7 +32,10 @@ MAX_SOURCES = 100
 
 
 def sources_for(app_id):
-    return KnowledgeEntry.objects.filter(application_id=app_id, active=True).order_by("id")
+    # Answerable, not just active: a restricted source is never built into a
+    # graph, and every citation is verified against this, so restricting one
+    # also takes it out of published versions at once.
+    return KnowledgeEntry.objects.filter(application_id=app_id).answerable().order_by("id")
 
 
 def fingerprint(app_id):
@@ -248,9 +251,7 @@ def rebuild(app_id):
     if config is None and graph.requested_model and not requested:
         # A stale request from a failed attempt: clear it so no later rebuild
         # picks it up, and leave this one structural.
-        KnowledgeGraph.objects.filter(pk=graph.pk).update(
-            requested_provider="", requested_model=""
-        )
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(requested_provider="", requested_model="")
     if config and entries:
         from .graph_ai import enrich_graph
 
@@ -407,9 +408,7 @@ def process_next_graph():
         # Nothing is rebuilt while intake is still running. Waiting for the
         # whole batch rather than for each file is what keeps one import to one
         # version instead of one version per document.
-        if Document.objects.filter(
-            application_id=app_id, status__in=Document.IN_FLIGHT
-        ).exists():
+        if Document.objects.filter(application_id=app_id, status__in=Document.IN_FLIGHT).exists():
             continue
         graph = KnowledgeGraph.objects.filter(application_id=app_id).first()
         current_fingerprint = fingerprint(app_id)
@@ -423,6 +422,13 @@ def process_next_graph():
         ):
             continue
         if graph is None or graph.fingerprint != current_fingerprint or graph.status != "ready":
+            if (
+                graph
+                and graph.auto_refresh_by_id
+                and graph.fingerprint != current_fingerprint
+                and graph.status in {"ready", "failed"}
+            ):
+                arm_auto_refresh(app, graph)
             try:
                 rebuild(app_id)
             except Exception:
@@ -430,6 +436,98 @@ def process_next_graph():
                 raise
             return True
     return False
+
+
+def arm_auto_refresh(app, graph):
+    """Turn a source change into an incremental AI run, as whoever switched it on.
+
+    A deliberate trade, like a connector's schedule: an owner's standing
+    request replaces a button press. What keeps it bounded: it runs only when
+    the sources changed, extraction is incremental so only changed sources are
+    paid for, the monthly budget applies, and the person is re-checked here -
+    someone who can no longer change this application's knowledge stops it,
+    and the reason is recorded. The result is still a draft: nothing reaches
+    an answer until somebody publishes it.
+    """
+    from django.http import Http404
+
+    user = graph.auto_refresh_by
+    config = AIConfiguration.objects.filter(
+        application=app, purpose="graph_generation", enabled=True
+    ).first()
+    reason = ""
+    if config is None or not config.model:
+        reason = "Graph generation is switched off in AI settings."
+    else:
+        try:
+            if not user.is_active:
+                raise PermissionDenied
+            access(user, app.pk, "knowledge", write=True)
+        except (PermissionDenied, Http404):
+            reason = f"{user.username} may no longer change this application's knowledge."
+    if reason:
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(
+            auto_refresh_by=None, auto_refresh_note=f"Automatic refresh stopped: {reason}"
+        )
+        return False
+    armed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
+        status="queued",
+        fingerprint="",
+        stage="Queued (automatic refresh)",
+        started_at=timezone.now(),
+        failure_reason="",
+        requested_provider=config.provider,
+        requested_model=config.model,
+        requested_by=user,
+    )
+    if armed:
+        audit(
+            user,
+            "graph.generation_requested",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"provider": config.provider, "model": config.model, "automatic": True},
+        )
+    return bool(armed)
+
+
+def set_auto_refresh(request, app, pk):
+    """The owner's switch for `arm_auto_refresh`. Off clears who pays."""
+    graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
+    enabled = request.POST.get("enabled") == "on"
+    if (
+        enabled
+        and not AIConfiguration.objects.filter(
+            application=app, purpose="graph_generation", enabled=True
+        ).exists()
+    ):
+        messages.error(request, "Enable Graph generation in AI settings first.")
+        return redirect("graph-generate", pk=pk)
+    KnowledgeGraph.objects.filter(pk=graph.pk).update(
+        auto_refresh_by=request.user if enabled else None, auto_refresh_note=""
+    )
+    audit(
+        request.user,
+        "graph.auto_refresh_on" if enabled else "graph.auto_refresh_off",
+        app.pk,
+        app.product.portfolio.organization,
+    )
+    messages.success(
+        request,
+        "AI relationships will be kept current as sources change, charged to you. "
+        "New versions are still drafts until published."
+        if enabled
+        else "Automatic AI refresh is off.",
+    )
+    return redirect("graph", pk=pk)
+
+
+def revision_added(revision, app_id):
+    """Sources added since this revision was saved: `revision_drift`'s blind spot."""
+    recorded = {source["id"] for source in revision.data.get("sources", [])}
+    return sum(
+        1 for pk in sources_for(app_id).values_list("id", flat=True) if str(pk) not in recorded
+    )
 
 
 def revision_drift(revision, app_id):
@@ -580,12 +678,20 @@ def graph_generate(request, pk):
         raise PermissionDenied("Only an owner or contributor may generate a graph.")
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
+        if request.POST.get("action") == "auto_refresh":
+            # Owner-only: it commits the application to spending on its own.
+            if grant.role != "owner":
+                raise PermissionDenied("Only an owner may switch automatic refresh.")
+            return set_auto_refresh(request, app, pk)
         return queue_generation(request, app, pk)
+    graph = KnowledgeGraph.objects.filter(application=app).select_related("auto_refresh_by").first()
     return render(
         request,
         "graph_generate.html",
         {
             "application": app,
+            "grant": grant,
+            "graph": graph,
             "model_choices": MODEL_CHOICES,
             "has_versions": GraphRevision.objects.filter(application=app).exists(),
             "graph_ai_configured": AIConfiguration.objects.filter(
@@ -632,9 +738,7 @@ def graph_view(request, pk):
             return redirect("graph", pk=pk)
         target = KnowledgeGraph.objects.filter(application=app, status__in=["failed", "building"])
         if target.filter(status="building").exists():
-            target = target.filter(
-                updated_at__lt=timezone.now() - timedelta(minutes=STALL_MINUTES)
-            )
+            target = target.filter(updated_at__lt=timezone.now() - timedelta(minutes=STALL_MINUTES))
         queued = target.update(status="queued", fingerprint="", stage="Queued")
         messages.success(
             request,
@@ -708,6 +812,7 @@ def graph_view(request, pk):
     # Drift on the revision that is actually answering. Display only - the
     # answer still comes from the snapshot, which is the point of publishing.
     published_changed, published_total = revision_drift(published, pk) if published else (0, 0)
+    published_added = revision_added(published, pk) if published else 0
     # The Sources rail reuses the documents screen's own gating rather than
     # reimplementing it, so one set of rules governs both places.
     from .documents import LinkForm, intake_enabled
@@ -723,9 +828,7 @@ def graph_view(request, pk):
         .exclude(status="deleted")
         .order_by("-created_at")[:12]
     )
-    document_total = (
-        Document.objects.filter(application=app).exclude(status="deleted").count()
-    )
+    document_total = Document.objects.filter(application=app).exclude(status="deleted").count()
     # A connector import is a source with no Document behind it, so the rail's
     # own list can never be the source count. Counted rather than subtracted:
     # a document whose conversion failed has no entry either, so the two
@@ -750,9 +853,9 @@ def graph_view(request, pk):
                 graph_themes = node_themes(graph.data)
             except Exception:
                 logger.warning("graph_themes_failed", extra={"event": "graph_themes_failed"})
-    versions = Paginator(
-        GraphRevision.objects.filter(application=app).defer("data"), 20
-    ).get_page(request.GET.get("page"))
+    versions = Paginator(GraphRevision.objects.filter(application=app).defer("data"), 20).get_page(
+        request.GET.get("page")
+    )
     if tab == "versions":
         # One query for the page's scores, not one per row.
         from .benchmark import latest_runs
@@ -777,6 +880,7 @@ def graph_view(request, pk):
             "published": published,
             "latest_revision": latest_revision,
             "published_changed": published_changed,
+            "published_added": published_added,
             "published_total": published_total,
             "is_published": bool(selected and selected.published_at),
             "model_choices": MODEL_CHOICES,

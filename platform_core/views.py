@@ -693,6 +693,8 @@ def usage(request, pk):
     if not feature_enabled("usage_reports", app):
         # Same reasoning as chat_settings above: a disabled feature is 403.
         raise PermissionDenied("This feature is disabled.")
+    from .budget import status as budget_status
+
     records = AIUsage.objects.filter(application=app)
     totals = records.values("currency", "estimated").annotate(
         amount=Sum("amount"),
@@ -706,6 +708,7 @@ def usage(request, pk):
         {
             "application": app,
             "totals": totals,
+            "budget": budget_status(app.pk),
             "page": Paginator(records, 30).get_page(request.GET.get("page")),
         },
     )

@@ -38,6 +38,7 @@ def load_config():
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
+        "shared_streams",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -45,6 +46,8 @@ def load_config():
         raise ImproperlyConfigured("mode must be development or production.")
     if type(config.get("scan_documents", False)) is not bool:
         raise ImproperlyConfigured("scan_documents must be a boolean.")
+    if type(config.get("shared_streams", False)) is not bool:
+        raise ImproperlyConfigured("shared_streams must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("allow_self_approval", False)) is not bool:

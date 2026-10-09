@@ -1,10 +1,17 @@
 """Server-sent event plumbing for streamed chat answers.
 
-PROCESS-LOCAL BY DESIGN. The session registry is module state, so a stop request
+PROCESS-LOCAL BY DEFAULT. The session registry is module state, so a stop request
 only reaches a stream started by the same process. `scripts/serve.py` runs one
-waitress process, which is what makes this correct today. Running multiple worker
-processes would require a shared cancellation channel (a polled database column
-or an external broker) before `stop` could be trusted.
+waitress process, which is what makes that correct.
+
+More than one process sets `shared_streams = true`, and every stream also holds
+a `StreamLease` row: the streaming process renews it and polls it for a Stop
+another process wrote, and any process can ask whether an answer is still being
+written (`is_live`). A polled database column rather than Redis: an answer and
+its stream always live in the same process - the stream request starts the
+worker - so only "stop" and "is it live?" cross processes, and that does not
+need a broker. The lease is written by a keeper thread, never by the SSE
+generator, which keeps the no-ORM rule below.
 
 Division of labour, which the rest of the chat code depends on:
 
@@ -15,10 +22,17 @@ Division of labour, which the rest of the chat code depends on:
 """
 
 import json
+import logging
+import os
 import queue
+import socket
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
+from datetime import timedelta
+
+logger = logging.getLogger(__name__)
 
 HEARTBEAT_SECONDS = 10
 MAX_STREAM_SECONDS = 180
@@ -32,6 +46,13 @@ SESSION_TTL_SECONDS = 600
 
 #: Pushed by the worker to mark the end of the event stream.
 END_OF_STREAM = object()
+
+#: Shared mode: how often the streaming process renews its lease and looks for
+#: a Stop written by another process, and how long a silent lease stays live.
+LEASE_POLL_SECONDS = 2
+LEASE_STALE_SECONDS = 30
+#: This process, as a lease names it.
+PROCESS = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
 
 
 class StreamCapacityError(RuntimeError):
@@ -71,17 +92,25 @@ _lock = threading.Lock()
 
 def _sweep(now):
     stale = [
-        key
-        for key, session in _sessions.items()
-        if now - session.started_at > SESSION_TTL_SECONDS
+        key for key, session in _sessions.items() if now - session.started_at > SESSION_TTL_SECONDS
     ]
     for key in stale:
         _sessions[key].cancel.set()
         del _sessions[key]
 
 
+def shared():
+    from django.conf import settings
+
+    return bool(getattr(settings, "SHARED_STREAMS", False))
+
+
 def open_session(message_id):
-    """Register a stream, refusing to start one when the process is saturated."""
+    """Register a stream, refusing to start one when the process is saturated.
+
+    Shared, it also refuses an answer another process is streaming: a second
+    worker for the same answer would be a second paid call.
+    """
     key = str(message_id)
     now = time.monotonic()
     with _lock:
@@ -92,7 +121,14 @@ def open_session(message_id):
             raise StreamCapacityError("Too many answers are streaming right now.")
         session = StreamSession(message_id=key)
         _sessions[key] = session
-        return session
+    if shared():
+        try:
+            claim_lease(key)
+        except StreamCapacityError:
+            close_session(key)
+            raise
+        start_keeper(session)
+    return session
 
 
 def get_session(message_id):
@@ -101,17 +137,120 @@ def get_session(message_id):
 
 
 def close_session(message_id):
+    # Local only and no ORM: the SSE generator calls this. The keeper thread
+    # sees the session gone and removes the lease itself.
     with _lock:
         _sessions.pop(str(message_id), None)
 
 
 def request_stop(message_id):
-    """Signal a running stream to stop. True when a live stream was signalled."""
+    """Signal a running stream to stop. True when a live stream was signalled.
+
+    Shared, a stream in another process is signalled through its lease, and
+    that process's keeper sees it within `LEASE_POLL_SECONDS`.
+    """
     session = get_session(message_id)
-    if session is None:
+    if session is not None:
+        session.cancel.set()
+        return True
+    if not shared():
         return False
-    session.cancel.set()
+    from ..models import StreamLease
+
+    return bool(
+        StreamLease.objects.filter(message_id=message_id, heartbeat_at__gte=fresh_since()).update(
+            stop_requested=True
+        )
+    )
+
+
+def is_live(message_id):
+    """Whether an answer is being streamed now: by this process, or, shared, any."""
+    if get_session(message_id) is not None:
+        return True
+    if not shared():
+        return False
+    from ..models import StreamLease
+
+    return StreamLease.objects.filter(
+        message_id=message_id, heartbeat_at__gte=fresh_since()
+    ).exists()
+
+
+# ── shared mode ──────────────────────────────────────────────────────────────
+
+
+def fresh_since():
+    from django.utils import timezone
+
+    return timezone.now() - timedelta(seconds=LEASE_STALE_SECONDS)
+
+
+def claim_lease(key):
+    """Take the answer's lease, unless another live process holds it."""
+    from django.db import IntegrityError, transaction
+    from django.utils import timezone
+
+    from ..models import StreamLease
+
+    try:
+        with transaction.atomic():
+            lease = StreamLease.objects.select_for_update().filter(message_id=key).first()
+            if lease and lease.owner != PROCESS and lease.heartbeat_at >= fresh_since():
+                raise StreamCapacityError("This answer is already streaming.")
+            StreamLease.objects.update_or_create(
+                message_id=key,
+                defaults={
+                    "owner": PROCESS,
+                    "heartbeat_at": timezone.now(),
+                    "stop_requested": False,
+                },
+            )
+    except IntegrityError:
+        # Another process created it between the read and the write.
+        raise StreamCapacityError("This answer is already streaming.") from None
+
+
+def renew(session):
+    """One keeper tick: renew the lease and honour a Stop written elsewhere.
+
+    Returns False once the keeper should stop: the stream ended here, or the
+    lease is gone or was taken over by another process.
+    """
+    from django.utils import timezone
+
+    from ..models import StreamLease
+
+    lease = StreamLease.objects.filter(message_id=session.message_id, owner=PROCESS)
+    if get_session(session.message_id) is not session:
+        lease.delete()
+        return False
+    if not lease.update(heartbeat_at=timezone.now()):
+        session.cancel.set()
+        return False
+    if lease.filter(stop_requested=True).exists():
+        session.cancel.set()
     return True
+
+
+def keep_lease(session):
+    from django.db import connection
+
+    try:
+        while renew(session):
+            time.sleep(LEASE_POLL_SECONDS)
+    except Exception:
+        # A lease that cannot be renewed goes stale and reads as gone; the
+        # stream itself carries on, as it would in a single process.
+        logger.exception("stream_lease_failed", extra={"event": "stream_lease_failed"})
+    finally:
+        connection.close()
+
+
+def start_keeper(session):
+    threading.Thread(
+        target=keep_lease, args=(session,), name=f"stream-lease-{session.message_id}", daemon=True
+    ).start()
 
 
 def encode(event, data, sequence):

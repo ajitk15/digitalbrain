@@ -7,6 +7,12 @@
 <p class="muted">{{ section.note }}</p>
 {% if section.advice %}<p class="notice" role="note">{{ section.advice }}</p>{% endif %}
 <form method="post" class="ai-model-form">{% csrf_token %}<input type="hidden" name="purpose" value="{{ section.purpose }}">{{ section.form.as_p }}<button class="button">{% icon "save" %}Save</button></form></details>{% endfor %}</div>
+<details class="card section ai-budget" id="budget" {% if budget_form.errors %}open{% endif %}>
+<summary class="card-heading"><strong>Monthly budget</strong><span class="pill {% if not budget %}pending{% elif budget.reached %}status-failed{% endif %}">{% if budget %}${{ budget.spent|floatformat:2 }} of ${{ budget.limit|floatformat:2 }} this month{% else %}No cap{% endif %}</span></summary>
+{% if budget %}<progress class="share-bar" value="{{ budget.percent }}" max="100">{{ budget.percent }}%</progress>{% if budget.reached %}<p class="notice" role="note">The budget is used up: every paid AI call for this application is refused until it is raised or the month ends.</p>{% endif %}{% endif %}
+<p class="muted">Spend is the sum of this application's usage receipts at the rates entered above, so a task priced at 0 counts as free here. Each call is checked before it starts and never stopped part way, so a month can end one call over the cap.</p>
+<form method="post" class="ai-budget-form">{% csrf_token %}<input type="hidden" name="purpose" value="budget">{{ budget_form.as_p }}<button class="button">{% icon "save" %}Save budget</button></form>
+</details>
 <section class="card section credential-status">
 <div class="card-heading"><h2>Credentials</h2><span class="pill {% if openai_mounted or claude_mounted or host_login %}{% else %}pending{% endif %}">{% if openai_mounted or claude_mounted %}Mounted{% elif host_login %}Development login{% else %}Not configured{% endif %}</span></div>
 {% if host_login %}<p class="notice" role="note">Claude answers use this machine's own Claude Code login, not a credential belonging to {{ application.name }}. Spend is billed to that login while usage is still recorded here. This is refused outright in production. <strong>Nobody using Chat is told this</strong> &mdash; this page is owner-only, so mount <code class="mono">{{ claude_secret }}</code> before other people ask questions here.</p>{% endif %}

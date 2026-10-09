@@ -210,7 +210,7 @@ def evidence_pack(app, incident, walk=None):
             row["path"],
         )
     for row in walk["passages"]:
-        entry = KnowledgeEntry.objects.filter(pk=row["id"], application=app, active=True).first()
+        entry = KnowledgeEntry.objects.filter(pk=row["id"], application=app).answerable().first()
         if entry and verified(entry) and row["excerpt"] in entry.content:
             add(
                 entry,

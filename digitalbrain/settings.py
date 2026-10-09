@@ -42,6 +42,10 @@ CODE_FACTORY_LOCAL_WRITE = bool(CONFIG.get("code_factory_local_write", False)) a
 # with the folder's own .venv. That executes code on this server, so it is off
 # unless written down and refused under production; forced off there as well.
 CODE_FACTORY_LOCAL_TESTS = bool(CONFIG.get("code_factory_local_tests", False)) and not PRODUCTION
+#: More than one server process: chat streams register in the database so Stop
+#: and "is this answer still being written?" reach every process. See
+#: platform_core/agent_runtime/streaming.py.
+SHARED_STREAMS = bool(CONFIG.get("shared_streams", False))
 # How many files one import may take from a directory - a GitHub /tree/ link or
 # a SharePoint folder. A knowledge base is not a mirror of a repository, so the
 # walk stays bounded; the bound is configurable because what counts as a

@@ -236,13 +236,18 @@ class JiraForm(forms.Form):
         return cleaned
 
 
-def jira_records(config, secret):
-    base = config["base_url"]
+def jira_headers(config, secret):
     if config.get("auth") == "cloud":
         headers = {"Authorization": basic(config["account_email"], secret)}
     else:
         headers = {"Authorization": f"Bearer {secret}"}
     headers["Accept"] = "application/json"
+    return headers
+
+
+def jira_records(config, secret):
+    base = config["base_url"]
+    headers = jira_headers(config, secret)
     query = urlencode(
         {
             "jql": config.get("jql") or "order by updated DESC",
