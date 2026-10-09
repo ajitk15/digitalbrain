@@ -1,0 +1,350 @@
+{
+ "extraction": [
+  {
+   "id": "CARE-401",
+   "title": "CARE-401 - Patient consent is not checked before a record is exported to a partner",
+   "text": "CARE-401 - Patient consent is not checked before a record is exported to a partner\n\nKey: KAN-4\nType: Bug\nPriority: Highest\nUpdated: 2026-09-14T09:12:00.000+0000\n\nBR-05 requires that the patient's recorded consent decision is honoured before their record leaves the organisation. The consent record itself is complete and correct: decisions are captured per purpose, the history is append-only, and consent.current() returns the right answer, including the correct default of withheld for a patient who has never been asked.\nNothing reads it.\nGET /fhir/Patient/{patient_id}/$everything checks that the caller holds the fhir:export permission and then builds and returns the bundle. There is no call to the consent service anywhere on that path.\nThe HIPAA control matrix claims this control as C-09 under 164.502(a) and rates it not implemented. The release notes instruct the requesting party to confirm consent manually. A manual check performed by the party who wants the export is not a control.\nSteps to reproduce: register a patient; record purpose data-exchange granted false; request the export as a partner. Expected 403 and an audit record of the refusal. Actual 200 with the full bundle. The seed cohort includes a patient in this state: Priya Raman, MRN RGH-0177310.\nAcceptance criteria: an export for a patient whose current data-exchange decision is withheld, or who has never been asked, is refused; the refusal uses the existing ConsentWithheld error, which already maps to 403; the refusal is written to the audit trail, because a refused disclosure is as much a disclosure event as a permitted one; a permitted export continues to work unchanged; tests cover granted, withdrawn, never asked, and withdrawn-then-regranted."
+  },
+  {
+   "id": "CARE-412",
+   "title": "CARE-412 - Patient search accepts an unbounded limit",
+   "text": "CARE-412 - Patient search accepts an unbounded limit\n\nKey: KAN-5\nType: Bug\nPriority: High\nUpdated: 2026-09-12T14:40:00.000+0000\n\nGET /patients declares limit with a default of 50 and no upper bound. The value is passed to the database unchanged.\nThe three sibling listing endpoints for encounters, referrals and consent all declare le=settings.max_page_size and refuse a larger value with 422. Patient search is the odd one out, which is why it survived review: a reviewer reading any one of the other three sees a clamp and moves on.\nNFR-06 states that the clamp is the requirement. An endpoint that accepts a caller-supplied limit and passes it through satisfies the letter of taking a limit and none of the intent.\nRealised as INC-2026-0814 on 2026-08-14. A coordinator searched for family name A to browse the cohort alphabetically, with limit=100000. The service read the whole patient table, held a transaction past the two-second ceiling in NFR-11, and blocked every write behind it on SQLite's single writer. Forty-five minutes, roughly sixty per cent of requests failing.\nAcceptance criteria: GET /patients clamps limit to settings.max_page_size, matching the sibling endpoints exactly; a limit above the maximum returns 422; a test asserts an upper bound on every collection endpoint, not only the ones that have one today, which is postmortem action A-2."
+  },
+  {
+   "id": "CARE-425",
+   "title": "CARE-425 - Referral status changes are not written to the audit trail",
+   "text": "CARE-425 - Referral status changes are not written to the audit trail\n\nKey: KAN-7\nType: Bug\nPriority: Medium\nUpdated: 2026-09-08T16:22:00.000+0000\n\nservices/referrals.py transition updates the referral row and returns it. It does not call audit.record.\nEvery other write path in the service audits: register, read, search, open_encounter, add_observation, referrals.create, consent.record_decision. This is the single exception, and the function already takes the Principal it would need, so the omission is visible in the signature.\nNFR-03 requires an audit event in the same transaction as every access to patient data. A referral status change is a change to the patient's clinical record: it is what tells a partner organisation the patient is coming. The HIPAA control matrix rates C-03 partially effective for this reason.\nThe quarterly review will not catch it. C-10's reconciliation compares access counts against audit counts per endpoint, so an endpoint that writes no audit event at all contributes to neither side and is invisible to the review designed to find exactly this.\nAcceptance criteria: transition writes an audit event in the same transaction as the update; the action distinguishes a status change from a creation; the event records the transition that occurred, so an access report shows what changed and not merely that something did; a test asserts the audit event in the same style as the other write-path tests."
+  },
+  {
+   "id": "CARE-431",
+   "title": "CARE-431 - An auditor receives the full patient record, including telephone and address",
+   "text": "CARE-431 - An auditor receives the full patient record, including telephone and address\n\nKey: KAN-8\nType: Bug\nPriority: Medium\nUpdated: 2026-09-05T10:31:00.000+0000\n\nREG-03, HIPAA 164.502(b) minimum necessary, requires that disclosure is limited to what the purpose needs. The security design states the intent plainly: a caller entitled to know a patient exists is not thereby entitled to their contact details.\nThe auditor role holds patient:read so that a compliance officer can reconcile an access report against real patients. GET /patients/{id} returns PatientOut to every caller holding that permission, so an auditor receives the name, full date of birth, postal code and telephone number.\nA PatientSummary schema already exists in schemas.py, with a masked MRN, the family name and the birth year only. Its docstring says it is returned to a caller who is entitled to know a patient exists but not to read their contact details, an auditor reconciling an access report for instance. Nothing returns it. The schema was designed, documented, and never wired to a route. mask_mrn in security/phi.py is in the same position: written, tested, unused.\nAcceptance criteria: a caller with the auditor role receives PatientSummary from GET /patients/{id}; a caller with the clinician or coordinator role continues to receive PatientOut unchanged; the response shape is determined by the caller's role, not by a query parameter the caller chooses; the read is audited identically in both cases; tests cover both roles."
+  }
+ ],
+ "answers": [
+  {
+   "question": "Is patient consent checked before a FHIR export?",
+   "expected": "KAN-4",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "CARE-401 - Patient consent is not checked before a record is exported to a partner",
+     "excerpt": "Graph v1: CARE-401 - Patient consent is not checked before a record is exported to a partner contains section GET /fhir/Patient/{patient_id}/$everything checks that the caller holds the fhir:export permission and then builds and r\nSource evidence: GET /fhir/Patient/{patient_id}/$everything checks that the caller holds the fhir:export permission and then builds and returns the bundle. There is no call to the consent service anywhere on that path.",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-4"
+    },
+    {
+     "id": "e2",
+     "title": "06-operate/service-level-objectives.xlsx",
+     "excerpt": "Graph v1: How each is measured Text Text: Export correctness — for each export in the audit trail, check the patient's consent position at that timestamp. M\nSource evidence: | How each is measured | Export correctness — for each export in the audit trail, check the patient's consent position at that timestamp. Manual until the check is automated. |",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "05-release/release-notes-1.0.0.html",
+     "excerpt": "Graph v1: The export does not check consent before releasing a record Limitation Limitation: The export does not check consent before releasing a record\nSource evidence: | The export does not check consent before releasing a record | **Confirm consent before requesting an export** | 1.0.1 |",
+     "source": ""
+    },
+    {
+     "id": "e4",
+     "title": "04-test/traceability-matrix.xlsx",
+     "excerpt": "Graph v1: T-03 Finding Finding: No test asserts that the FHIR export consults consent. The consent service is fully tested; nothing joins it to\nSource evidence: | T-03 | BR-05 | No test asserts that the FHIR export consults consent. The consent service is fully tested; nothing joins it to the export path | High | Engineering |",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "06-operate/operations-runbook.txt",
+     "excerpt": "Graph v1: 06-operate/operations-runbook.txt contains section the question is whether an export should have happened, check the consent\nSource evidence: the question is whether an export should have happened, check the consent",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "02-design/architecture.html",
+     "excerpt": "Graph v1: Partner requests a record for a patient who withdrew consent Measure Measure: Zero exports without current consent (BR-05)\nSource evidence: | Partner requests a record for a patient who withdrew consent | Export requested | Refused | Zero exports without current consent (BR-05) |",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "02-design/adr/0004-fhir-profile-scope.md",
+     "excerpt": "Graph v1: 02-design/adr/0004-fhir-profile-scope.md contains section Release 1.0 exports base FHIR R4 resources — Patient, Encounter, Observation —\nSource evidence: Release 1.0 exports base FHIR R4 resources — Patient, Encounter, Observation —",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "07-govern/risk-register.xlsx",
+     "excerpt": "Graph v1: R-01 Risk Risk: A record is disclosed to a partner for a patient who withdrew consent, because the export path does not consult th\nSource evidence: | R-01 | A record is disclosed to a partner for a patient who withdrew consent, because the export path does not consult the consent record | 4 | 5 | 20 | Mitigate — implement the check in 1.0.1. Interim: manual confirmation by the requester, which is not a control | Engineering | Open, escalated |",
+     "source": ""
+    }
+   ]
+  },
+  {
+   "question": "Why can a partner download records of people who said no?",
+   "expected": "KAN-4",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "02-design/architecture.html",
+     "excerpt": "Graph v1: Partner requests a record for a patient who withdrew consent Scenario Scenario: Partner requests a record for a patient who withdrew consent\nSource evidence: | Partner requests a record for a patient who withdrew consent | Export requested | Refused | Zero exports without current consent (BR-05) |",
+     "source": ""
+    },
+    {
+     "id": "e2",
+     "title": "02-design/security-design.docx",
+     "excerpt": "Graph v1: 02-design/security-design.docx contains record partner\nSource evidence: | partner | Export | Everything else |",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "CARE-401 - Patient consent is not checked before a record is exported to a partner",
+     "excerpt": "Graph v1: CARE-401 - Patient consent is not checked before a record is exported to a partner contains section CARE-401 - Patient consent is not checked before a record is exported to a partner\nSource evidence: CARE-401 - Patient consent is not checked before a record is exported to a partner",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-4"
+    },
+    {
+     "id": "e4",
+     "title": "01-requirements/business-requirements.docx",
+     "excerpt": "Graph v1: BR-06 column 2 column 2: Exchange records with partner systems in a standard format\nSource evidence: | BR-06 | Exchange records with partner systems in a standard format | Northvale runs a different vendor; a bespoke feed would need building twice | Northvale ingests the export with no custom mapping |",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "07-govern/risk-register.xlsx",
+     "excerpt": "Graph v1: R-01 Risk Risk: A record is disclosed to a partner for a patient who withdrew consent, because the export path does not consult th\nSource evidence: | R-01 | A record is disclosed to a partner for a patient who withdrew consent, because the export path does not consult the consent record | 4 | 5 | 20 | Mitigate — implement the check in 1.0.1. Interim: manual confirmation by the requester, which is not a control | Engineering | Open, escalated |",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "03-build/api-specification.html",
+     "excerpt": "Graph v1: `fhir:export` partner partner: ●\nSource evidence: | `fhir:export` |  |  |  | ● |",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "03-build/coding-standards.md",
+     "excerpt": "Graph v1: 03-build/coding-standards.md contains section Log identifiers, not people (NFR-04).\nSource evidence: Log identifiers, not people (NFR-04).",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "05-release/deployment-runbook.md",
+     "excerpt": "Graph v1: 05-release/deployment-runbook.md contains section and two people deployed to the wrong one during the 1.0 rehearsal.\nSource evidence: and two people deployed to the wrong one during the 1.0 rehearsal.",
+     "source": ""
+    }
+   ]
+  },
+  {
+   "question": "What limits the page size of patient search?",
+   "expected": "KAN-5",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "CARE-412 - Patient search accepts an unbounded limit",
+     "excerpt": "Graph v1: CARE-412 - Patient search accepts an unbounded limit contains section Acceptance criteria: GET /patients clamps limit to settings.max_page_size, matching the sibling endpoints exactly; a lim\nSource evidence: Acceptance criteria: GET /patients clamps limit to settings.max_page_size, matching the sibling endpoints exactly; a limit above the maximum returns 422; a test asserts an upper bound on every collection endpoint, not only the ones that have one today, which is postmortem action A-2.",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-5"
+    },
+    {
+     "id": "e2",
+     "title": "06-operate/incident-2026-08-14-postmortem.docx",
+     "excerpt": "Graph v1: A-1 column 2 column 2: Clamp limit on GET /patients to the maximum page size, as the sibling endpoints do\nSource evidence: | A-1 | Clamp limit on GET /patients to the maximum page size, as the sibling endpoints do | Engineering | 2026-08-22 | Open |",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "03-build/coding-standards.md",
+     "excerpt": "Graph v1: 03-build/coding-standards.md contains section `settings.max_page_size`. A limit that is accepted and passed through is not a\nSource evidence: `settings.max_page_size`. A limit that is accepted and passed through is not a",
+     "source": ""
+    },
+    {
+     "id": "e4",
+     "title": "05-release/release-readiness-review.pptx",
+     "excerpt": "Graph v1: T-01 Finding Finding: Patient search accepts an unbounded limit\nSource evidence: | T-01 | Patient search accepts an unbounded limit | High |",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "03-build/api-specification.html",
+     "excerpt": "Graph v1: `GET` Notes Notes: Newest first. `422` above the maximum page size\nSource evidence: | `GET` | `/patients/{patient_id}/encounters?limit=` | `encounter:read` | Newest first. `422` above the maximum page size |",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "05-release/release-plan.docx",
+     "excerpt": "Graph v1: T-01 patient search has no upper bound column 1 column 1: T-01 patient search has no upper bound\nSource evidence: | T-01 patient search has no upper bound | Traceability matrix | Engineering | 1.0.1 |",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "04-test/traceability-matrix.xlsx",
+     "excerpt": "Graph v1: FR-03 Code Code: services/patients.py::search\nSource evidence: | FR-03 | Search by family name | services/patients.py::search | TestRetrieval::test\\_a\\_search\\_records\\_what\\_was\\_looked\\_for\\_not\\_what\\_was\\_found, ::test\\_a\\_search\\_matches\\_on\\_a\\_prefix\\_only |",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "05-release/release-notes-1.0.0.html",
+     "excerpt": "Graph v1: Patient search returns an unbounded number of results Limitation Limitation: Patient search returns an unbounded number of results\nSource evidence: | Patient search returns an unbounded number of results | A broad search may be slow | 1.0.1 |",
+     "source": ""
+    }
+   ]
+  },
+  {
+   "question": "Why did the service fail on 14 August?",
+   "expected": "incident-2026-08-14",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "06-operate/service-level-objectives.xlsx",
+     "excerpt": "Graph v1: Service down Condition Condition: Readiness failing on all instances for 2 minutes\nSource evidence: | Service down | Readiness failing on all instances for 2 minutes | Sev-1 | Page |",
+     "source": ""
+    },
+    {
+     "id": "e2",
+     "title": "07-govern/change-management.docx",
+     "excerpt": "Graph v1: 07-govern/change-management.docx contains section * Disabling an audit write to get past a failing audit table. **Take the service out of the pool instead.** A disclosure\nSource evidence: * Disabling an audit write to get past a failing audit table. **Take the service out of the pool instead.** A disclosure that cannot be recorded is a disclosure that is not made.",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "02-design/architecture.html",
+     "excerpt": "Graph v1: 02-design/architecture.html contains section 3. An audit write that fails fails the request. A disclosure we cannot record is a disclosure we do not make.\nSource evidence: 3. An audit write that fails fails the request. A disclosure we cannot record is a disclosure we do not make.",
+     "source": ""
+    },
+    {
+     "id": "e4",
+     "title": "04-test/traceability-matrix.xlsx",
+     "excerpt": "Graph v1: Suite result Value Value: 111 passed, 0 failed\nSource evidence: | Suite result | 111 passed, 0 failed |",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "05-release/release-readiness-review.pptx",
+     "excerpt": "Graph v1: High-severity findings open Verdict Verdict: FAIL\nSource evidence: | High-severity findings open | 0 | 3 | FAIL |",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "06-operate/incident-2026-08-14-postmortem.docx",
+     "excerpt": "Graph v1: 06-operate/incident-2026-08-14-postmortem.docx contains section Availability for August fell to 99.83%, below the 99.9% objective. The error budget for the month was fully consumed.\nSource evidence: Availability for August fell to 99.83%, below the 99.9% objective. The error budget for the month was fully consumed.",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "04-test/test-strategy.docx",
+     "excerpt": "Graph v1: Service column 1 column 1: Service\nSource evidence: | Service | Use cases against a real in-memory database: transactions, audit rows, conflicts | Test\\* classes taking the connection fixture | milliseconds |",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "06-operate/operations-runbook.txt",
+     "excerpt": "Graph v1: 06-operate/operations-runbook.txt contains section Readiness is failing\nSource evidence:   Readiness is failing",
+     "source": ""
+    }
+   ]
+  },
+  {
+   "question": "Which log line leaks the patient name and date of birth?",
+   "expected": "KAN-6",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "CARE-418 - Patient name and date of birth are written to the application log",
+     "excerpt": "Graph v1: CARE-418 - Patient name and date of birth are written to the application log contains section Acceptance criteria: the scoring log line identifies the patient by surrogate id only, carrying no name and no date of b\nSource evidence: Acceptance criteria: the scoring log line identifies the patient by surrogate id only, carrying no name and no date of birth; the telephone pattern no longer matches an ISO-8601 date; a test pins that an ISO date passes through redact unchanged; existing redaction tests continue to pass.",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-6"
+    },
+    {
+     "id": "e2",
+     "title": "05-release/release-notes-1.0.0.html",
+     "excerpt": "Graph v1: The scoring log line contains patient names Limitation Limitation: The scoring log line contains patient names\nSource evidence: | The scoring log line contains patient names | Internal; raised with Information Governance | 1.0.1 |",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "01-requirements/non-functional-requirements.xlsx",
+     "excerpt": "Graph v1: NFR-04 Requirement Requirement: No protected health information in application logs, including names, dates of birth, addresses and free-te\nSource evidence: | NFR-04 | No protected health information in application logs, including names, dates of birth, addresses and free-text clinical detail | Automated redaction at the formatter; log sampling review each sprint | Sev-2 incident |",
+     "source": ""
+    },
+    {
+     "id": "e4",
+     "title": "04-test/test-plan.docx",
+     "excerpt": "Graph v1: 04-test/test-plan.docx contains section Two things in one line. The patient's name is present in a log that NFR-04 says must not carry protected health informat\nSource evidence: Two things in one line. The patient's name is present in a log that NFR-04 says must not carry protected health information. And the date of birth has been replaced by [phone] — the telephone pattern in the redaction filter is broad enough to match a date, which means dates are being redacted by accident rather than by rule, and other numeric data may be redacted when it should not be.",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "05-release/release-readiness-review.pptx",
+     "excerpt": "Graph v1: T-02 Finding Finding: Patient name written to the application log\nSource evidence: | T-02 | Patient name written to the application log | High |",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "03-build/api-specification.html",
+     "excerpt": "Graph v1: 03-build/api-specification.html contains section -d '{\"mrn\":\"RGH-0142857\",\"given_name\":\"Amara\",\"family_name\":\"Okonjo\",\"birth_date\":\"1943-03-11\",\"postal_code\":\"RG1 4QT\"}'\nSource evidence:      -d '{\"mrn\":\"RGH-0142857\",\"given_name\":\"Amara\",\"family_name\":\"Okonjo\",\"birth_date\":\"1943-03-11\",\"postal_code\":\"RG1 4QT\"}' \\",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "07-govern/risk-register.xlsx",
+     "excerpt": "Graph v1: R-03 Risk Risk: Patient names in application logs reach the aggregator, where retention and access differ from the clinical record\nSource evidence: | R-03 | Patient names in application logs reach the aggregator, where retention and access differ from the clinical record | 4 | 3 | 12 | Mitigate — remove the identifying fields from the scoring log line (T-02); sprint log sampling | Engineering | Open |",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "CARE-431 - An auditor receives the full patient record, including telephone and address",
+     "excerpt": "Graph v1: CARE-431 - An auditor receives the full patient record, including telephone and address contains section A PatientSummary schema already exists in schemas.py, with a masked MRN, the family name and the birth year only. Its do\nSource evidence: A PatientSummary schema already exists in schemas.py, with a masked MRN, the family name and the birth year only. Its docstring says it is returned to a caller who is entitled to know a patient exists but not to read their contact details, an auditor reconciling an access report for instance. Nothing returns it. The schema was designed, documented, and never wired to a route. mask_mrn in security/phi.py is in the same position: written, tested, unused.",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-8"
+    }
+   ]
+  },
+  {
+   "question": "Are referral status changes written to the audit trail?",
+   "expected": "KAN-7",
+   "evidence": [
+    {
+     "id": "e1",
+     "title": "CARE-425 - Referral status changes are not written to the audit trail",
+     "excerpt": "Graph v1: CARE-425 - Referral status changes are not written to the audit trail contains section CARE-425 - Referral status changes are not written to the audit trail\nSource evidence: CARE-425 - Referral status changes are not written to the audit trail",
+     "source": "https://ajitk15.atlassian.net/browse/KAN-7"
+    },
+    {
+     "id": "e2",
+     "title": "05-release/release-notes-1.0.0.html",
+     "excerpt": "Graph v1: Referral status changes are not recorded in the audit trail Limitation Limitation: Referral status changes are not recorded in the audit trail\nSource evidence: | Referral status changes are not recorded in the audit trail | A status change will not appear on an access report | 1.0.1 |",
+     "source": ""
+    },
+    {
+     "id": "e3",
+     "title": "05-release/deployment-runbook.md",
+     "excerpt": "Graph v1: 05-release/deployment-runbook.md contains section changed in this release — a restore discards audit events written since the\nSource evidence: changed in this release — a restore discards audit events written since the",
+     "source": ""
+    },
+    {
+     "id": "e4",
+     "title": "07-govern/hipaa-control-matrix.xlsx",
+     "excerpt": "Graph v1: C-03 Audit controls Effectiveness Effectiveness: Partially effective — the referral status transition writes no audit event (T-04)\nSource evidence: | C-03 Audit controls | (b) | Audit event written in the same transaction as every access to patient data | security/audit.py; audit assertions across the suite | Partially effective — the referral status transition writes no audit event (T-04) |",
+     "source": ""
+    },
+    {
+     "id": "e5",
+     "title": "04-test/traceability-matrix.xlsx",
+     "excerpt": "Graph v1: T-04 Finding Finding: The referral status transition has no audit assertion, unlike every other write in the suite\nSource evidence: | T-04 | NFR-03 | The referral status transition has no audit assertion, unlike every other write in the suite | Medium | Engineering |",
+     "source": ""
+    },
+    {
+     "id": "e6",
+     "title": "01-requirements/business-requirements.docx",
+     "excerpt": "Graph v1: 01-requirements/business-requirements.docx contains section Patient registration, encounters and observations, referral lifecycle, consent capture, readmission risk, audit trail, F\nSource evidence: Patient registration, encounters and observations, referral lifecycle, consent capture, readmission risk, audit trail, FHIR R4 export.",
+     "source": ""
+    },
+    {
+     "id": "e7",
+     "title": "03-build/api-specification.html",
+     "excerpt": "Graph v1: `POST` Path Path: `/referrals/{referral_id}/status`\nSource evidence: | `POST` | `/referrals/{referral_id}/status` | `referral:write` | `409` on a forbidden transition |",
+     "source": ""
+    },
+    {
+     "id": "e8",
+     "title": "05-release/release-plan.docx",
+     "excerpt": "Graph v1: T-04 referral transition not audited column 1 column 1: T-04 referral transition not audited\nSource evidence: | T-04 referral transition not audited | Traceability matrix | Engineering | 1.0.1 |",
+     "source": ""
+    }
+   ]
+  }
+ ]
+}

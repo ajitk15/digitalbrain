@@ -257,6 +257,7 @@ class TypedGraphTests(TestCase):
         data, quality = self.enrich()
         self.assertEqual(quality["semantic_relationships"], 3)
         self.assertEqual(quality["outside_ontology"], 2)
+        self.assertEqual(quality["rejection_reasons"], {"outside the ontology": 2})
         self.assertEqual(quality["ontology"], ontology.ONTOLOGY_VERSION)
         self.assertEqual(data["ontology"], ontology.ONTOLOGY_VERSION)
         relations = {e["relation"] for e in data["edges"] if e.get("inferred")}

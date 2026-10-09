@@ -1,0 +1,11 @@
+{
+  "about": "For each CarePath ticket with a planted bug, the identifiers in the project's own documents that reveal it (demo-artifacts/demo-kit/seeded-gaps.md). The scorecard asks the knowledge graph for the evidence Code Factory would receive for the ticket and counts how many of these appear in it. CARE-444 has no planted code bug and is not scored.",
+  "tickets": {
+    "CARE-401": ["BR-05", "T-03", "W-01", "C-09", "F-01", "R-01"],
+    "CARE-412": ["NFR-06", "T-01", "R-04", "INC-2026-0814"],
+    "CARE-418": ["NFR-04", "T-02", "TC-3", "R-03"],
+    "CARE-425": ["NFR-03", "T-04", "C-03", "R-02"],
+    "CARE-431": ["REG-03", "C-08", "F-03"],
+    "CARE-437": ["NFR-12", "ADR-0002", "T-05", "R-05"]
+  }
+}
