@@ -5,6 +5,7 @@ from platform_core import (
     administration,
     ai,
     api,
+    benchmark,
     code_graph,
     code_knowledge,
     connectors,
@@ -25,6 +26,11 @@ urlpatterns = [
         name="graph-related-code",
     ),
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
+    path(
+        "applications/<uuid:pk>/graph/benchmark/",
+        benchmark.benchmark_view,
+        name="graph-benchmark",
+    ),
     path(
         "applications/<uuid:pk>/graph/generate/",
         graphs.graph_generate,

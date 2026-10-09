@@ -22,6 +22,20 @@ MODEL_CHOICES = [
     ("Custom", [("custom", "Custom / existing model ID")]),
 ]
 
+#: Search embeddings are OpenAI's: Anthropic has no embeddings endpoint. They
+#: use the application's own OpenAI credential, like any OpenAI purpose.
+EMBEDDING_CHOICES = [
+    (
+        "OpenAI",
+        [
+            ("openai:text-embedding-3-small", "text-embedding-3-small"),
+            ("openai:text-embedding-3-large", "text-embedding-3-large"),
+        ],
+    ),
+    ("Custom", [("custom", "Custom / existing model ID")]),
+]
+DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small"
+
 
 # Graph extraction is materially harder than chat: it must find relationships,
 # quote them exactly and name both entities. Small fast models produce thin or
@@ -48,6 +62,14 @@ PURPOSE_NOTES = {
     ),
     "conversation_title": "Names each conversation from its first exchange. A short, cheap call.",
     "plan_drafting": "Drafts Code Factory change plans from a ticket and the knowledge graph.",
+    "embeddings": (
+        "Finds where to start looking by meaning, so a question worded differently from the "
+        "source still reaches it. Relationships and passages are embedded when an AI graph run "
+        "is requested; each question is embedded when it is asked. A vector only chooses "
+        "starting points - every citation is still verified against its source. Uses this "
+        "application's OpenAI credential; enter your contracted input price (output is not "
+        "billed)."
+    ),
 }
 
 

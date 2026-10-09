@@ -182,6 +182,9 @@ class CredentialSeedingTests(TestCase):
             seed_application_ai(self.admin, app)
         rows = {row.purpose: row for row in AIConfiguration.objects.filter(application=app)}
         self.assertEqual(set(rows), {purpose for purpose, _ in AI_PURPOSES})
+        # Search embeddings are OpenAI's whatever setup chose, and seeded off.
+        embeddings = rows.pop("embeddings")
+        self.assertEqual((embeddings.provider, embeddings.enabled), ("openai", False))
         for purpose, row in rows.items():
             self.assertEqual(row.provider, "claude")
             self.assertEqual(row.model, DEFAULT_MODELS["claude"])

@@ -119,6 +119,7 @@ def records_fingerprint(app):
     )
     published = published_revision(app.pk)
     rows.append(("published", str(published.pk) if published else ""))
+    rows.append(("rules", RULES_VERSION))
     # An article's valid-to date passes without any record changing, so the day
     # is part of what the graph was built from.
     rows.append(("today", timezone.now().date().isoformat()))
@@ -139,6 +140,22 @@ def documents_only(entries):
 MIN_NAME_LENGTH = 4
 #: At most this many passages are joined to any one component or service.
 PASSAGES_PER_NAME = 12
+#: Bumped when a linking rule changes, so every graph is rebuilt under it.
+RULES_VERSION = 2
+
+
+def name_pattern(name):
+    """A component or service name, found whole however it is punctuated.
+
+    "carepath-api-green" is also "CarePath API green" and "carepath_api_green"
+    in a runbook; the words must still be all there, in order, and nothing may
+    continue the name: `carepath-api` is not in `carepath-api-green`.
+    """
+    from .ontology import normalise
+
+    words = normalise(name).split() or [name]
+    joined = r"[\s_.-]+".join(re.escape(word) for word in words)
+    return re.compile(rf"(?<![\w-]){joined}(?![\w-])", re.IGNORECASE)
 
 
 def passages(app, names):
@@ -148,19 +165,20 @@ def passages(app, names):
     revision, and only a quote whose source is active with an unchanged digest
     and which still contains the quote - the same checks `graph_citations`
     makes. A name matches whole, not inside a longer name: `carepath-api` is not
-    in `carepath-api-green`.
+    in `carepath-api-green`. A name the knowledge graph merged with another
+    (`ontology.merge_entities`) is looked for under both.
     """
-    import re
-
     from .graphs import published_revision, sources_for
+    from .ontology import aliases_for
 
     revision = published_revision(app.pk)
     wanted = {name: key for name, key in names.items() if len(name) >= MIN_NAME_LENGTH}
     if revision is None or not wanted:
         return []
-    patterns = {
-        name: re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])", re.IGNORECASE) for name in wanted
-    }
+    for alias, key in aliases_for(revision.data, wanted).items():
+        if len(alias) >= MIN_NAME_LENGTH:
+            wanted.setdefault(alias, key)
+    patterns = {name: name_pattern(name) for name in wanted}
     edges = revision.data.get("edges", [])
     ids = {edge.get("knowledge_id") for edge in edges if edge.get("knowledge_id")}
     # Documents only. The published graph also holds imported tickets, whose own
@@ -178,13 +196,14 @@ def passages(app, names):
         if quote not in entry.content:
             continue
         for name, pattern in patterns.items():
-            if counts.get(name, 0) >= PASSAGES_PER_NAME or not pattern.search(quote):
+            target = wanted[name]
+            if counts.get(target, 0) >= PASSAGES_PER_NAME or not pattern.search(quote):
                 continue
             passage = f"passage:{entry.pk}:{hashlib.sha256(quote.encode()).hexdigest()[:12]}"
-            if (passage, name) in seen:
+            if (passage, target) in seen:
                 continue
-            seen.add((passage, name))
-            counts[name] = counts.get(name, 0) + 1
+            seen.add((passage, target))
+            counts[target] = counts.get(target, 0) + 1
             line = edge.get("line")
             found.append(
                 {

@@ -18,6 +18,8 @@ dependencies = [
   "claude-agent-sdk>=0.2.152,<0.3",
   "graphifyy>=0.9.67,<0.10",
   "graspologic-native>=1.3,<2",
+  "numpy>=2.0,<3",
+  "rapidfuzz>=3.0,<4",
 ]
 
 [dependency-groups]

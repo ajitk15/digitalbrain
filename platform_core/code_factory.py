@@ -522,7 +522,7 @@ def finish_phase(
         )
 
 
-def evidence_for(app_id, question, version):
+def evidence_for(app_id, question, version, user=None):
     """Verified graph citations for one phase's question.
 
     Code Factory used to draft from lexical keyword matches while chat answered
@@ -539,7 +539,7 @@ def evidence_for(app_id, question, version):
     """
     from .graph_ai import graph_citations
 
-    return graph_citations(app_id, question, version=version)
+    return graph_citations(app_id, question, version=version, user=user)
 
 
 def ask(user, app_id, phase_name, instructions, question, citations, receipt):
@@ -1210,7 +1210,8 @@ def run_analysis(run, triage, body):
         phase="analysis",
     )
     graph = labelled_graph_citations(
-        evidence_for(run.application_id, question, run.graph_version), run.graph_version
+        evidence_for(run.application_id, question, run.graph_version, run.requested_by),
+        run.graph_version,
     )
     # Every piece of evidence says where it came from: the ticket itself, the
     # knowledge graph (and the system the passage was imported from), or the

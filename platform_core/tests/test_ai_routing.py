@@ -147,8 +147,10 @@ class AIRoutingTests(TestCase):
                     "relationships": [
                         {
                             "subject": "Service Alpha",
+                            "subject_type": "Component",
                             "relation": "sends messages to",
                             "object": "Queue Beta",
+                            "object_type": "Component",
                             "source_id": str(self.source.pk),
                             "quote": self.source.content,
                         },

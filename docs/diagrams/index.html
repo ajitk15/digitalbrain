@@ -266,6 +266,7 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
     <div class="rail-label">Contents</div>
     <a href="#overview"><span class="n">00</span><span>Overview</span></a>
     <a href="#technology"><span class="n">01</span><span>Technology &amp; features</span></a>
+    <a href="#agentic"><span class="n">1.1</span><span>Agentic AI by component</span></a>
     <a href="#d01"><span class="n">02</span><span>System overview</span></a>
     <a href="#d02"><span class="n">03</span><span>Knowledge graph</span></a>
     <a href="#d03"><span class="n">04</span><span>Bug fix</span></a>
@@ -315,7 +316,7 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
 
   <header class="masthead">
     <div class="eyebrow">Application-isolated enterprise knowledge platform</div>
-<p class="rail-note">Source audit: 28 September 2026 · <a href="VALIDATION.md">Evidence and validation notes</a> · PDF excluded from this update</p>
+<p class="rail-note">Source audit: 28 September 2026 · Agentic AI section: 9 October 2026 · <a href="VALIDATION.md">Evidence and validation notes</a> · PDF excluded from this update</p>
     <h1>Digital Brain</h1>
     <p class="lede">Digital&nbsp;Brain turns the documents, tickets, incidents and code a team already owns into <b>evidence the business can stand behind</b> — then puts that evidence to work in the two places it pays back fastest: <b>software delivery</b> and <b>service operations</b>.</p>
   </header>
@@ -547,10 +548,13 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
             <td class="paid"><b>Enrichment only</b>, and only when someone requests it. Relationships must carry a quote that is re-verified</td></tr>
         <tr><td class="layer">Chat</td>
             <td><b>Sources</b> mode returns the matching evidence directly — no model at all. Retrieval is deterministic in every mode</td>
-            <td class="paid"><b>AI</b> starts with active sources and can use scoped tools; <b>Graph answer</b> starts with published graph evidence. Optional title generation adds a call</td></tr>
+            <td class="paid"><b>AI</b> starts with active sources, <b>Graph answer</b> with published graph evidence; when streamed, both run the tool-using agent loop. Optional title generation adds a call</td></tr>
         <tr><td class="layer">Code&nbsp;Factory</td>
             <td><b>Verification</b> — path safety, elisions, and live staleness checks when a write credential is available; snapshot-only preparation checks paths and elisions. <b>Delivery</b> — branch and draft PR</td>
             <td class="paid"><b>Triage · analysis · design · work order · implementation · tests · review</b>, with phase-specific limits and receipts</td></tr>
+        <tr><td class="layer">ServiceOps triage</td>
+            <td>Symptom profile, operations-graph walk, evidence pack, quote re-check and scorer. A reused answer for identical evidence is free</td>
+            <td class="paid"><b>One bounded call</b> per requested run: at most three cited hypotheses with read-only next steps</td></tr>
         <tr><td class="layer">Graph REST &amp; MCP</td>
             <td>Everything. Same verified evidence, served straight from the published graph</td>
             <td class="paid">No model for graph search or MCP; separate chat and triage REST endpoints may spend AI budget</td></tr>
@@ -558,7 +562,86 @@ figcaption{font-family:var(--mono);font-size:.67rem;color:var(--dim);margin-top:
     </table>
     </div>
 
+    <p class="sec-sub" style="margin-top:1rem;margin-bottom:0">Which of these calls are agents, and who decides their next step: <a href="#agentic" style="color:var(--cyan)">Agentic AI by component →</a></p>
+
     <p class="band" style="margin-top:1.4rem">Features are switched on <strong>per application</strong> — each team gets only what it asked for. <span class="chip">Document uploads</span> require a configured scanner when scanning is mandatory, including production. <span class="chip">Chat API</span>, which also gates budget-spending triage POST, starts ticked for new applications and can be unticked at creation.</p>
+  </section>
+
+  <!-- ═══ 1.1 · AGENTIC AI ═══ -->
+  <section id="agentic">
+    <div class="sec-head"><span class="sec-num">1.1</span><h2>Agentic AI by component</h2></div>
+    <p class="sec-sub">Two kinds of agent run here. In <strong>chat</strong> the model chooses its own next step — search, read more, or answer — inside a fixed budget. Everywhere else <strong>code chooses the next step</strong> and the model plays one bounded role per call: Code Factory chains seven of them, enrichment and triage use one each. No agent holds a credential, a shell, a file system or a write path of its own.</p>
+
+    <div class="frame">
+      <div class="frame-bar">
+        <span>architecture · 12 components · who decides the next step</span>
+        <a href="06_agentic-ai.html" target="_blank" rel="noopener">Open standalone — guided views, export ↗</a>
+      </div>
+      <iframe data-src="06_agentic-ai.html" data-vw="1220" data-vh="572" loading="lazy" title="Agentic AI by core component architecture diagram"></iframe>
+    </div>
+
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>Agentic pattern</th><th>What the agent does</th><th>Bounds and guardrails</th><th>Human decision</th></tr></thead>
+      <tbody>
+        <tr><td class="layer">Chat<br><span class="sub">AI · Graph answer</span></td>
+            <td><b>Tool-using agent loop</b> — the model decides whether and what to search</td>
+            <td>Calls <code>search_knowledge</code> and <code>fetch_source</code>, rephrases when a search misses, then streams a cited answer. Seeded with retrieved evidence (active sources, or the published graph for Graph answer), so one turn is never worse than no tools</td>
+            <td>≤4 turns, ≤8 tool calls, 120&nbsp;s. Tools bound to one application and user before the run; access re-checked on every call. Citations kept only if still active, same digest, exact quote. One usage receipt per model turn</td>
+            <td>The person asks; Stop ends the display but drains the run so billing stays honest</td></tr>
+        <tr><td class="layer">Code&nbsp;Factory</td>
+            <td><b>Orchestrated multi-agent pipeline</b> — fixed order, one role per call</td>
+            <td><b>Plan:</b> ticket triage → gap analysis → change design. <b>Prepare:</b> work order → implementation → test author → change review. The reviewer agent can reject single files, which are dropped. Pre-write checks and PR delivery are code, not models</td>
+            <td>Single-turn, no tools; each phase has its own output cap, timeout and receipt. Ticket text is data, never instruction. Items may cite only supplied, verified evidence by number. Requires a published graph</td>
+            <td>Plan approval (<code>can_approve</code>); a separate request to prepare and to open the draft PR; local-folder write and test run are opt-in buttons</td></tr>
+        <tr><td class="layer">Knowledge&nbsp;graph<br><span class="sub">enrichment</span></td>
+            <td><b>Extraction agent</b> — one call per source</td>
+            <td>Proposes subject–relation–object edges, each with the shortest quote that carries it, from up to 25 sources</td>
+            <td>≤12 relationships per source, ≤60 per run, 300-character quotes; an edge whose quote or entity names are not in the source is rejected. Runs only for a requested run, never on a rebuild</td>
+            <td>Someone requests the run; the result is a <b>draft</b> until a person publishes it</td></tr>
+        <tr><td class="layer">ServiceOps<br><span class="sub">triage</span></td>
+            <td><b>Bounded analyst agent</b> over a model-free evidence pack</td>
+            <td>Reads a redacted incident and an evidence pack from the operations graph; proposes up to three hypotheses, each with counter-evidence and a read-only next step</td>
+            <td>One call, 120&nbsp;s, 8,000-token cap. Skipped for an empty pack; reused for identical evidence. Quotes re-checked live; next steps pass an action-word deny-list; below 0.35 the hypotheses are withheld</td>
+            <td>The responder requests triage and records verdicts and the confirmed cause; automations are only ever <b>simulated</b></td></tr>
+        <tr><td class="layer">Conversation<br><span class="sub">titles</span></td>
+            <td><b>Single-turn helper</b></td>
+            <td>Names a conversation after its first answer</td>
+            <td>32 tokens, its own priced purpose; any failure keeps the truncated question as the title</td>
+            <td>Owner enables it; a renamed conversation is never retitled</td></tr>
+        <tr><td class="layer">MCP &amp; REST<br><span class="sub">for outside agents</span></td>
+            <td><b>Tool server</b> — this platform is the tool, not the agent</td>
+            <td>Exposes <code>search_knowledge_graph</code> and <code>triage_brief</code> to an outside agent over MCP JSON-RPC; REST serves the same graph search</td>
+            <td>No model call and no spend. Bearer token is a user, so revoking the grant closes it. Chat and triage REST are the only API paths that spend, behind the Chat API switch</td>
+            <td>An owner issues the API token</td></tr>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="grid g3" style="margin-top:1.5rem">
+      <div class="card c-cyan"><h4><span class="dot"></span>Agent runtime</h4>
+        <ul>
+          <li><strong>Claude Agent SDK</strong> drives the bundled CLI with no built-in tools, no settings, skills or plugins, an empty config home and a scrubbed environment</li>
+          <li>The <code>brain</code> tools run as an in-process MCP server; <code>permission_mode="dontAsk"</code> refuses anything else</li>
+          <li><strong>OpenAI Agents SDK</strong> gets the same two tools as function tools and the same instructions</li>
+          <li>Single-turn agents use <code>tools=[]</code>, <code>max_turns=1</code>, on both providers</li>
+        </ul></div>
+      <div class="card c-em"><h4><span class="dot"></span>Autonomous, without a model</h4>
+        <ul>
+          <li><strong>Worker lanes</strong> — intake, graph, code-graph, factory, serviceops, connectors, maintenance — each queue isolated from the others</li>
+          <li><strong>Scheduled imports</strong> run as the connector's creator; revoking their grant stops the schedule</li>
+          <li>Structural graph rebuilds, operations-graph refresh, benchmark scoring after each saved version, CI-check polling and stalled-run reclaim</li>
+        </ul></div>
+      <div class="card c-ro"><h4><span class="dot"></span>Deliberately not agentic</h4>
+        <ul>
+          <li>No agent starts another, schedules itself or retries a failed paid call</li>
+          <li>No model output is written to the operations graph or triggers triage</li>
+          <li>Graphify's LLM pass is never called; only its AST and clustering</li>
+          <li>The platform never runs the code it writes, except the opt-in local test button</li>
+        </ul></div>
+    </div>
+
+    <p class="band">The same three checks sit behind every agent: <strong>scope is closed over</strong> (a model may only narrow what the request was already allowed to see), <strong>citations are re-verified against live sources</strong> before anything is stored or shown, and <strong>every model turn is receipted</strong> to the application whose key paid for it — usage is never silently zero.</p>
   </section>
 
   <!-- ═══ 01 ═══ -->
@@ -840,11 +923,11 @@ POST /api/v1/applications/&lt;reference&gt;/mcp/
 <!-- ═══ 07 · RETRIEVAL AND GRAPH ROADMAP ═══ -->
 <section id="roadmap">
 <div class="sec-head"><span class="sec-num">07</span><h2>Retrieval and graph roadmap</h2></div>
-<p class="sec-sub">Where Digital Brain sits against the three retrieval styles in <a href="https://atlan.com/know/knowledge-graphs-vs-rag-for-ai/" rel="noreferrer noopener">Atlan's knowledge graphs vs RAG comparison</a>, and what would move it to an enterprise-grade hybrid. This is a proposal: nothing in this section is implemented yet, and every percentage is an estimate from public retrieval results until the benchmark (improvement 1) measures it on our own sources.</p>
+<p class="sec-sub">Where Digital Brain sits against the three retrieval styles in <a href="https://atlan.com/know/knowledge-graphs-vs-rag-for-ai/" rel="noreferrer noopener">Atlan's knowledge graphs vs RAG comparison</a>, and what would move it to an enterprise-grade hybrid. Improvements 1-6 (benchmark, BM25, ontology, merged names, OpenAI embeddings, two-hop traversal) and cached published graphs are now implemented; the reranker, spend caps and enterprise items are not. Phases, effort and status are in <code>docs/retrieval-roadmap-plan.md</code>. Percentages are estimates from public retrieval results except where the benchmark has measured them on our own sources.</p>
 <div class="table-wrap"><table><thead><tr><th>Approach</th><th>How it retrieves</th><th>Digital Brain today</th></tr></thead><tbody>
-<tr><td class="layer">RAG<br><span class="sub">vector + BM25</span></td><td>Embed chunks, find the nearest by meaning, often blended with BM25 keyword ranking.</td><td><b>Not used.</b> No embeddings, no vector store, no BM25. Chat's AI mode and the search tool use a plain keyword hit count.</td></tr>
+<tr><td class="layer">RAG<br><span class="sub">vector + BM25</span></td><td>Embed chunks, find the nearest by meaning, often blended with BM25 keyword ranking.</td><td><b>Yes, opt-in, as starting points.</b> BM25 ranking for the graph and keyword paths, fused with OpenAI embeddings when an owner switches Search embeddings on. A vector only chooses where to look; it is never cited.</td></tr>
 <tr><td class="layer">Knowledge graph</td><td>Entities as nodes, typed relationships as edges; answers walk paths.</td><td><b>Primary.</b> Chat graph mode, Code Factory and ServiceOps answer from graphs. Every citation is a relationship with a quote re-checked against the live source.</td></tr>
-<tr><td class="layer">Hybrid<br><span class="sub">GraphRAG</span></td><td>Vector recall finds starting points; graph expansion connects them.</td><td><b>Half of it.</b> The expansion half exists (one hop from the top three matches); the starting points come from keyword matching, not vectors.</td></tr>
+<tr><td class="layer">Hybrid<br><span class="sub">GraphRAG</span></td><td>Vector recall finds starting points; graph expansion connects them.</td><td><b>Yes, opt-in.</b> Starting points from BM25 fused with vectors; expansion two hops along typed relationships, one hop structural; the graph stays the authority.</td></tr>
 </tbody></table></div>
 <p class="band"><strong>Recommendation: GraphRAG where vectors only find the starting points and the graph stays the authority.</strong> Search decides where to look; only a verified graph relationship can be cited. That keeps the explainability and governance the knowledge-graph column is strong on, and fixes its weakness - missing anything worded differently from the source. Do it in stages, each measured: benchmark, then the free wins (BM25, ontology, merged names), then embeddings, then multi-hop.</p>
 </section>

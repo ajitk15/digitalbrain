@@ -1,0 +1,18 @@
+[
+  {"question": "Is patient consent checked before a FHIR export?", "expected": "KAN-4"},
+  {"question": "Why can a partner download records of people who said no?", "expected": "KAN-4"},
+  {"question": "What limits the page size of patient search?", "expected": "KAN-5"},
+  {"question": "Why did the service fail on 14 August?", "expected": "incident-2026-08-14"},
+  {"question": "Which log line leaks the patient name and date of birth?", "expected": "KAN-6"},
+  {"question": "Are referral status changes written to the audit trail?", "expected": "KAN-7"},
+  {"question": "What should an auditor see when reading a patient record?", "expected": "KAN-8"},
+  {"question": "How is login protected against credential stuffing?", "expected": "KAN-9"},
+  {"question": "Which deployment names does the operations runbook use?", "expected": "operations-runbook"},
+  {"question": "How is a release deployed and rolled back?", "expected": "deployment-runbook"},
+  {"question": "Why was SQLite chosen for release one?", "expected": "0001-sqlite"},
+  {"question": "How are API tokens issued and rotated?", "expected": "0002-static-token"},
+  {"question": "Which HIPAA controls are not implemented?", "expected": "hipaa-control-matrix"},
+  {"question": "What availability target does the service commit to?", "expected": "service-level-objectives"},
+  {"question": "What does minimum necessary disclosure require?", "expected": "regulatory-requirements"},
+  {"question": "Which risks are still open?", "expected": "risk-register"}
+]

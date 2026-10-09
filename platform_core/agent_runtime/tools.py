@@ -67,6 +67,7 @@ def _scoped_application(scope):
 
 def search_knowledge(scope, args):
     """Lexical passage search over this application's active sources."""
+    from ..models import User
     from ..workbench import lexical_citations
 
     app = _scoped_application(scope)
@@ -75,7 +76,7 @@ def search_knowledge(scope, args):
         return ToolResult("Provide a search query.", [])
     limit = args.get("limit", 5)
     limit = limit if isinstance(limit, int) and 1 <= limit <= MAX_RESULTS else 5
-    citations = lexical_citations(app, query)[:limit]
+    citations = lexical_citations(app, query, User.objects.get(pk=scope.user_id))[:limit]
     if not citations:
         return ToolResult(f"No sources in this application matched {query!r}.", [])
     lines = [f"{len(citations)} matching passage(s) for {query!r}:"]

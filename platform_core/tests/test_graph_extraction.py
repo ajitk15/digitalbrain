@@ -78,8 +78,10 @@ class PerSourceExtractionTests(TestCase):
                 "relationships": [
                     {
                         "subject": subject,
+                        "subject_type": "Component",
                         "relation": "depends on",
                         "object": obj,
+                        "object_type": "Component",
                         "source_id": str(entry.pk),
                         "quote": quote,
                     }
@@ -142,8 +144,10 @@ class PerSourceExtractionTests(TestCase):
                 "relationships": [
                     {
                         "subject": "Service Alpha",
+                        "subject_type": "Component",
                         "relation": "sends messages to",
                         "object": "Queue Beta",
+                        "object_type": "Component",
                         "source_id": str(self.first.pk),
                         "quote": self.first.content,
                     }

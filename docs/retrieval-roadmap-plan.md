@@ -1,0 +1,186 @@
+# Retrieval roadmap - implementation plan
+
+Turns section 07 of `docs/diagrams/index.html` ("Retrieval roadmap · proposed") into
+phases that can each ship on their own. Every phase is measured with the benchmark
+(Knowledge → Benchmark, `manage.py benchmark`) before and after, and none of them
+touches the three invariants: the publish gate, citation checks against live sources,
+and published-version-only answers.
+
+Estimates are engineering days for one developer who knows the codebase, including
+tests and the four verification gates in `CLAUDE.md`. They are not calendar time.
+
+## Summary
+
+| Phase | Roadmap items | Effort | New infrastructure | Model cost | Status |
+|---|---|---|---|---|---|
+| 0 Measure and rank | 1 Benchmark, 2 BM25 | 3-4 d | None | None | **Done** |
+| 1 Ontology | 3 Typed graph | 2-3 d | None | None (same call) | **Done** |
+| 2 Merge names | 4 Merged names, runbook aliases | 2-3 d | None | None | **Done** |
+| 3 Multi-hop | 6 Traversal (2 hops, typed) | 2-3 d | None | None | **Done** |
+| 4 Speed | Cached published graphs, Postgres full-text | 2-3 d | None (index migration) | None | Cache **done**; full-text next |
+| 5 Embeddings | 5 Vector starting points | 6-8 d | OpenAI credential (pgvector later) | **Yes** | **Done** - not yet measured |
+| 6 Spend and rerank | Spend caps, reranker | 3-5 d | Optional reranking model | Yes (reranker) | After 5 |
+| 7 Enterprise | Labels, incremental updates, source permissions, shared queue | 20-29 d | Redis; per-connector permission sync | Optional | Separate project |
+
+Phases 0-4 need no new infrastructure and no new spend: **about 11-16 days**. With 5 and 6,
+**about 20-29 days**. Phase 7 is a separate project of roughly another month.
+
+Order is the roadmap's: measure first, then the free wins, then the paid one. Phase 1 must
+precede 2 (merging is type-aware) and 3 (traversal follows typed relations).
+
+## Phase 0 - Measure and rank (done)
+
+- `benchmark.py`, `BenchmarkQuestion`/`BenchmarkRun` (migration 0067), Knowledge → Benchmark,
+  `manage.py benchmark`. Every saved version is scored after commit, free.
+- `ranking.py`: coverage first, BM25 second, then `spread` (each source's best citation
+  before any source's second). Used by graph citations and `workbench.retrieve`.
+- Measured on CarePathDev v4: 11/16 → 15/16 found, MRR 0.53 → 0.61.
+- Follow-up fix (2026-10-09). The first version ranked three questions lower than the old
+  word count (graph KAN-5 1→2, regulatory-requirements 2→4; keyword KAN-9 3→4). Causes and
+  fixes: an identifier was one word (`max_page_size`), now its words; "requirement" and
+  "require" were different terms, now one (`ranking.term`, outside the fingerprint stemmer);
+  "against" counted as a subject word, now filler. Keyword search was 2.2× slower than HEAD
+  because every passage was split and stemmed on every question; terms are now cached per
+  source and per word.
+
+  | Measured vs HEAD 18dee62, 16 questions | HEAD | BM25 first cut | Now |
+  |---|---|---|---|
+  | Graph: found / top 3 / MRR | 11 / 9 / 0.528 | 15 / 10 / 0.614 | **15 / 11 / 0.693** |
+  | Keyword: found / top 3 / MRR | 8 / 6 / 0.257 | 14 / 11 / 0.614 | **14 / 12 / 0.674** |
+  | Questions ranked worse than HEAD | - | 3 | **0** |
+  | Graph ms per question (median) | 22.2 | 59.9 (6.8 cached) | **6.8** |
+  | Keyword ms per question (median) | 10.4 | 22.9 | **4.4** (27.8 first search) |
+
+## Phase 1 - Ontology (done)
+
+`platform_core/ontology.py` is a closed registry, the same pattern as `services.FEATURES`:
+eight types (Ticket, Requirement, Control, Component, Code, Runbook, Incident, Change)
+and twelve relations, each with the free-text phrasings it absorbs ("uses", "relies on",
+"depends on" → `depends on`).
+
+- Extraction instructions list the allowed types and relations; the prompt and the
+  validator read the same registry, so they cannot drift.
+- A relationship whose relation is not in the registry, or whose types are not, is rejected
+  and counted, exactly like an unverified quote. The quote check is unchanged and still
+  comes first.
+- Entity nodes carry `type`; edges carry the canonical relation. `ONTOLOGY_VERSION` is
+  saved on the revision's data and quality report. It is deliberately not part of the
+  fingerprint: that would make every application rebuild a new structural draft on
+  deploy, and a requested AI run always saves a new version anyway.
+
+Value: relations stop drifting; merging and traversal can trust types.
+
+## Phase 2 - Merge names (done)
+
+`ontology.merge_entities` runs after extraction. Two AI entity nodes merge only when they
+have the **same type** and their names normalise to the same key, or are near-identical
+word by word: the same number of words, each equal after stemming or a long word (6+
+letters) misspelt (Jaro-Winkler ≥ 0.93), numbers exact. A Component never merges with a
+Requirement, CARE-401 never with CARE-412, `carepath-api` never with `carepath-api-green`
+(whole-string similarity was tried first and did exactly that), blue never with green.
+
+- Every edge keeps its own `knowledge_id`, digest and quote, so verification is per edge
+  exactly as before; the merged node lists its `aliases`.
+- Graphify's `dedup` was evaluated and not used for this step: it only merges cross-file
+  nodes typed `concept`, keys behaviour on `source_file` paths and prints to stderr. The
+  rules above are the same idea in 40 lines we control. Its LLM tie-break stays off either way.
+- ServiceOps runbook linking (`ops_graph.passages`) now matches a component name however it
+  is punctuated ("CarePath API green" reaches `carepath-api-green`; `carepath-api` still does
+  not), and also under any name the published knowledge graph merged with it.
+  `RULES_VERSION` in the operations fingerprint rebuilds every operations graph under the
+  new rule. Free and works on structural graphs too.
+- Not done, deliberately: "green deployment" → `carepath-api-green`. That needs meaning, not
+  spelling - phase 5.
+
+## Phase 3 - Multi-hop (done)
+
+`graph_ai.walk` goes breadth-first, up to `MAX_HOPS = 2`, from the endpoints of the five
+best-ranked AI relationships, along other AI relationships.
+
+- **Typed (AI) relationships only.** Structural edges are not walked: a value like
+  "Status: Done" is shared by hundreds of records, and walking through it connects
+  everything to everything. The existing one-hop structural expansion is unchanged.
+- A hub with more than `MAX_FANOUT = 25` typed relationships is not walked through.
+- Walked finds take at most `PATH_SLOTS = 3` places ahead of weaker direct matches (hop 1
+  before hop 2), carry `hops`, and say "Reached by: CARE-425 affects Referrals API -> ...".
+  Every one is verified exactly as before, so a further hop can only add verified evidence.
+- Measured: CarePathDev v4 (structural only) unchanged at 15/16 found, top-3 10/16,
+  MRR 0.61 - no regression. The gain needs an AI-enriched version; the test fixture shows
+  CARE-425 → Referrals API → referrals.py ← NFR-03 cited with no word shared with the
+  question, and not cited with one hop.
+- ServiceOps "change → component → runbook" needed no new walk: a change is linked to an
+  incident only on the same CI, so its runbooks are already the incident's. A change on a
+  component the incident's component *depends on* is the real third hop, and needs typed
+  `depends on` edges in a published graph - a follow-up once AI-enriched graphs exist.
+
+## Phase 4 - Speed
+
+Done: `graph_ai.prepared` keeps a published revision's parsed data, relationship texts and
+BM25 index in process (LRU of 8), keyed by revision id and creation time; a `post_save`
+drops an entry. Safe because a revision's data never changes once saved. The benchmark
+builds the same structure once per run instead of once per question. Measured on
+CarePathDev v4 (2,974 relationships): **54 ms → 6.6 ms per question**, plus the ~60 ms read
+and parse of the graph that is no longer repeated.
+
+Next (1-2 d): a Postgres `GIN` full-text index on `KnowledgeEntry(title, content)` for
+`workbench.retrieve`, replacing the 100-record `icontains` scan on Postgres only; SQLite
+keeps the scan. Benchmark must not drop.
+
+## Phase 5 - Embeddings (done: OpenAI `text-embedding-3-small`)
+
+Decided: OpenAI embeddings through each application's own OpenAI credential. Built as
+**starting points only** - a vector picks candidates, and what is cited is still a
+relationship or passage verified against its live source.
+
+- **Setting.** A seventh AI purpose, *Search embeddings* (`embeddings`), OpenAI-only,
+  `text-embedding-3-small` or `-large` or a custom `text-embedding-*` id. **Off by
+  default** and seeded off on new applications: it needs an OpenAI credential and spends on
+  every new question once on.
+- **What is embedded, and when.** Relationship texts of the graph version, passages of its
+  sources (the same 1,400-character windows keyword search uses) and the benchmark
+  questions - only in an **AI graph run someone requested** (`graphs.rebuild`), or by an
+  operator with `manage.py embed <app> --as <user>`. A background rebuild never spends.
+  Each new question is embedded when asked and charged to the person asking; Code Factory
+  charges the run's requester. Capped at 12,000 texts per run.
+- **Storage** (`models.Embedding`, migration 0068). Content-addressed by the SHA-256 of
+  the exact text, per application and model, 512-dimension unit float32: unchanged text is
+  never paid for twice, so a rebuilt version reuses every vector. A passage also records
+  its entry and offset and is re-read and re-hashed at search time - changed text is
+  skipped.
+- **Search.** Exact cosine in process with numpy over the stored vectors (top 30, floor
+  0.2), fused with the BM25 order by reciprocal rank fusion (k = 60). With no vector the
+  order is exactly the word ranking, so every application that leaves it off behaves as
+  before. Used by Chat graph mode, Chat AI mode and the `search_knowledge` tool, the
+  API/MCP search, Code Factory evidence and ServiceOps' graph passages (stored question
+  vectors only there: nothing is charged from a page view).
+- **Billing.** One `AIUsage` receipt per request, purpose `embeddings`, provider OpenAI,
+  the request id from `x-request-id`; a missing token count or malformed vector is an
+  error, never a free request. A failed question embedding logs `embedding_unavailable`
+  and answers by words; a failed indexing step warns on the version and never loses the
+  relationships already paid for.
+- **Benchmark.** Uses stored question vectors only, so a run still calls no model; each
+  row records whether meaning took part ("words + meaning").
+- **pgvector deliberately not used yet.** A version's vectors fit in memory (3,000 × 512
+  float32 ≈ 6 MB) and exact search over them is sub-millisecond, so the production
+  database image and its extension privileges do not change. pgvector replaces the
+  in-memory matrices once a library outgrows that - nothing else changes.
+- Not measured on CarePath yet: this machine has no OpenAI credential. Set
+  `openai_<app id>`, switch Search embeddings on, then
+  `manage.py embed <app> --as <owner>` and `manage.py benchmark <app>` give the before/after
+  (cost on CarePathDev is a fraction of a cent).
+
+## Phase 6 - Spend caps and reranking (3-5 d)
+
+- Per-application monthly budget (`AIConfiguration` field), checked before every paid call
+  including embeddings; refusal is an error with the reason, never a silent skip. (2 d)
+- Optional reranker over the verified top 20 → top 8, through the application credential,
+  off by default, enabled per application only after a benchmark run shows it helps. (2-3 d)
+
+## Phase 7 - Enterprise hardening (separate project, 20-29 d)
+
+| Item | Effort | Infrastructure |
+|---|---|---|
+| Sensitivity labels per source, filtered at retrieval | 3-4 d | None |
+| Incremental graph updates for a changed source + stale alert | 4-5 d | Worker job |
+| Source-system permissions on answers (Jira, ServiceNow, delegated SharePoint) | 10-15 d | Permission sync per connector |
+| Shared queue for streaming and Stop across processes | 3-5 d | Redis |

@@ -714,7 +714,7 @@ class ChatTests(BrowserTestCase):
         config = SimpleNamespace(provider="openai", model="gpt-5.6-luna")
         asked = self.asked
 
-        def citations(app_id, question, version=None):
+        def citations(app_id, question, version=None, user=None):
             asked.append({"version": version})
             return []
 
