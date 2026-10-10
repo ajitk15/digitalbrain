@@ -150,3 +150,57 @@ class JudgeTests(SimpleTestCase):
         }
         for reason, item in cases.items():
             self.assertEqual(judge(item, self.source), (None, reason), reason)
+
+    def test_a_source_may_be_the_subject_of_what_it_says(self):
+        ticket = {
+            "t": {
+                "title": "CARE-401 - Consent is not checked before export",
+                "excerpt": "CARE-401 - Consent is not checked before export\n\nKey: KAN-4\n"
+                "Type: Bug\n\nBR-05 requires that consent is honoured before export.",
+            }
+        }
+        item = {
+            "subject": "CARE-401",
+            "subject_type": "Ticket",
+            "relation": "violates",
+            "object": "BR-05",
+            "object_type": "Requirement",
+            "source_id": "t",
+            "quote": "BR-05 requires that consent is honoured before export.",
+        }
+        self.assertEqual(judge(item, ticket), (("Ticket", "violates", "Requirement"), None))
+        # Named by its whole title, or by the key its imported header states.
+        for name in ("CARE-401 - Consent is not checked before export", "KAN-4", "care-401"):
+            self.assertIsNone(judge({**item, "subject": name}, ticket)[1], name)
+        # Not another ticket, not a type a source cannot be, and the object still counts.
+        refused = {
+            "subject not in quote": [
+                {**item, "subject": "CARE-402"},
+                {**item, "subject_type": "Component"},
+            ],
+            "object not in quote": [{**item, "object": "NFR-03"}],
+        }
+        for reason, items in refused.items():
+            for refused_item in items:
+                self.assertEqual(judge(refused_item, ticket), (None, reason), refused_item)
+
+    def test_offline_rescoring_uses_the_same_judge(self):
+        pack = drift.load_pack()["extraction"][0]
+        record = {
+            "details": {
+                "proposals": [
+                    {
+                        "task": pack["id"],
+                        "subject": pack["id"],
+                        "subject_type": "Ticket",
+                        "relation": "references",
+                        "object": pack["text"].split()[-1],
+                        "object_type": "Component",
+                        "quote": pack["text"].rstrip().split("\n")[-1][-100:],
+                    },
+                    {"task": pack["id"], "raw": "'not a dict'"},
+                ]
+            }
+        }
+        acceptance, reasons = drift.rescore(record)
+        self.assertEqual((acceptance, reasons), (50.0, {"malformed": 1}))

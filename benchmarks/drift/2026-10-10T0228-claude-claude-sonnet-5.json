@@ -1,0 +1,317 @@
+{
+ "generated_at": "2026-10-10T02:28:29+00:00",
+ "extraction_model": "claude:claude-sonnet-5",
+ "answer_model": "claude:claude-sonnet-5",
+ "calls": 10,
+ "metrics": {
+  "extraction_valid": 100.0,
+  "extraction_acceptance": 90.9,
+  "extraction_off_ontology": 0.0,
+  "relationships_per_source": 5.5,
+  "answer_cites_expected": 100.0,
+  "answer_with_citation": 100.0,
+  "answer_invented_citations": 0,
+  "tokens_per_call": 3009,
+  "seconds_per_call": 13.5
+ },
+ "details": {
+  "rejection_reasons": {
+   "subject not in quote": 2
+  },
+  "proposals": [
+   {
+    "task": "CARE-401",
+    "subject": "CARE-401",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "BR-05",
+    "object_type": "Requirement",
+    "quote": "BR-05 requires that the patient's recorded consent decision is honoured before their record leaves the organisation.",
+    "refused": null
+   },
+   {
+    "task": "CARE-401",
+    "subject": "CARE-401",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "C-09",
+    "object_type": "Control",
+    "quote": "The HIPAA control matrix claims this control as C-09 under 164.502(a) and rates it not implemented.",
+    "refused": null
+   },
+   {
+    "task": "CARE-401",
+    "subject": "C-09",
+    "subject_type": "Control",
+    "relation": "required by",
+    "object": "164.502(a)",
+    "object_type": "Control",
+    "quote": "The HIPAA control matrix claims this control as C-09 under 164.502(a) and rates it not implemented.",
+    "refused": null
+   },
+   {
+    "task": "CARE-401",
+    "subject": "CARE-401",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "GET /fhir/Patient/{patient_id}/$everything",
+    "object_type": "Component",
+    "quote": "GET /fhir/Patient/{patient_id}/$everything checks that the caller holds the fhir:export permission and then builds and returns the bundle. There is no call to the consent service anywhere on that path.",
+    "refused": null
+   },
+   {
+    "task": "CARE-401",
+    "subject": "GET /fhir/Patient/{patient_id}/$everything",
+    "subject_type": "Component",
+    "relation": "depends on",
+    "object": "consent service",
+    "object_type": "Component",
+    "quote": "There is no call to the consent service anywhere on that path.",
+    "refused": "subject not in quote"
+   },
+   {
+    "task": "CARE-412",
+    "subject": "CARE-412",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "GET /patients",
+    "object_type": "Component",
+    "quote": "GET /patients declares limit with a default of 50 and no upper bound.",
+    "refused": null
+   },
+   {
+    "task": "CARE-412",
+    "subject": "CARE-412",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "NFR-06",
+    "object_type": "Requirement",
+    "quote": "NFR-06 states that the clamp is the requirement.",
+    "refused": null
+   },
+   {
+    "task": "CARE-412",
+    "subject": "CARE-412",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "NFR-11",
+    "object_type": "Requirement",
+    "quote": "held a transaction past the two-second ceiling in NFR-11",
+    "refused": null
+   },
+   {
+    "task": "CARE-412",
+    "subject": "CARE-412",
+    "subject_type": "Ticket",
+    "relation": "references",
+    "object": "INC-2026-0814",
+    "object_type": "Incident",
+    "quote": "Realised as INC-2026-0814 on 2026-08-14.",
+    "refused": null
+   },
+   {
+    "task": "CARE-412",
+    "subject": "CARE-412",
+    "subject_type": "Ticket",
+    "relation": "references",
+    "object": "A-2",
+    "object_type": "Ticket",
+    "quote": "a test asserts an upper bound on every collection endpoint, not only the ones that have one today, which is postmortem action A-2",
+    "refused": null
+   },
+   {
+    "task": "CARE-425",
+    "subject": "CARE-425",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "services/referrals.py",
+    "object_type": "Code",
+    "quote": "services/referrals.py transition updates the referral row and returns it. It does not call audit.record.",
+    "refused": null
+   },
+   {
+    "task": "CARE-425",
+    "subject": "services/referrals.py",
+    "subject_type": "Code",
+    "relation": "violates",
+    "object": "NFR-03",
+    "object_type": "Requirement",
+    "quote": "NFR-03 requires an audit event in the same transaction as every access to patient data.",
+    "refused": "subject not in quote"
+   },
+   {
+    "task": "CARE-425",
+    "subject": "CARE-425",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "NFR-03",
+    "object_type": "Requirement",
+    "quote": "NFR-03 requires an audit event in the same transaction as every access to patient data. A referral status change is a change to the patient's clinical record",
+    "refused": null
+   },
+   {
+    "task": "CARE-425",
+    "subject": "CARE-425",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "C-03",
+    "object_type": "Control",
+    "quote": "The HIPAA control matrix rates C-03 partially effective for this reason.",
+    "refused": null
+   },
+   {
+    "task": "CARE-425",
+    "subject": "CARE-425",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "C-10",
+    "object_type": "Control",
+    "quote": "C-10's reconciliation compares access counts against audit counts per endpoint, so an endpoint that writes no audit event at all contributes to neither side and is invisible to the review",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "CARE-431",
+    "subject_type": "Ticket",
+    "relation": "violates",
+    "object": "REG-03, HIPAA 164.502(b) minimum necessary",
+    "object_type": "Control",
+    "quote": "REG-03, HIPAA 164.502(b) minimum necessary, requires that disclosure is limited to what the purpose needs.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "CARE-431",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "GET /patients/{id}",
+    "object_type": "Component",
+    "quote": "GET /patients/{id} returns PatientOut to every caller holding that permission, so an auditor receives the name, full date of birth, postal code and telephone number.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "GET /patients/{id}",
+    "subject_type": "Component",
+    "relation": "depends on",
+    "object": "PatientOut",
+    "object_type": "Code",
+    "quote": "GET /patients/{id} returns PatientOut to every caller holding that permission, so an auditor receives the name, full date of birth, postal code and telephone number.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "PatientSummary",
+    "subject_type": "Code",
+    "relation": "implemented in",
+    "object": "schemas.py",
+    "object_type": "Code",
+    "quote": "A PatientSummary schema already exists in schemas.py, with a masked MRN, the family name and the birth year only.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "mask_mrn",
+    "subject_type": "Code",
+    "relation": "implemented in",
+    "object": "security/phi.py",
+    "object_type": "Code",
+    "quote": "mask_mrn in security/phi.py is in the same position: written, tested, unused.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "CARE-431",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "PatientSummary",
+    "object_type": "Code",
+    "quote": "A PatientSummary schema already exists in schemas.py, with a masked MRN, the family name and the birth year only.",
+    "refused": null
+   },
+   {
+    "task": "CARE-431",
+    "subject": "CARE-431",
+    "subject_type": "Ticket",
+    "relation": "affects",
+    "object": "mask_mrn",
+    "object_type": "Code",
+    "quote": "mask_mrn in security/phi.py is in the same position: written, tested, unused.",
+    "refused": null
+   }
+  ],
+  "answers": [
+   {
+    "question": "Is patient consent checked before a FHIR export?",
+    "cited": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     8
+    ],
+    "hit": true
+   },
+   {
+    "question": "Why can a partner download records of people who said no?",
+    "cited": [
+     1,
+     2,
+     3,
+     5,
+     6
+    ],
+    "hit": true
+   },
+   {
+    "question": "What limits the page size of patient search?",
+    "cited": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     8
+    ],
+    "hit": true
+   },
+   {
+    "question": "Why did the service fail on 14 August?",
+    "cited": [
+     1,
+     3,
+     6
+    ],
+    "hit": true
+   },
+   {
+    "question": "Which log line leaks the patient name and date of birth?",
+    "cited": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     7
+    ],
+    "hit": true
+   },
+   {
+    "question": "Are referral status changes written to the audit trail?",
+    "cited": [
+     1,
+     2,
+     4,
+     5,
+     6,
+     7,
+     8
+    ],
+    "hit": true
+   }
+  ]
+ }
+}

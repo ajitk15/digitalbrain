@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import re
 import threading
 from collections import OrderedDict
 from types import SimpleNamespace
@@ -52,10 +53,17 @@ EXTRACTION_INSTRUCTIONS = (
     # Measured by `manage.py llm_drift`: with a second sentence asking for "the
     # most specific entity name available", 21 of 22 refusals were a subject the
     # quote did not contain - the model named the thing better than the text did.
+    # The next run found the rest: 11 of 16 proposals named the ticket itself,
+    # which its own body never repeats, while this prompt asked for "what a ticket
+    # affects" and forbade naming it. The source itself is now the one exception.
     "subject and object must each be copied character for character from inside the quote, "
-    "so that both appear in it verbatim: never a ticket key, document title or fuller name "
-    "the quote itself does not contain. If the quote does not name a subject, choose a "
-    "longer quote that does, or skip the relationship. Do not infer missing facts. "
+    "so that both appear in it verbatim. The one exception is the source itself: when the "
+    "subject is the ticket, runbook, incident or change the evidence is, name it by the key "
+    "its title starts with (or its whole title if it has no key), and the quote then needs "
+    "to contain only the object. Never use any other name the quote does not contain; if "
+    "the quote does not name a subject, choose a longer quote that does, or skip the "
+    "relationship. A quote saying something is absent or missing supports no relationship "
+    "to it. Do not infer missing facts. "
     + ontology_prompt()
     + " Prefer relationships a reader would care about: what a ticket affects or violates, "
     "what code implements a requirement, what a component depends on, what a runbook covers. "
@@ -116,12 +124,43 @@ REJECTIONS = (
 )
 
 
+#: What a source can itself be, so may be the subject of what it says.
+SELF_TYPES = frozenset({"Ticket", "Runbook", "Incident", "Change"})
+_KEY = re.compile(r"[A-Z][A-Z0-9]+-\d+")
+_KEY_LINE = re.compile(r"^Key: (\S+)$", re.M)
+
+
+def own_names(source):
+    """What a source is called by its own record, case-folded: its title, the key
+    the title starts with, and the key an imported record's header states.
+
+    A ticket's body never repeats its own key, so "CARE-401 violates BR-05" can
+    never have both names in one quote. The record says which source the quote
+    came from; the model's naming of it is checked against that, never trusted.
+    """
+    names = set()
+    title = (source.get("title") or "").strip()
+    if title:
+        names.add(title.casefold())
+        key = _KEY.match(title)
+        if key:
+            names.add(key.group().casefold())
+    key = _KEY_LINE.search(source["excerpt"][:600])
+    if key:
+        names.add(key.group(1).casefold())
+    return names
+
+
 def judge(item, sources):
     """((subject type, relation, object type), None) or (None, why it is refused).
 
     The quote is checked first and still decides: a type is a filter on
     verified relationships, never a reason to accept one. One function, so
     graph generation and the LLM drift check refuse for the same reasons.
+
+    The subject may instead be the source itself, named as its record names it
+    (`own_names`) and typed as something a source can be (`SELF_TYPES`); the
+    object must still be in the quote.
     """
     if not isinstance(item, dict) or any(
         not isinstance(item.get(k), str) or not item[k].strip()
@@ -138,13 +177,17 @@ def judge(item, sources):
         return None, "quote not in source"
     if any(len(item[k]) > 120 for k in ("subject", "relation", "object")):
         return None, "name too long"
-    if item["subject"].casefold() not in quote.casefold():
+    subject_quoted = item["subject"].casefold() in quote.casefold()
+    itself = not subject_quoted and item["subject"].strip().casefold() in own_names(source)
+    if not subject_quoted and not itself:
         return None, "subject not in quote"
     if item["object"].casefold() not in quote.casefold():
         return None, "object not in quote"
     kinds = typed(item.get("subject_type"), item["relation"], item.get("object_type"))
     if kinds is None:
         return None, "outside the ontology"
+    if itself and kinds[0] not in SELF_TYPES:
+        return None, "subject not in quote"
     return kinds, None
 
 
