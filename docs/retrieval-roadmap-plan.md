@@ -1,6 +1,7 @@
 # Retrieval roadmap - implementation plan
 
-Turns section 07 of `docs/diagrams/index.html` ("Retrieval roadmap · proposed") into
+Turns the retrieval roadmap (the former `docs/diagrams/index.html` section 07, now
+in git history; current behaviour is `docs/index.html#components-retrieval-and-chat`) into
 phases that can each ship on their own. Every phase is measured with the benchmark
 (Knowledge → Benchmark, `manage.py benchmark`) before and after, and none of them
 touches the three invariants: the publish gate, citation checks against live sources,

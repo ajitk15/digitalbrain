@@ -2,7 +2,7 @@
 
 For `srv1874861.hstgr.cloud` (200.141.11.23), serving `ajitconnect.in`.
 
-`docs/deployment.md` is the general procedure and the authority on why each rule
+`docs/index.html#infrastructure` is the general procedure and the authority on why each rule
 exists. This is the specific one, and it differs in ways worth knowing.
 
 **Nothing has to be prepared on the server.** No directories to create, no

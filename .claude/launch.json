@@ -18,18 +18,6 @@
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["manage.py", "runserver", "8056", "--noreload"],
       "port": 8056
-    },
-    {
-      "name": "diagrams",
-      "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": [
-        "-m",
-        "http.server",
-        "8781",
-        "--directory",
-        "docs/diagrams"
-      ],
-      "port": 8781
     }
   ]
 }

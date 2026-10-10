@@ -1,6 +1,13 @@
 # Digital Brain
 
-Working Python/Django SaaS foundation using the selected Digital Brain logo, with a compact responsive interface. This repository previously contained architecture documents only. The implementation covers administration, private local document intake, automatic background MarkItDown conversion, searchable knowledge, streaming cited answers from either OpenAI or Claude with cost receipts, GitHub/Jira/ServiceNow issue import, a GitHub repository index, and a gated pipeline from ticket to draft pull request. See [feature workflows and setup](docs/feature-workflows.md) for configuration and remaining production integrations.
+An application-isolated knowledge platform for engineering and IT operations teams:
+documents, tickets, incidents and code become a versioned knowledge graph that answers
+questions, plans code fixes and triages incidents, with every citation re-verified
+against its live source. Django 5.2, Python 3.12, server-rendered.
+
+**Documentation: [`docs/index.html`](docs/index.html)** (one file, open it in a browser: product overview, architecture,
+components, engineering, infrastructure, marketing). Rules for changing code:
+[`CLAUDE.md`](CLAUDE.md).
 
 ## First run on a new machine
 
@@ -144,56 +151,15 @@ The site admin ID is a bootstrap identity, not a login bypass. Changing it later
 
 Mounted secret loading follows [Django's deployment checklist](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/).
 
-## Available now
-
-| Area | Implementation |
-| --- | --- |
-| Identity | Password sign-in, database sessions, lockout, password change, first-login change, account enable/disable |
-| Roles | Platform admin, organization admin/member, application owner/contributor/viewer; approval is a separate grant |
-| Hierarchy | Organization → Portfolio → Product → Application; organization/application enable/disable |
-| Isolation | Deny-by-default application policy; current organization membership and explicit grant required on every request |
-| Branding | Selected logo by default; platform-admin image upload; bounded decoding, canonical PNG, alpha preservation, atomic replacement, cache revalidation |
-| Documents | Multi-file uploads (20 files / 20 MB total), private originals, automatic MarkItDown conversion, Markdown/graph-input export, scoped deletion; optional scanning |
-| Knowledge graph | Automatic structural graph generation, interactive exploration, evidence links, measured structural quality and numbered version history |
-| Knowledge & chat | Searchable immutable sources, verified citation excerpts, per-user conversations, streaming tool-using answers from either Agent SDK |
-| Code Factory | Six-phase pipeline from ticket to draft pull request: graph-cited plans with pinned sources, independent approval by a different user, confirmed repository, a verification pass, then a draft PR on its own branch. Replaces files it first read; never creates, deletes or merges |
-| Code Graph | GitHub repositories indexed at one commit on their own worker lane: files, symbols and import relationships, with the remote host hardcoded and no URL accepted. Feeds Code Factory analysis and design |
-| Machine surfaces | Bearer-token REST graph search and an MCP server under /api/v1/, returning the same verified evidence as chat and calling no model |
-| Connectors | Read-only GitHub, Jira and ServiceNow imports, bounded to 100 records, deduplicated by digest with revision history |
-| Navigation | Organization tree at left; functional menus at top; current application highlighted |
-| Governance | Scoped, paginated audit events with actor, time, resource, request ID and structured change details |
-| Features | Seven global/application feature switches; global disable overrides application enable; connector/provider setup remains explicit |
-| AI accounting | Exact decimal amounts, currency, provider/model, token counts, estimated/reported status, duplicate/conflicting receipt detection |
-| Operations | Liveness/readiness, safe structured logs, request IDs, limits, static compression, production security defaults, local lifecycle scripts |
-
-The optional OpenAI adapter records returned token usage and estimated costs at owner-configured prices. GitHub imports issue content as versioned knowledge. Both require application-specific mounted credentials. These adapters are covered by mocked tests; no live service calls were made during implementation. Automatic price catalogs, budgets, invoice reconciliation and spend alerts remain pending. Currency and estimate/report totals remain separate.
-
-Platform admins see service metadata and aggregate spend, not application content. Organizational seniority does not imply application access. The normalized hierarchy derives an application's organization from its product and portfolio rather than accepting a browser-supplied organization ID.
-
 ## Verification
+
+All five must be clean before a change is done (see
+[How we build](docs/index.html#engineering--the-five-gates-all-must-be-clean)):
 
 ```powershell
 .venv/Scripts/ruff.exe check digitalbrain platform_core scripts manage.py
 .venv/Scripts/python.exe manage.py makemigrations --check --dry-run
 .venv/Scripts/python.exe manage.py test
 .venv/Scripts/python.exe scripts/production_preflight.py
+.venv/Scripts/python.exe manage.py scorecard --check
 ```
-
-The production preflight uses disposable synthetic mounted secrets and does not connect to real infrastructure. Local tests use SQLite; PostgreSQL concurrency, TLS and row-level security are separate release requirements. See [non-functional requirements](docs/non-functional.md) and [deployment](docs/deployment.md).
-
-## Structure
-
-- `digitalbrain/`: configuration, URL routing and WSGI.
-- `platform_core/`: models, access policy, transactional services, screens and tests.
-- `templates/`, `static/`: compact server-rendered UI and default branding.
-- `scripts/`: local setup, lifecycle helpers, WSGI server and security preflight.
-- `design/`: original architecture narrative and diagrams.
-- `docs/`: operational instructions and implementation boundaries.
-
-React is intentionally deferred: streaming chat is served as server-sent events with a small progressive-enhancement script, so the interface still works with JavaScript disabled and needs no build step or client-side permission logic.
-
-## Documents and simplified navigation
-
-Open **Organizations → your organization → application → Documents**. Application owners and contributors can upload; viewers can list document metadata. Administration does not automatically grant document access. Portfolio/product management is collapsed below the application cards. The same Documents / AI costs / People & access / Settings tabs appear across application screens.
-
-Local originals are preserved byte-for-byte under `.runtime/documents/<organization>/<application>/<document-id>.quarantine`, outside public static storage. The database stores metadata only. Uploads are quarantined and cannot be downloaded, previewed or sent to AI until scanning is integrated. No malware-scan result is implied by a successful upload. Production intake is disabled until application-specific private storage and scanning are configured. The application upload feature switch is enforced on the server.

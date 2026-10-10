@@ -60,7 +60,7 @@ RUN set -eu; \
         tini; \
     rm -rf /var/lib/apt/lists/*
 
-# An unprivileged identity, as docs/deployment.md requires. The uid is fixed so
+# An unprivileged identity, as docs/index.html#infrastructure requires. The uid is fixed so
 # a bind-mounted secret directory can be chowned to it from the host - read_secret
 # refuses any file carrying group or other permission bits.
 RUN groupadd --gid 10001 brain \

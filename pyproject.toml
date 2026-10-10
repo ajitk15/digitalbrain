@@ -32,7 +32,7 @@ dev = [
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-extend-exclude = [".runtime", ".venv", "design", "staticfiles"]
+extend-exclude = [".runtime", ".venv", "staticfiles"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
