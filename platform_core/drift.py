@@ -109,6 +109,33 @@ def load_pack():
     return json.loads(PACK.read_text(encoding="utf-8")) if PACK.is_file() else build_pack()
 
 
+def proposal(task_id, item, reason):
+    """One proposed relationship as the record keeps it, so a change to
+    `judge` can be re-scored against what the model actually said, for free."""
+    fields = ("subject", "subject_type", "relation", "object", "object_type", "quote")
+    kept = {k: item.get(k) for k in fields} if isinstance(item, dict) else {"raw": repr(item)}
+    return {"task": task_id, **kept, "refused": reason}
+
+
+def rescore(record):
+    """(acceptance %, reasons) for a record's proposals under today's `judge`."""
+    from .graph_ai import judge
+
+    pack = {t["id"]: t for t in load_pack()["extraction"]}
+    reasons, accepted, proposals = {}, 0, record["details"].get("proposals", [])
+    for p in proposals:
+        task = pack[p["task"]]
+        item = {k: v for k, v in p.items() if k not in ("task", "refused")}
+        item["source_id"] = task["id"]
+        source = {"title": task["title"], "excerpt": task["text"]}
+        _, reason = judge(item, {task["id"]: source})
+        if reason:
+            reasons[reason] = reasons.get(reason, 0) + 1
+        else:
+            accepted += 1
+    return (round(100 * accepted / len(proposals), 1) if proposals else 0.0), reasons
+
+
 def markers(answer):
     """The evidence numbers an answer cites, as [3] or [3][4] or [3, 4]."""
     found = []
@@ -130,7 +157,7 @@ def run(user, app):
     pack = load_pack()
     calls = []
     proposed = accepted = off = valid = 0
-    reasons = {}
+    reasons, proposals = {}, []
     for task in pack["extraction"]:
         citation = {
             "id": task["id"],
@@ -150,6 +177,7 @@ def run(user, app):
         for item in found:
             proposed += 1
             _, reason = judge(item, {task["id"]: citation})
+            proposals.append(proposal(task["id"], item, reason))
             if reason:
                 reasons[reason] = reasons.get(reason, 0) + 1
                 off += reason == "outside the ontology"
@@ -206,7 +234,7 @@ def run(user, app):
         "answer_model": f"{answer_config.provider}:{answer_config.model}" if answer_config else "",
         "calls": len(calls),
         "metrics": values,
-        "details": {"rejection_reasons": reasons, "answers": answers},
+        "details": {"rejection_reasons": reasons, "proposals": proposals, "answers": answers},
     }
 
 

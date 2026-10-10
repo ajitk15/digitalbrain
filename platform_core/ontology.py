@@ -118,7 +118,7 @@ RELATIONS = {
         ("is required by", "mandated by", "is mandated by", "derives from", "traces to"),
     ),
     "implemented in": Relation(
-        _types("Requirement", "Control", "Component"),
+        _types("Requirement", "Control", "Component", "Code"),
         _types("Code", "Component"),
         ("is implemented in", "implemented by", "is implemented by", "is defined in", "lives in"),
     ),

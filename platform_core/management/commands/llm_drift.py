@@ -2,6 +2,7 @@
 
     manage.py llm_drift <application id> --as <username>
     manage.py llm_drift <application id> --as <username> --record
+    manage.py llm_drift <application id> --as <username> --json record.json
     manage.py llm_drift --build-pack
 
 Sends the frozen evidence pack (`benchmarks/drift-pack.json`) to the
@@ -11,6 +12,9 @@ latest recorded run of the same models. About ten calls, through the
 application's own credential and monthly budget, receipted as usual. See
 `platform_core/drift.py`.
 """
+
+import json
+from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.core.management.base import BaseCommand, CommandError
@@ -28,6 +32,7 @@ class Command(BaseCommand):
         parser.add_argument("--as", dest="actor", help="Username the calls are made and charged as")
         parser.add_argument("--record", action="store_true", help="Save under benchmarks/drift/")
         parser.add_argument("--build-pack", action="store_true", help="Rebuild the frozen inputs")
+        parser.add_argument("--json", help="Also write the record to this file, not the history")
 
     def handle(self, *args, **options):
         if options["build_pack"]:
@@ -63,6 +68,10 @@ class Command(BaseCommand):
                 f"{k} {v}" for k, v in record["details"]["rejection_reasons"].items()
             )
             self.stdout.write(f"  Refused: {reasons}")
+        if options["json"]:
+            Path(options["json"]).write_text(
+                json.dumps(record, indent=1, ensure_ascii=False), encoding="utf-8"
+            )
         if options["record"]:
             path = drift.save(record)
             self.stdout.write(f"Recorded {path.relative_to(drift.BENCH.parent)}")

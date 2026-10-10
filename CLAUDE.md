@@ -436,6 +436,18 @@ long-typo-equal, word by word, numbers exact): whole-string similarity merged
 `carepath-api` with `carepath-api-green`, which is CARE-444's mistake. Each edge keeps its
 own source, digest and quote. Untyped entities in older versions are left alone.
 
+**A source may be the subject of what it says** (`graph_ai.own_names`, `SELF_TYPES`). A
+ticket's body never repeats its own key, so under the exact-quote rule "CARE-401 violates
+BR-05" could never verify: the drift check found 11 of 16 proposals were exactly that,
+refused, while the prompt asked for "what a ticket affects". The subject may now be the
+source itself - named by its title, the key its title starts with, or its imported `Key:`
+line, all read from the record, never from the model - when typed as something a source
+can be (Ticket, Runbook, Incident, Change). The object must still be in the quote and the
+quote must still be exact; every other subject still has to be quoted. On the frozen pack
+this took verified proposals from 25% (0% on a rerun) to 91%, and the two still refused
+were correctly refused. Re-score a `judge` change against a record's `proposals` with
+`drift.rescore` before paying for a run.
+
 **Retrieval walks two hops, typed edges only.** `graph_ai.walk` goes breadth-first from the
 best-ranked AI relationships along other AI relationships (`MAX_HOPS`), stops at hubs
 (`MAX_FANOUT`), and its finds (at most `MAX_WALKED`) come **after every direct match**,
