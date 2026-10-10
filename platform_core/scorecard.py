@@ -398,7 +398,7 @@ def ticket_question(ticket):
 
 def agentic(ws, revision):
     """What Code Factory is handed for each ticket with a planted bug, scored by the answer key."""
-    from .graph_ai import citations_from
+    from .graph_ai import MAX_REFERENCED, citations_from
 
     key = json.loads((BENCH / "seeded-evidence.json").read_text(encoding="utf-8"))["tickets"]
     found = expected = self_cited = 0
@@ -406,10 +406,16 @@ def agentic(ws, revision):
     for care, identifiers in key.items():
         ticket = ws.tickets[care]
         question = ticket_question(ticket)
+        # As `code_factory.evidence_for` asks: the eight, then cross-references.
         cited = citations_from(
-            ws.app.pk, revision.data, revision.number, question, viewer=ws.people["owner"]
+            ws.app.pk,
+            revision.data,
+            revision.number,
+            question,
+            viewer=ws.people["owner"],
+            references=MAX_REFERENCED,
         )
-        text = "\n".join(f"{c['title']}\n{c['excerpt']}" for c in cited)
+        text ="\n".join(f"{c['title']}\n{c['excerpt']}" for c in cited)
         hits = [i for i in identifiers if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", text)]
         found += len(hits)
         expected += len(identifiers)

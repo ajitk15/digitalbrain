@@ -9,7 +9,7 @@ from platform_core import serviceops
 from platform_core.graph_ai import citations_from
 from platform_core.graphs import build_graph
 from platform_core.models import KnowledgeEntry
-from platform_core.ranking import BM25, query_terms, spread, stem, terms
+from platform_core.ranking import BM25, identifiers, query_terms, spread, stem, terms
 from platform_core.workbench import retrieve
 
 from . import test_documents
@@ -21,6 +21,23 @@ class RankingTests(SimpleTestCase):
         index = BM25([terms(text) for text in texts])
         best = index.rank(query_terms("patient consent"))[0]
         self.assertEqual(best[1], 8)
+
+    def test_a_reference_is_one_term_however_short(self):
+        """"C-09" was two fragments under three characters, so it was no term at all."""
+        self.assertEqual(
+            identifiers("BR-05, C-09 (F-01); INC-2026-0814 and ADR-0002. CARE-401's"),
+            ["br-05", "c-09", "f-01", "inc-2026-0814", "adr-0002", "care-401"],
+        )
+        self.assertEqual(identifiers("2026-08-14, x-request-id, 164.502(b)"), [])
+        self.assertIn("c-09", terms("The control matrix rates C-09 not implemented."))
+        index = BM25([terms(t) for t in ["control C-08 row", "control C-09 row"]])
+        self.assertEqual(index.rank_covering(query_terms("Which control is C-09?"))[0][1], 1)
+
+    def test_a_reference_late_in_a_long_question_is_kept(self):
+        long = " ".join(f"word{n}" for n in range(40)) + " and finally NFR-11"
+        query = query_terms(long)
+        self.assertIn("nfr-11", query)
+        self.assertEqual(len([t for t in query if "-" not in t]), 20)
 
     def test_holding_more_of_the_question_comes_first(self):
         """One rare word must not carry a text past one holding the whole question."""

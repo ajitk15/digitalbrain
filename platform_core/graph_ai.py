@@ -478,7 +478,7 @@ _prepared_lock = threading.Lock()
 
 def prepare(data):
     """A graph's data with its relationships' texts and BM25 index built."""
-    from .ranking import BM25, terms
+    from .ranking import BM25, identifiers, terms
 
     nodes = {n["id"]: n for n in data.get("nodes", [])}
     candidates = []
@@ -487,7 +487,18 @@ def prepare(data):
         if start and end:
             candidates.append((edge, f"{start['label']} {edge['relation']} {end['label']}"))
     index = BM25([terms(text) for _, text in candidates])
-    return SimpleNamespace(data=data, nodes=nodes, candidates=candidates, index=index)
+    # References are read from the whole passage, not only its label: a table
+    # row's label stops at its first cell, before the requirement it cites. A
+    # source naming its own key ("CARE-401" in CARE-401) is not a reference.
+    titles = {s["id"]: s.get("title") or "" for s in data.get("sources", [])}
+    names = [
+        frozenset(identifiers(f"{text} {edge.get('evidence', '')}"))
+        - frozenset(identifiers(titles.get(edge.get("knowledge_id"), "")))
+        for edge, text in candidates
+    ]
+    return SimpleNamespace(
+        data=data, nodes=nodes, candidates=candidates, index=index, names=names
+    )
 
 
 def prepared(revision):
@@ -541,12 +552,14 @@ def available_graph_versions(app_id):
     )
 
 
-def graph_citations(app_id, question, version=None, user=None):
+def graph_citations(app_id, question, version=None, user=None, references=0):
     """Verified citations from the published graph.
 
     `user` is who a new question embedding is charged to, when the application
     has search embeddings on; without one, only a stored vector is used and
     otherwise the ranking is by words alone, exactly as before embeddings.
+    `references` adds up to that many cross-references after the eight
+    (`referenced`); Code Factory asks for them, chat does not.
     """
     from .embeddings import question_vector
 
@@ -566,8 +579,11 @@ def graph_citations(app_id, question, version=None, user=None):
         model=model,
         limit=rerank.CANDIDATES if wide else 8,
         viewer=user,
+        references=references,
+        # Reranking chooses the eight; cross-references are added after it.
+        choose=(lambda direct: rerank.rerank(user, app_id, question, direct, 8)) if wide else None,
     )
-    return rerank.rerank(user, app_id, question, found, 8) if wide else found
+    return found
 
 
 #: How far a question may walk along typed relationships from where it starts.
@@ -639,8 +655,53 @@ def walk(data, ranked):
     return reached
 
 
+#: Cross-references a ticket's evidence follows, after its direct matches.
+MAX_REFERENCED = 4
+
+
+def referenced(question, ready, order, cited=frozenset()):
+    """Relationships whose text names the references the question names.
+
+    A ticket that says "C-09" or "INC-2026-0814" points at the control matrix
+    row and the postmortem that say the rest, and a person reading it follows
+    those references; the words around them are often too common to. Most
+    names first, then a source not `cited` yet, then the word ranking.
+    Candidates only - each is verified like any other citation. Nothing when
+    the question names no reference.
+    """
+    from .ranking import identifiers
+
+    named = set(identifiers(question))
+    if not named:
+        return []
+    rank = {position: place for place, position in enumerate(order)}
+    hits = []
+    for position, names in enumerate(ready.names):
+        shared = named.intersection(names)
+        if shared:
+            edge = ready.candidates[position][0]
+            again = edge.get("knowledge_id") in cited
+            hits.append((-len(shared), again, rank.get(position, len(rank)), position, shared))
+    hits.sort()
+    found = []
+    for *_, position, shared in hits:
+        edge, text = ready.candidates[position]
+        found.append((edge, text, 1, [f"names {', '.join(sorted(n.upper() for n in shared))}"]))
+    return found
+
+
 def citations_from(
-    app_id, data, number, question, ready=None, vector=None, model=None, limit=8, viewer=None
+    app_id,
+    data,
+    number,
+    question,
+    ready=None,
+    vector=None,
+    model=None,
+    limit=8,
+    viewer=None,
+    references=0,
+    choose=None,
 ):
     """Verified citations for a question, from one graph's data.
 
@@ -648,7 +709,9 @@ def citations_from(
     anyone publishes it. Answering still goes through `graph_snapshot`, which
     refuses drafts; this function never decides which graph may answer. `ready`
     is `prepare(data)`, when the caller already has it; `vector` is the
-    question's embedding under `model`, when there is one.
+    question's embedding under `model`, when there is one. `references` is how
+    many cross-references (`referenced`) to add after the direct matches, and
+    `choose`, when given, picks the direct matches from the `limit` found.
     """
     from .embeddings import fuse, nearest, relation_matrix
     from .graphs import sources_for
@@ -700,9 +763,10 @@ def citations_from(
         if permitted(e, viewer)
     }
 
-    def verified():
-        seen = set()
-        for edge, text, hop, path in ordered:
+    seen, signatures = set(), {}
+
+    def verified(items):
+        for edge, text, hop, path in items:
             entry = active.get(edge.get("knowledge_id"))
             signature = (edge["source"], edge["target"], edge["relation"])
             quote = edge.get("evidence", "")
@@ -716,7 +780,7 @@ def citations_from(
                 continue
             seen.add(signature)
             found = f"\nReached by: {' -> '.join(path)}" if path else ""
-            yield {
+            citation = {
                 "id": str(entry.pk),
                 "title": entry.title,
                 "digest": entry.digest,
@@ -728,7 +792,20 @@ def citations_from(
                 "relation": text,
                 "hops": hop,
             }
+            signatures[id(citation)] = signature
+            yield citation
 
     # Eight citations, each source's best one before any source's second: eight
     # relationships from one document are one source shown eight times.
-    return spread(verified(), key=lambda citation: citation["id"], limit=limit)
+    direct = spread(verified(ordered), key=lambda citation: citation["id"], limit=limit)
+    if choose is not None:
+        direct = choose(direct)
+    if not references:
+        return direct
+    # `seen` also holds what `spread` looked at and left out; only what was
+    # actually cited may stop a cross-reference from being offered.
+    seen.clear()
+    seen.update(signatures.get(id(citation)) for citation in direct)
+    cited = {citation["id"] for citation in direct}
+    found = verified(referenced(question, ready, order, cited))
+    return direct + spread(found, key=lambda citation: citation["id"], limit=references)

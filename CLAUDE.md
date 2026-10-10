@@ -458,6 +458,25 @@ them it is 15/16, 0.691 - the walk only fills a place a direct match left empty.
 - a value node such as "Status: Done" joins hundreds of records. Every walked citation is
 verified like any other.
 
+**A reference is one term** (`ranking.identifiers`). `words` drops anything under three
+characters, so "C-09", "BR-05" and "R-04" were no term at all and "NFR-06" was "nfr", which
+every requirement shares; a question's twenty-word cap also cut off references late in a
+long ticket. References are now indexed whole beside the words and kept beyond the cap.
+That alone took the graph benchmark to 16/16, MRR 0.709. Ranking references *ahead* of
+words was tried and measured worse (evidence recall 76% -> 60%): planted evidence such as
+a risk register row is found by the ticket's words, not its references.
+
+**Code Factory follows the references its ticket names** (`graph_ai.referenced`,
+`MAX_REFERENCED`, asked for by `code_factory.evidence_for` only). After the eight direct
+matches - exactly what chat cites, unmoved - up to four passages that name the most of the
+question's references, read from the whole passage rather than its label (a table row's
+label stops at its first cell), a source not yet cited breaking ties. A source naming its
+own key is not a reference to it. Each is verified like any other citation and says
+"Reached by: names C-09". A question naming no reference gets nothing extra, so chat and
+the benchmark are untouched. Planted-bug evidence recall went 76% -> 96%; the one miss,
+F-03, is named only by evidence (C-08), not by the ticket - following references from
+the evidence is the next step, and would need measuring for noise first.
+
 **Published graphs are prepared once per process** (`graph_ai.prepared`, LRU of
 `CACHE_SIZE`): parsed data, relationship texts and the BM25 index. Safe because a
 revision's data never changes after it is saved; a `post_save` drops it anyway. Callers of

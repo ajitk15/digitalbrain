@@ -85,14 +85,35 @@ def term(word):
     return word
 
 
+#: A reference as documents write them: BR-05, C-09, NFR-06, ADR-0002,
+#: INC-2026-0814, CARE-401. Letters, then one or more hyphenated numbers.
+_IDENTIFIER = re.compile(r"(?<![\w-])[a-z]{1,8}(?:-\d+)+(?![\w-])")
+
+
+def identifiers(text):
+    """The references a text names, whole and case-folded, in order.
+
+    `words` cannot see them: "C-09" is a letter and a two-digit number, both
+    under three characters, and "NFR-06" is left as "nfr", which every
+    non-functional requirement shares. A ticket that names the control it
+    breaks matched the control matrix no better than any other table did.
+    """
+    return _IDENTIFIER.findall(text.casefold())
+
+
 def terms(text):
-    """The terms BM25 compares. Cached per word: a library repeats its words."""
-    return [term(word) for word in words(text)]
+    """The terms BM25 compares: words, then whole references. Cached per word."""
+    return [term(word) for word in words(text)] + identifiers(text)
 
 
 def query_terms(question, limit=20):
-    """A question's distinct terms, in order, capped so a pasted essay stays cheap."""
-    return list(dict.fromkeys(terms(question)))[:limit]
+    """A question's distinct terms, its references first, capped so a pasted
+    essay stays cheap. References are capped separately rather than counted in
+    the twenty words: a ticket names what it breaks in its last paragraph as
+    often as in its first, and the word cap used to cut them off."""
+    split = list(dict.fromkeys(terms(question)))
+    named = [t for t in split if "-" in t][:limit]
+    return named + [t for t in split if "-" not in t][:limit]
 
 
 class BM25:

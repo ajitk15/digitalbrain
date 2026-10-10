@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-09T20:06:29+00:00",
- "commit": "2ca77cb",
+ "generated_at": "2026-10-10T03:02:29+00:00",
+ "commit": "0cac9e5",
  "corpus": {
   "sources": 34,
   "questions": 16
@@ -12,7 +12,7 @@
    "unit": "of 16",
    "better": "higher",
    "tolerance": 0,
-   "value": 15
+   "value": 16
   },
   "graph_top3": {
    "aspect": "Retrieval",
@@ -28,7 +28,7 @@
    "unit": "",
    "better": "higher",
    "tolerance": 0.005,
-   "value": 0.702
+   "value": 0.709
   },
   "keyword_found": {
    "aspect": "Retrieval",
@@ -76,7 +76,7 @@
    "unit": "%",
    "better": "higher",
    "tolerance": 0.5,
-   "value": 76.0
+   "value": 96.0
   },
   "seeded_tickets_self_cited": {
    "aspect": "Agentic evidence",
@@ -270,7 +270,7 @@
    {
     "question": "How are API tokens issued and rotated?",
     "expected": "0002-static-token",
-    "graph_rank": null,
+    "graph_rank": 8,
     "keyword_rank": 5
    },
    {
@@ -316,7 +316,9 @@
     "found": [
      "BR-05",
      "T-03",
+     "W-01",
      "C-09",
+     "F-01",
      "R-01"
     ]
    },
@@ -330,7 +332,9 @@
     ],
     "found": [
      "NFR-06",
-     "T-01"
+     "T-01",
+     "R-04",
+     "INC-2026-0814"
     ]
    },
    {
@@ -385,6 +389,7 @@
     ],
     "found": [
      "NFR-12",
+     "ADR-0002",
      "T-05",
      "R-05"
     ]
