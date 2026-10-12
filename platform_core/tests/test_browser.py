@@ -1075,6 +1075,33 @@ class FactoryReviewArrivesTests(BrowserTestCase):
         self.assertTrue(stage.get_by_role("button", name="Approve").first.is_visible())
         self.assertNoScriptErrors()
 
+    def test_several_stages_arriving_at_once_keep_their_order(self):
+        """Each new stage was placed after the last one the page already had,
+        so stages arriving in one refresh landed in reverse: 3, 4, 7, 6, 5."""
+        from platform_core.models import FactoryRun, ProposedChange
+
+        self.open("run-detail", self.app.pk, self.run.pk)
+        self.page.locator('[data-live="run-hero"][data-live-pending]').wait_for()
+        self.mark_page()
+        # Analysis, approval and preparation all land before the next refresh,
+        # so stages 3, 4 and 5 arrive together.
+        self.finish_analysis()
+        run = FactoryRun.objects.get(pk=self.run.pk)
+        run.plan.status = "approved"
+        run.plan.save(update_fields=["status"])
+        ProposedChange.objects.create(run=run, path="app/util.py", content="X = 2\n")
+        FactoryRun.objects.filter(pk=run.pk).update(status="prepared")
+        self.page.locator('[data-live="run-hero"]:not([data-live-pending])').wait_for()
+        self.page.locator('[data-live="stage-5"]').wait_for()
+        self.assertSamePage()
+        order = "(all) => all.map((node) => node.dataset.live)"
+        live = self.page.locator("main > [data-live]").evaluate_all(order)
+        self.page.reload()
+        rendered = self.page.locator("main > [data-live]").evaluate_all(order)
+        self.assertIn("stage-4", rendered)
+        self.assertEqual(live, rendered)
+        self.assertNoScriptErrors()
+
 
 class OnboardingTests(BrowserTestCase):
     def test_the_connector_question_opens_as_a_dialog_and_saves(self):

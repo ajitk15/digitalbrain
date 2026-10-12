@@ -105,6 +105,10 @@ async function refreshLive() {
     const imported = document.importNode(node, true);
     if (place.after) place.at.after(imported);
     else place.at.before(imported);
+    // On the page now, so the next new part can be placed after it: several
+    // stages can arrive in one refresh, and each placed after the last part
+    // the page had would land in reverse order.
+    current.set(key, imported);
     changed = true;
   });
   localTimes(document);
