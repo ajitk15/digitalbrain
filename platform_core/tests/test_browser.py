@@ -191,6 +191,32 @@ SMALL_TEXT = """(minimum) => {
 }"""
 
 
+class SidebarTreeTests(BrowserTestCase):
+    def test_a_long_name_wraps_and_its_kind_does_not(self):
+        """ "Knowledge Platform" beside its kind broke "Product" across two lines."""
+        from platform_core.models import Portfolio, Product
+
+        Product.objects.filter(pk=self.app.product_id).update(name="Knowledge Platform")
+        Portfolio.objects.filter(pk=self.app.product.portfolio_id).update(
+            name="Integrated Care Coordination Portfolio"
+        )
+        for width, height in ((1280, 720), (1440, 900)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open("application", self.app.pk)
+                lines = self.page.locator(".org-tree summary .tree-kind").evaluate_all(
+                    """(kinds) => kinds.map((kind) => {
+                      const range = document.createRange();
+                      range.selectNodeContents(kind);
+                      const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+                      return [kind.textContent, tops.size];
+                    })"""
+                )
+                self.assertIn(["Product", 1], lines)
+                self.assertTrue(all(count == 1 for _, count in lines), lines)
+        self.assertNoScriptErrors()
+
+
 class ReadabilityTests(BrowserTestCase):
     def test_no_screen_sets_text_smaller_than_the_minimum(self):
         for name in (

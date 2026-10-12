@@ -1967,6 +1967,10 @@
   .org-tree summary:hover .tree-add,
   .tree-add:focus-visible { opacity: 1; color: var(--c-brand-strong); }
   .org-tree summary { display: flex; align-items: center; gap: var(--s-1); }
+  /* A long name wraps; the word saying what it is never does. As flex items
+     both shrank, and "Product" broke as "Produc" / "t". */
+  .org-tree summary .tree-label { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .org-tree summary .tree-kind { flex: none; white-space: nowrap; }
   /* An application an organization admin can see in the structure but not
      open: named, never linked, since the link would be a 404. */
   .sidebar .org-tree .tree-locked { color: var(--c-ink-3); cursor: default; }
