@@ -883,6 +883,71 @@ class LiveProgressTests(BrowserTestCase):
         self.assertNoScriptErrors()
 
 
+class FactoryReviewArrivesTests(BrowserTestCase):
+    """A run page open while the analysis works shows the review when it lands.
+
+    Stage 3 is rendered only once there are gaps, so the live refresh had no
+    element to swap: the header said "Awaiting review", its button pointed at
+    #stage-3, there was no stage 3, and polling stopped because nothing was
+    pending any more. Only a reload showed the controls.
+    """
+
+    def setUp(self):
+        from platform_core.models import ApplicationGrant, FactoryRun
+
+        super().setUp()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        self.run = FactoryRun.objects.create(
+            application=self.app,
+            requested_by=self.owner,
+            ticket_external_id="CARE-1",
+            ticket_title="Export times out",
+            status="running",
+        )
+
+    def finish_analysis(self):
+        """What the worker does when the analysis returns: a plan with gaps."""
+        from platform_core.models import ChangePlan, FactoryRun, PlanItem
+
+        plan = ChangePlan.objects.create(
+            application=self.app, author=self.owner, title="Fix", proposal="p",
+            validation="v", digest="d", status="pending",
+        )
+        for number in (1, 2):
+            PlanItem.objects.create(
+                plan=plan, sequence=number, category="stated", title=f"Gap {number}",
+                explanation="e", change_summary="c",
+            )
+        FactoryRun.objects.filter(pk=self.run.pk).update(plan=plan, status="awaiting_review")
+
+    def test_the_review_stage_appears_in_place_and_its_pickers_work(self):
+        self.open("run-detail", self.app.pk, self.run.pk)
+        self.page.locator('[data-live="run-hero"][data-live-pending]').wait_for()
+        self.assertEqual(self.page.locator("#stage-3").count(), 0)
+        self.mark_page()
+        self.finish_analysis()
+        stage = self.page.locator('[data-live="stage-3"]')
+        stage.wait_for()
+        self.assertSamePage()
+        # In order: after the analysis, not wherever it happened to land.
+        self.assertEqual(
+            self.page.locator("details.stage").evaluate_all("(all) => all.map((d) => d.id)")[:3],
+            ["stage-1", "stage-2", "stage-3"],
+        )
+        boxes = stage.locator("input.gap-pick")
+        self.assertEqual(boxes.count(), 2)
+        # Select all / Clear all is bound on the document, so markup that
+        # arrived after load is enhanced like markup that was there.
+        stage.get_by_role("button", name="Clear all").click()
+        self.assertEqual([boxes.nth(i).is_checked() for i in range(2)], [False, False])
+        stage.get_by_role("button", name="Select all").click()
+        self.assertEqual([boxes.nth(i).is_checked() for i in range(2)], [True, True])
+        self.assertTrue(stage.get_by_role("button", name="Approve").first.is_visible())
+        self.assertNoScriptErrors()
+
+
 class OnboardingTests(BrowserTestCase):
     def test_the_connector_question_opens_as_a_dialog_and_saves(self):
         """modal.js lifts the form into a <dialog>; saving lands back on the list."""

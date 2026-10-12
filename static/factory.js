@@ -9,18 +9,25 @@
   // Select all / clear all for the gap checkboxes. The buttons are rendered
   // `hidden` and unhidden here, because without script they would be controls
   // that do nothing, and ticking eight boxes by hand is a chore rather than a
-  // barrier.
-  document.querySelectorAll("[data-pick-all]").forEach((bar) => {
-    const boxes = () => document.querySelectorAll("." + bar.dataset.pickAll);
-    if (!boxes().length) return;
-    bar.hidden = false;
-    bar.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-pick]");
-      if (!button) return;
-      const wanted = button.dataset.pick === "all";
-      // Assigning fires no change event, and the row styling keys off :checked
-      // in CSS, so there is nothing else to keep in step.
-      boxes().forEach((box) => { box.checked = wanted; });
+  // barrier. A bar can also arrive later, when the live refresh in
+  // documents.js inserts or replaces the review stage, so the click is handled
+  // on the document and unhiding runs again on every live update.
+  const showPickers = () => {
+    document.querySelectorAll("[data-pick-all][hidden]").forEach((bar) => {
+      if (document.querySelector("." + bar.dataset.pickAll)) bar.hidden = false;
+    });
+  };
+  showPickers();
+  document.addEventListener("live:updated", showPickers);
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pick-all] [data-pick]");
+    if (!button) return;
+    const bar = button.closest("[data-pick-all]");
+    const wanted = button.dataset.pick === "all";
+    // Assigning fires no change event, and the row styling keys off :checked
+    // in CSS, so there is nothing else to keep in step.
+    document.querySelectorAll("." + bar.dataset.pickAll).forEach((box) => {
+      box.checked = wanted;
     });
   });
 

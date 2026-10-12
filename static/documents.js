@@ -70,8 +70,10 @@ async function refreshLive() {
     return "failed";
   }
   const incoming = liveKeys(fresh);
+  const current = liveKeys(document);
   let waiting = false;
-  liveKeys(document).forEach((node, key) => {
+  let changed = false;
+  current.forEach((node, key) => {
     const replacement = incoming.get(key);
     if (!replacement) return;
     // A row the reader is working in (a focused Retry, a half-written review
@@ -84,10 +86,46 @@ async function refreshLive() {
     }
     const imported = document.importNode(replacement, true);
     keepDisclosures(node, imported);
-    if (imported.outerHTML !== node.outerHTML) node.replaceWith(imported);
+    if (imported.outerHTML !== node.outerHTML) {
+      node.replaceWith(imported);
+      // What is on the page now: a new part is placed beside this one, and
+      // the node it replaced is detached.
+      current.set(key, imported);
+      changed = true;
+    }
+  });
+  // Keys the fresh page has and this one does not: a part that did not exist
+  // when the page loaded, such as a run's review stage, rendered only once
+  // there is a plan to review. With nothing to swap it would never appear -
+  // and as the run then stops being pending, polling would stop with it.
+  incoming.forEach((node, key) => {
+    if (current.has(key) || node.parentElement.closest("[data-live]")) return;
+    const place = neighbour(node, current);
+    if (!place) return;
+    const imported = document.importNode(node, true);
+    if (place.after) place.at.after(imported);
+    else place.at.before(imported);
+    changed = true;
   });
   localTimes(document);
+  // Markup that arrived in place is new to every enhancement bound at load.
+  if (changed) document.dispatchEvent(new CustomEvent("live:updated"));
   return fresh.querySelector("[data-live-pending]") !== null || waiting ? "pending" : "done";
+}
+
+// Where a new live part goes: after the nearest earlier sibling this page
+// already has, or before the nearest later one. Neither, and it is left out
+// rather than put somewhere it was not rendered.
+function neighbour(node, current) {
+  for (let sibling = node.previousElementSibling; sibling; sibling = sibling.previousElementSibling) {
+    const here = sibling.dataset.live && current.get(sibling.dataset.live);
+    if (here) return { at: here, after: true };
+  }
+  for (let sibling = node.nextElementSibling; sibling; sibling = sibling.nextElementSibling) {
+    const here = sibling.dataset.live && current.get(sibling.dataset.live);
+    if (here) return { at: here, after: false };
+  }
+  return null;
 }
 
 // Said once, in one place, while updates cannot be fetched; gone when they can.
