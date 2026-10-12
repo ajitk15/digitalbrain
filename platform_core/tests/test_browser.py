@@ -208,7 +208,8 @@ class SidebarTreeTests(BrowserTestCase):
                     """(kinds) => kinds.map((kind) => {
                       const range = document.createRange();
                       range.selectNodeContents(kind);
-                      const tops = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+                      const rects = [...range.getClientRects()];
+                      const tops = new Set(rects.map((r) => Math.round(r.top)));
                       return [kind.textContent, tops.size];
                     })"""
                 )
