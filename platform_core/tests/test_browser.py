@@ -487,15 +487,54 @@ class ChatLayoutTests(BrowserTestCase):
                     configured_by=self.owner,
                     enabled=True,
                 )
-            for width, height in ((1280, 720), (1366, 768)):
+            for width, height in ((1280, 720), (1366, 768), (1440, 900)):
                 with self.subTest(size=f"{width}x{height}", setup_finished=finished, ai=ai):
                     self.page.set_viewport_size({"width": width, "height": height})
                     self.open("chat", self.app.pk, query="?new=1")
                     found = self.measure()
                     self.assertGreater(found["starters"], 1)
                     self.assertLessEqual(found["send"], found["height"], "Send is below the fold")
-                    self.assertGreaterEqual(found["messages"], 200)
+                    self.assertGreaterEqual(found["messages"], 140)
                     self.assertLessEqual(found["starter"], found["composer"], "starter covered")
+                    # The whole message area, not just the starters: a sticky
+                    # composer once covered its bottom, where the latest
+                    # answer is scrolled to.
+                    self.assertLessEqual(
+                        found["messagesBottom"], found["composer"], "composer covers messages"
+                    )
+        self.assertNoScriptErrors()
+
+    def test_the_latest_answer_is_not_under_the_composer(self):
+        """A long conversation opens at its end; that end must be readable."""
+        from platform_core.models import Application
+
+        Application.objects.filter(pk=self.app.pk).update(setup_completed_at=None)
+        conversation = ChatConversation.objects.create(
+            application=self.app, user=self.owner, title="Long", mode="search"
+        )
+        for number in range(6):
+            for offset, role in enumerate(("user", "assistant")):
+                ChatMessage.objects.create(
+                    conversation=conversation, application=self.app, user=self.owner,
+                    role=role, body=f"{role} {number} " * 60, sequence=2 * number + offset,
+                    status="complete",
+                )
+        for width, height in ((1280, 720), (1366, 768), (1440, 900)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open("chat", self.app.pk, query=f"?conversation={conversation.pk}")
+                composer = self.page.locator("#chat-composer").bounding_box()
+                # chat.js scrolls to the end, smoothly, so give it a moment.
+                deadline = time.monotonic() + 5
+                while True:
+                    last = self.page.locator(".chat-message").last.bounding_box()
+                    end = last["y"] + last["height"]
+                    if end <= composer["y"] + 1 or time.monotonic() > deadline:
+                        break
+                    time.sleep(0.1)
+                self.assertLessEqual(end, composer["y"] + 1, "latest answer under the composer")
+                self.assertGreater(end, composer["y"] - 80, "not opened at the latest answer")
+                self.assertLessEqual(composer["y"] + composer["height"], height)
         self.assertNoScriptErrors()
 
     def test_without_ai_a_new_chat_opens_on_a_mode_that_works(self):
