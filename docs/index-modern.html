@@ -2284,8 +2284,9 @@ the restriction.</li>
 records which platform users Jira lets browse it. Every answer path then filters by
 the person asking. The filter <strong>fails closed</strong>: an unchecked record, a member with no
 matched account, or a caller with no user sees nothing restricted. Members are
-matched by email, or linked by hand with <code>manage.py link_identity</code>. The Sources list
-and graph explorer still show titles; the filter governs answers. ServiceNow and
+matched by email, or linked by hand with <code>manage.py link_identity</code>. The Sources list,
+a source's own page and the graph explorer still show every record in full to
+every member; the filter governs answers, not reading. ServiceNow and
 SharePoint are not supported. Source: <a href="../platform_core/permissions.py"><code>permissions.py</code></a>.</p>
 <h3 id="components-access-and-security--outbound-requests"><a class="anchor" href="#components-access-and-security--outbound-requests">#</a>Outbound requests</h3>
 <figure class="diagram" tabindex="0" title="Click to enlarge"><pre class="mermaid">flowchart LR

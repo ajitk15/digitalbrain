@@ -269,6 +269,14 @@ class EnforcementTests(TestCase):
         # Closed at once, not visible until the next import notices.
         self.assertEqual(self.secret.access_principals, [])
 
+    def test_the_option_says_it_governs_answers_not_reading(self):
+        """Any member can still open a source's page and read it in full; the
+        form must not imply the option hides more than answers."""
+        form = self.client.get(reverse("connector-edit", args=[self.app.pk, self.connector.pk]))
+        self.assertContains(form, "connector-enforce")
+        self.assertContains(form, "This governs answers, not reading:")
+        self.assertContains(form, "read it in full")
+
     def test_unsupported_kinds_cannot_enforce(self):
         self.assertNotIn("servicenow", permissions.SUPPORTED)
         add = self.client.get(reverse("connector-new", args=[self.app.pk]) + "?kind=servicenow")
