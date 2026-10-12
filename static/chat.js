@@ -19,6 +19,7 @@
   const messages = document.getElementById("chat-messages");
   const sendButton = document.getElementById("chat-send");
   const status = document.getElementById("chat-status");
+  const waitingText = status.textContent;
   const csrf = form.querySelector("[name=csrfmiddlewaretoken]");
   const modeSelect = document.getElementById("chat-mode");
 
@@ -162,9 +163,13 @@
       }
     });
 
+    // A server "error" frame: the answer failed, and the worker says why. A
+    // dropped connection raises an "error" event too, but with no data - that
+    // one is onerror's below.
     source.addEventListener("error", (event) => {
+      if (!event.data) return;
       let message = "The answer could not be completed.";
-      try { message = JSON.parse(event.data).message || message; } catch { /* transport */ }
+      try { message = JSON.parse(event.data).message || message; } catch { /* malformed */ }
       assistant.body.textContent = text || message;
       finish(payload, assistant, text || message);
     });
@@ -174,10 +179,51 @@
       finish(payload, assistant, text);
     });
 
-    // Transport-level failure, distinct from a server "error" frame.
     source.onerror = () => {
-      if (source.readyState === EventSource.CLOSED) finish(payload, assistant, text);
+      if (active !== source) return;
+      // Refused outright (the server was too busy to start it): nothing is
+      // running, so the answer is shown as it stands.
+      if (source.readyState === EventSource.CLOSED) {
+        finish(payload, assistant, text);
+        return;
+      }
+      // Dropped mid-answer. The browser would reconnect by itself, and
+      // opening this stream again starts the answer again - a second paid
+      // call - so it is closed here instead. The server's worker sees its
+      // reader gone and saves the row; what it saved is then shown.
+      source.close();
+      active = null;
+      showStop(false);
+      sendButton.disabled = true;
+      status.textContent = "Connection lost. Checking what was saved…";
+      status.hidden = false;
+      settle(payload, assistant, text);
     };
+  };
+
+  // How long to wait for a dropped answer's worker to save its row. It notices
+  // the reader has gone at its next write, a heartbeat at most ten seconds
+  // away, and then stops.
+  const SETTLE_TRIES = 40;
+  const SETTLE_MS = 1500;
+
+  const settle = async (payload, assistant, text) => {
+    for (let attempt = 0; attempt < SETTLE_TRIES; attempt += 1) {
+      await new Promise((resume) => window.setTimeout(resume, SETTLE_MS));
+      try {
+        const response = await fetch(payload.fragment, {
+          headers: { "X-Requested-With": "fetch" },
+        });
+        if (response.ok) {
+          const holder = document.createElement("div");
+          holder.innerHTML = await response.text();
+          const saved = holder.firstElementChild;
+          if (saved && saved.dataset.status !== "streaming") break;
+        }
+      } catch { /* still unreachable; ask again */ }
+    }
+    status.textContent = waitingText;
+    finish(payload, assistant, text);
   };
 
   const stop = async () => {

@@ -816,6 +816,68 @@ class ChatTests(BrowserTestCase):
         self.script_errors = [e for e in self.script_errors if "net::ERR" not in e]
         self.assertNoScriptErrors()
 
+    def test_a_dropped_stream_is_not_reopened_and_shows_what_was_saved(self):
+        """A dropped connection used to run the server-error path: the stream
+        was finished on the spot and the composer reset as if the answer were
+        done, with no word of what happened. Reconnecting is no better here:
+        opening the stream again starts the answer again, a second paid call.
+        So the page says the connection was lost, opens nothing, and shows the
+        row once the server's worker has saved it."""
+        config = SimpleNamespace(provider="openai", model="gpt-5.6-luna")
+        started = []
+
+        def slow(user, app, config, token, question, seed, history, session):
+            started.append(question)
+            deadline = time.monotonic() + 20
+            while not session.stopped and time.monotonic() < deadline:
+                session.emit("delta", {"t": "still answering "})
+                time.sleep(0.2)
+            return "still answering", []
+
+        for item in (
+            patch("platform_core.ai.chat_configuration", return_value=(self.app, config, "k")),
+            patch("platform_core.ai.stream_chat_answer", side_effect=slow),
+            patch("platform_core.ai.generate_title", return_value=None),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
+        # Every EventSource the page opens, so the test can drop one the way a
+        # network does: an "error" event with no data. An init script runs
+        # before the page's own and is not subject to its CSP.
+        self.page.add_init_script(
+            """(() => {
+              const Real = window.EventSource;
+              window.__streams = [];
+              window.EventSource = function (url, options) {
+                const source = new Real(url, options);
+                window.__streams.push(source);
+                return source;
+              };
+              window.EventSource.prototype = Real.prototype;
+              Object.assign(window.EventSource, {
+                CONNECTING: Real.CONNECTING, OPEN: Real.OPEN, CLOSED: Real.CLOSED,
+              });
+            })()"""
+        )
+        self.open("chat", self.app.pk, query="?new=1")
+        self.mark_page()
+        self.ask("Which deployment serves traffic?")
+        self.page.locator(".chat-assistant").last.get_by_text("still answering").first.wait_for()
+        self.page.evaluate("window.__streams[0].dispatchEvent(new Event('error'))")
+        status = self.page.locator("#chat-status")
+        self.page.get_by_text("Connection lost").wait_for()
+        self.assertEqual(self.page.locator("#chat-send").inner_text(), "Send")
+        self.assertTrue(self.page.locator("#chat-send").is_disabled())
+        # The worker stops when its reader is gone, and the saved row is shown.
+        self.page.locator('.chat-assistant[data-status="stopped"]').wait_for(timeout=45000)
+        self.assertSamePage()
+        self.assertTrue(status.is_hidden())
+        self.assertFalse(self.page.locator("#chat-send").is_disabled())
+        self.assertEqual(ChatMessage.objects.get(role="assistant").status, "stopped")
+        self.assertEqual(len(started), 1, "the stream was opened again: a second paid call")
+        self.assertEqual(self.page.evaluate("window.__streams.length"), 1)
+        self.assertNoScriptErrors()
+
 
 class LiveProgressTests(BrowserTestCase):
     """A run page follows the run by itself, and says so when it cannot."""
