@@ -18,9 +18,13 @@ records with no list at all. A member is allowed only if their account could
 be found and the system said yes; a lookup that fails, a hidden email address,
 a check past the per-sync cap - each leaves them out, never in.
 
-What it does not cover, deliberately stated: the Sources list and the graph
-explorer still show titles and structure to every member, as before - this is
-about what answers cite and what is sent to a model. ServiceNow and SharePoint
+What it does not cover, deliberately stated: the Sources list, a source's own
+page and the graph explorer still show every record, in full, to every member
+of the application, as before - this is about what answers cite and what is
+sent to a model, and the connector form says so where the option is ticked.
+Treating a source system's permissions as a confidentiality boundary would
+mean enforcing them on those pages and downloads too; that is a product
+decision, not an omission. ServiceNow and SharePoint
 are not checked: ServiceNow ACLs are scripts evaluated per user and SharePoint
 reads as the application, and both need delegated per-user access this
 platform does not have. A connector of those kinds cannot switch it on.

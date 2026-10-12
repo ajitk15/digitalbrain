@@ -261,34 +261,43 @@ def model_evidence(pack):
     ]
 
 
-def run_still_verified(run):
-    """Hide a stored brief when its cited source was changed or retired."""
-    if not verified(run.incident) or run.incident.digest != run.incident_digest:
+def run_still_verified(run, viewer):
+    """Hide a stored brief unless every source it shows still holds for `viewer`.
+
+    A brief is saved once and read by many, so what held when it was made is
+    not enough: each read re-checks every source as it is now. Changed or
+    retired, restricted since, or no longer one `viewer` may be shown
+    (`permissions.permitted`, which fails closed for a viewer of None) - any
+    one hides the whole brief, since a hypothesis with a citation cut out of
+    it would read as complete when it is not.
+    """
+    from .permissions import permitted
+
+    sources = KnowledgeEntry.objects.filter(application=run.application).answerable()
+
+    def holds(pk, digest=None):
+        entry = sources.filter(pk=pk).first()
+        if not entry or not verified(entry) or not permitted(entry, viewer):
+            return None
+        return entry if digest is None or entry.digest == digest else None
+
+    if not holds(run.incident_id, run.incident_digest):
         return False
     for row in run.evidence:
-        entry = KnowledgeEntry.objects.filter(
-            pk=row["id"],
-            application=run.application,
-            active=True,
-            digest=row["digest"],
-        ).first()
-        if not entry or not verified(entry) or row["excerpt"] not in entry.content:
+        entry = holds(row["id"], row["digest"])
+        if not entry or row["excerpt"] not in entry.content:
             return False
     for hypothesis in run.hypotheses.all():
         for citation in hypothesis.citations:
-            entry = KnowledgeEntry.objects.filter(
-                pk=citation["id"],
-                application=run.application,
-                active=True,
-            ).first()
-            if not entry or not verified(entry) or citation["quote"] not in entry.content:
+            entry = holds(citation["id"])
+            if not entry or citation["quote"] not in entry.content:
                 return False
     return True
 
 
-def brief_payload(run):
+def brief_payload(run, viewer):
     """One verified brief shape for REST and MCP reads; never calls a model."""
-    if not run_still_verified(run):
+    if not run_still_verified(run, viewer):
         raise ValidationError("The brief's evidence has changed; triage again.")
     return {
         "id": str(run.pk),
@@ -686,7 +695,7 @@ def _execute(run):
     answer = None
     receipt = {}
     error = ""
-    if cached and run_still_verified(cached):
+    if cached and run_still_verified(cached, run.requested_by):
         # Same incident, same evidence, same model: the answer would be the one
         # already paid for. It is copied, and still verified again below.
         hypotheses = [

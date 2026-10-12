@@ -109,7 +109,8 @@ def mode_of(body, conversation):
     if conversation is not None:
         return conversation.mode
     value = body.get("mode", "ai")
-    if value not in MODES:
+    # A string first: a list or object is unhashable, and `in` a set would raise.
+    if not isinstance(value, str) or value not in MODES:
         raise ApiError("mode must be one of: search, ai, graph.", code="invalid_request")
     return value
 

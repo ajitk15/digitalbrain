@@ -44,9 +44,9 @@ def _uuid(value):
         raise ApiError("No such incident or run.", status=404, code="not_found") from None
 
 
-def _brief(run):
+def _brief(run, user):
     try:
-        return brief_payload(run)
+        return brief_payload(run, user)
     except ValidationError:
         raise ApiError(
             "The brief's evidence has changed; triage again.",
@@ -70,7 +70,7 @@ def triage(request, reference):
         if not incident or not verified(incident):
             raise ApiError("No such incident.", status=404, code="not_found")
         run = create_run(user, app.pk, incident, trigger="api")
-        return JsonResponse(_brief(run), status=201)
+        return JsonResponse(_brief(run, user), status=201)
     except ValidationError as failure:
         return _error(ApiError(" ".join(failure.messages), status=409, code="triage_unavailable"))
     except ApiError as failure:
@@ -81,10 +81,10 @@ def triage(request, reference):
 @require_GET
 def brief(request, reference, run_id):
     try:
-        _, app = _authorize(request, reference)
+        user, app = _authorize(request, reference)
         run = TriageRun.objects.filter(pk=_uuid(run_id), application=app).first()
         if not run:
             raise ApiError("No such run.", status=404, code="not_found")
-        return JsonResponse(_brief(run))
+        return JsonResponse(_brief(run, user))
     except ApiError as failure:
         return _error(failure)

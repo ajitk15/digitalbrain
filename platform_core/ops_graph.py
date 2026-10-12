@@ -53,9 +53,15 @@ SHARED = (
 
 
 def change_queryset(app):
-    """Imported change requests, which is what the connector's source says they are."""
-    return KnowledgeEntry.objects.filter(
-        application=app, active=True, source__icontains="change_request.do"
+    """Imported change requests, which is what the connector's source says they are.
+
+    Answerable, like incidents: a restricted change is in neither the graph nor
+    any triage pack. Being in the fingerprint's queryset, restricting one
+    rebuilds the graph."""
+    return (
+        KnowledgeEntry.objects.filter(application=app)
+        .answerable()
+        .filter(source__icontains="change_request.do")
     )
 
 

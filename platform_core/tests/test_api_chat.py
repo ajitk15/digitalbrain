@@ -190,12 +190,19 @@ class ChatApiTests(TestCase):
         self.assertEqual(second["mode"], "ai")
 
     def test_a_bad_request_is_refused_before_a_model_is_called(self):
-        for body in [{}, {"question": "  "}, {"question": 7}, {"question": "x", "mode": "free"}]:
+        modes = ["free", [], {}, None, True, 7, ["ai"]]
+        bodies = [{}, {"question": "  "}, {"question": 7}]
+        bodies += [{"question": "x", "mode": mode} for mode in modes]
+        for body in bodies:
             with self.subTest(body=body):
                 with patch("platform_core.ai.invoke_ai") as model:
                     response = self.ask(self.secret, **body)
+                # A JSON refusal, not a server error page: a list or object
+                # mode used to raise TypeError testing membership of a set.
                 self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.json()["error"]["code"], "invalid_request")
                 model.assert_not_called()
+        self.assertFalse(ChatConversation.objects.filter(application=self.app).exists())
 
     def test_streaming_returns_a_handle_rather_than_an_answer(self):
         response = self.ask(self.secret, question="What is Alpha?", stream=True)

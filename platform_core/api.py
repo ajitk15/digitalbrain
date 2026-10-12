@@ -242,7 +242,7 @@ def mcp(request, reference):
                 run = TriageRun.objects.filter(pk=identity, application=app).first()
                 if not run:
                     raise ValidationError("No such triage run.")
-                payload = brief_payload(run)
+                payload = brief_payload(run, user)
             except (PermissionDenied, Http404, ValueError, ValidationError):
                 return rpc_result(
                     request_id,

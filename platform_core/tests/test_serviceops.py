@@ -548,6 +548,113 @@ class ServiceOpsViewTests(TestCase):
             self.client.get(foreign, headers={"Authorization": f"Bearer {secret}"}).status_code, 401
         )
 
+    def test_a_saved_brief_is_rechecked_for_whoever_reads_it(self):
+        """A brief is saved once and read by many: each read re-checks every
+        source it shows against the reader, on every surface, so neither a
+        source's access list nor a restriction made after the run is bypassed
+        by reading the run instead of asking again."""
+        current = self.incident("Queue timeout")
+        prior = self.incident(
+            "Queue timeout earlier", state="Resolved", close_notes="Restarted worker safely."
+        )
+        answer = json.dumps(
+            {
+                "hypotheses": [
+                    {
+                        "statement": "A worker may be stalled",
+                        "next_step": "Inspect queue depth",
+                        "citations": [{"id": str(prior.pk), "quote": "Restarted worker safely."}],
+                    }
+                ]
+            }
+        )
+        with (
+            patch("platform_core.graph_ai.graph_citations", return_value=[]),
+            patch("platform_core.ai.invoke_ai", return_value=answer),
+        ):
+            self.triage(current)
+        run = TriageRun.objects.get(incident=current)
+        self.assertEqual(run.hypotheses.count(), 1)
+
+        def token(user):
+            prefix, secret, digest = issue()
+            ApiToken.objects.create(
+                application=self.app, user=user, name=user.username, prefix=prefix, digest=digest
+            )
+            return {"Authorization": f"Bearer {secret}"}
+
+        owner, viewer = token(self.owner), token(self.viewer)
+        brief = reverse("api-triage-brief", args=[self.app.pk, run.pk])
+        mcp = reverse("api-mcp", args=[self.app.pk])
+        page = reverse("serviceops-run", args=[self.app.pk, run.pk])
+        incident_page = {"incident": str(current.pk)}
+        call = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "triage_brief", "arguments": {"run_id": str(run.pk)}},
+            }
+        )
+
+        def readable(headers=None, user=None):
+            """What each surface gives this reader: REST, MCP, run page, incident page."""
+            rest = self.client.get(brief, headers=headers)
+            tool = self.client.post(mcp, call, content_type="application/json", headers=headers)
+            self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+            with patch("platform_core.graph_ai.graph_citations", return_value=[]):
+                pages = [self.client.get(page), self.client.get(self.url, incident_page)]
+            return (
+                rest.status_code == 200 and "Restarted worker safely." in rest.content.decode(),
+                not tool.json()["result"]["isError"],
+                [b"A worker may be stalled" in response.content for response in pages],
+            )
+
+        self.assertEqual(readable(viewer, self.viewer), (True, True, [True, True]))
+
+        # The source system lets the owner open the precedent, not the viewer.
+        KnowledgeEntry.objects.filter(pk=prior.pk).update(access_principals=[str(self.owner.pk)])
+        self.assertEqual(readable(viewer, self.viewer), (False, False, [False, False]))
+        refused = self.client.get(brief, headers=viewer)
+        self.assertEqual(refused.status_code, 409)
+        self.assertEqual(refused.json()["error"]["code"], "stale_evidence")
+        self.assertNotIn("Restarted worker safely.", refused.content.decode())
+        self.assertEqual(readable(owner, self.owner), (True, True, [True, True]))
+
+        # Restricted after the run: nobody is shown it, its owner included.
+        KnowledgeEntry.objects.filter(pk=prior.pk).update(
+            access_principals=None, sensitivity="restricted"
+        )
+        self.assertEqual(readable(owner, self.owner), (False, False, [False, False]))
+        self.assertEqual(readable(viewer, self.viewer), (False, False, [False, False]))
+
+    def test_a_restricted_change_is_not_operations_evidence(self):
+        """Restricted like an incident is: out of the graph and any triage pack."""
+        from platform_core.ops_graph import neighbourhood
+
+        incident = add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Queue alarm",
+            "Queue alarm\n\nType: Incident\nCI: api-1\n"
+            "Opened: 2026-09-25 10:00:00\n\nWorker stalled",
+            source="https://acme.service-now.com/nav_to.do?uri=incident.do%3Fsys_id%3D1",
+        )
+        change = add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Deploy worker",
+            "Deploy worker\n\nType: Change\nCI: api-1\n"
+            "Start: 2026-09-25 08:00:00\n\nUpdated worker config",
+            source="https://acme.service-now.com/nav_to.do?uri=change_request.do%3Fsys_id%3D2",
+        )
+        with patch("platform_core.graph_ai.graph_citations", return_value=[]):
+            before = [row["entry"].pk for row in neighbourhood(self.app, incident)["changes"]]
+            KnowledgeEntry.objects.filter(pk=change.pk).update(sensitivity="restricted")
+            after = [row["entry"].pk for row in neighbourhood(self.app, incident)["changes"]]
+        self.assertEqual(before, [change.pk])
+        self.assertEqual(after, [])
+
     # ---- the three fixes from the live CareOps walkthrough ----
 
     def test_english_filler_is_not_a_symptom(self):

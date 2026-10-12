@@ -191,6 +191,33 @@ SMALL_TEXT = """(minimum) => {
 }"""
 
 
+class SidebarTreeTests(BrowserTestCase):
+    def test_a_long_name_wraps_and_its_kind_does_not(self):
+        """ "Knowledge Platform" beside its kind broke "Product" across two lines."""
+        from platform_core.models import Portfolio, Product
+
+        Product.objects.filter(pk=self.app.product_id).update(name="Knowledge Platform")
+        Portfolio.objects.filter(pk=self.app.product.portfolio_id).update(
+            name="Integrated Care Coordination Portfolio"
+        )
+        for width, height in ((1280, 720), (1440, 900)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open("application", self.app.pk)
+                lines = self.page.locator(".org-tree summary .tree-kind").evaluate_all(
+                    """(kinds) => kinds.map((kind) => {
+                      const range = document.createRange();
+                      range.selectNodeContents(kind);
+                      const rects = [...range.getClientRects()];
+                      const tops = new Set(rects.map((r) => Math.round(r.top)));
+                      return [kind.textContent, tops.size];
+                    })"""
+                )
+                self.assertIn(["Product", 1], lines)
+                self.assertTrue(all(count == 1 for _, count in lines), lines)
+        self.assertNoScriptErrors()
+
+
 class ReadabilityTests(BrowserTestCase):
     def test_no_screen_sets_text_smaller_than_the_minimum(self):
         for name in (
@@ -487,15 +514,54 @@ class ChatLayoutTests(BrowserTestCase):
                     configured_by=self.owner,
                     enabled=True,
                 )
-            for width, height in ((1280, 720), (1366, 768)):
+            for width, height in ((1280, 720), (1366, 768), (1440, 900)):
                 with self.subTest(size=f"{width}x{height}", setup_finished=finished, ai=ai):
                     self.page.set_viewport_size({"width": width, "height": height})
                     self.open("chat", self.app.pk, query="?new=1")
                     found = self.measure()
                     self.assertGreater(found["starters"], 1)
                     self.assertLessEqual(found["send"], found["height"], "Send is below the fold")
-                    self.assertGreaterEqual(found["messages"], 200)
+                    self.assertGreaterEqual(found["messages"], 140)
                     self.assertLessEqual(found["starter"], found["composer"], "starter covered")
+                    # The whole message area, not just the starters: a sticky
+                    # composer once covered its bottom, where the latest
+                    # answer is scrolled to.
+                    self.assertLessEqual(
+                        found["messagesBottom"], found["composer"], "composer covers messages"
+                    )
+        self.assertNoScriptErrors()
+
+    def test_the_latest_answer_is_not_under_the_composer(self):
+        """A long conversation opens at its end; that end must be readable."""
+        from platform_core.models import Application
+
+        Application.objects.filter(pk=self.app.pk).update(setup_completed_at=None)
+        conversation = ChatConversation.objects.create(
+            application=self.app, user=self.owner, title="Long", mode="search"
+        )
+        for number in range(6):
+            for offset, role in enumerate(("user", "assistant")):
+                ChatMessage.objects.create(
+                    conversation=conversation, application=self.app, user=self.owner,
+                    role=role, body=f"{role} {number} " * 60, sequence=2 * number + offset,
+                    status="complete",
+                )
+        for width, height in ((1280, 720), (1366, 768), (1440, 900)):
+            with self.subTest(size=f"{width}x{height}"):
+                self.page.set_viewport_size({"width": width, "height": height})
+                self.open("chat", self.app.pk, query=f"?conversation={conversation.pk}")
+                composer = self.page.locator("#chat-composer").bounding_box()
+                # chat.js scrolls to the end, smoothly, so give it a moment.
+                deadline = time.monotonic() + 5
+                while True:
+                    last = self.page.locator(".chat-message").last.bounding_box()
+                    end = last["y"] + last["height"]
+                    if end <= composer["y"] + 1 or time.monotonic() > deadline:
+                        break
+                    time.sleep(0.1)
+                self.assertLessEqual(end, composer["y"] + 1, "latest answer under the composer")
+                self.assertGreater(end, composer["y"] - 80, "not opened at the latest answer")
+                self.assertLessEqual(composer["y"] + composer["height"], height)
         self.assertNoScriptErrors()
 
     def test_without_ai_a_new_chat_opens_on_a_mode_that_works(self):
@@ -816,6 +882,68 @@ class ChatTests(BrowserTestCase):
         self.script_errors = [e for e in self.script_errors if "net::ERR" not in e]
         self.assertNoScriptErrors()
 
+    def test_a_dropped_stream_is_not_reopened_and_shows_what_was_saved(self):
+        """A dropped connection used to run the server-error path: the stream
+        was finished on the spot and the composer reset as if the answer were
+        done, with no word of what happened. Reconnecting is no better here:
+        opening the stream again starts the answer again, a second paid call.
+        So the page says the connection was lost, opens nothing, and shows the
+        row once the server's worker has saved it."""
+        config = SimpleNamespace(provider="openai", model="gpt-5.6-luna")
+        started = []
+
+        def slow(user, app, config, token, question, seed, history, session):
+            started.append(question)
+            deadline = time.monotonic() + 20
+            while not session.stopped and time.monotonic() < deadline:
+                session.emit("delta", {"t": "still answering "})
+                time.sleep(0.2)
+            return "still answering", []
+
+        for item in (
+            patch("platform_core.ai.chat_configuration", return_value=(self.app, config, "k")),
+            patch("platform_core.ai.stream_chat_answer", side_effect=slow),
+            patch("platform_core.ai.generate_title", return_value=None),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
+        # Every EventSource the page opens, so the test can drop one the way a
+        # network does: an "error" event with no data. An init script runs
+        # before the page's own and is not subject to its CSP.
+        self.page.add_init_script(
+            """(() => {
+              const Real = window.EventSource;
+              window.__streams = [];
+              window.EventSource = function (url, options) {
+                const source = new Real(url, options);
+                window.__streams.push(source);
+                return source;
+              };
+              window.EventSource.prototype = Real.prototype;
+              Object.assign(window.EventSource, {
+                CONNECTING: Real.CONNECTING, OPEN: Real.OPEN, CLOSED: Real.CLOSED,
+              });
+            })()"""
+        )
+        self.open("chat", self.app.pk, query="?new=1")
+        self.mark_page()
+        self.ask("Which deployment serves traffic?")
+        self.page.locator(".chat-assistant").last.get_by_text("still answering").first.wait_for()
+        self.page.evaluate("window.__streams[0].dispatchEvent(new Event('error'))")
+        status = self.page.locator("#chat-status")
+        self.page.get_by_text("Connection lost").wait_for()
+        self.assertEqual(self.page.locator("#chat-send").inner_text(), "Send")
+        self.assertTrue(self.page.locator("#chat-send").is_disabled())
+        # The worker stops when its reader is gone, and the saved row is shown.
+        self.page.locator('.chat-assistant[data-status="stopped"]').wait_for(timeout=45000)
+        self.assertSamePage()
+        self.assertTrue(status.is_hidden())
+        self.assertFalse(self.page.locator("#chat-send").is_disabled())
+        self.assertEqual(ChatMessage.objects.get(role="assistant").status, "stopped")
+        self.assertEqual(len(started), 1, "the stream was opened again: a second paid call")
+        self.assertEqual(self.page.evaluate("window.__streams.length"), 1)
+        self.assertNoScriptErrors()
+
 
 class LiveProgressTests(BrowserTestCase):
     """A run page follows the run by itself, and says so when it cannot."""
@@ -880,6 +1008,98 @@ class LiveProgressTests(BrowserTestCase):
         self.assertEqual(status.count(), 0, "the interruption notice outlived the recovery")
         self.assertSamePage()
         self.script_errors = [e for e in self.script_errors if "net::ERR" not in e]
+        self.assertNoScriptErrors()
+
+
+class FactoryReviewArrivesTests(BrowserTestCase):
+    """A run page open while the analysis works shows the review when it lands.
+
+    Stage 3 is rendered only once there are gaps, so the live refresh had no
+    element to swap: the header said "Awaiting review", its button pointed at
+    #stage-3, there was no stage 3, and polling stopped because nothing was
+    pending any more. Only a reload showed the controls.
+    """
+
+    def setUp(self):
+        from platform_core.models import ApplicationGrant, FactoryRun
+
+        super().setUp()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            can_approve=True
+        )
+        self.run = FactoryRun.objects.create(
+            application=self.app,
+            requested_by=self.owner,
+            ticket_external_id="CARE-1",
+            ticket_title="Export times out",
+            status="running",
+        )
+
+    def finish_analysis(self):
+        """What the worker does when the analysis returns: a plan with gaps."""
+        from platform_core.models import ChangePlan, FactoryRun, PlanItem
+
+        plan = ChangePlan.objects.create(
+            application=self.app, author=self.owner, title="Fix", proposal="p",
+            validation="v", digest="d", status="pending",
+        )
+        for number in (1, 2):
+            PlanItem.objects.create(
+                plan=plan, sequence=number, category="stated", title=f"Gap {number}",
+                explanation="e", change_summary="c",
+            )
+        FactoryRun.objects.filter(pk=self.run.pk).update(plan=plan, status="awaiting_review")
+
+    def test_the_review_stage_appears_in_place_and_its_pickers_work(self):
+        self.open("run-detail", self.app.pk, self.run.pk)
+        self.page.locator('[data-live="run-hero"][data-live-pending]').wait_for()
+        self.assertEqual(self.page.locator("#stage-3").count(), 0)
+        self.mark_page()
+        self.finish_analysis()
+        stage = self.page.locator('[data-live="stage-3"]')
+        stage.wait_for()
+        self.assertSamePage()
+        # In order: after the analysis, not wherever it happened to land.
+        self.assertEqual(
+            self.page.locator("details.stage").evaluate_all("(all) => all.map((d) => d.id)")[:3],
+            ["stage-1", "stage-2", "stage-3"],
+        )
+        boxes = stage.locator("input.gap-pick")
+        self.assertEqual(boxes.count(), 2)
+        # Select all / Clear all is bound on the document, so markup that
+        # arrived after load is enhanced like markup that was there.
+        stage.get_by_role("button", name="Clear all").click()
+        self.assertEqual([boxes.nth(i).is_checked() for i in range(2)], [False, False])
+        stage.get_by_role("button", name="Select all").click()
+        self.assertEqual([boxes.nth(i).is_checked() for i in range(2)], [True, True])
+        self.assertTrue(stage.get_by_role("button", name="Approve").first.is_visible())
+        self.assertNoScriptErrors()
+
+    def test_several_stages_arriving_at_once_keep_their_order(self):
+        """Each new stage was placed after the last one the page already had,
+        so stages arriving in one refresh landed in reverse: 3, 4, 7, 6, 5."""
+        from platform_core.models import FactoryRun, ProposedChange
+
+        self.open("run-detail", self.app.pk, self.run.pk)
+        self.page.locator('[data-live="run-hero"][data-live-pending]').wait_for()
+        self.mark_page()
+        # Analysis, approval and preparation all land before the next refresh,
+        # so stages 3, 4 and 5 arrive together.
+        self.finish_analysis()
+        run = FactoryRun.objects.get(pk=self.run.pk)
+        run.plan.status = "approved"
+        run.plan.save(update_fields=["status"])
+        ProposedChange.objects.create(run=run, path="app/util.py", content="X = 2\n")
+        FactoryRun.objects.filter(pk=run.pk).update(status="prepared")
+        self.page.locator('[data-live="run-hero"]:not([data-live-pending])').wait_for()
+        self.page.locator('[data-live="stage-5"]').wait_for()
+        self.assertSamePage()
+        order = "(all) => all.map((node) => node.dataset.live)"
+        live = self.page.locator("main > [data-live]").evaluate_all(order)
+        self.page.reload()
+        rendered = self.page.locator("main > [data-live]").evaluate_all(order)
+        self.assertIn("stage-4", rendered)
+        self.assertEqual(live, rendered)
         self.assertNoScriptErrors()
 
 

@@ -819,7 +819,7 @@ def serviceops(request, pk):
     # The same walk triage makes, so the page shows exactly what a run would use.
     walk = neighbourhood(app, selected)
     drawn_map = neighbourhood_map(walk)
-    run = pick_run(app, selected, request.GET.get("run", ""))
+    run = pick_run(app, selected, request.GET.get("run", ""), request.user)
     return render(
         request,
         "serviceops_incident.html",
@@ -905,8 +905,9 @@ def typical_cost(app):
     return f"{amounts[0][1]} {average:.2f}"
 
 
-def pick_run(app, incident, run_id):
-    """The run asked for, or the incident's latest; None when it no longer holds."""
+def pick_run(app, incident, run_id, viewer):
+    """The run asked for, or the incident's latest; None when it no longer holds
+    for `viewer`."""
     if run_id:
         try:
             run_uuid = uuid.UUID(run_id)
@@ -924,7 +925,7 @@ def pick_run(app, incident, run_id):
     if run and run.status in FINISHED:
         from .serviceops_triage import run_still_verified
 
-        if not run_still_verified(run):
+        if not run_still_verified(run, viewer):
             return None
     return run
 
@@ -1025,7 +1026,7 @@ def serviceops_run(request, pk, run_id):
     )
     incident_fields, _ = fields_and_description(run.incident)
     stale = run.status in FINISHED and (
-        not run.incident.active or pick_run(app, run.incident, str(run.pk)) is None
+        not run.incident.active or pick_run(app, run.incident, str(run.pk), request.user) is None
     )
     return render(
         request,
@@ -1138,7 +1139,7 @@ def triage_verdict(request, pk, hypothesis_id):
             mine.delete()
         return redirect(incident_url(app, run.incident_id, run.pk))
 
-    if not run_still_verified(run):
+    if not run_still_verified(run, request.user):
         raise Http404
     verdict = request.POST.get("verdict")
     if verdict not in {"accepted", "rejected", "partial"}:

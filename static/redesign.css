@@ -1967,6 +1967,10 @@
   .org-tree summary:hover .tree-add,
   .tree-add:focus-visible { opacity: 1; color: var(--c-brand-strong); }
   .org-tree summary { display: flex; align-items: center; gap: var(--s-1); }
+  /* A long name wraps; the word saying what it is never does. As flex items
+     both shrank, and "Product" broke as "Produc" / "t". */
+  .org-tree summary .tree-label { flex: 0 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .org-tree summary .tree-kind { flex: none; white-space: nowrap; }
   /* An application an organization admin can see in the structure but not
      open: named, never linked, since the link would be a 404. */
   .sidebar .org-tree .tree-locked { color: var(--c-ink-3); cursor: default; }
@@ -3277,17 +3281,25 @@
   /* Chat: the conversation and the composer get the screen. The workspace
      used to be a fixed calc(100dvh - 215px) box with overflow hidden, which
      assumed nothing sat above it: with breadcrumbs and a setup strip, Send
-     fell below a 720px window and the messages had 100px. Now the page
-     scrolls, the messages area has a real minimum, and the composer stays
-     pinned to the bottom of the window whatever is above it. */
+     fell below a 720px window and the messages had 100px. The full-height
+     shell above now makes the workspace whatever space is left, and inside it
+     the composer is a row of its own: the messages take the rest.
+
+     The composer was sticky to the window bottom for a while. That kept Send
+     in view, but whenever the panel was taller than the space left it sat over
+     the bottom of the messages - exactly where chat.js scrolls the latest
+     answer - so the end of an answer and its actions were covered. A floor of
+     200px on the messages made that the case at 1280x720 with setup
+     unfinished. Below the floor the page scrolls; nothing overlaps. */
   .chat-workspace { height: auto; overflow: visible; }
-  .chat-messages { min-height: 200px; overflow: auto; }
-  .chat-composer { position: sticky; bottom: 0; z-index: 5; border-radius: 0 0 var(--r-md) var(--r-md); box-shadow: 0 -6px 16px rgb(0 0 0 / 0.05); }
-  /* The composer pinned at the bottom must not cover what it is pinned over:
-     the label stays for screen readers, the box starts at two lines. */
+  .chat-messages { flex: 1 1 auto; min-height: 140px; overflow: auto; }
+  .chat-composer { flex: none; border-radius: 0 0 var(--r-md) var(--r-md); }
+  /* The label stays for screen readers, the box starts at two lines. */
   .chat-composer > label[for="id_question"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .chat-composer { padding-top: var(--s-2); padding-bottom: var(--s-2); }
   .chat-composer textarea { min-height: 48px; margin: 0 0 var(--s-1); }
+  /* The composer's own padding is the space below; a margin doubled it. */
+  .chat-composer .composer-actions { margin-bottom: 0; }
   .chat-empty { padding: var(--s-2) var(--s-3); }
   .chat-empty h2 { margin: 0 0 var(--s-1); font-size: var(--t-17); }
   .chat-empty > p { margin: 0; }
