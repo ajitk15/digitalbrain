@@ -28,6 +28,8 @@ from mdparse import parse
 HERE = Path(__file__).resolve().parent
 SOURCE = HERE / "source"
 DOCS = HERE.parent / "docs"
+#: Written by `build_quality_samples.py`, not from `source/`: a rebuild keeps it.
+SAMPLES = DOCS / "08-quality-samples"
 
 #: source path -> output format. A format of "md" copies the file through.
 #: The rationale column is the reason the format was chosen, not decoration:
@@ -180,7 +182,7 @@ def build() -> int:
         return 1
 
     for path in sorted(DOCS.rglob("*")):
-        if path.is_file():
+        if path.is_file() and SAMPLES not in path.parents:
             path.unlink()
 
     built: list[tuple[str, str]] = []

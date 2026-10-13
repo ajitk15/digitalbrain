@@ -11,6 +11,11 @@ uv pip install --python .venv/Scripts/python.exe python-docx python-pptx openpyx
 .venv/Scripts/python.exe verify_conversion.py  # convert every output via the platform
 ```
 
+One folder is not built from `source/`: `../docs/08-quality-samples/` holds ten
+documents with planted problems, including scans for OCR. `build_quality_samples.py`
+writes it, `build_formats.py` leaves it alone, and `quality-samples.md` says what
+each one should show.
+
 ## Why the formats differ
 
 The point is to exercise Digital Brain's ingestion across the range a customer

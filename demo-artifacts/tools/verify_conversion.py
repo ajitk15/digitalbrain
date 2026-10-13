@@ -50,7 +50,13 @@ EXPECTED: dict[str, str] = {
     "07-govern/risk-register.xlsx": "R-01",
     "07-govern/change-management.docx": "waiver",
     "00-overview/sdlc-map.pptx": "BR-05",
+    "08-quality-samples/escalation-policy.md": "BR-99",
+    "08-quality-samples/audit-letter-mixed.pdf": "REG-01",
 }
+
+#: Samples that are pictures of text: with OCR off the platform refuses them,
+#: and that refusal is what they are there to show.
+NEEDS_OCR = {"08-quality-samples/referral-sla-scanned.pdf"}
 
 
 def convert(script: Path, python: Path, path: Path) -> tuple[bool, str]:
@@ -88,12 +94,15 @@ def main() -> int:
     print("-" * 92)
     for path in targets:
         relative = path.relative_to(ARTIFACTS).as_posix()
+        key = path.relative_to(ARTIFACTS / "docs").as_posix() if "docs/" in relative else ""
         ok, output = convert(script, python, path)
+        if not ok and key in NEEDS_OCR:
+            print(f"{relative:62} {path.suffix[1:]:5} {'-':>7}  refused without OCR, as expected")
+            continue
         if not ok:
             print(f"{relative:62} {path.suffix[1:]:5} {'-':>7}  CONVERSION FAILED: {output}")
             failures += 1
             continue
-        key = path.relative_to(ARTIFACTS / "docs").as_posix() if "docs/" in relative else ""
         needle = EXPECTED.get(key, "")
         verdict = "ok"
         if not output.strip():

@@ -291,8 +291,10 @@ so a citation from it says so too. At most `MAX_OCR_PAGES` a document, which is
 equal in `processing` and the extractor and tested; over it the document fails rather
 than half-reads. A page under `LOW_CONFIDENCE` makes the Source check's "Readable text"
 missing: text read badly is the one case where a quote can verify exactly and still be
-wrong. `demo-artifacts/carepath-quality-samples/` holds scans and broken documents to
-try it on. It is outside `docs/`, so the scorecard does not read it.
+wrong. `demo-artifacts/docs/08-quality-samples/` holds scans and broken documents to
+try it on (`demo-artifacts/tools/quality-samples.md` says what each shows). The
+scorecard reads them with the rest of `docs/` and skips only those the converter
+refuses without OCR.
 
 **Usage is never silently zero.** A missing or malformed token count is an error, not a
 free request — providers bill for calls whose usage we failed to parse. See

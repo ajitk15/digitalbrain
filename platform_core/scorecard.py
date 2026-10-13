@@ -36,6 +36,8 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "demo-artifacts" / "docs"
+#: Documents with one planted problem each, for the Source check; some need OCR.
+SAMPLES = DOCS / "08-quality-samples"
 KIT = ROOT / "demo-artifacts" / "demo-kit"
 BENCH = ROOT / "benchmarks"
 CACHE = ROOT / ".runtime" / "scorecard-cache"
@@ -165,7 +167,13 @@ HIPAA = [
 
 
 def convert(path):
-    """A document as Markdown, through the production converter, cached by content."""
+    """A document as Markdown, through the production converter, cached by content.
+
+    None when the converter refuses one of the quality samples - a scanned page or
+    an image with OCR off - which in production is a failed document and no source
+    at all. Any other refusal is an error: a CarePath document that stopped
+    converting must fail the scorecard, not quietly leave the corpus.
+    """
     data = path.read_bytes()
     key = hashlib.sha256(data).hexdigest()
     cached = CACHE / f"{key}.md"
@@ -176,8 +184,12 @@ def convert(path):
         stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=120,
-        check=True,
+        check=False,
     )
+    if done.returncode != 0:
+        if SAMPLES in path.parents:
+            return None
+        done.check_returncode()
     text = done.stdout.decode("utf-8").strip()
     CACHE.mkdir(parents=True, exist_ok=True)
     cached.write_text(text, encoding="utf-8")
@@ -262,8 +274,9 @@ def _workspace():
     owner = people["owner"]
 
     for path in sorted(p for p in DOCS.rglob("*") if p.is_file()):
-        title = path.relative_to(DOCS).as_posix()
-        add_knowledge(owner, app.pk, title, convert(path))
+        text = convert(path)
+        if text is not None:
+            add_knowledge(owner, app.pk, path.relative_to(DOCS).as_posix(), text)
     payload, care_keys = jira_payload()
     config = {"base_url": JIRA_SITE, "auth": "cloud", "account_email": "bot@scorecard.example"}
     with patch("platform_core.connector_kinds.api_json", return_value=payload):

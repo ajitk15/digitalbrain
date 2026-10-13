@@ -22,6 +22,7 @@ from platform_core.models import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+DOCUMENTS = sum(1 for path in (ROOT / "demo-artifacts/docs").rglob("*") if path.is_file())
 
 
 def builder():
@@ -84,7 +85,9 @@ class RebuildDemoTests(TestCase):
             self.assertEqual((grant.role, grant.can_approve), ("owner", True))
             source = KnowledgeSource.objects.get(application__name=name)
             self.assertEqual((source.provider, source.name), ("folder", "docs"))
-            self.assertEqual(source.documents.exclude(status="deleted").count(), 27)
+            # Every file in the folder, the quality samples' scans included: a scan
+            # OCR cannot read yet is a failed document, still listed.
+            self.assertEqual(source.documents.exclude(status="deleted").count(), DOCUMENTS)
         repository = CodeRepository.objects.get(application__name="CarePathDev")
         self.assertEqual((repository.provider, repository.name), ("local", "carepath"))
         self.assertEqual(

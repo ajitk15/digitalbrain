@@ -1,22 +1,34 @@
 # CarePath source-quality samples
 
-Ten CarePath documents, nearly all with one deliberate problem, for checking the
-**Source check** card (on each document page and Knowledge source), the pills in the
-Sources list, and **Check sources** (the source map) by hand. Upload them into a
-CarePath application next to the documents from `../docs/`.
+Ten CarePath documents in `../docs/08-quality-samples/`, nearly all with one deliberate
+problem. Use them to check by hand:
 
-They are kept apart from `../docs/` on purpose. That folder is the scorecard's corpus,
-and these files are meant to score badly. Adding them there would move
-`benchmarks/baseline.json`.
+- the **Source check** card, on each document page and Knowledge source;
+- the pills in the Sources list;
+- **Check sources**, the source map.
+
+They upload with the rest of `../docs/`.
+
+The scorecard reads them too, so the baseline was reset with them in.
+`on-call-handover.txt` mentions "the August incident" in an unstructured line, which
+pushes the postmortem out of the graph's citations for "Why did the service fail on
+14 August?". That took graph found from 16 to 15 and MRR from 0.716 to 0.701. A
+noisy document costing retrieval is the point of the sample. The keyword path still
+ranks the postmortem first.
+
+With OCR off, the scanned PDF and the whiteboard are refused, as an upload would be.
+The scorecard skips them, and only them. A refusal anywhere else in `../docs/` still
+fails it.
 
 Rebuild them with:
 
 ```bash
-.venv/Scripts/python.exe demo-artifacts/carepath-quality-samples/build_samples.py
+.venv/Scripts/python.exe demo-artifacts/tools/build_quality_samples.py
 ```
 
-The build uses only what the platform already installs (Pillow, openpyxl, pypdf). The
-`.docx` and the typed page of the mixed PDF are written by hand.
+`build_formats.py` leaves that folder alone when it rebuilds `../docs/`. The build
+uses only what the platform already installs (Pillow, openpyxl, pypdf). The `.docx`
+and the typed page of the mixed PDF are written by hand.
 
 ## What each one should show
 
@@ -33,14 +45,14 @@ The build uses only what the platform already installs (Pillow, openpyxl, pypdf)
 | `audit-letter-mixed.pdf` | Page 1 is typed. Page 2 is a signed attestation that was scanned back in. | OCR off: Needs work 80, because page 2 of 2 had no text. OCR on: Ready, with page 2 read by OCR. |
 | `ward-whiteboard.png` | A photo of a ward board. | OCR off: refused, because images need OCR. OCR on: read, but Needs work if Tesseract's confidence is under 60% (the score is a whiteboard's typical one). |
 
-These are the results with the samples uploaded beside the 24 documents in
-`../docs/`:
+These are the results with the whole of `../docs/` uploaded, 27 documents plus these:
 
-- **Check sources** should report 29 of 34 connected.
+- **Check sources** should report 31 of 35 connected with OCR off, or 32 of 37 with
+  OCR on.
 - **BR-99** should be listed among the references nothing defines, next to the corpus's
   own gaps (A-01 to A-03, F-01 to F-04, INC-2026-0814).
-- The bed export, the template, the handover notes, the menu and the whiteboard should
-  be isolated.
+- The bed export, the template, the handover notes and the menu should be isolated,
+  and with OCR on the whiteboard too. The menu is also flagged off-topic.
 
 The exact scores above were measured with `source_quality.assess` and
 `source_map.analyse`. The "OCR on" rows used a stand-in reader that returns what was

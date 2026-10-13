@@ -1,8 +1,8 @@
 {
- "generated_at": "2026-10-13T07:45:34+00:00",
- "commit": "25207be",
+ "generated_at": "2026-10-13T09:40:39+00:00",
+ "commit": "c053178",
  "corpus": {
-  "sources": 34,
+  "sources": 42,
   "questions": 16
  },
  "metrics": {
@@ -12,7 +12,7 @@
    "unit": "of 16",
    "better": "higher",
    "tolerance": 0,
-   "value": 16
+   "value": 15
   },
   "graph_top3": {
    "aspect": "Retrieval",
@@ -28,7 +28,7 @@
    "unit": "",
    "better": "higher",
    "tolerance": 0.005,
-   "value": 0.716
+   "value": 0.701
   },
   "keyword_found": {
    "aspect": "Retrieval",
@@ -222,7 +222,7 @@
    {
     "question": "Why did the service fail on 14 August?",
     "expected": "incident-2026-08-14",
-    "graph_rank": 4,
+    "graph_rank": null,
     "keyword_rank": 1
    },
    {

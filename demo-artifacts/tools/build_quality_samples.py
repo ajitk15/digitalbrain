@@ -1,11 +1,13 @@
 """Build the CarePath source-quality samples: one planted problem per file.
 
-    .venv/Scripts/python.exe demo-artifacts/carepath-quality-samples/build_samples.py
+    .venv/Scripts/python.exe demo-artifacts/tools/build_quality_samples.py
 
-Uses only what the platform already installs - Pillow, openpyxl, pypdf and the
-standard library - so the .docx and the text-layer PDF are written by hand.
-Kept apart from `../docs/` on purpose: that folder is the scorecard's corpus,
-and these files are meant to score badly.
+Writes `../docs/08-quality-samples/`, beside the CarePath documents, so the
+scorecard reads them too: they are meant to score badly, and the baseline was
+set with them in. `build_formats.py` leaves that folder alone. Uses only what
+the platform already installs - Pillow, openpyxl, pypdf and the standard
+library - so the .docx and the text-layer PDF are written by hand. What each
+file should show is in `quality-samples.md`.
 """
 
 import zipfile
@@ -17,7 +19,7 @@ from openpyxl import Workbook
 from PIL import Image, ImageDraw, ImageFont
 from pypdf import PdfReader, PdfWriter
 
-HERE = Path(__file__).resolve().parent
+OUT = Path(__file__).resolve().parent.parent / "docs" / "08-quality-samples"
 NOTICE = "Demonstration artifact. Synthetic content only - not a clinical record."
 
 
@@ -119,7 +121,7 @@ def discharge_checklist():
                 ["Patient contacted", "2 working days", "Community nurse"],
                 ["Readmission risk reviewed", "7 days", "Clinical lead"]], bold_first=False),
     ])
-    write_docx(HERE / "discharge-checklist.docx", body)
+    write_docx(OUT / "discharge-checklist.docx", body)
 
 
 # ------------------------------------------------------------------ spreadsheet
@@ -139,7 +141,7 @@ def bed_capacity():
     ]
     for row in rows:
         sheet.append(row)
-    book.save(HERE / "bed-capacity-export.xlsx")
+    book.save(OUT / "bed-capacity-export.xlsx")
 
 
 # ------------------------------------------------------------------ scans
@@ -179,7 +181,7 @@ REFERRAL_SLA = [
 
 def referral_sla_scanned():
     pages = [page_image(lines) for lines in REFERRAL_SLA]
-    pages[0].save(HERE / "referral-sla-scanned.pdf", save_all=True,
+    pages[0].save(OUT / "referral-sla-scanned.pdf", save_all=True,
                   append_images=pages[1:], resolution=200)
 
 
@@ -250,12 +252,12 @@ def audit_letter_mixed():
     for source in (typed, scanned.getvalue()):
         for page in PdfReader(BytesIO(source)).pages:
             writer.add_page(page)
-    with open(HERE / "audit-letter-mixed.pdf", "wb") as target:
+    with open(OUT / "audit-letter-mixed.pdf", "wb") as target:
         writer.write(target)
 
 
 def whiteboard():
-    page_image(WHITEBOARD, size=(1600, 900)).save(HERE / "ward-whiteboard.png")
+    page_image(WHITEBOARD, size=(1600, 900)).save(OUT / "ward-whiteboard.png")
 
 
 # ------------------------------------------------------------------ text
@@ -326,18 +328,19 @@ Soup is served with fresh bread. Bring your own cup for a discount on coffee.
 
 
 def text_files():
-    (HERE / "on-call-handover.txt").write_text(ON_CALL, encoding="utf-8")
-    (HERE / "discharge-summary-template.md").write_text(TEMPLATE, encoding="utf-8")
-    (HERE / "escalation-policy.md").write_text(ESCALATION, encoding="utf-8")
-    (HERE / "escalation-policy-copy.md").write_text(ESCALATION, encoding="utf-8")
-    (HERE / "staff-canteen-menu.md").write_text(MENU, encoding="utf-8")
+    (OUT / "on-call-handover.txt").write_text(ON_CALL, encoding="utf-8")
+    (OUT / "discharge-summary-template.md").write_text(TEMPLATE, encoding="utf-8")
+    (OUT / "escalation-policy.md").write_text(ESCALATION, encoding="utf-8")
+    (OUT / "escalation-policy-copy.md").write_text(ESCALATION, encoding="utf-8")
+    (OUT / "staff-canteen-menu.md").write_text(MENU, encoding="utf-8")
 
 
 if __name__ == "__main__":
+    OUT.mkdir(parents=True, exist_ok=True)
     discharge_checklist()
     bed_capacity()
     referral_sla_scanned()
     audit_letter_mixed()
     whiteboard()
     text_files()
-    print("Built the samples in", HERE)
+    print("Built the samples in", OUT)
