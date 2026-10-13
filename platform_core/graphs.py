@@ -688,6 +688,12 @@ def queue_generation(request, app, pk):
     return redirect("graph", pk=pk)
 
 
+def source_summary(app_id):
+    from .source_map import summary
+
+    return summary(app_id) if sources_for(app_id).exists() else None
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def graph_generate(request, pk):
@@ -720,6 +726,8 @@ def graph_generate(request, pk):
             "graph": graph,
             "model_choices": MODEL_CHOICES,
             "has_versions": GraphRevision.objects.filter(application=app).exists(),
+            # Said, never enforced: a source that needs work still goes in.
+            "source_summary": source_summary(app.pk),
             "graph_ai_configured": AIConfiguration.objects.filter(
                 application=app, purpose="graph_generation", enabled=True
             ).exists(),

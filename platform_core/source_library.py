@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from django.core.paginator import Paginator
 from django.db.models import CharField, Count, Prefetch, Q, Value
 
+from . import source_map
 from .models import (
     CodeRepository,
     Connector,
@@ -307,5 +308,8 @@ def library_context(app, request):
         "origins": origins,
         "knowledge_enabled": enabled,
         "quality_column": quality_column,
+        # How the set reads and connects, in one line above the table. Worked
+        # out once per graph fingerprint, so a second visit reads no text.
+        "source_summary": source_map.summary(app.pk) if enabled and count else None,
         "conversion_pending": documents.filter(status__in=Document.IN_FLIGHT).exists(),
     }
