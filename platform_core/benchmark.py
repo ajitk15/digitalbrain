@@ -184,6 +184,27 @@ def latest_runs(app, revisions):
     return latest
 
 
+def rows(questions, selected):
+    """One row per question, with what the selected run made of it.
+
+    The questions and a run's results used to be two tables listing the same
+    questions twice. A run stores its questions as text, so a question is
+    matched by its words and expected source; one added since the run reads
+    "Not scored yet", and one removed since still shows, because it is in the
+    run's count.
+    """
+    results = {
+        (result["question"], result["expected"]): result
+        for result in (selected.results if selected else [])
+    }
+    merged = []
+    for question in questions:
+        result = results.pop((question.question, question.expected), None)
+        merged.append({"question": question, "result": result})
+    merged.extend({"question": None, "result": result} for result in results.values())
+    return merged
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def benchmark_view(request, pk):
@@ -252,6 +273,7 @@ def benchmark_view(request, pk):
         selected = (
             BenchmarkRun.objects.filter(application=app).select_related("revision").first()
         )
+    questions = list(BenchmarkQuestion.objects.filter(application=app))
     return render(
         request,
         "graph_benchmark.html",
@@ -261,7 +283,8 @@ def benchmark_view(request, pk):
             "knowledge_view": "benchmark",
             "can_edit": grant.role in {"owner", "contributor"},
             "form": form,
-            "questions": BenchmarkQuestion.objects.filter(application=app),
+            "questions": questions,
+            "rows": rows(questions, selected),
             "max_questions": MAX_QUESTIONS,
             "revisions": revisions,
             "selected": selected,

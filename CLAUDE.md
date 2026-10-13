@@ -402,7 +402,7 @@ Neither path checks the live fingerprint — answering from a published snapshot
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
 
 **Retrieval changes are measured, not asserted.** `benchmark.py` scores every saved graph
-version against an owner's questions (Knowledge → Benchmark, `manage.py benchmark`): is the
+version against an owner's questions (a version's score in Knowledge → Versions or Quality opens it, `manage.py benchmark`): is the
 expected source among the citations, in the top three, and at what rank. It calls
 `graph_ai.citations_from` - the ranking and verification an answer uses - and no model, so it
 is free and runs automatically after each version is saved. It may score a **draft**: measuring

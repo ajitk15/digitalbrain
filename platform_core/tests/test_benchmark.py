@@ -195,6 +195,35 @@ class BenchmarkTests(TestCase):
         self.assertContains(page, f"?run={result.pk}")
         self.assertContains(page, ">1/1</a>", html=False)
 
+    def test_each_question_is_listed_once_with_its_result(self):
+        """Questions and results used to be two tables naming the same questions."""
+        draft = self.revision(number=2)
+        removed = self.ask("Who approves a release?", "KAN-4")
+        self.ask("Is consent checked on export?", "KAN-4")
+        result = run(self.app, draft)
+        removed.delete()
+        self.ask("Is the export audited?", "KAN-4")
+        page = self.client.get(f"{self.url}?run={result.pk}").content.decode()
+        self.assertEqual(page.count("Is consent checked on export?"), 2)  # cell and aria-label
+        self.assertIn("Not scored yet", page)
+        self.assertIn("(removed since)", page)
+        self.assertNotIn("<h3>Versions</h3>", page)
+
+    def test_the_benchmark_opens_as_a_popup_not_a_tab(self):
+        draft = self.revision(number=2, published=True)
+        self.ask("Is consent checked on export?", "KAN-4")
+        result = run(self.app, draft)
+        versions = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "versions"})
+        self.assertNotContains(versions, "Benchmark</a></nav>", html=False)
+        self.assertContains(versions, f'?run={result.pk}" data-modal', html=False)
+        quality = self.client.get(reverse("graph", args=[self.app.pk]), {"tab": "quality"})
+        self.assertContains(quality, "Finds the right source")
+        self.assertContains(quality, "1 of 1")
+        self.assertContains(quality, f'?run={result.pk}" data-modal>See the questions', html=False)
+        # The page still stands on its own, with Versions as its tab.
+        page = self.client.get(self.url).content.decode()
+        self.assertRegex(page, r'aria-current="page">[^<]*<svg[^>]*>.*?</svg>Versions')
+
     def test_the_command_loads_questions_once_and_scores_the_latest_version(self):
         self.revision(number=1)
         self.revision(number=2)

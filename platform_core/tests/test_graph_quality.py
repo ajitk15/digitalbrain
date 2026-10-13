@@ -1,12 +1,17 @@
+from types import SimpleNamespace
+
 from django.test import SimpleTestCase
 
 from platform_core.graph_quality import (
+    at_a_glance,
     components,
     cross_document_links,
     document_share,
     health_report,
     node_themes,
+    notes,
     provenance_bands,
+    quality_overview,
     themes,
 )
 
@@ -251,4 +256,77 @@ class ThemeTests(SimpleTestCase):
         bare = health_report({"nodes": [node("a")], "edges": []}, {})
         html = render_to_string("_kb_quality.html", {"health": bare, "graph": {"quality": {}}})
         self.assertNotIn("Themes", html)
-        self.assertIn("Edge provenance", html)
+        self.assertIn("Where the links come from", html)
+
+
+class GlanceTests(SimpleTestCase):
+    health = {"orphan_percent": 5, "evidence_percent": 100}
+
+    def test_four_plain_answers_each_with_a_verdict(self):
+        run = SimpleNamespace(found=2, questions=4)
+        cards = at_a_glance(self.health, {"processed_sources": 9}, 12, run)
+        self.assertEqual(
+            [card["key"] for card in cards], ["sources", "evidence", "connected", "retrieval"]
+        )
+        sources, evidence, connected, retrieval = cards
+        self.assertEqual((sources["figure"], sources["tone"]), ("9 of 12", "fair"))
+        self.assertEqual(sources["meaning"], "3 not read yet.")
+        self.assertEqual((evidence["figure"], evidence["tone"]), ("100%", "good"))
+        self.assertEqual((connected["figure"], connected["percent"]), ("95%", 95))
+        self.assertEqual((retrieval["figure"], retrieval["tone"]), ("2 of 4", "poor"))
+        self.assertIs(retrieval["run"], run)
+
+    def test_an_unscored_version_says_so_rather_than_zero(self):
+        retrieval = at_a_glance(self.health, {}, 0)[-1]
+        self.assertEqual((retrieval["figure"], retrieval["percent"]), ("Not measured", None))
+
+    def test_notes_already_shown_as_figures_are_not_repeated(self):
+        kept = "AI enrichment stopped at the relationship limit."
+        warnings = [
+            "42 empty table cells were found.",
+            "7 repeated table rows were found.",
+            "3 unsupported or invalid AI relationship(s) were excluded.",
+            kept,
+        ]
+        self.assertEqual(notes(warnings), [kept])
+        self.assertEqual(notes(None), [])
+
+
+class QualityOverviewTests(SimpleTestCase):
+    def test_uncitable_links_are_prioritized_above_unmeasured_retrieval(self):
+        health = {
+            "nodes": 100, "orphans": 20, "orphan_percent": 20,
+            "evidence_percent": 80, "bands": {"unquoted": 10},
+            "components": 1, "largest_percent": 80,
+        }
+        cards = at_a_glance(health, {"processed_sources": 3}, 4)
+        summary = quality_overview(health, cards)
+        self.assertEqual(summary["actions"][0]["title"], "10 links need source evidence")
+        self.assertEqual(summary["actions"][1]["route"], "documents")
+        self.assertEqual(summary["actions"][2]["route"], "graph-benchmark")
+        self.assertEqual(summary["additional"], 1)
+        self.assertEqual(summary["tone"], "fair")
+
+    def test_healthy_structure_still_calls_out_unmeasured_answers(self):
+        health = {
+            "nodes": 10, "orphan_percent": 0, "evidence_percent": 100,
+            "bands": {"unquoted": 0}, "components": 1, "largest_percent": 100,
+        }
+        summary = quality_overview(health, at_a_glance(health, {"processed_sources": 2}, 2))
+        self.assertEqual(len(summary["actions"]), 1)
+        self.assertIn("not been tested", summary["actions"][0]["detail"])
+
+    def test_an_empty_graph_is_not_presented_as_healthy(self):
+        summary = quality_overview({"nodes": 0}, [])
+        self.assertEqual(summary["tone"], "none")
+        self.assertIn("not enough", summary["detail"])
+
+    def test_partial_content_is_surfaced_even_when_all_sources_were_processed(self):
+        health = {
+            "nodes": 10, "orphan_percent": 0, "evidence_percent": 100,
+            "bands": {"unquoted": 0}, "components": 1, "largest_percent": 100,
+        }
+        cards = at_a_glance(health, {"processed_sources": 2}, 2)
+        summary = quality_overview(health, cards, {"coverage_percent": 75, "table_rows": 20})
+        self.assertEqual(summary["title"], "Source coverage is incomplete")
+        self.assertIn("75%", summary["actions"][0]["detail"])
