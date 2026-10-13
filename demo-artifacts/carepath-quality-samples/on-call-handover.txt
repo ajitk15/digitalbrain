@@ -1,0 +1,19 @@
+On-call handover notes, week 38
+Monday was quiet until the referral queue backed up around 14:00.
+The coordinator dashboard showed 41 open referrals, most from Northvale.
+Restarting the worker cleared the queue but nobody knows why it stalled.
+Owner for the follow-up is TBD.
+Tuesday the nightly export ran long again and finished at 06:40.
+The risk scores were stale for the morning huddle.
+We agreed to look at the export schedule but the new time is TBD.
+Wednesday there was a short outage of the patient search page.
+It matched the pattern from the August incident but recovered by itself.
+Somebody should check whether the connection pool fix is deployed. TODO.
+Thursday was uneventful apart from two password resets.
+Friday the clinic in Eastfield reported slow page loads after 16:00.
+The network team said there was maintenance on their side.
+Saturday and Sunday had no pages.
+Next week we expect the Northvale data feed change to go live.
+The rollback plan for that change is to be confirmed.
+Please read the deployment runbook before Thursday.
+Questions go to the platform channel.
