@@ -1,0 +1,282 @@
+[
+  {
+    "file": "digitalbrain/settings.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/agent_runtime/tools.py",
+    "line": 196,
+    "symbol": "verify_citations"
+  },
+  {
+    "file": "platform_core/ai.py",
+    "line": 162,
+    "symbol": "provider_credential"
+  },
+  {
+    "file": "platform_core/ai.py",
+    "line": 278,
+    "symbol": "invoke_ai"
+  },
+  {
+    "file": "platform_core/ai.py",
+    "line": 491,
+    "symbol": "stream_chat_answer"
+  },
+  {
+    "file": "platform_core/benchmark.py",
+    "line": 67,
+    "symbol": "score"
+  },
+  {
+    "file": "platform_core/budget.py",
+    "line": 72,
+    "symbol": "check"
+  },
+  {
+    "file": "platform_core/code_graph_graphify.py",
+    "line": 75,
+    "symbol": "analyse"
+  },
+  {
+    "file": "platform_core/code_graph_ingest.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/code_knowledge.py",
+    "line": 64,
+    "symbol": "links"
+  },
+  {
+    "file": "platform_core/documents.py",
+    "line": 236,
+    "symbol": "store_document"
+  },
+  {
+    "file": "platform_core/embeddings.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/embeddings.py",
+    "line": 61,
+    "symbol": "configuration"
+  },
+  {
+    "file": "platform_core/embeddings.py",
+    "line": 89,
+    "symbol": "request"
+  },
+  {
+    "file": "platform_core/fetching.py",
+    "line": 110,
+    "symbol": "resolve"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 75,
+    "symbol": "extract_relationships"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 154,
+    "symbol": "judge"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 194,
+    "symbol": "reusable"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 251,
+    "symbol": "enrich_graph"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 429,
+    "symbol": "snapshot_revision"
+  },
+  {
+    "file": "platform_core/graph_ai.py",
+    "line": 693,
+    "symbol": "citations_from"
+  },
+  {
+    "file": "platform_core/graph_quality.py",
+    "line": 133,
+    "symbol": "communities"
+  },
+  {
+    "file": "platform_core/graph_quality.py",
+    "line": 162,
+    "symbol": "themes"
+  },
+  {
+    "file": "platform_core/graph_quality.py",
+    "line": 203,
+    "symbol": "health_report"
+  },
+  {
+    "file": "platform_core/graph_quality.py",
+    "line": 344,
+    "symbol": "quality_overview"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 41,
+    "symbol": "fingerprint"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 60,
+    "symbol": "cells"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 66,
+    "symbol": "build_graph"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 222,
+    "symbol": "rebuild"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 377,
+    "symbol": "publish_revision"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 567,
+    "symbol": "run_in_flight"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 586,
+    "symbol": "claim_generation"
+  },
+  {
+    "file": "platform_core/graphs.py",
+    "line": 706,
+    "symbol": "graph_view"
+  },
+  {
+    "file": "platform_core/middleware.py",
+    "line": 59,
+    "symbol": "ResponsePolicyMiddleware"
+  },
+  {
+    "file": "platform_core/models.py",
+    "line": 1647,
+    "symbol": "GraphRevision"
+  },
+  {
+    "file": "platform_core/ontology.py",
+    "line": 183,
+    "symbol": "typed"
+  },
+  {
+    "file": "platform_core/ontology.py",
+    "line": 225,
+    "symbol": "normalise"
+  },
+  {
+    "file": "platform_core/ontology.py",
+    "line": 267,
+    "symbol": "merge_entities"
+  },
+  {
+    "file": "platform_core/ops_graph.py",
+    "line": 527,
+    "symbol": "rebuild"
+  },
+  {
+    "file": "platform_core/permissions.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/permissions.py",
+    "line": 66,
+    "symbol": "permitted"
+  },
+  {
+    "file": "platform_core/policy.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/policy.py",
+    "line": 25,
+    "symbol": "applications_for"
+  },
+  {
+    "file": "platform_core/policy.py",
+    "line": 41,
+    "symbol": "application_for"
+  },
+  {
+    "file": "platform_core/processing.py",
+    "line": 59,
+    "symbol": "process_document"
+  },
+  {
+    "file": "platform_core/ranking.py",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "platform_core/rerank.py",
+    "line": 42,
+    "symbol": "configuration"
+  },
+  {
+    "file": "platform_core/secrets.py",
+    "line": 205,
+    "symbol": "application_secret"
+  },
+  {
+    "file": "platform_core/sensitivity.py",
+    "line": 62,
+    "symbol": "scan"
+  },
+  {
+    "file": "platform_core/workbench.py",
+    "line": 42,
+    "symbol": "access"
+  },
+  {
+    "file": "platform_core/workbench.py",
+    "line": 62,
+    "symbol": "add_knowledge"
+  },
+  {
+    "file": "platform_core/workbench.py",
+    "line": 686,
+    "symbol": "answer_question"
+  },
+  {
+    "file": "platform_core/workbench.py",
+    "line": 1153,
+    "symbol": "answer_worker"
+  },
+  {
+    "file": "pyproject.toml",
+    "line": 1,
+    "symbol": null
+  },
+  {
+    "file": "scripts/extract_text.py",
+    "line": 15,
+    "symbol": "extract"
+  },
+  {
+    "file": "static/graph.js",
+    "line": 1,
+    "symbol": null
+  }
+]

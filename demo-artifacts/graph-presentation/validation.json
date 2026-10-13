@@ -1,0 +1,46 @@
+{
+  "date": "2026-10-13",
+  "generation_page": {
+    "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\generation.html",
+    "sha256": "4754baee3f6341057cd6182f880aed6abc77f15868d99253578e98fe2d2bb455",
+    "detailed_box_rows": 12,
+    "technology_and_purpose_mapping": "passed",
+    "local_links": "passed",
+    "static_html_check": "passed",
+    "live_browser_review": "not performed; diagram component separately browser-validated"
+  },
+  "main_presentation": {
+    "slides": 22,
+    "html_structure": "passed",
+    "source_reference_check": "passed",
+    "offline_links": "passed",
+    "javascript_syntax": "passed",
+    "live_browser_review": "not performed: direct file URL rejected by browser URL policy"
+  },
+  "diagrams": [
+    {
+      "diagram_type": "architecture",
+      "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\generation-diagram.html",
+      "specification_sha256": "b90f230b1b7cee06c18a8e391d0f93b5f6edbe1482955ff98a51b43467d246a6",
+      "artifact_sha256": "ecf3b5f573cfe02eec5e8f9960839bc891e6159fb3109fc34a28bd429a70226d",
+      "validation": "9/9 showcase; 0 errors; 0 warnings",
+      "browser_evidence": "passed",
+      "visual_review": "passed",
+      "correction_rounds": 0,
+      "visual_review_scope": "Rendered screenshot review: light/dark at 1440x900 and 2048x1320",
+      "browser_receipt": "generation-diagram.visual-check.json"
+    },
+    {
+      "diagram_type": "workflow",
+      "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\security.html",
+      "specification_sha256": "ffb3dce5999d5048127dd362010e71fede858ab0fecf6aca775dc5e440df6e29",
+      "artifact_sha256": "ccc21f62231d3f6462c10761a003b788c38e03aed4d994c29a4d18de0c8076c9",
+      "validation": "9/9 showcase; 0 errors; 0 warnings",
+      "browser_evidence": "passed",
+      "visual_review": "passed",
+      "correction_rounds": 0,
+      "visual_review_scope": "Rendered screenshot review: light/dark at 1440x900 and 2048x1320",
+      "browser_receipt": "security.visual-check.json"
+    }
+  ]
+}
