@@ -269,6 +269,18 @@ worker downloads it; conversion never learns URLs exist and MarkItDown is never 
 one. Keep it that way - the offline conversion subprocess patches `socket.connect` to
 raise, and that guarantee is worth more than the convenience of fetching inside it.
 
+**The converted text is the record; the original file is optional.** Citations verify
+against `KnowledgeEntry.content`, so that is never dropped. `keep_original_documents`
+(on unless written down as false, accepted in production) decides the uploaded file:
+when off, `processing.remove_original` deletes it **on commit** of a successful
+conversion and sets `Document.original_removed_at`; name, size, SHA-256 and
+`conversion_report` (a PDF's pages and the ones with no text, read in the extractor
+subprocess before the file can go) remain. A failed conversion always keeps its file.
+"Convert again" is owner-only, needs the original, and goes through
+`processing.supersede`: unchanged text keeps its entry, changed text retires the old one
+(`active=False`, document released - the one-to-one allows one) and carries a
+restriction over. A failed re-conversion leaves the document ready on its old text.
+
 **Usage is never silently zero.** A missing or malformed token count is an error, not a
 free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed

@@ -82,7 +82,7 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         personal_data=scan(f"{title}\n{content}"),
         # Documents only: a typed note or an imported ticket is not a document,
         # and a ticket has its own score (`ticket_quality`).
-        quality=check_source(content) if document else {},
+        quality=check_source(content, document.conversion_report) if document else {},
         sensitivity=RESTRICTED if inherited else STANDARD,
     )
     entry.full_clean()

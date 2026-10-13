@@ -28,6 +28,7 @@ def load_config():
         "trust_proxy",
         "scanner",
         "scan_documents",
+        "keep_original_documents",
         "claude_use_host_login",
         "allow_self_approval",
         "allow_demo_reset",
@@ -46,6 +47,8 @@ def load_config():
         raise ImproperlyConfigured("mode must be development or production.")
     if type(config.get("scan_documents", False)) is not bool:
         raise ImproperlyConfigured("scan_documents must be a boolean.")
+    if type(config.get("keep_original_documents", True)) is not bool:
+        raise ImproperlyConfigured("keep_original_documents must be a boolean.")
     if type(config.get("shared_streams", False)) is not bool:
         raise ImproperlyConfigured("shared_streams must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:

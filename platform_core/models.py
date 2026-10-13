@@ -337,6 +337,12 @@ class Document(models.Model):
     )
     conversion_error = models.CharField(max_length=500, blank=True)
     converter = models.CharField(max_length=80, blank=True)
+    #: What conversion saw, read before the original can be removed: for a PDF
+    #: its page count and the pages that held no text. The source check reads it.
+    conversion_report = models.JSONField(default=dict, blank=True)
+    #: When the stored original was deleted after converting, because the
+    #: deployment does not keep originals. Name, size and SHA-256 remain.
+    original_removed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]

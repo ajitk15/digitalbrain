@@ -24,8 +24,10 @@ class Command(BaseCommand):
         if options["application"]:
             entries = entries.filter(application_id=options["application"])
         verdicts = Counter()
-        for entry in entries.only("id", "content", "quality").iterator():
-            stored = run(entry.content)
+        for entry in entries.select_related("document").only(
+            "id", "content", "quality", "document__conversion_report"
+        ).iterator(chunk_size=200):
+            stored = run(entry.content, entry.document.conversion_report)
             verdicts[result(stored)["verdict"]] += 1
             if stored != entry.quality:
                 KnowledgeEntry.objects.filter(pk=entry.pk).update(quality=stored)

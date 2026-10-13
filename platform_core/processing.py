@@ -1,15 +1,18 @@
 """Bounded local text conversion with optional fail-closed scanning."""
 
 import hashlib
+import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from importlib.metadata import version
 from pathlib import Path
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from .models import Document, KnowledgeEntry
 from .services import audit
@@ -112,18 +115,22 @@ def process_document(user, app_id, document_id):
         if scan.returncode != 0:
             raise ValidationError("Scanner unavailable or signatures stale. File remains private.")
     try:
-        converted = subprocess.run(
-            [
-                sys.executable,
-                str(Path(__file__).resolve().parent.parent / "scripts/extract_text.py"),
-                str(path),
-                Path(doc.name).suffix.lower(),
-            ],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            timeout=45,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as scratch:
+            report_path = Path(scratch) / "report.json"
+            converted = subprocess.run(
+                [
+                    sys.executable,
+                    str(Path(__file__).resolve().parent.parent / "scripts/extract_text.py"),
+                    str(path),
+                    Path(doc.name).suffix.lower(),
+                    str(report_path),
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=45,
+                check=False,
+            )
+            report = read_report(report_path)
         if converted.returncode != 0 or len(converted.stdout) > 4000000:
             raise ValueError
         content = converted.stdout.decode("utf-8").strip()
@@ -141,11 +148,18 @@ def process_document(user, app_id, document_id):
             return KnowledgeEntry.objects.get(document=locked)
         if locked.status not in {"quarantined", "failed", "queued", "converting"}:
             raise ValidationError("This document is no longer eligible for processing.")
-        entry = add_knowledge(user, app_id, doc.name, content, document=locked)
+        locked.conversion_report = report
+        entry = supersede(user, app_id, locked, content)
         locked.status = "ready"
         locked.converter = "MarkItDown " + version("markitdown")
         locked.conversion_error = ""
-        locked.save(update_fields=["status", "converter", "conversion_error"])
+        locked.save(
+            update_fields=["status", "converter", "conversion_error", "conversion_report"]
+        )
+        if not settings.KEEP_ORIGINAL_DOCUMENTS:
+            # After commit: until the text is stored for certain, the file is
+            # the only copy of what was uploaded.
+            transaction.on_commit(lambda: remove_original(locked.pk, path))
         audit(
             user,
             "document.processed",
@@ -154,6 +168,71 @@ def process_document(user, app_id, document_id):
             details={"security_scan_required": settings.DOCUMENT_SCAN_REQUIRED},
         )
         return entry
+
+
+def read_report(path):
+    """The extractor's report, held to the shape the source check reads."""
+    try:
+        found = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(found, dict) or not isinstance(found.get("pages"), int):
+        return {}
+    blank = found.get("pages_without_text")
+    return {
+        "pages": found["pages"],
+        "pages_without_text": (
+            [n for n in blank if isinstance(n, int)][:500] if isinstance(blank, list) else []
+        ),
+    }
+
+
+def supersede(user, app_id, document, content):
+    """The document's entry for this text: kept when the text is unchanged,
+    otherwise a new one, with the old one retired as an updated record is.
+
+    A document has one entry, so the old one gives the document up and goes
+    inactive - which takes it out of answers and of published versions the way
+    any superseded source leaves them. A restriction carries over: converting
+    again must never quietly make a restricted source usable.
+    """
+    from .sensitivity import RESTRICTED
+    from .source_quality import run as check_source
+
+    previous = KnowledgeEntry.objects.select_for_update().filter(document=document).first()
+    if previous and previous.active and previous.content == content:
+        previous.quality = check_source(content, document.conversion_report)
+        previous.save(update_fields=["quality"])
+        return previous
+    if previous:
+        previous.document = None
+        previous.active = False
+        previous.save(update_fields=["document", "active"])
+    entry = add_knowledge(user, app_id, document.name, content, document=document)
+    if previous and previous.sensitivity == RESTRICTED:
+        entry.sensitivity = RESTRICTED
+        entry.save(update_fields=["sensitivity"])
+    return entry
+
+
+def remove_original(document_id, path):
+    """Delete a converted document's stored file, and say when."""
+    path.unlink(missing_ok=True)
+    Document.objects.filter(pk=document_id, status="ready").update(
+        original_removed_at=timezone.now()
+    )
+
+
+def settle_failure(doc, message):
+    """Where a failed conversion leaves a document: failed, unless it already
+    had text - a re-conversion that failed leaves the text it had, and says so."""
+    if KnowledgeEntry.objects.filter(document=doc, active=True).exists():
+        doc.status = "ready"
+        doc.conversion_error = f"Converting again failed: {message}"[:500]
+    else:
+        doc.status = "failed"
+        doc.conversion_error = message[:500]
+    doc.save(update_fields=["status", "conversion_error"])
 
 
 def convert_document(user, app_id, document_id):
@@ -165,9 +244,7 @@ def convert_document(user, app_id, document_id):
         with transaction.atomic():
             doc = Document.objects.select_for_update().get(pk=document_id, application=app)
             if doc.status not in {"ready", "rejected", "deleted"}:
-                doc.status = "failed"
-                doc.conversion_error = " ".join(error.messages)[:500]
-                doc.save(update_fields=["status", "conversion_error"])
+                settle_failure(doc, " ".join(error.messages))
                 audit(
                     user, "document.conversion_failed", doc.pk, app.product.portfolio.organization
                 )

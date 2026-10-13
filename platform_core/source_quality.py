@@ -366,10 +366,10 @@ def for_entries(entries):
         else:
             stale.append(entry.pk)
     if stale:
-        for pk, content in KnowledgeEntry.objects.filter(pk__in=stale).values_list(
-            "pk", "content"
+        for pk, content, report in KnowledgeEntry.objects.filter(pk__in=stale).values_list(
+            "pk", "content", "document__conversion_report"
         ):
-            stored = run(content)
+            stored = run(content, report)
             KnowledgeEntry.objects.filter(pk=pk).update(quality=stored)
             results[pk] = result(stored)
     return results
