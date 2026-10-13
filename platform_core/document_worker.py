@@ -168,6 +168,18 @@ def connector_steps():
     return (process_next_connector,)
 
 
+def serviceops_test_steps():
+    from .serviceops_testing import process_next_test
+
+    return (process_next_test,)
+
+
+def automation_steps():
+    from .automation_execution import process_next_execution
+
+    return (process_next_execution,)
+
+
 def maintenance_steps():
     from .knowledge_sources import process_next_source
 
@@ -201,6 +213,8 @@ LANES = (
     # Its own lane, checked every second: somebody is watching a triage run's
     # steps as it goes, and it must not wait behind a Code Factory run.
     ("serviceops", serviceops_steps, 1.0),
+    ("serviceops-tests", serviceops_test_steps, 3.0),
+    ("automations", automation_steps, 2.0),
     # Its own lane, not maintenance: an import waits on somebody else's instance
     # and may take tens of seconds, which must not sit in front of the retention
     # sweep. Ten seconds between ticks is ample when the shortest interval an

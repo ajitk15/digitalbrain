@@ -132,6 +132,13 @@ MANAGEABLE = {
             "A Rundeck API token for a user who can read the project's jobs.",
         ),
         Manageable(
+            "awx_execute",
+            "Ansible AWX (execute)",
+            "play",
+            "Launching and monitoring owner-approved AWX job templates.",
+            "A separate AWX token with Execute on the allowed templates and Read on their jobs.",
+        ),
+        Manageable(
             "azure_automation",
             "Azure Automation",
             "network",

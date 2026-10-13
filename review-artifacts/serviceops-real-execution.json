@@ -1,0 +1,59 @@
+{
+  "application": "34b6dc60-39c3-46bb-ab3d-826c88334945",
+  "runs": [
+    {
+      "run_id": "e25da819-1a80-43ed-ab25-be4bb94aeecd",
+      "automation_id": "5fb15611-4144-4696-8d7b-c40fab474ec8",
+      "connection_id": "58081bd3-264e-4913-a357-f29b2699fa1b",
+      "request_key": "65813e1b-f022-45a4-a23e-dd23ed6097e6",
+      "job": "reprofile_incidents",
+      "mode": "real",
+      "status": "succeeded",
+      "result": {
+        "nodes": 18,
+        "edges": 18,
+        "profiles_refreshed": 1,
+        "verification": "passed",
+        "source_fingerprint": "373252c8905ed0b3ac9b5c813474973fcbd8703adb5eb1379b23259f6b3f8095",
+        "effects": "Machine-built graph replaced; human-confirmed edges preserved."
+      },
+      "started_at": "2026-10-13T07:24:07.385979+00:00",
+      "finished_at": "2026-10-13T07:24:07.640687+00:00"
+    },
+    {
+      "run_id": "7463189f-801a-45e7-af58-b25913e254e4",
+      "automation_id": "13a33817-b997-493e-9c78-8d83c8acd6f1",
+      "connection_id": "58081bd3-264e-4913-a357-f29b2699fa1b",
+      "request_key": "e4d3022b-4a7d-4806-bcbe-0104dafcb32e",
+      "job": "rebuild_ops_graph",
+      "mode": "real",
+      "status": "succeeded",
+      "result": {
+        "nodes": 18,
+        "edges": 18,
+        "profiles_refreshed": 0,
+        "verification": "passed",
+        "source_fingerprint": "373252c8905ed0b3ac9b5c813474973fcbd8703adb5eb1379b23259f6b3f8095",
+        "effects": "Machine-built graph replaced; human-confirmed edges preserved."
+      },
+      "started_at": "2026-10-13T07:24:07.733297+00:00",
+      "finished_at": "2026-10-13T07:24:07.980338+00:00"
+    }
+  ],
+  "sources_unchanged": true,
+  "human_confirmed_edges_preserved": true,
+  "replayed_requests_did_not_duplicate_jobs": true,
+  "background_worker_verified": true,
+  "background_worker_run": {
+    "run_id": "eae5c706-1b69-43df-91f6-bcde82fd4be6",
+    "status": "succeeded",
+    "result": {
+      "nodes": 18,
+      "edges": 18,
+      "profiles_refreshed": 0,
+      "verification": "passed",
+      "source_fingerprint": "373252c8905ed0b3ac9b5c813474973fcbd8703adb5eb1379b23259f6b3f8095",
+      "effects": "Machine-built graph replaced; human-confirmed edges preserved."
+    }
+  }
+}

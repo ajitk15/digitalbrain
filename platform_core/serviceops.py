@@ -841,7 +841,8 @@ def serviceops(request, pk):
             "graph_available": walk["graph_available"],
             "articles": walk["articles"],
             "automations": walk["automations"],
-            "automation_runs": AutomationRun.objects.filter(application=app, incident=selected)
+            "automation_runs": AutomationRun.objects.filter(application=app, incident=selected,
+                                                           mode="simulated")
             .select_related("automation", "requested_by")[:5],
             "map": drawn_map,
             "map_legend": map_legend(drawn_map),

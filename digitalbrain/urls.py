@@ -5,6 +5,7 @@ from platform_core import (
     administration,
     ai,
     api,
+    automation_execution,
     benchmark,
     code_graph,
     code_knowledge,
@@ -14,6 +15,7 @@ from platform_core import (
     graphs,
     secrets,
     serviceops,
+    serviceops_testing,
     views,
     workbench,
 )
@@ -87,6 +89,12 @@ urlpatterns = [
         name="api-graph-search",
     ),
     path("api/v1/applications/<str:reference>/mcp/", api.mcp, name="api-mcp"),
+    path("api/v1/applications/<str:reference>/automations/invoke/",
+         automation_execution.execution_api, name="api-automation-invoke"),
+    path("api/v1/applications/<str:reference>/automations/catalog/",
+         automation_execution.execution_api, name="api-automation-catalog"),
+    path("api/v1/applications/<str:reference>/automations/runs/<uuid:run_id>/",
+         automation_execution.execution_api, name="api-automation-run"),
     # The one API surface that calls a model. Gated on the `chat_api` feature
     # switch, which an owner has to turn on.
     path("api/v1/applications/<str:reference>/chat/", api_chat.chat, name="api-chat"),
@@ -104,6 +112,12 @@ urlpatterns = [
     path("applications/<uuid:pk>/api-access/", views.api_tokens, name="api-tokens"),
     path("applications/<uuid:pk>/chat/", workbench.chat, name="chat"),
     path("applications/<uuid:pk>/serviceops/", serviceops.serviceops, name="serviceops"),
+    path("applications/<uuid:pk>/serviceops/automations/",
+         automation_execution.automations, name="serviceops-automations"),
+    path("applications/<uuid:pk>/serviceops/testing/",
+         serviceops_testing.testing, name="serviceops-testing"),
+    path("applications/<uuid:pk>/serviceops/testing/<uuid:run_id>/report/",
+         serviceops_testing.report, name="serviceops-test-report"),
     path(
         "applications/<uuid:pk>/serviceops/runs/",
         serviceops.serviceops_runs,

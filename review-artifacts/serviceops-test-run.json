@@ -1,0 +1,44 @@
+{
+  "run": "85ef7b06-f157-40d3-a220-137abedcf538",
+  "application": "34b6dc60-39c3-46bb-ab3d-826c88334945",
+  "status": "passed",
+  "summary": "6 tests executed. Isolated browser/application checks; AI mocked and automation simulated.",
+  "results": [
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_complete_incident_triage_assessment_and_automation_journey",
+      "status": "passed",
+      "seconds": 7.578,
+      "detail": ""
+    },
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_empty_evidence_abstains_without_an_ai_call",
+      "status": "passed",
+      "seconds": 4.547,
+      "detail": ""
+    },
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_provider_outage_keeps_evidence_and_finishes_the_page",
+      "status": "passed",
+      "seconds": 4.797,
+      "detail": ""
+    },
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_stale_evidence_hides_the_previously_verified_idea",
+      "status": "passed",
+      "seconds": 4.547,
+      "detail": ""
+    },
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_test_workbench_shows_coverage_without_script_errors",
+      "status": "passed",
+      "seconds": 0.922,
+      "detail": ""
+    },
+    {
+      "test": "platform_core.tests.test_serviceops_e2e.ServiceOpsJourneyTests.test_viewer_cannot_start_triage_or_automation",
+      "status": "passed",
+      "seconds": 1.797,
+      "detail": ""
+    }
+  ]
+}
