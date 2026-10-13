@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Brain Graph Pipeline</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: two left-to-right pipelines of stage columns (cards inside), the
+   same running health-insurance example threaded through every card, and a
+   small drawing of the graph that example produces between them. */
+:root {
+  --bg: #fafbfd;
+  --surface: #ffffff;
+  --ink: #18202e;
+  --muted: #5b6678;
+  --line: #7f93b8;
+  --card-line: #c9d1de;
+  --accent: #df4f2a;
+  --accent-soft: #fdf1ec;
+  --ai: #d9822b;
+  --ok: #1d7f55;
+  --bad: #b8352f;
+  --tint: #eef2f8;
+  --f-sans: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11151c; --surface: #171c25; --ink: #e7ebf2; --muted: #9aa5b8;
+    --line: #5f739a; --card-line: #2e3747; --accent: #ff7a55; --accent-soft: #2a1a15;
+    --ai: #f0a04b; --ok: #4cc28c; --bad: #ff7b72; --tint: #1d2430; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11151c; --surface: #171c25; --ink: #e7ebf2; --muted: #9aa5b8;
+  --line: #5f739a; --card-line: #2e3747; --accent: #ff7a55; --accent-soft: #2a1a15;
+  --ai: #f0a04b; --ok: #4cc28c; --bad: #ff7b72; --tint: #1d2430; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-sans);
+  font-size: 15px; line-height: 1.5; padding-inline: 24px; padding-block: 32px 48px;
+}
+.page { max-width: 1320px; margin: 0 auto; display: grid; gap: 48px; }
+h1, h2, h3, h4 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+code, .mono { font-family: var(--f-mono); font-size: 0.86em; }
+
+header.top { display: grid; gap: 8px; }
+.eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+header.top h1 { font-size: clamp(26px, 3.2vw, 34px); font-weight: 700; }
+header.top p { color: var(--muted); max-width: 72ch; }
+
+/* The running example */
+.example { display: grid; gap: 14px; }
+.example h2 { font-size: 18px; font-weight: 700; }
+.example > p { color: var(--muted); max-width: 80ch; }
+.sources { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.source { background: var(--surface); border: 1px solid var(--card-line); border-radius: 8px; padding: 14px 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.source-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.source-head strong { font-size: 15px; }
+.tag { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: var(--tint); border-radius: 4px; padding: 2px 6px; white-space: nowrap; }
+.snippet { font-family: var(--f-mono); font-size: 12px; color: var(--muted); background: var(--tint); border-radius: 6px; padding: 8px 10px; white-space: pre; overflow-x: auto; }
+
+/* A pipeline */
+.pipeline { display: grid; gap: 22px; }
+.pipeline > header { display: grid; gap: 6px; }
+.pipeline h2 { font-size: clamp(22px, 2.4vw, 27px); font-weight: 700; }
+.pipeline > header p { color: var(--muted); max-width: 80ch; }
+.flow { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; padding-bottom: 4px; }
+.arrow { flex: none; width: 36px; display: grid; place-items: center; padding-top: 64px; color: var(--ink); font-size: 22px; font-weight: 700; }
+.stage {
+  flex: 1 1 0; min-width: 220px; border: 1.5px solid var(--line); border-radius: 12px;
+  padding: 18px 16px 18px; display: grid; gap: 12px; background: var(--surface); align-content: start;
+}
+.stage > h3 { font-size: 19px; font-weight: 700; text-align: center; padding-bottom: 4px; }
+.stage .when { text-align: center; font-size: 12px; color: var(--muted); margin-top: -10px; }
+.stage.key { border: 2px solid var(--accent); background: var(--accent-soft); }
+.stage.key > h3 { color: var(--accent); }
+.stage.loop { border: 1.5px dashed var(--line); background: transparent; }
+
+.step { border: 1px solid var(--card-line); border-radius: 7px; padding: 12px 13px; background: var(--surface); display: grid; gap: 5px; min-width: 0; }
+.step h4 { font-size: 15px; font-weight: 600; }
+.step p { font-size: 13.5px; color: var(--muted); }
+.eg { font-size: 12.5px; font-style: italic; color: var(--muted); border-top: 1px dashed var(--card-line); padding-top: 7px; margin-top: 3px; }
+.eg b { font-style: normal; font-weight: 600; color: var(--ink); }
+.note { font-size: 12.5px; font-style: italic; color: var(--accent); text-align: left; padding-left: 2px; }
+.keep { color: var(--ok); font-style: normal; font-weight: 600; }
+.drop { color: var(--bad); font-style: normal; font-weight: 600; }
+.answer { font-size: 13.5px; color: var(--ink); background: var(--tint); border-radius: 6px; padding: 10px 11px; display: grid; gap: 6px; }
+.answer sup { color: var(--accent); font-weight: 700; }
+.cites { font-size: 12px; color: var(--muted); display: grid; gap: 2px; }
+
+/* The graph this example makes */
+.graph { display: grid; gap: 12px; }
+.graph h2 { font-size: 18px; font-weight: 700; }
+.graph > p { color: var(--muted); max-width: 80ch; }
+.canvas { background: var(--surface); border: 1px solid var(--card-line); border-radius: 10px; padding: 14px; overflow-x: auto; }
+.canvas svg { display: block; width: 100%; min-width: 680px; height: auto; }
+.n-box { fill: var(--surface); stroke: var(--card-line); stroke-width: 1.2; }
+.n-doc { stroke: #6d7cff; } .n-rec { stroke: #a874f0; } .n-val { stroke: #2fb791; }
+.n-tic { stroke: var(--accent); } .n-com { stroke: #3a9fd0; } .n-run { stroke: #6d7cff; }
+.n-type { fill: var(--muted); font: 600 9.5px var(--f-sans); letter-spacing: 0.06em; text-transform: uppercase; }
+.n-label { fill: var(--ink); font: 600 13px var(--f-sans); }
+.e-struct { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+.e-ai { stroke: var(--ai); stroke-width: 1.8; stroke-dasharray: 6 4; fill: none; }
+.e-label { fill: var(--muted); font: 500 11.5px var(--f-sans); }
+.e-label.ai { fill: var(--ai); font-weight: 600; }
+.arrowhead-s { fill: var(--muted); } .arrowhead-a { fill: var(--ai); }
+.legend { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend i { display: inline-block; width: 28px; height: 0; border-top: 2px solid var(--muted); }
+.legend i.ai { border-top: 2px dashed var(--ai); }
+
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--card-line); padding-top: 14px; }
+
+@media (max-width: 980px) {
+  .sources { grid-template-columns: 1fr; }
+  .flow { flex-direction: column; align-items: stretch; overflow: visible; }
+  .stage { min-width: 0; }
+  .arrow { width: auto; padding: 6px 0; transform: rotate(90deg); }
+}
+@media (max-width: 480px) { body { padding-inline: 16px; } }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <header class="top">
+    <span class="eyebrow">Digital Brain · Knowledge</span>
+    <h1>From documents to a cited answer</h1>
+    <p>Digital Brain turns an application's documents and tickets into a knowledge graph, then answers questions from it. Every answer points back to the exact line it came from. Below are the two journeys, with one small health-insurance example carried all the way through.</p>
+  </header>
+
+  <section class="example" aria-labelledby="ex-title">
+    <h2 id="ex-title">The example: MRI claims paid without prior authorization</h2>
+    <p>A health insurer's claims team has three sources in Digital Brain. A plan rule says an MRI needs prior authorization before it is paid. A Jira ticket reports that the claims system is paying MRI claims anyway. A runbook says what to do while that is being fixed.</p>
+    <div class="sources">
+      <article class="source">
+        <div class="source-head"><strong>Claims policy.docx</strong><span class="tag">Uploaded</span></div>
+        <div class="snippet">| Rule  | Requirement                      |
+| BR-05 | An MRI needs prior authorization |</div>
+      </article>
+      <article class="source">
+        <div class="source-head"><strong>CARE-412 · MRI claims paid without approval</strong><span class="tag">Jira</span></div>
+        <div class="snippet">Status: In Progress
+claims-service approves MRI claims even when no
+prior authorization is on file. This breaks BR-05.</div>
+      </article>
+      <article class="source">
+        <div class="source-head"><strong>Claims runbook.docx</strong><span class="tag">Uploaded</span></div>
+        <div class="snippet">| Service        | Owner       |
+| claims-service | Claims Team |
+First step: hold MRI claims for review.</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="pipeline" aria-labelledby="p1-title">
+    <header>
+      <h2 id="p1-title">1. Building the knowledge graph</h2>
+      <p>Sources become a graph in four stages. The structure is built for free whenever a source changes. AI enrichment runs only when someone asks for it, and nothing reaches Chat until an owner publishes it.</p>
+    </header>
+    <div class="flow">
+      <div class="stage">
+        <h3>Collect</h3>
+        <div class="step">
+          <h4>Bring sources in</h4>
+          <p>Uploads, links, and connectors for Jira, GitHub, ServiceNow and SharePoint. A connector can re-import on a schedule.</p>
+          <p class="eg">CARE-412 arrives with its <b>status inside the text</b>, so "In Progress → Done" counts as a change.</p>
+        </div>
+        <div class="step">
+          <h4>Convert &amp; fingerprint</h4>
+          <p>Word and PDF files become plain text offline, with no internet access. Each source gets a fingerprint of its exact content.</p>
+          <p class="eg">Claims policy.docx → a table with <b>BR-05</b>, plus a fingerprint like <span class="mono">3f9a…c21</span>.</p>
+        </div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage">
+        <h3>Build structure</h3>
+        <p class="when">Automatic · free</p>
+        <div class="step">
+          <h4>One node per fact</h4>
+          <p>Each source, each table row and each "field: value" becomes a node. Each link keeps the line it was read from.</p>
+          <p class="eg">BR-05 → <b>Requirement: An MRI needs prior authorization…</b></p>
+        </div>
+        <div class="step">
+          <h4>Same value, one node</h4>
+          <p>The same value under the same column in two documents becomes one shared node, which joins the documents.</p>
+          <p class="eg">"Service: claims-service" in two tables would link them.</p>
+        </div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage key">
+        <h3>Enrich with AI</h3>
+        <p class="when">Only when requested · within the monthly budget</p>
+        <div class="step">
+          <h4>Propose typed links</h4>
+          <p>The model reads new or changed sources only. It can use eight types (Ticket, Requirement, Runbook…) and twelve relations (affects, violates, covers…).</p>
+          <p class="eg"><b>CARE-412 violates BR-05</b>, quoting "This breaks BR-05"</p>
+        </div>
+        <div class="step">
+          <h4>Keep only what is quoted</h4>
+          <p>Every proposed link must quote its source word for word. A link with no matching line is refused.</p>
+          <p class="eg"><span class="keep">Kept</span> "claims-service approves MRI claims"<br><span class="drop">Refused</span> "CARE-412 fixes billing", no such line</p>
+        </div>
+        <p class="note">quoted links only</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage">
+        <h3>Draft &amp; publish</h3>
+        <div class="step">
+          <h4>Save a version and test it</h4>
+          <p>Every run saves a draft version. The owner's test questions are scored against it automatically, with no AI and no charge.</p>
+          <p class="eg"><b>v3 · draft</b>: 15 of 16 test questions find their source.</p>
+        </div>
+        <div class="step">
+          <h4>Publish</h4>
+          <p>An owner publishes a version. Chat and Code Factory only ever answer from the published one, never a draft.</p>
+          <p class="eg"><b>v3 published</b> → Chat answers from v3.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="graph" aria-labelledby="g-title">
+    <h2 id="g-title">The graph this example produces</h2>
+    <p>Solid lines are read straight from a table. Dashed lines were proposed by AI and kept because their quote was found in the source.</p>
+    <div class="canvas">
+      <svg viewBox="0 0 880 250" role="img" aria-label="Claims policy contains BR-05, whose requirement is that an MRI needs prior authorization. CARE-412 violates BR-05 and affects claims-service. Claims runbook covers claims-service.">
+        <defs>
+          <marker id="ah-s" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-s" d="M0 0 L10 5 L0 10 z"/></marker>
+          <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="arrowhead-a" d="M0 0 L10 5 L0 10 z"/></marker>
+        </defs>
+        <!-- edges -->
+        <path class="e-struct" d="M170 55 L243 55" marker-end="url(#ah-s)"/>
+        <text class="e-label" x="206" y="46" text-anchor="middle">contains</text>
+        <path class="e-struct" d="M357 55 L433 55" marker-end="url(#ah-s)"/>
+        <text class="e-label" x="395" y="46" text-anchor="middle">Requirement</text>
+        <path class="e-ai" d="M300 166 L300 81" marker-end="url(#ah-a)"/>
+        <text class="e-label ai" x="310" y="128">violates</text>
+        <path class="e-ai" d="M362 192 L483 192" marker-end="url(#ah-a)"/>
+        <text class="e-label ai" x="422" y="183" text-anchor="middle">affects</text>
+        <path class="e-ai" d="M714 192 L640 192" marker-end="url(#ah-a)"/>
+        <text class="e-label ai" x="677" y="183" text-anchor="middle">covers</text>
+        <!-- nodes -->
+        <rect class="n-box n-doc" x="20" y="31" width="150" height="48" rx="8"/>
+        <text class="n-type" x="95" y="49" text-anchor="middle">Document</text>
+        <text class="n-label" x="95" y="67" text-anchor="middle">Claims policy</text>
+
+        <rect class="n-box n-rec" x="245" y="31" width="110" height="48" rx="8"/>
+        <text class="n-type" x="300" y="49" text-anchor="middle">Record</text>
+        <text class="n-label" x="300" y="67" text-anchor="middle">BR-05</text>
+
+        <rect class="n-box n-val" x="435" y="31" width="290" height="48" rx="8"/>
+        <text class="n-type" x="580" y="49" text-anchor="middle">Value</text>
+        <text class="n-label" x="580" y="67" text-anchor="middle">An MRI needs prior authorization</text>
+
+        <rect class="n-box n-tic" x="240" y="168" width="120" height="48" rx="8"/>
+        <text class="n-type" x="300" y="186" text-anchor="middle">Ticket</text>
+        <text class="n-label" x="300" y="204" text-anchor="middle">CARE-412</text>
+
+        <rect class="n-box n-com" x="485" y="168" width="153" height="48" rx="8"/>
+        <text class="n-type" x="561" y="186" text-anchor="middle">Component</text>
+        <text class="n-label" x="561" y="204" text-anchor="middle">claims-service</text>
+
+        <rect class="n-box n-run" x="716" y="168" width="150" height="48" rx="8"/>
+        <text class="n-type" x="791" y="186" text-anchor="middle">Runbook</text>
+        <text class="n-label" x="791" y="204" text-anchor="middle">Claims runbook</text>
+      </svg>
+    </div>
+    <div class="legend"><span><i></i>Read from the source</span><span><i class="ai"></i>Found by AI, quote verified</span></div>
+  </section>
+
+  <section class="pipeline" aria-labelledby="p2-title">
+    <header>
+      <h2 id="p2-title">2. Answering a question</h2>
+      <p>A question passes through five stages. Finding and ranking cost nothing. A model is called only to write the answer, and only after every piece of evidence has been checked against the live source.</p>
+    </header>
+    <div class="flow">
+      <div class="stage">
+        <h3>Ask</h3>
+        <div class="step">
+          <h4>Receive the question</h4>
+          <p>From Chat, from the API, or from Code Factory working on a ticket.</p>
+          <p class="eg"><b>"Why are MRI claims being paid without prior authorization, and what do we do?"</b></p>
+        </div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage">
+        <h3>Find &amp; rank</h3>
+        <p class="when">No AI · free</p>
+        <div class="step">
+          <h4>Match words and references</h4>
+          <p>Each question word is matched in its root form, while an ID such as BR-05 stays whole. Each source's best passage comes before any source's second one.</p>
+          <p class="eg">"authorization", "MRI", "claims" → <b>CARE-412</b> and <b>BR-05</b></p>
+        </div>
+        <div class="step">
+          <h4>Walk the graph</h4>
+          <p>From the best matches, follow up to two hops of typed links to find what a keyword search would miss. These finds come after the direct matches.</p>
+          <p class="eg">CARE-412 → affects → claims-service ← covers ← <b>Claims runbook</b></p>
+        </div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage key">
+        <h3>Verify</h3>
+        <div class="step">
+          <h4>Check every citation</h4>
+          <p>Each piece of evidence must still be active, have an unchanged fingerprint, and its quote must still appear in the source.</p>
+          <p class="eg"><span class="keep">✓</span> Claims runbook is unchanged since v3</p>
+        </div>
+        <div class="step">
+          <h4>Check who is asking</h4>
+          <p>A source marked restricted is never sent to AI. A Jira record is cited only to people Jira lets open it.</p>
+          <p class="eg"><span class="keep">✓</span> The asker can open CARE-412<br><span class="drop">✗</span> Member appeals.xlsx is restricted, so it is left out</p>
+        </div>
+        <p class="note">what the model claims is not evidence</p>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage">
+        <h3>Answer</h3>
+        <div class="step">
+          <h4>Write from checked evidence</h4>
+          <p>The model writes only from the verified passages and numbers its citations. The answer is shown as plain text.</p>
+          <div class="answer">
+            <p>CARE-412 tracks it: claims-service approves MRI claims with no prior authorization on file<sup>[1]</sup>, which breaks rule BR-05<sup>[2]</sup>. Until it is fixed, hold MRI claims for review. The Claims Team owns the service<sup>[3]</sup>.</p>
+            <div class="cites"><span>[1] CARE-412</span><span>[2] Claims policy · BR-05</span><span>[3] Claims runbook · claims-service row</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="arrow" aria-hidden="true">→</div>
+      <div class="stage loop">
+        <h3>Measure &amp; improve</h3>
+        <div class="step">
+          <h4>Keep score</h4>
+          <p>The Quality tab shows four plain answers per version. Test questions are scored on every version, a scorecard runs on every change, and a drift check runs whenever the model changes.</p>
+          <p class="eg">Add <b>"Who owns claims-service?"</b> as a test question, and every later version is checked against it.</p>
+        </div>
+        <p class="note">continuous quality loop</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>The claims sources and answer are illustrative. The stages are how Digital Brain works: the publish gate, the quote check and the live citation check apply to every answer.</footer>
+</div>
+</body>
+</html>
