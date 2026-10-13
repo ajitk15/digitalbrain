@@ -5,12 +5,12 @@ import time
 from datetime import timedelta
 from threading import Thread
 
-from django.db import close_old_connections
+from django.db import close_old_connections, transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import Document
-from .processing import convert_document
+from .processing import convert_document, settle_failure
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +72,12 @@ def process_next_document():
         # document's own text. The exception's *type* carries none of it, and
         # without it a transient failure and a permanent one look identical to
         # everyone: the reader, and the operator reading the log afterwards.
-        Document.objects.filter(pk=doc.pk, status="converting").update(
-            status="failed", conversion_error="Conversion could not finish. Check access and retry."
-        )
+        with transaction.atomic():
+            stuck = Document.objects.select_for_update().filter(
+                pk=doc.pk, status="converting"
+            ).first()
+            if stuck:
+                settle_failure(stuck, "Conversion could not finish. Check access and retry.")
         logger.warning(
             "document_conversion_failed",
             extra={

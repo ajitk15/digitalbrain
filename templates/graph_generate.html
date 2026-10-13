@@ -9,6 +9,7 @@
 {% for group, options in model_choices %}{% if group != 'Custom' %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
 </select>
 <span class="helptext">{% if not graph_ai_configured %}Enable Graph generation in <a href="{% url 'ai-settings' application.pk %}">AI settings</a> before choosing a model.{% else %}Provider charges may apply when a model is chosen.{% endif %}</span></p>
+{% if source_summary.attention %}<p class="notice notice-warning" role="note">{% icon "warning" %}<span>{{ source_summary.attention }} source{{ source_summary.attention|pluralize:" needs,s need" }} attention before this graph is built. <a href="{% url 'source-check' application.pk %}">Review them</a> &mdash; or generate anyway; nothing is held back.</span></p>{% endif %}
 <p class="notice" role="note">{% icon "history" %}<span>The new version is saved as a <strong>draft</strong>. Publish it under <strong>Versions</strong> before Chat and Code Factory answer from it.</span></p>
 <div class="actions"><button class="button" type="submit">{% icon "graph" %}{% if has_versions %}Regenerate{% else %}Generate{% endif %}</button></div>
 </form>

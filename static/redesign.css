@@ -631,6 +631,10 @@
   .bench-bar-label { color: var(--c-ink-2); }
   .bench-bar-label small { color: var(--c-ink-faint); }
   .bench-bar strong { font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+  /* Sources: one line on how the set reads, and the Check sources popup. */
+  .source-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s-1) var(--s-3); margin: var(--s-1) 0 0; font-size: var(--t-12); color: var(--c-ink-2); }
+  .source-findings ul { display: grid; gap: var(--s-2); margin: 0; padding-left: var(--s-4); font-size: var(--t-12); }
+  .source-map-table td:nth-child(n+3) { font-variant-numeric: tabular-nums; }
   .bench-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-12); }
   .bench-switch .inline-action { margin-left: auto; }
   @media (max-width: 560px) {

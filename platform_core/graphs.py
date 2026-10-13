@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from collections import namedtuple
 from datetime import timedelta
 
 from django.contrib import messages
@@ -47,7 +48,7 @@ def fingerprint(app_id):
     return hashlib.sha256(
         json.dumps(
             {
-                "generator": "structural-v1",
+                "generator": "structural-v2",
                 "ai": ai_settings,
                 "limits": [MAX_NODES, MAX_RECORDS_PER_SOURCE, MAX_SOURCES],
                 "sources": [(str(pk), digest) for pk, digest in records],
@@ -61,6 +62,65 @@ def cells(line):
     return [
         cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))
     ]
+
+
+def is_table_line(line):
+    stripped = line.strip()
+    return stripped.startswith("|") and "|" in stripped[1:]
+
+
+def is_separator(values):
+    """A Markdown table's `| --- | :--: |` line: structure, not a row."""
+    return bool(values) and all(re.fullmatch(r":?-{2,}:?", v.replace(" ", "")) for v in values)
+
+
+def is_bold_row(lines, index):
+    """A table row whose every cell is filled and wholly bold: `| **Step** | **Owner** |`."""
+    if index >= len(lines) or not is_table_line(lines[index]):
+        return False
+    values = cells(lines[index])
+    return all(re.fullmatch(r"\*\*[^*]+\*\*", value) for value in values)
+
+
+Line = namedtuple("Line", "kind index text headers values")
+
+
+def walk(content):
+    """What the graph reads in a source, one `Line` at a time.
+
+    "header" starts a table, "row" is a table row under it, "section" is a
+    line of text. Separators, and table lines with no header above them, yield
+    nothing. The source check (`source_quality`) reads the same walk, so what it
+    says about a table cannot disagree with what `build_graph` made of it.
+    """
+    lines = content.splitlines()
+    headers = None
+    promoted = None
+    for index, line in enumerate(lines):
+        if is_table_line(line):
+            values = cells(line)
+            if is_separator(values):
+                continue
+            if index == promoted:
+                headers = [value.strip("*").strip() for value in values]
+                yield Line("header", index, line, headers, None)
+                continue
+            if index + 1 < len(lines) and is_separator(cells(lines[index + 1])):
+                headers = values
+                # MarkItDown writes a Word table whose header row is not marked
+                # as one as a blank header, then the real header in bold as the
+                # first row. That row is the header: read as a record it named
+                # every column "column N" and joined nothing to anything.
+                if not any(values) and is_bold_row(lines, index + 2):
+                    promoted = index + 2
+                    continue
+                yield Line("header", index, line, values, None)
+            elif headers:
+                yield Line("row", index, line, headers, values)
+            continue
+        headers = None
+        if line.strip() and not line.strip().startswith("|"):
+            yield Line("section", index, line, None, None)
 
 
 def build_graph(entries, source_count):
@@ -96,64 +156,50 @@ def build_graph(entries, source_count):
     for entry in entries:
         source_refs.append({"id": str(entry.pk), "title": entry.title, "digest": entry.digest})
         document = node("document", str(entry.pk), entry.title, knowledge_id=str(entry.pk))
-        lines = entry.content.splitlines()
-        headers = None
         row_seen = set()
         local_included = 0
         omitted = False
-        for index, line in enumerate(lines):
-            if line.strip().startswith("|") and "|" in line.strip()[1:]:
-                values = cells(line)
-                if all(re.fullmatch(r":?-{2,}:?", value.replace(" ", "")) for value in values):
+        for item in walk(entry.content):
+            index, line = item.index, item.text
+            if item.kind == "row":
+                headers, values = item.headers, item.values
+                total_rows += 1
+                signature = tuple(values)
+                if signature in row_seen:
+                    duplicate_rows += 1
+                row_seen.add(signature)
+                missing_values += sum(not value for value in values)
+                if (
+                    local_included >= MAX_RECORDS_PER_SOURCE
+                    or len(nodes) + 1 + len(values) > MAX_NODES
+                ):
+                    omitted = True
                     continue
-                if index + 1 < len(lines):
-                    following = cells(lines[index + 1])
-                    if following and all(
-                        re.fullmatch(r":?-{2,}:?", v.replace(" ", "")) for v in following
-                    ):
-                        headers = values
+                label = next((value for value in values if value), f"Row {index + 1}")
+                record = node(
+                    "record",
+                    f"{entry.pk}:{index}",
+                    label,
+                    knowledge_id=str(entry.pk),
+                    line=index + 1,
+                )
+                edge(document, record, "contains record", entry, index + 1, line)
+                for column, value in enumerate(values):
+                    if not value:
                         continue
-                if headers:
-                    total_rows += 1
-                    signature = tuple(values)
-                    if signature in row_seen:
-                        duplicate_rows += 1
-                    row_seen.add(signature)
-                    missing_values += sum(not value for value in values)
-                    if (
-                        local_included >= MAX_RECORDS_PER_SOURCE
-                        or len(nodes) + 1 + len(values) > MAX_NODES
-                    ):
-                        omitted = True
-                        continue
-                    label = next((value for value in values if value), f"Row {index + 1}")
-                    record = node(
-                        "record",
-                        f"{entry.pk}:{index}",
-                        label,
-                        knowledge_id=str(entry.pk),
-                        line=index + 1,
+                    field = headers[column] if column < len(headers) else f"column {column + 1}"
+                    field = field or f"column {column + 1}"
+                    value_node = node(
+                        "value",
+                        json.dumps([field.casefold(), value]),
+                        f"{field}: {value}",
+                        field=field,
+                        value=value[:1000],
                     )
-                    edge(document, record, "contains record", entry, index + 1, line)
-                    for column, value in enumerate(values):
-                        if not value:
-                            continue
-                        field = headers[column] if column < len(headers) else f"column {column + 1}"
-                        field = field or f"column {column + 1}"
-                        value_node = node(
-                            "value",
-                            json.dumps([field.casefold(), value]),
-                            f"{field}: {value}",
-                            field=field,
-                            value=value[:1000],
-                        )
-                        edge(record, value_node, field, entry, index + 1, line)
-                    included_rows += 1
-                    local_included += 1
-                    continue
-            else:
-                headers = None
-            if line.strip() and not line.strip().startswith("|"):
+                    edge(record, value_node, field, entry, index + 1, line)
+                included_rows += 1
+                local_included += 1
+            elif item.kind == "section":
                 total_sections += 1
                 if local_included >= MAX_RECORDS_PER_SOURCE or len(nodes) >= MAX_NODES:
                     omitted = True
@@ -206,7 +252,7 @@ def build_graph(entries, source_count):
         "isolated_nodes": isolated,
         "warnings": warnings,
         "provenance_percent": 100 if edges else None,
-        "method": "Deterministic Markdown structure v1",
+        "method": "Deterministic Markdown structure v2",
         "semantic_accuracy": "Not measured; no inferred semantic relationships.",
     }
     return {"nodes": list(nodes.values()), "edges": edges, "sources": source_refs}, quality
@@ -662,6 +708,12 @@ def queue_generation(request, app, pk):
     return redirect("graph", pk=pk)
 
 
+def source_summary(app_id):
+    from .source_map import summary
+
+    return summary(app_id) if sources_for(app_id).exists() else None
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def graph_generate(request, pk):
@@ -694,6 +746,8 @@ def graph_generate(request, pk):
             "graph": graph,
             "model_choices": MODEL_CHOICES,
             "has_versions": GraphRevision.objects.filter(application=app).exists(),
+            # Said, never enforced: a source that needs work still goes in.
+            "source_summary": source_summary(app.pk),
             "graph_ai_configured": AIConfiguration.objects.filter(
                 application=app, purpose="graph_generation", enabled=True
             ).exists(),

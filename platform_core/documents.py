@@ -465,6 +465,38 @@ def intake(request, pk, can_upload):
     return None, form, link_form
 
 
+def reconvert(request, app, grant, document):
+    """Convert a ready document again from its stored original.
+
+    How an existing document picks up a converter improvement. The current
+    text stays in use until the new text replaces it, and replaces it only if
+    it differs; a failed attempt leaves it as it was and says so. Owner only:
+    it can change what every answer from this source cites.
+    """
+    if grant.role != "owner":
+        raise PermissionDenied("Only an owner may convert a document again.")
+    with transaction.atomic():
+        locked = Document.objects.select_for_update().get(pk=document.pk)
+        stored = document_path(app, locked.pk).is_file() and not locked.original_removed_at
+        if locked.status != "ready" or not stored:
+            messages.info(
+                request,
+                "Only a converted document whose original is still stored can be converted "
+                "again. Upload it again instead.",
+            )
+            return redirect("document-detail", pk=app.pk, document_id=locked.pk)
+        locked.status = "queued"
+        locked.conversion_actor = request.user
+        locked.conversion_error = ""
+        locked.save(update_fields=["status", "conversion_actor", "conversion_error"])
+        audit(
+            request.user, "document.reconversion_queued", locked.pk,
+            app.product.portfolio.organization,
+        )
+    messages.success(request, "Queued to convert again. The current text stays in use until then.")
+    return redirect("document-detail", pk=app.pk, document_id=locked.pk)
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def document_detail(request, pk, document_id):
@@ -477,6 +509,8 @@ def document_detail(request, pk, document_id):
         from .workbench import access
 
         access(request.user, pk, "knowledge", write=True)
+        if request.POST.get("action") == "reconvert":
+            return reconvert(request, app, grant, document)
         with transaction.atomic():
             locked = Document.objects.select_for_update().get(pk=document.pk)
             if locked.status in {"quarantined", "failed"}:
@@ -538,19 +572,28 @@ def document_detail(request, pk, document_id):
         response = HttpResponse(body, content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{document.pk}.{extension}"'
         return response
+    from .source_quality import for_entries
+
     return render(
         request,
         "document_detail.html",
         {
             "application": app,
+            "grant": grant,
             "document": document,
             "entry": entry,
+            "source_check": for_entries([entry])[entry.pk] if entry else None,
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []) if entry else [],
             "can_delete": grant.role == "owner"
             or (grant.role == "contributor" and document.uploaded_by_id == request.user.pk),
             "scan_required": settings.DOCUMENT_SCAN_REQUIRED,
             "can_process": grant.role in {"owner", "contributor"}
             and feature_enabled("knowledge", app),
+            "can_reconvert": grant.role == "owner"
+            and feature_enabled("knowledge", app)
+            and document.status == "ready"
+            and not document.original_removed_at
+            and document_path(app, document.pk).is_file(),
         },
     )
 

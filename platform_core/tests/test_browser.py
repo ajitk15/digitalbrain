@@ -386,6 +386,7 @@ AUDITED = (
     "graph",
     "documents",
     "source-add",
+    "source-check",
     "chat",
     "serviceops",
     "serviceops-runs",
@@ -1210,6 +1211,48 @@ class FactoryReviewArrivesTests(BrowserTestCase):
         rendered = self.page.locator("main > [data-live]").evaluate_all(order)
         self.assertIn("stage-4", rendered)
         self.assertEqual(live, rendered)
+        self.assertNoScriptErrors()
+
+
+class SourceCheckTests(BrowserTestCase):
+    """Check sources opens over Sources as a popup, and reads as it does alone."""
+
+    def setUp(self):
+        super().setUp()
+        import hashlib
+
+        from platform_core import source_map
+        from platform_core.models import Document
+
+        from .test_source_map import REQUIREMENTS, TESTS
+        from .test_source_quality import FLAWED
+
+        source_map._cache.clear()
+        for name, content in (("requirements.docx", REQUIREMENTS),
+                              ("test-plan.docx", TESTS), ("release-plan.docx", FLAWED)):
+            document = Document.objects.create(
+                application=self.app, uploaded_by=self.owner, name=name, size=len(content),
+                sha256=hashlib.sha256(content.encode()).hexdigest(), status="ready",
+                origin="upload",
+            )
+            add_knowledge(self.owner, self.app.pk, name, content, document=document)
+
+    def test_check_sources_opens_over_sources_and_links_each_source(self):
+        self.open("documents", self.app.pk)
+        self.mark_page()
+        self.page.get_by_role("link", name="Check sources").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Check sources").wait_for()
+        self.assertEqual(dialog.locator(".bench-bar").count(), 3)
+        self.assertEqual(dialog.locator(".source-map-table tbody tr").count(), 3)
+        dialog.get_by_text("Not referenced by any other source").wait_for()
+        self.assertSamePage()
+        self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
+        self.assertEqual(self.page.evaluate(CONTRAST), [])
+        self.assertNoScriptErrors()
+        # A source's name leads to its own page and its check.
+        dialog.get_by_role("link", name="release-plan.docx").click()
+        self.page.locator("#source-check").wait_for()
         self.assertNoScriptErrors()
 
 

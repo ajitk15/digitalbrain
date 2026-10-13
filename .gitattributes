@@ -8,3 +8,13 @@
 Dockerfile      text eol=lf
 *.toml          text eol=lf
 docker-compose.yaml text eol=lf
+
+# Documents are bytes. A small PDF holds no NUL byte, so git guessed "text" and a
+# Windows checkout rewrote its line endings: the file then failed to convert, and
+# the scorecard with it, on any fresh clone.
+*.pdf           binary
+*.docx          binary
+*.xlsx          binary
+*.pptx          binary
+*.zip           binary
+*.png           binary

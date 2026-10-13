@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-10T03:02:29+00:00",
- "commit": "0cac9e5",
+ "generated_at": "2026-10-13T07:45:34+00:00",
+ "commit": "25207be",
  "corpus": {
   "sources": 34,
   "questions": 16
@@ -28,7 +28,7 @@
    "unit": "",
    "better": "higher",
    "tolerance": 0.005,
-   "value": 0.709
+   "value": 0.716
   },
   "keyword_found": {
    "aspect": "Retrieval",
@@ -222,7 +222,7 @@
    {
     "question": "Why did the service fail on 14 August?",
     "expected": "incident-2026-08-14",
-    "graph_rank": 6,
+    "graph_rank": 4,
     "keyword_rank": 1
    },
    {
@@ -294,7 +294,7 @@
    {
     "question": "Which risks are still open?",
     "expected": "risk-register",
-    "graph_rank": 7,
+    "graph_rank": 6,
     "keyword_rank": null
    }
   ],

@@ -12,6 +12,7 @@ dependencies = [
   "whitenoise>=6.9,<7",
   "waitress>=3,<4",
   "pypdf>=6.18,<7",
+  "pypdfium2>=5.13,<6",
   "defusedxml>=0.7.1,<1",
   "markitdown[docx,outlook,pdf,pptx,xls,xlsx]>=0.1,<1",
   "openai-agents>=0.22.2,<0.23",

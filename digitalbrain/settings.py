@@ -10,6 +10,16 @@ PRODUCTION = CONFIG["mode"] == "production"
 SERVICEOPS_TEST_AUTOMATION = not PRODUCTION
 DOCUMENT_AUTO_CONVERT = True
 DOCUMENT_SCAN_REQUIRED = PRODUCTION or CONFIG.get("scan_documents", False)
+#: Keep an uploaded file after it converts. On unless written down as false; when
+#: off, the original is deleted once its text is stored and only its name, size,
+#: SHA-256 and conversion report remain. A failed conversion always keeps its
+#: file, so Retry works; a link can be fetched again. Accepted in production.
+KEEP_ORIGINAL_DOCUMENTS = bool(CONFIG.get("keep_original_documents", True))
+#: Read scanned PDF pages and images with a local Tesseract. Off unless written
+#: down; `tesseract_path` names the binary when it is not on PATH. Conversion
+#: stays offline: Tesseract is handed a file and makes no network call.
+OCR_ENABLED = bool(CONFIG.get("ocr", False))
+TESSERACT_PATH = CONFIG.get("tesseract_path", "")
 # Development only: let the bundled CLI use the operator's own Claude Code login
 # instead of a mounted per-application credential. Never true in production.
 CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not PRODUCTION

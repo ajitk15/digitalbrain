@@ -16,6 +16,7 @@ from platform_core import (
     secrets,
     serviceops,
     serviceops_testing,
+    source_map,
     views,
     workbench,
 )
@@ -32,6 +33,11 @@ urlpatterns = [
         "applications/<uuid:pk>/graph/benchmark/",
         benchmark.benchmark_view,
         name="graph-benchmark",
+    ),
+    path(
+        "applications/<uuid:pk>/sources/check/",
+        source_map.source_check,
+        name="source-check",
     ),
     path(
         "applications/<uuid:pk>/graph/generate/",

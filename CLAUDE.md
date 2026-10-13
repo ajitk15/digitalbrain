@@ -269,6 +269,31 @@ worker downloads it; conversion never learns URLs exist and MarkItDown is never 
 one. Keep it that way - the offline conversion subprocess patches `socket.connect` to
 raise, and that guarantee is worth more than the convenience of fetching inside it.
 
+**The converted text is the record; the original file is optional.** Citations verify
+against `KnowledgeEntry.content`, so that is never dropped. `keep_original_documents`
+(on unless written down as false, accepted in production) decides the uploaded file:
+when off, `processing.remove_original` deletes it **on commit** of a successful
+conversion and sets `Document.original_removed_at`; name, size, SHA-256 and
+`conversion_report` (a PDF's pages and the ones with no text, read in the extractor
+subprocess before the file can go) remain. A failed conversion always keeps its file.
+"Convert again" is owner-only, needs the original, and goes through
+`processing.supersede`: unchanged text keeps its entry, changed text retires the old one
+(`active=False`, document released - the one-to-one allows one) and carries a
+restriction over. A failed re-conversion leaves the document ready on its old text.
+
+**OCR is local, off by default, and says which text it read.** `ocr = true` (with
+`tesseract_path` if Tesseract is not on PATH; the Dockerfile installs it) makes the
+extractor subprocess render each PDF page that has no text layer with pypdfium2, read it,
+and read `.png`/`.jpg`/`.tif` uploads. Images are refused without it. Tesseract is handed
+a file and makes no network call, so the subprocess's socket patch still holds. Each
+page read that way is headed `## Page N (read by OCR, C% confidence)` in the text itself,
+so a citation from it says so too. At most `MAX_OCR_PAGES` a document, which is
+equal in `processing` and the extractor and tested; over it the document fails rather
+than half-reads. A page under `LOW_CONFIDENCE` makes the Source check's "Readable text"
+missing: text read badly is the one case where a quote can verify exactly and still be
+wrong. `demo-artifacts/carepath-quality-samples/` holds scans and broken documents to
+try it on. It is outside `docs/`, so the scorecard does not read it.
+
 **Usage is never silently zero.** A missing or malformed token count is an error, not a
 free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed
@@ -400,6 +425,26 @@ evidence shows on every item it produces.
 
 Neither path checks the live fingerprint — answering from a published snapshot is the point.
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
+
+**Sources are checked before a graph is built, and the check only suggests.**
+`source_quality.py` scores each *document* (not typed records, not imported tickets - a
+Jira ticket keeps `ticket_quality`) on a fixed rubric with no model, stored on
+`KnowledgeEntry.quality` with `QUALITY_VERSION`; a stale version is re-run on read and
+kept, and `manage.py check_sources` fills existing rows. Ready needs 80 **and** no check
+missing outright. `source_map.py` reads the set `graphs.sources_for` would build from -
+references defined and mentioned, table values keyed exactly as `build_graph` keys value
+nodes - cached per `graphs.fingerprint`, shown as the Check sources popup, one line on
+Sources and a warning on Generate. Nothing here ever disables Generate or leaves a
+source out. Both read tables through `graphs.walk`, the walk `build_graph` itself makes:
+**do not give either its own table parser**, or a finding will disagree with the graph.
+
+`walk` promotes a wholly bold first row under a blank header to the header - how
+MarkItDown writes a Word table whose header row is not marked as one. Stored text is
+untouched, so digests and quotes are too; the generator is `structural-v2` so every
+structural graph rebuilds once, as a draft. On CarePath it named 400 values that were
+"column N", added 8 cross-source joins, and took graph MRR 0.709 -> 0.716 with two
+questions ranked higher and none lower. A `**Label** | value` front-matter table is not
+promoted and not flagged.
 
 **Retrieval changes are measured, not asserted.** `benchmark.py` scores every saved graph
 version against an owner's questions (a version's score in Knowledge → Versions or Quality opens it, `manage.py benchmark`): is the

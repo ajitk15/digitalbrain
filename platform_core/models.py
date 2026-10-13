@@ -337,6 +337,12 @@ class Document(models.Model):
     )
     conversion_error = models.CharField(max_length=500, blank=True)
     converter = models.CharField(max_length=80, blank=True)
+    #: What conversion saw, read before the original can be removed: for a PDF
+    #: its page count and the pages that held no text. The source check reads it.
+    conversion_report = models.JSONField(default=dict, blank=True)
+    #: When the stored original was deleted after converting, because the
+    #: deployment does not keep originals. Name, size and SHA-256 remain.
+    original_removed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]
@@ -374,6 +380,9 @@ class KnowledgeEntry(models.Model):
     #: What `sensitivity.scan` found when the source was added: {kind: count}.
     #: A suggestion for a person, never a label by itself.
     personal_data = models.JSONField(default=dict, blank=True)
+    #: What `source_quality.run` found when the source was added: the rules'
+    #: version and each check. Empty until checked; stale rules are re-run on read.
+    quality = models.JSONField(default=dict, blank=True)
     #: Who the source system lets open this record, as platform user ids. None
     #: means its system is not checked and every member may see it in answers;
     #: a list - empty until the first check - limits answers to those users.
