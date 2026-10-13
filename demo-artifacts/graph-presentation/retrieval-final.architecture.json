@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Digital Brain · the real graph retrieval pipeline",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "prepared",
+      "type": "database",
+      "label": "Graph revisions + vectors",
+      "sublabel": "Django JSON; stored vectors optional",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "authorize",
+      "type": "security",
+      "label": "Receive + authorize",
+      "sublabel": "Application grant; configured mode",
+      "pos": [
+        300,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "query",
+      "type": "backend",
+      "label": "Query + published snapshot",
+      "sublabel": "Follow-up context; chosen graph version",
+      "pos": [
+        300,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "rank",
+      "type": "backend",
+      "label": "Hybrid candidate ranking",
+      "sublabel": "BM25; optional NumPy vectors + fusion",
+      "pos": [
+        560,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "walk",
+      "type": "backend",
+      "label": "Bounded graph expansion",
+      "sublabel": "Typed 2-hop walk; one-hop neighbours",
+      "pos": [
+        560,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "verify",
+      "type": "security",
+      "label": "Live evidence gate",
+      "sublabel": "Active source; quote; digest; access",
+      "pos": [
+        820,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "select",
+      "type": "backend",
+      "label": "Diverse sources + rerank",
+      "sublabel": "Up to 8; optional paid reranking",
+      "pos": [
+        820,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "answer",
+      "type": "cloud",
+      "label": "Generate grounded answer",
+      "sublabel": "Configured OpenAI / Claude runtime",
+      "pos": [
+        1080,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "final",
+      "type": "security",
+      "label": "Recheck + deliver citations",
+      "sublabel": "Streaming path: verify, emit and save",
+      "pos": [
+        1080,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "benchmark",
+      "type": "backend",
+      "label": "Benchmark + human review",
+      "sublabel": "Same retrieval + checks; expected-source tests",
+      "pos": [
+        410,
+        620
+      ],
+      "size": [
+        370,
+        96
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "1 · Prepared evidence (offline)",
+      "wraps": [
+        "prepared"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "2 · Query and scope",
+      "wraps": [
+        "authorize",
+        "query"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "3 · Search and expand",
+      "wraps": [
+        "rank",
+        "walk"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "4 · Verify and select",
+      "wraps": [
+        "verify",
+        "select"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "5 · Generate and deliver",
+      "wraps": [
+        "answer",
+        "final"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "Offline tests · drafts allowed; no auto-training",
+      "wraps": [
+        "benchmark"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "from": "authorize",
+      "to": "query"
+    },
+    {
+      "from": "prepared",
+      "to": "query",
+      "label": "snapshot",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "query",
+      "to": "rank",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "rank",
+      "to": "walk"
+    },
+    {
+      "from": "walk",
+      "to": "verify",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "verify",
+      "to": "select",
+      "variant": "security"
+    },
+    {
+      "from": "select",
+      "to": "answer",
+      "label": "verified context",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "answer",
+      "to": "final"
+    },
+    {
+      "from": "prepared",
+      "to": "benchmark",
+      "label": "saved version",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "left"
+    }
+  ]
+}

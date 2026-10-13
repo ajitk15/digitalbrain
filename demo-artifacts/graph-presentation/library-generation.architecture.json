@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "Digital Brain · build a graph from a library document", "quality_profile": "showcase", "locale": "en"},
+  "components": [
+    {"id": "source", "type": "external", "label": "Library App depends on", "sublabel": "Book Database. · Library setup document", "pos": [40,150], "size": [220,100]},
+    {"id": "convert", "type": "backend", "label": "Read and normalize text", "sublabel": "MarkItDown; scan files when required", "pos": [40,350], "size": [220,100]},
+    {"id": "structure", "type": "backend", "label": "Build document structure", "sublabel": "Custom Python · document and section", "pos": [300,150], "size": [220,100]},
+    {"id": "propose", "type": "cloud", "label": "Propose a semantic link", "sublabel": "Optional OpenAI / Claude: depends on", "pos": [300,350], "size": [220,100]},
+    {"id": "quote", "type": "security", "label": "Check the original quote", "sublabel": "Python: exact words exist in source", "pos": [560,150], "size": [220,100]},
+    {"id": "types", "type": "security", "label": "Check names and types", "sublabel": "Ontology: Component → Component", "pos": [560,350], "size": [220,100]},
+    {"id": "save", "type": "database", "label": "Save draft graph v1", "sublabel": "Django JSON; quote + source digest", "pos": [820,150], "size": [220,100]},
+    {"id": "quality", "type": "backend", "label": "Review a test question", "sublabel": "Should cite the Library setup source", "pos": [820,350], "size": [220,100]},
+    {"id": "publish", "type": "frontend", "label": "Review and publish v1", "sublabel": "Human action · graph answers enabled", "pos": [1080,150], "size": [220,100]},
+    {"id": "themes", "type": "backend", "label": "Explore graph themes", "sublabel": "Graphify + NetworkX / Leiden; no LLM", "pos": [1080,350], "size": [220,100]}
+  ],
+  "boundaries": [
+    {"kind":"region","label":"1 · Ingest and read","wraps":["source","convert"],"pad":18},
+    {"kind":"region","label":"2 · Build relationships","wraps":["structure","propose"],"pad":18},
+    {"kind":"security-group","label":"3 · Validate evidence","wraps":["quote","types"],"pad":18},
+    {"kind":"region","label":"4 · Save and review","wraps":["save","quality"],"pad":18},
+    {"kind":"region","label":"5 · Publish and explore","wraps":["publish","themes"],"pad":18}
+  ],
+  "connections": [
+    {"from":"source","to":"convert"},
+    {"from":"convert","to":"structure","fromSide":"right","toSide":"left"},
+    {"from":"structure","to":"propose","label":"if enabled","labelDy":35},
+    {"from":"propose","to":"quote","fromSide":"right","toSide":"left"},
+    {"from":"quote","to":"types","variant":"security"},
+    {"from":"types","to":"save","fromSide":"right","toSide":"left"},
+    {"from":"structure","to":"save","label":"structural-only path","variant":"dashed","fromSide":"top","toSide":"top","via":[[410,80],[930,80]]},
+    {"from":"save","to":"quality"},
+    {"from":"quality","to":"publish","label":"human review","fromSide":"right","toSide":"left"},
+    {"from":"publish","to":"themes","label":"view only","labelDy":35}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"Example graph fact","items":["Library App — depends on → Book Database.","The exact source sentence stays with that relationship."]},
+    {"dot":"amber","title":"What is optional","items":["Without AI: document structure only, no inferred depends-on fact.","Embeddings are optional; Graphify themes do not create facts."]}
+  ]
+}

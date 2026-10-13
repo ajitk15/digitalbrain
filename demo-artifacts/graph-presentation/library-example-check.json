@@ -1,0 +1,13 @@
+{
+  "example": "Synthetic library app",
+  "source_quote": "Library App depends on Book Database.",
+  "question": "What does the Library App depend on?",
+  "intended_answer": "Book Database [Library setup]",
+  "structural_builder": "passed",
+  "actual_enrichment_validation_and_merging": "passed using mocked proposals; no provider call",
+  "invented_quote_rejection": "passed",
+  "actual_bm25_expected_source": "passed",
+  "citations_with_live_database": "not exercised",
+  "answer_model": "not called",
+  "production_data": "not read or changed"
+}
