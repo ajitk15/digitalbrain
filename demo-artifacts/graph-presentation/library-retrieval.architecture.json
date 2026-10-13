@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "Digital Brain · answer a simple library question", "quality_profile": "showcase", "locale": "en"},
+  "components": [
+    {"id":"question","type":"external","label":"What does Library App","sublabel":"depend on? · user question","pos":[40,150],"size":[220,100]},
+    {"id":"version","type":"security","label":"Check access + choose v1","sublabel":"Django grants; published version only","pos":[40,350],"size":[220,100]},
+    {"id":"rank","type":"backend","label":"Find likely evidence","sublabel":"BM25; optional vectors via NumPy","pos":[300,150],"size":[220,100]},
+    {"id":"walk","type":"backend","label":"Follow nearby graph links","sublabel":"Bounded walk; keep direct matches first","pos":[300,350],"size":[220,100]},
+    {"id":"verify","type":"security","label":"Can this quote be cited?","sublabel":"Active + unchanged + exact + allowed","pos":[560,150],"size":[220,100]},
+    {"id":"select","type":"backend","label":"Keep useful, diverse sources","sublabel":"Optional rerank; same verified evidence","pos":[560,350],"size":[220,100]},
+    {"id":"answer","type":"cloud","label":"Answer: Book Database","sublabel":"OpenAI / Claude uses verified context","pos":[820,150],"size":[220,100]},
+    {"id":"citation","type":"security","label":"Show: [Library setup]","sublabel":"Streaming path rechecks final citations","pos":[820,350],"size":[220,100]},
+    {"id":"test","type":"backend","label":"Did the expected source appear?","sublabel":"Offline benchmark of saved versions","pos":[1080,150],"size":[220,100]},
+    {"id":"improve","type":"frontend","label":"People review and improve","sublabel":"New draft + publish; no auto-training","pos":[1080,350],"size":[220,100]}
+  ],
+  "boundaries": [
+    {"kind":"region","label":"1 · Receive the question","wraps":["question","version"],"pad":18},
+    {"kind":"region","label":"2 · Search and expand","wraps":["rank","walk"],"pad":18},
+    {"kind":"security-group","label":"3 · Verify and select","wraps":["verify","select"],"pad":18},
+    {"kind":"region","label":"4 · Answer with a citation","wraps":["answer","citation"],"pad":18},
+    {"kind":"region","label":"Separate · measure and review","wraps":["test","improve"],"pad":18}
+  ],
+  "connections": [
+    {"from":"question","to":"version"},
+    {"from":"version","to":"rank","fromSide":"right","toSide":"left"},
+    {"from":"rank","to":"walk"},
+    {"from":"walk","to":"verify","fromSide":"right","toSide":"left"},
+    {"from":"verify","to":"select","variant":"security"},
+    {"from":"select","to":"answer","label":"verified quote","fromSide":"right","toSide":"left"},
+    {"from":"answer","to":"citation"},
+    {"from":"test","to":"improve","variant":"dashed"}
+  ],
+  "cards": [
+    {"dot":"emerald","title":"Evidence used for the answer","items":["Library App depends on Book Database.","Expected answer is illustrative, not a live model response."]},
+    {"dot":"rose","title":"If the evidence changes","items":["Changed, restricted or unauthorized source → old edge is skipped.","Benchmarking measures retrieval, not every generated sentence."]}
+  ]
+}

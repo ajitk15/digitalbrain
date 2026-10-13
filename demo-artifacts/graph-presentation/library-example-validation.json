@@ -1,0 +1,40 @@
+{
+  "prepared": "2026-10-13",
+  "diagrams": [
+    {
+      "diagram_type": "architecture",
+      "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\library-generation.html",
+      "artifact_sha256": "d4fe3127e0235ba681210f93f61c8ff2e531824e3d6173530f89cc1efda2a3c2",
+      "spec_sha256": "facd127948de934ce397ba7e570fc59dd97801feb818ef39cdbff455feff8211",
+      "showcase_acceptance": "9/9 passed",
+      "composition_errors": 0,
+      "composition_warnings": 0,
+      "browser_evidence": "passed",
+      "visual_review": "passed",
+      "correction_rounds": 1,
+      "visual_review_scope": "1440x900 and 2048x1320, light and dark screenshots",
+      "browser_receipt": "library-generation.visual-check.json"
+    },
+    {
+      "diagram_type": "architecture",
+      "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\library-retrieval.html",
+      "artifact_sha256": "7b92c322d4ae02ae300888ffdae336e01c186f90f9b3ef8526d891258401864f",
+      "spec_sha256": "229d79737c670be5be36a0ca00132044c36abf56ffe405d46c8fea55ecfeaac1",
+      "showcase_acceptance": "9/9 passed",
+      "composition_errors": 0,
+      "composition_warnings": 0,
+      "browser_evidence": "passed",
+      "visual_review": "passed",
+      "correction_rounds": 0,
+      "visual_review_scope": "1440x900 and 2048x1320, light and dark screenshots",
+      "browser_receipt": "library-retrieval.visual-check.json"
+    }
+  ],
+  "overview": {
+    "path": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\library-example.html",
+    "static_audit": "passed",
+    "full_browser_review": "not performed"
+  },
+  "example_verification": "library-example-check.json",
+  "example_scope": "Synthetic sources and mocked AI proposals; actual builder, enrichment validation, merging and BM25 ranking. No live model answer or live database citation test."
+}

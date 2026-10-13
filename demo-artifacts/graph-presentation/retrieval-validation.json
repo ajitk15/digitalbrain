@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-13",
+  "diagram_type": "architecture",
+  "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\retrieval.html",
+  "specification_sha256": "4d9281dc6e8e1e3f4b8c1ec675a1f5c9fde87a623c66e67024b94e37b1f3c5f2",
+  "artifact_sha256": "7cd4300a8aff4078854454a89f5de1b866f5195d82016cc2cffae18d93e380b4",
+  "validation": "9/9 showcase; 0 errors; 0 warnings",
+  "browser_evidence": "passed",
+  "visual_review": "passed",
+  "correction_rounds": 1,
+  "visual_review_scope": "Light/dark screenshots at 1440x900 and 2048x1320",
+  "browser_receipt": "retrieval.visual-check.json",
+  "source_implementation": "Repository graph-mode retrieval; synchronous and streaming distinctions documented in retrieval-guide.md"
+}
