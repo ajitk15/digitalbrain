@@ -596,14 +596,24 @@ class OpsEdge(models.Model):
         indexes = [models.Index(fields=["application", "relation"])]
 
 
-class AutomationRun(models.Model):
-    """A simulated run of an automation, for one incident.
+class AutomationConnection(models.Model):
+    """Owner-configured execution boundary, separate from imported job descriptions."""
 
-    Nothing is executed. The row records who asked, for which incident, and
-    exactly what would have been sent to which platform, so the flow can be
-    demonstrated and audited before anyone wires a real launcher in. `mode` is
-    the switch a real implementation would add a value to; today there is one.
-    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    provider = models.CharField(max_length=20, choices=[("local", "Local Python runbooks"),
+                                                       ("awx", "Ansible AWX")])
+    base_url = models.URLField(max_length=500, blank=True)
+    allowed_jobs = models.JSONField(default=list)
+    enabled = models.BooleanField(default=True)
+    require_approval = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class AutomationRun(models.Model):
+    """Simulated requests and real, connection-bound automation executions."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     application = models.ForeignKey(Application, on_delete=models.CASCADE)
@@ -619,8 +629,25 @@ class AutomationRun(models.Model):
     )
     requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     mode = models.CharField(
-        max_length=12, default="simulated", choices=[("simulated", "Simulated")]
+        max_length=12, default="simulated",
+        choices=[("simulated", "Simulated"), ("real", "Real execution")]
     )
+    connection = models.ForeignKey(AutomationConnection, null=True, blank=True,
+                                   on_delete=models.PROTECT)
+    status = models.CharField(max_length=20, default="simulated", choices=[
+        ("simulated", "Simulated"), ("pending_approval", "Awaiting approval"),
+        ("queued", "Queued"), ("launching", "Launching"), ("running", "Running"),
+        ("succeeded", "Succeeded"), ("failed", "Failed"), ("blocked", "Blocked"),
+        ("unknown", "Needs reconciliation"),
+    ])
+    idempotency_key = models.UUIDField(null=True, blank=True)
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+        on_delete=models.PROTECT, related_name="automation_approvals")
+    external_job_id = models.CharField(max_length=80, blank=True)
+    result = models.JSONField(default=dict, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    last_checked_at = models.DateTimeField(null=True, blank=True)
     platform = models.CharField(max_length=80, blank=True)
     #: What a real launch would have sent: method, address, inputs.
     request = models.JSONField(default=dict, blank=True)
@@ -630,6 +657,37 @@ class AutomationRun(models.Model):
     class Meta:
         ordering = ["-created_at"]
         indexes = [models.Index(fields=["application", "incident", "created_at"])]
+        constraints = [models.UniqueConstraint(fields=["application", "idempotency_key"],
+            condition=models.Q(idempotency_key__isnull=False), name="unique_automation_request"),
+            models.UniqueConstraint(fields=["application"], condition=models.Q(
+                mode="real", status__in=["queued", "launching", "running"]),
+                name="one_active_real_automation")]
+
+
+class ServiceOpsTestRun(models.Model):
+    """A fixed, isolated ServiceOps suite; never an arbitrary shell command."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    suite = models.CharField(max_length=20, default="e2e")
+    status = models.CharField(max_length=12, default="queued", choices=[
+        ("queued", "Queued"), ("running", "Running"), ("passed", "Passed"),
+        ("failed", "Failed"), ("blocked", "Blocked"),
+    ])
+    results = models.JSONField(default=list, blank=True)
+    summary = models.CharField(max_length=600, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(
+            fields=["application"], condition=models.Q(status__in=["queued", "running"]),
+            name="one_active_serviceops_test",
+        ), models.UniqueConstraint(fields=["status"], condition=models.Q(status="running"),
+                                   name="one_running_serviceops_test")]
 
 
 class CodeRepository(models.Model):

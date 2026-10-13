@@ -1,0 +1,24 @@
+# Use an application owner's API token. No credential is included in this file.
+# The local runbook below performs a real graph rebuild in CarePathOps.
+@baseUrl = http://127.0.0.1:8000
+@application = 34b6dc60-39c3-46bb-ab3d-826c88334945
+@token = REPLACE_WITH_YOUR_APPLICATION_OWNER_API_TOKEN
+
+### Discover permitted runbooks and execution connections
+GET {{baseUrl}}/api/v1/applications/{{application}}/automations/catalog/
+Authorization: Bearer {{token}}
+
+### Invoke the real local graph rebuild (replace request_key with a new UUID)
+POST {{baseUrl}}/api/v1/applications/{{application}}/automations/invoke/
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "automation_id": "13a33817-b997-493e-9c78-8d83c8acd6f1",
+  "connection_id": "58081bd3-264e-4913-a357-f29b2699fa1b",
+  "request_key": "REPLACE_WITH_A_NEW_UUID"
+}
+
+### Inspect an actual completed run (or replace its ID with your POST response ID)
+GET {{baseUrl}}/api/v1/applications/{{application}}/automations/runs/7463189f-801a-45e7-af58-b25913e254e4/
+Authorization: Bearer {{token}}

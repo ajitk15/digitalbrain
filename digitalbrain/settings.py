@@ -7,6 +7,7 @@ from .configuration import ROOT, admin_identity, load_config, read_secret, self_
 BASE_DIR = ROOT
 CONFIG = load_config()
 PRODUCTION = CONFIG["mode"] == "production"
+SERVICEOPS_TEST_AUTOMATION = not PRODUCTION
 DOCUMENT_AUTO_CONVERT = True
 DOCUMENT_SCAN_REQUIRED = PRODUCTION or CONFIG.get("scan_documents", False)
 #: Keep an uploaded file after it converts. On unless written down as false; when
