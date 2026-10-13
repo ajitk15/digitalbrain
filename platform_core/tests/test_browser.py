@@ -686,12 +686,13 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         self.open("graph", self.app.pk, query=f"?version={revision.number}&node={node}")
         selector = f"#graph-inspector a[href='{reverse('code-file', args=[self.app.pk, file.pk])}']"
         self.page.wait_for_selector(selector)
-        self.assertTrue(self.page.locator(".kb-graph-bar #graph-expand-code").is_visible())
-        self.page.get_by_role("button", name="Expand related code", exact=True).click()
+        # No button to press: the focused node's code is drawn as it arrives.
         self.page.wait_for_selector("#graph-canvas[data-code-nodes='1'][data-code-edges='1']")
         self.assertTrue(self.page.get_by_text("Code reference", exact=True).is_visible())
-        # The path match and identifier match share one file node and one edge.
-        self.page.get_by_role("button", name="Expand related code", exact=True).click()
+        # The path match and identifier match share one file node and one edge,
+        # and focusing the node again does not draw them twice.
+        self.page.select_option("#graph-node", node)
+        self.page.wait_for_selector(selector)
         self.page.wait_for_selector("#graph-canvas[data-code-nodes='1'][data-code-edges='1']")
         code_id = f"code:{snapshot.pk}:{file.pk}"
         self.page.select_option("#graph-node", code_id)
@@ -710,6 +711,45 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
             f"Explore in knowledge graph v{revision.number}", exact=True
         ).first.click()
         self.page.wait_for_selector(f"#graph-canvas[data-focus='{node}']")
+        self.assertNoScriptErrors()
+
+    def test_typing_shows_the_best_match_and_its_code_in_one_step(self):
+        """Find a node used to need a pick from the list and then a button press
+        before a requirement and its code were on the canvas together."""
+        import hashlib
+
+        from platform_core.graphs import rebuild
+        from platform_core.models import CodeFile, CodeRepository, CodeSnapshot
+
+        add_knowledge(self.owner, self.app.pk, "Consent", "FR-09 uses services/consent.py")
+        rebuild(self.app.pk)
+        revision = GraphRevision.objects.filter(application=self.app).first()
+        revision.published_at = timezone.now()
+        revision.save(update_fields=["published_at"])
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, name="CarePath", status="ready",
+            external_id="acme/care", source_url="https://github.com/acme/care",
+        )
+        snapshot = CodeSnapshot.objects.create(repository=repository, number=1, commit_sha="a" * 40)
+        content = "# FR-09 consent\n"
+        CodeFile.objects.create(
+            snapshot=snapshot, path="services/consent.py", content=content,
+            digest=hashlib.sha256(content.encode()).hexdigest(), language="python",
+        )
+        node = next(n["id"] for n in revision.data["nodes"]
+                    if n["kind"] == "section" and "FR-09" in n["label"])
+        self.open("graph", self.app.pk, query=f"?version={revision.number}")
+        self.page.wait_for_selector("#graph-canvas[data-nodes]")
+        self.page.locator("#graph-search").press_sequentially("FR-09")
+        self.page.wait_for_selector(f"#graph-canvas[data-focus='{node}']")
+        self.page.wait_for_selector("#graph-canvas[data-code-nodes='1'][data-code-edges='1']")
+        self.assertEqual(self.page.input_value("#graph-node"), node)
+        self.assertIn("1 related code file shown", self.page.inner_text("#graph-code-status"))
+        # A term that matches nothing says so, rather than leaving a stale list.
+        self.page.locator("#graph-search").fill("NODE-THAT-DOES-NOT-EXIST")
+        self.assertEqual(
+            self.page.locator("#graph-node option").first.inner_text(), "No node matches"
+        )
         self.assertNoScriptErrors()
 
     def test_choosing_a_node_from_the_list_inspects_it(self):
@@ -744,6 +784,76 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         light = self.page.evaluate(read)
         self.assertEqual(light["legend"], light["filters"])
         self.assertNotEqual(light["legend"], dark["legend"])
+        self.assertNoScriptErrors()
+
+
+class KnowledgeQualityTests(BrowserTestCase):
+    """Quality opens on four plain answers, and the benchmark is a popup over
+    it rather than a fifth tab that repeated the versions table."""
+
+    def setUp(self):
+        super().setUp()
+        from platform_core.benchmark import run
+        from platform_core.graphs import rebuild
+        from platform_core.models import BenchmarkQuestion, GraphRevision
+
+        add_knowledge(
+            self.owner,
+            self.app.pk,
+            "Configuration",
+            "| Node | Queue |\n| --- | --- |\n| NODE1 | Q1 |\n| NODE2 | Q1 |\n| NODE3 | Q2 |",
+        )
+        rebuild(self.app.pk)
+        BenchmarkQuestion.objects.create(
+            application=self.app, question="Which queue is NODE1 on?", expected="Configuration"
+        )
+        run(self.app, GraphRevision.objects.filter(application=self.app).first())
+
+    def test_four_answers_in_a_row_with_nothing_spilling(self):
+        self.page.set_viewport_size({"width": 1366, "height": 900})
+        self.open("graph", self.app.pk, query="?tab=quality")
+        cards = self.page.locator(".glance-card")
+        cards.first.wait_for()
+        self.assertEqual(cards.count(), 4)
+        tops = {round(cards.nth(i).bounding_box()["y"]) for i in range(4)}
+        self.assertEqual(len(tops), 1, "the four answers did not sit in one row")
+        spills = self.page.evaluate(
+            """() => [...document.querySelectorAll('.glance-card, .tile, .bar-list td')]
+              .filter((el) => el.scrollWidth > el.clientWidth + 1).map((el) => el.className)"""
+        )
+        self.assertEqual(spills, [])
+        self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
+        self.assertEqual(self.page.evaluate(CONTRAST), [])
+        self.assertNoScriptErrors()
+
+    def test_priority_insights_come_first_and_details_are_available_on_demand(self):
+        from platform_core.models import BenchmarkRun
+
+        BenchmarkRun.objects.filter(application=self.app).update(found=0)
+        self.open("graph", self.app.pk, query="?tab=quality")
+        self.page.get_by_role("heading", name="Retrieval needs attention").wait_for()
+        overview = self.page.locator(".quality-overview").bounding_box()
+        cards = self.page.locator(".glance").bounding_box()
+        self.assertLess(overview["y"], cards["y"])
+        self.assertFalse(self.page.locator(".tile").first.is_visible())
+        self.page.locator(".quality-metrics > summary").click()
+        self.assertTrue(self.page.locator(".tile").first.is_visible())
+        self.assertNoScriptErrors()
+
+    def test_the_questions_open_over_quality_and_a_new_one_stays_in_the_popup(self):
+        self.open("graph", self.app.pk, query="?tab=quality")
+        self.mark_page()
+        self.page.get_by_role("link", name="See the questions").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Test questions").wait_for()
+        dialog.get_by_text("Cited #").first.wait_for()
+        self.assertEqual(dialog.locator(".bench-bar").count(), 3)
+        dialog.get_by_role("textbox", name="Question:").fill("Which queue is NODE3 on?")
+        dialog.get_by_role("textbox", name="Should cite:").fill("Configuration")
+        dialog.get_by_role("button", name="Add question").click()
+        dialog.get_by_text("Which queue is NODE3 on?").first.wait_for()
+        dialog.get_by_text("Not scored yet").wait_for()
+        self.assertSamePage()
         self.assertNoScriptErrors()
 
 

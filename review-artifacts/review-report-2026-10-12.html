@@ -1,0 +1,235 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Digital Brain — Desktop Review</title><style>
+:root{color-scheme:light dark;--bg:#f5f7fb;--paper:#fff;--ink:#192940;--muted:#55647a;--line:#dce3ed;--accent:#3654b8}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.65 system-ui,Segoe UI,sans-serif}main{max-width:1120px;margin:36px auto;padding:48px 60px;background:var(--paper);border:1px solid var(--line);border-radius:16px}h1{font-size:36px;line-height:1.2;letter-spacing:-1px}h2{font-size:25px;border-top:1px solid var(--line);padding-top:30px;margin-top:44px}h3{font-size:20px;margin-top:32px}a{color:var(--accent);overflow-wrap:anywhere}p,li{max-width:96ch}code{font-size:.9em;background:var(--bg);padding:2px 5px;border-radius:4px}table{width:100%;border-collapse:collapse;margin:24px 0;font-size:14px}th{text-align:left;background:var(--bg)}th,td{padding:12px;border:1px solid var(--line);vertical-align:top}img{display:block;max-width:100%;max-height:600px;object-fit:contain;margin:24px auto;border:1px solid var(--line);border-radius:8px}li{margin:7px 0}strong{font-weight:650}@media(max-width:750px){main{margin:0;padding:24px;border:0;border-radius:0}table{display:block;overflow:auto}h1{font-size:28px}}@media(prefers-color-scheme:dark){:root{--bg:#111923;--paper:#182332;--ink:#e5edf6;--muted:#b4c0d0;--line:#33445a;--accent:#a4b9ff}}@media print{body{background:white;color:#111}main{margin:0;border:0;padding:0;max-width:none}h2,h3{break-after:avoid}tr,img{break-inside:avoid}a{color:inherit}img{max-height:400px}table{font-size:11px}}
+</style></head><body><main><h1 id="digital-brain-desktop-application-review">Digital Brain — desktop application review</h1>
+<blockquote>
+<p><strong>Latest verification at <code>11dfd8c</code>:</strong> All five reported defects and the remaining R01 ordering issue are verified fixed. All five gates pass; 1,789 tests ran with two skips. <a href="revalidation-closure-2026-10-12.md">Read the closure report</a>. The assessments below are historical.</p>
+</blockquote>
+<blockquote>
+<p><strong>Revalidation at <code>3b3f46a</code>:</strong> D01, D03, D04 and D05 are verified fixed. D02's missing review stage is fixed, but simultaneous insertion of later stages reverses their order. O01 is clarified and O02 is fixed. <a href="revalidation-report-2026-10-12.md">Read the revalidation report</a>. The original findings below are the historical baseline.</p>
+</blockquote>
+<p><strong>Reviewed:</strong> 12 October 2026 (IST) · <strong>Revision:</strong> <code>73bcfb3</code> · <strong>Workspace:</strong> <code>C:\Workspace\digitalbrian</code></p>
+<p><strong>Assessment:</strong> Fix the saved-triage evidence disclosure before using the application with sources that have different readership permissions. The desktop workflow also has reproducible defects in Code Factory live progress, chat layout, stream recovery, and API validation. The application has useful security controls and broad automated coverage, but passing its existing quality probes does not cover these failures.</p>
+<p>Desktop behavior is the priority. Mobile observations are supplementary. This was a review, not an implementation task; application source code was not changed.</p>
+<h2 id="scope-and-method">Scope and method</h2>
+<ul>
+<li>Reviewed Django routes, authorization and source filtering, chat and incident APIs, streaming, live refresh, templates, CSS, configuration, workers, and deployment notes.</li>
+<li>Ran the repository verification gates and the existing automated suite, including required Chrome browser coverage. Final results are recorded below.</li>
+<li>Used an isolated SQLite review database, synthetic sources/accounts, and a loopback review server. Existing application data was not used for the interaction tests.</li>
+<li>Inspected desktop interfaces at 1280×720 and 1440×900: overview, Knowledge, Sources, source intake dialog, Chat, Code Factory, ServiceOps, and Settings. Tested source-search chat, dialog switching/cancel, and the transition from running analysis to review.</li>
+<li>Used targeted Django-client probes and an isolated JavaScript harness to reproduce authorization, API, and temporary-disconnection behavior. No live AI calls, connector imports, repository writes, approvals, or external messages were performed.</li>
+</ul>
+<p>Priority: <strong>P1</strong> = resolve before release into an affected environment; <strong>P2</strong> = fix in the next development cycle; <strong>P3</strong> = polish or a product/deployment decision. Confidence distinguishes live reproduction from bounded code-level testing.</p>
+<h2 id="findings">Findings</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Priority</th>
+<th>Area</th>
+<th>Finding</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D01</td>
+<td>P1</td>
+<td>Security / functional</td>
+<td>Saved triage briefs disclose evidence without current source-permission or sensitivity checks</td>
+<td>Reproduced through the bearer API</td>
+</tr>
+<tr>
+<td>D02</td>
+<td>P2</td>
+<td>Desktop workflow</td>
+<td>Code Factory live updates omit newly available stages, leaving the review link without a target</td>
+<td>Reproduced in the browser</td>
+</tr>
+<tr>
+<td>D03</td>
+<td>P2</td>
+<td>Desktop UI/UX</td>
+<td>Chat composer overlaps the message viewport on a laptop-sized window</td>
+<td>Screenshot and DOM measurements</td>
+</tr>
+<tr>
+<td>D04</td>
+<td>P2</td>
+<td>Reliability</td>
+<td>A transient SSE transport error closes the answer stream and presents it as finished</td>
+<td>Isolated JavaScript reproduction</td>
+</tr>
+<tr>
+<td>D05</td>
+<td>P2</td>
+<td>API correctness</td>
+<td>Array/object values for chat <code>mode</code> return HTTP 500 rather than a JSON validation error</td>
+<td>Reproduced through the bearer API</td>
+</tr>
+<tr>
+<td>O01</td>
+<td>Decision</td>
+<td>Access-control scope</td>
+<td>Direct source detail pages reveal full content to application members excluded by the source ACL</td>
+<td>Reproduced; narrower protection is documented</td>
+</tr>
+<tr>
+<td>O02</td>
+<td>P3</td>
+<td>Desktop polish</td>
+<td>Sidebar hierarchy type labels break mid-word</td>
+<td>Desktop screenshot</td>
+</tr>
+</tbody>
+</table>
+<h3 id="d01-revalidate-saved-triage-evidence-for-the-current-reader">D01 — Revalidate saved triage evidence for the current reader</h3>
+<p><strong>Location:</strong> <a href="../platform_core/serviceops_triage.py">serviceops_triage.py:264</a>, <a href="../platform_core/utility/api_triage.py">api_triage.py:82</a>, and <a href="../platform_core/api.py">api.py:245</a>.</p>
+<p><code>run_still_verified()</code> checks active state, digests, and matching quotations. It does not check <code>sensitivity</code> or <code>permissions.permitted(entry, current_user)</code>. <code>brief_payload()</code> has no reader argument, and the read endpoint fetches any run in the authorized application. The MCP brief uses the same serializer.</p>
+<p><strong>Reproduction:</strong> In the isolated database, a saved brief contained evidence from a source whose <code>access_principals</code> included the owner but excluded the viewer. Reading the brief with the viewer's valid application token returned <strong>200 with the full excerpt</strong>. Changing the source sensitivity to <code>restricted</code> still returned <strong>200 with the excerpt</strong>. The fixture simulated an already-saved brief; it did not call a model.</p>
+<p><strong>Impact:</strong> Application membership becomes sufficient to read evidence retained in another person's brief, and restricting a source does not prevent this saved output from citing it. This contradicts the source screen's claim that restricted sources are not cited by ServiceOps.</p>
+<p><strong>Recommended fix:</strong> Pass the current reader through brief serialization and validate the incident, evidence, and hypothesis citations against current answerability and source ACLs. Apply the same rule to REST, MCP, and rendered run details. Return a safe refusal/stale-evidence response when required evidence is no longer available; do not return a partially verified hypothesis as if it were complete.</p>
+<p><strong>Acceptance checks:</strong> An excluded reader cannot receive the excerpt; changing a label to restricted invalidates an existing brief; an allowed reader can still read unchanged evidence; revocation works consistently across REST/MCP/browser surfaces.</p>
+<h3 id="d02-add-newly-available-code-factory-stages-during-live-refresh">D02 — Add newly available Code Factory stages during live refresh</h3>
+<p><strong>Location:</strong> <a href="../static/documents.js">documents.js:70</a>, <a href="../templates/run_detail.html">run_detail.html:29</a>, and <a href="../static/factory.js">factory.js:16</a>.</p>
+<p>The refresh loop iterates only the existing page's <code>[data-live]</code> elements and replaces matching keys. Stage 3 is rendered only when items exist; later stages also have conditional rendering. A stage absent at initial load has no element for the refresh loop to replace.</p>
+<p><strong>Reproduction:</strong> Opened a running fixture without a plan, then simulated worker completion by saving a plan/item and setting <code>awaiting_review</code>. The header changed to <strong>Awaiting review</strong>, with <strong>Review the plan</strong> linking to <code>#stage-3</code>. The page still had <strong>no <code>stage-3</code></strong>, and <code>data-live-pending</code> disappeared, so polling stopped. Clicking the link changed the hash without showing review controls. Reloading immediately displayed the gap, checkbox, review note, and approval/rejection controls.</p>
+<p><strong>Impact:</strong> The principal desktop analysis-to-review workflow stalls until a user discovers the manual refresh workaround. Similar insertion problems can affect later conditional stages. In addition, new or replaced markup needs enhancement initialization: the Select all/Clear all toolbar is bound only once at page load.</p>
+<p><strong>Recommended fix:</strong> Render stable wrappers for every stage, or reconcile additions/removals within a stable stage container. Delegate enhancement events or run an idempotent initializer after replacement. Preserve focused fields and unsaved review selections.</p>
+<p><strong>Acceptance checks:</strong> Running → awaiting review reveals usable controls without reloading; approved → prepared/delivered reveals the next stage; Select all works on inserted controls; user-entered notes survive polling.</p>
+<p><img src="factory-missing-review.png" alt="Live run says review is available, but the review section is missing" /></p>
+<p><a href="factory-after-reload.png">Compare the same run after reload</a>.</p>
+<h3 id="d03-keep-the-desktop-composer-from-covering-messages">D03 — Keep the desktop composer from covering messages</h3>
+<p><strong>Location:</strong> <a href="../static/redesign.css">redesign.css:3283</a>, plus the legacy flex sizing in <a href="../static/app.css">app.css:97</a>.</p>
+<p>At <strong>1280×720</strong>, with onboarding unfinished and an AI-setup notice above the conversation, the message area extended from <strong>y=409.75 to 609.75</strong>. The sticky composer started at <strong>y=586.5</strong>, overlapping <strong>23.25 px</strong> of that area. The composer also extended below the measured panel boundary. The screenshot shows the bottom of the answer/action region covered.</p>
+<p><strong>Impact:</strong> Readers have less visible answer space and can lose access to lower message content/actions behind an unrelated input panel. The same arrangement is more severe at narrow widths, but the desktop case is sufficient to prioritize the fix.</p>
+<p><strong>Recommended fix:</strong> Give the composer a reserved, non-shrinking layout row, calculate the remaining message area from the actual header height, and limit sticky behavior to a container that preserves space for it. Check long application names and setup banners, not just the shortest fixture.</p>
+<p><strong>Acceptance checks:</strong> At 1280×720, 1366×768, and 1440×900, the composer and latest message actions do not overlap, with setup both finished and unfinished. Keyboard focus must remain visible at browser zoom.</p>
+<p><img src="chat-desktop.png" alt="Desktop chat overlap at 1280×720" /></p>
+<h3 id="d04-distinguish-transient-transport-errors-from-terminal-model-errors">D04 — Distinguish transient transport errors from terminal model errors</h3>
+<p><strong>Location:</strong> <a href="../static/chat.js">chat.js:165</a> and <a href="../static/chat.js">chat.js:93</a>.</p>
+<p>The <code>error</code> event listener handles both server-sent error frames and native EventSource transport errors. When a transport event has no JSON <code>data</code>, the parse fallback still calls <code>finish()</code>, which closes the active EventSource and resets the composer. The later <code>source.onerror</code> check cannot preserve reconnection because the earlier listener already closed the stream.</p>
+<p><strong>Reproduction:</strong> The isolated harness loaded the actual <code>static/chat.js</code>, started an answer, and delivered an error while the simulated EventSource was <strong>CONNECTING</strong>. It changed from <code>closed:false / Stop</code> to <strong><code>closed:true / Send / status hidden</code></strong>.</p>
+<p><strong>Impact:</strong> A short connection interruption terminates automatic recovery and can leave an incomplete answer presented without an actionable connection state. Whether the worker has saved its final result depends on timing; the harness does not establish a particular billing outcome.</p>
+<p><strong>Recommended fix:</strong> Use a distinct event name for application errors, or distinguish message events with payload data from transport errors. Show a reconnecting state, reconcile the saved message after reconnect, and bound retry behavior. Confirm resume does not initiate duplicate paid work.</p>
+<p><strong>Acceptance checks:</strong> An interrupted stream either resumes safely or clearly exposes recovery; terminal provider errors finish once; buttons and stored answer status stay consistent.</p>
+<h3 id="d05-validate-the-type-of-api-mode-before-set-membership">D05 — Validate the type of API <code>mode</code> before set membership</h3>
+<p><strong>Location:</strong> <a href="../platform_core/utility/api_chat.py">api_chat.py:102</a>.</p>
+<p><code>mode_of()</code> tests the request's value with <code>value not in MODES</code>, where <code>MODES</code> is a set. Lists and dictionaries are unhashable, producing an uncaught <code>TypeError</code>.</p>
+<p><strong>Reproduction:</strong> Authenticated POSTs with <code>{&quot;question&quot;:&quot;test&quot;,&quot;mode&quot;:[]}</code> and <code>{&quot;question&quot;:&quot;test&quot;,&quot;mode&quot;:{}}</code> both returned <strong>500 and an HTML error page</strong>.</p>
+<p><strong>Recommended fix:</strong> Require a string before membership testing and return the normal JSON <code>invalid_request</code> response with HTTP 400. Add cases for array, object, null, boolean, number, and an unknown string.</p>
+<p><strong>Acceptance check:</strong> Every malformed mode returns a bounded JSON validation error and creates no conversation/message or paid call.</p>
+<h2 id="product-and-ux-observations">Product and UX observations</h2>
+<p><strong>O01 — Decide whether source ACLs protect direct reading.</strong> <a href="../platform_core/workbench.py">knowledge_detail()</a> checks application access and renders full <code>entry.content</code> without checking the source permission list. The viewer probe returned <strong>200 with content</strong> even though the viewer was excluded by that list. The repository explicitly scopes these permissions to answers and permits application members to see source structure; the source screen also says restricted sensitivity does not prevent application members from reading it. Therefore this is a documented product boundary to decide, not an assertion that all source restrictions are accidentally bypassed. If imported Jira permissions are intended as a confidentiality boundary, enforce them on source detail/download/list/explorer surfaces as well. If application-wide reading is intended, explain that consequence clearly when enabling the connector option.</p>
+<p><strong>O02 — Sidebar label wrapping.</strong> The synthetic product name “Knowledge Platform” causes the adjacent “Product” label to render as “Produc” plus “t” at both reviewed desktop widths. Reserve a non-shrinking width for type labels or put them below the resource name. Keep the resource name wrap/ellipsis independent of the label.</p>
+<p><strong>What worked in the desktop review:</strong> Navigation distinguishes application features; Settings groups related controls coherently; source intake switches between Documents/Folder/Link and returns focus on cancel; source-search chat produces evidence; Code Factory and ServiceOps empty states provide actionable next steps. Browser error logs were empty on the manually inspected paths. These checks used a small synthetic dataset, not production-scale content.</p>
+<p><strong>Mobile — lower priority:</strong> At 390×844, the composer can cover the initial message region much more extensively (message area starts at y≈702; composer occupies y≈640–844). Keep this under D03 as a secondary case. Navigation opened and Escape closed it; the measured knowledge page did not have document-level horizontal overflow. No mobile redesign is proposed as a prerequisite to fixing desktop defects.</p>
+<h2 id="functional-coverage-and-remaining-gaps">Functional coverage and remaining gaps</h2>
+<table>
+<thead>
+<tr>
+<th>Flow</th>
+<th>Evidence</th>
+<th>Assessment</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Sign-in and workspace navigation</td>
+<td>Disposable owner account; browser walkthrough</td>
+<td>Working in reviewed scenario</td>
+</tr>
+<tr>
+<td>Source library and intake UI</td>
+<td>Dialog switching, cancellation, source detail probe</td>
+<td>Usable intake; access-scope decision O01</td>
+</tr>
+<tr>
+<td>Source-search chat</td>
+<td>Sent a synthetic query; received source excerpt and citation</td>
+<td>Working</td>
+</tr>
+<tr>
+<td>Failed AI answer recovery UI</td>
+<td>Unconfigured AI fixture; streamed failure displayed</td>
+<td>Failure shown; layout issue D03</td>
+</tr>
+<tr>
+<td>Streaming interruption</td>
+<td>Actual JS in isolated harness</td>
+<td>Defect D04</td>
+</tr>
+<tr>
+<td>Code Factory analysis → review</td>
+<td>Simulated worker completion; live browser and reload comparison</td>
+<td>Defect D02</td>
+</tr>
+<tr>
+<td>Saved triage brief reading</td>
+<td>Allowed application token, excluded source reader, restriction change</td>
+<td>Defect D01</td>
+</tr>
+<tr>
+<td>Chat API invalid input</td>
+<td>Authenticated malformed-mode requests</td>
+<td>Defect D05</td>
+</tr>
+<tr>
+<td>Live AI, external connectors, PR delivery</td>
+<td>Not invoked during manual review; automated tests use mocks</td>
+<td>Requires integration validation</td>
+</tr>
+</tbody>
+</table>
+<h2 id="non-functional-assessment">Non-functional assessment</h2>
+<p><strong>Security:</strong> Positive evidence includes deny-by-default application scoping, private response cache policy, CSP, password hashing/lockout settings, file-backed credentials, and bounded outbound-fetch/storage paths. These controls do not compensate for D01 or establish an exhaustive security audit. Source-permission revalidation needs to cover saved outputs as well as new retrieval.</p>
+<p><strong>Reliability:</strong> Worker lanes separate intake and longer graph/AI tasks, and the stream limit reserves web-request capacity. D02 and D04 expose gaps at transitions and interruptions despite useful happy-path tests. Regression coverage should prioritize changes of state and loss of connection.</p>
+<p><strong>Performance:</strong> The first scorecard measured graph median <strong>33.3 ms</strong> and keyword median <strong>21.0 ms</strong>, versus baseline <strong>8.0 ms / 4.8 ms</strong>. Both exceeded the allowed 15 ms absolute regression tolerance. This run overlapped automated checks; it is evidence of a failed gate, not proof of a code-induced slowdown. The post-suite rerun measured <strong>8.4 ms / 5.4 ms</strong> and passed; the earlier failure did not persist after concurrent work stopped. No concurrent-user, sustained-upload, large-graph, or production database load test was performed.</p>
+<p><strong>Capacity and cost:</strong> The API throttle is process-local (<a href="../platform_core/api_auth.py">api_auth.py:156</a>); a deployment with multiple workers needs a shared limit. Shared stream leases address some multi-process coordination, not token throttling. The monthly AI budget deliberately checks receipts before starting calls and does not reserve concurrent spend (<a href="../platform_core/budget.py">budget.py</a>); it should be described as a start-call guard, not an exact billing ceiling.</p>
+<p><strong>Operations:</strong> Production preflight validates Django defaults with temporary secrets; it does not connect to real PostgreSQL or validate deployment infrastructure. Deployment notes leave backup/restore implementation to the operator and document scanner startup/latency constraints. Validate a real restore, TLS/proxy routing, document scan, and PostgreSQL behavior before an operational readiness decision.</p>
+<p><strong>Maintainability:</strong> <code>workbench.py</code> has 1,487 lines, <code>serviceops.py</code> 1,303, and <code>redesign.css</code> 3,736. Multiple chat layout rules and separate enhancement initialization make cross-state behavior harder to reason about. Consolidate the chat sizing rules after D03, and define a small shared contract for enhancing live-replaced markup. These are maintenance recommendations, not independent correctness defects.</p>
+<h2 id="verification-results">Verification results</h2>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Final result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ruff: <code>check digitalbrain platform_core scripts manage.py</code></td>
+<td><strong>PASS</strong></td>
+</tr>
+<tr>
+<td>Migration drift: <code>makemigrations --check --dry-run</code></td>
+<td><strong>PASS — no changes detected</strong></td>
+</tr>
+<tr>
+<td>Full Django suite, <code>DIGITAL_BRAIN_REQUIRE_BROWSER=1</code></td>
+<td><strong>PASS — 1,781 run, 1,779 passed, 2 skipped, 321.917 seconds</strong></td>
+</tr>
+<tr>
+<td>Production-default preflight</td>
+<td><strong>PASS — no Django deployment warnings</strong></td>
+</tr>
+<tr>
+<td>Scorecard <code>--check</code>, rerun after suite completion</td>
+<td><strong>PASS — no regressions</strong></td>
+</tr>
+</tbody>
+</table>
+<p>The two skips were the PostgreSQL-only full-text test (this run used SQLite) and a symlink test (the account could not create symlinks). Chrome tests ran, including rendered text contrast, headings/control names, keyboard focus, keyboard dialog use, screen/script checks, and graph interactions. The suite's laptop chat check passed its existing starter-question assertions; D03 measures overlap of message/action space, which that check does not assert. Live-progress browser tests cover a stable ServiceOps container, not insertion of Code Factory's missing review stage.</p>
+<p>Evidence: <a href="verification-summary.txt">verification summary</a>, <a href="triage-probe.log">triage probe</a>, <a href="factory-probe.log">factory transition probe</a>, <a href="stream-probe.log">stream probe</a>, <a href="api-probe.log">API probe</a>.</p>
+<p>Full test output is retained locally in <a href="../.runtime/review-tests-final.log">.runtime/review-tests-final.log</a>.</p>
+<p>The original sandbox attempts encountered temporary-directory access issues and browser-process restrictions. They were superseded by a run with a workspace-local temporary directory and required browser coverage outside the sandbox. Warnings or printed “FAILED” messages produced inside mocked test fixtures are not counted as test failures; the final test runner summary is authoritative.</p>
+<p>The scorecard's frozen 34-source/16-question corpus reported graph source retrieval <strong>16/16</strong>, keyword retrieval <strong>14/16</strong>, citation re-verification <strong>100%</strong>, and no leaks in its tested paths. The saved-triage probe is outside that coverage, so those results do not refute D01.</p>
+<h2 id="recommended-order-of-work">Recommended order of work</h2>
+<ol>
+<li>Fix D01 and add revocation/restriction regression tests across saved brief readers.</li>
+<li>Fix D02 so desktop users can proceed from analysis to review without a reload, and test the entire stage transition chain.</li>
+<li>Fix D03 at laptop/desktop widths, then validate D04 with actual dropped-stream browser tests.</li>
+<li>Fix D05 and broaden API input-type validation.</li>
+<li>Resolve O01 as a product confidentiality decision. Address O02 and secondary mobile polish afterward.</li>
+</ol>
+<p>Before declaring release readiness, fix the findings and complete external integration testing. The repository verification gates passed this review run. This report does not claim universal link coverage, penetration testing, accessibility certification, or production load readiness.</p>
+</main></body></html>

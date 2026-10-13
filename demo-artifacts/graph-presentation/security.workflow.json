@@ -1,0 +1,32 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {"title": "Security checks from request to citation", "quality_profile": "showcase", "locale": "en", "animation": "trace"},
+  "lanes": [
+    {"id": "request", "label": "Identity and scope"},
+    {"id": "data", "label": "Source eligibility"},
+    {"id": "evidence", "label": "Answer-time verification"}
+  ],
+  "mainPath": ["user", "grant", "scope", "source", "check", "citation"],
+  "nodes": [
+    {"id": "user", "lane": "request", "col": 0, "type": "frontend", "label": "Signed-in user", "width": 150},
+    {"id": "grant", "lane": "request", "col": 1, "type": "security", "label": "Application grant", "width": 150},
+    {"id": "scope", "lane": "request", "col": 2, "type": "security", "label": "Scoped access", "width": 150},
+    {"id": "source", "lane": "data", "col": 2, "type": "database", "label": "Eligible sources", "width": 150},
+    {"id": "check", "lane": "evidence", "col": 3, "type": "security", "label": "Recheck evidence", "width": 150},
+    {"id": "citation", "lane": "evidence", "col": 4, "type": "backend", "label": "Verified citation", "width": 150},
+    {"id": "omit", "lane": "data", "col": 3, "type": "security", "label": "Omit restricted", "width": 150}
+  ],
+  "edges": [
+    {"from": "user", "to": "grant", "label": "authenticate"},
+    {"from": "grant", "to": "scope", "label": "authorize", "variant": "security"},
+    {"from": "scope", "to": "source", "label": "one application", "variant": "security"},
+    {"from": "source", "to": "check", "label": "published evidence"},
+    {"from": "check", "to": "citation", "label": "quote + digest + access", "variant": "security"},
+    {"from": "source", "to": "omit", "label": "restricted label", "role": "error", "variant": "security"}
+  ],
+  "cards": [
+    {"dot": "emerald", "title": "Checks are repeated", "items": ["Active source, unchanged digest, exact quote.", "Viewer permission list applies to answer citations."]},
+    {"dot": "amber", "title": "Boundary to explain", "items": ["Jira permission enforcement is optional.", "Sources and explorer still use application access."]}
+  ]
+}

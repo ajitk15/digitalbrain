@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "Knowledge graph generation · technologies and purpose", "quality_profile": "showcase", "locale": "en", "animation": "trace"},
+  "components": [
+    {"id": "intake", "type": "external", "label": "01 · Source intake", "sublabel": "Django + Python I/O · receive sources", "pos": [50, 80], "size": [220, 86]},
+    {"id": "convert", "type": "backend", "label": "02 · MarkItDown + pypdf", "sublabel": "ClamAV · scan and convert to Markdown", "pos": [355, 80], "size": [220, 86]},
+    {"id": "scope", "type": "security", "label": "03 · Access + source filter", "sublabel": "Django ORM · select eligible records", "pos": [660, 80], "size": [220, 86]},
+    {"id": "structure", "type": "backend", "label": "04 · Structural graph", "sublabel": "Python parsing + SHA-256 · build links", "pos": [965, 80], "size": [220, 86]},
+    {"id": "enrich", "type": "cloud", "label": "05 · OpenAI / Claude SDKs", "sublabel": "Optional AI · propose semantic links", "pos": [965, 300], "size": [220, 86]},
+    {"id": "verify", "type": "security", "label": "06 · Python + RapidFuzz", "sublabel": "Check quotes/types · merge names", "pos": [660, 300], "size": [220, 86]},
+    {"id": "save", "type": "database", "label": "07 · Django ORM + JSON", "sublabel": "SQLite / PostgreSQL · save revisions", "pos": [355, 300], "size": [220, 86]},
+    {"id": "publish", "type": "frontend", "label": "08 · Quality + publish", "sublabel": "Python metrics + benchmark · review", "pos": [50, 300], "size": [220, 86]},
+    {"id": "rag", "type": "backend", "label": "09 · Graph RAG → answer", "sublabel": "BM25 + NumPy + walks + model SDK", "tag": "Rank evidence; verify; generate answer", "pos": [50, 520], "size": [220, 102]},
+    {"id": "themes", "type": "backend", "label": "10 · Graphify themes", "sublabel": "NetworkX + Leiden · group linked nodes", "tag": "Local graphifyy package; no model call", "pos": [355, 520], "size": [220, 102]},
+    {"id": "bridge", "type": "backend", "label": "11 · Knowledge ↔ Code", "sublabel": "Python pattern matching · link references", "tag": "Paths and IDs; not proof of correctness", "pos": [660, 520], "size": [220, 102]},
+    {"id": "code", "type": "backend", "label": "12 · Graphify code analysis", "sublabel": "Tree-sitter · extract symbols and calls", "tag": "Local graphifyy AST pass; no semantic AI", "pos": [965, 520], "size": [220, 102]}
+  ],
+  "boundaries": [
+    {"kind": "region", "label": "Local integration · no graphify.net service calls", "wraps": ["themes", "bridge", "code"], "pad": 18}
+  ],
+  "connections": [
+    {"from": "intake", "to": "convert", "label": "local bytes"},
+    {"from": "convert", "to": "scope", "label": "Markdown"},
+    {"from": "scope", "to": "structure", "label": "eligible sources", "variant": "security"},
+    {"from": "structure", "to": "enrich", "label": "requested AI run", "labelDy": 24, "labelDx": 60},
+    {"from": "enrich", "to": "verify", "label": "JSON proposals", "variant": "security"},
+    {"from": "verify", "to": "save", "label": "accepted links"},
+    {"from": "structure", "to": "save", "label": "structural only", "variant": "dashed", "fromSide": "bottom", "toSide": "top"},
+    {"from": "save", "to": "publish", "label": "draft review"},
+    {"from": "publish", "to": "rag", "label": "published version", "labelDy": 24},
+    {"from": "save", "to": "themes", "label": "cluster existing graph", "variant": "dashed", "labelDy": 24},
+    {"from": "code", "to": "bridge", "label": "paths / IDs", "variant": "dashed"},
+    {"from": "save", "to": "bridge", "label": "quoted references", "variant": "dashed"}
+  ]
+}

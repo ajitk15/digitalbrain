@@ -1,0 +1,198 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How Digital Brain builds a knowledge graph",
+    "quality_profile": "showcase",
+    "locale": "en",
+    "animation": "trace"
+  },
+  "lanes": [
+    {
+      "id": "intake",
+      "label": "1 · Prepare evidence"
+    },
+    {
+      "id": "generation",
+      "label": "2 · Generate a draft"
+    },
+    {
+      "id": "release",
+      "label": "3 · Review and answer"
+    },
+    {
+      "id": "consumption",
+      "label": "4 · Use verified evidence"
+    }
+  ],
+  "mainPath": [
+    "source",
+    "markdown",
+    "eligible",
+    "structure",
+    "enrich",
+    "verify",
+    "draft",
+    "publish",
+    "answer"
+  ],
+  "nodes": [
+    {
+      "id": "source",
+      "lane": "intake",
+      "col": 0,
+      "type": "external",
+      "label": "Source intake",
+      "width": 160
+    },
+    {
+      "id": "markdown",
+      "lane": "intake",
+      "col": 1,
+      "type": "backend",
+      "label": "Normalize text",
+      "width": 160
+    },
+    {
+      "id": "eligible",
+      "lane": "intake",
+      "col": 2,
+      "type": "security",
+      "label": "Select sources",
+      "width": 160
+    },
+    {
+      "id": "structure",
+      "lane": "generation",
+      "col": 2,
+      "type": "backend",
+      "label": "Build structure",
+      "width": 160
+    },
+    {
+      "id": "enrich",
+      "lane": "generation",
+      "col": 3,
+      "type": "cloud",
+      "label": "Optional AI",
+      "width": 160
+    },
+    {
+      "id": "verify",
+      "lane": "generation",
+      "col": 4,
+      "type": "security",
+      "label": "Verify evidence",
+      "width": 160
+    },
+    {
+      "id": "draft",
+      "lane": "release",
+      "col": 4,
+      "type": "database",
+      "label": "Save draft",
+      "width": 160
+    },
+    {
+      "id": "publish",
+      "lane": "release",
+      "col": 5,
+      "type": "frontend",
+      "label": "Review + publish",
+      "width": 160
+    },
+    {
+      "id": "answer",
+      "lane": "consumption",
+      "col": 5,
+      "type": "backend",
+      "label": "Retrieve evidence",
+      "width": 160
+    }
+  ],
+  "edges": [
+    {
+      "from": "source",
+      "to": "markdown",
+      "label": "stored text"
+    },
+    {
+      "from": "markdown",
+      "to": "eligible",
+      "label": "Markdown"
+    },
+    {
+      "from": "eligible",
+      "to": "structure",
+      "label": "application scope",
+      "variant": "security"
+    },
+    {
+      "from": "structure",
+      "to": "enrich",
+      "label": "requested AI run"
+    },
+    {
+      "from": "enrich",
+      "to": "verify",
+      "label": "JSON proposals",
+      "variant": "security"
+    },
+    {
+      "from": "verify",
+      "to": "draft",
+      "label": "accepted links"
+    },
+    {
+      "from": "structure",
+      "to": "draft",
+      "label": "structural-only run",
+      "role": "branch",
+      "variant": "dashed"
+    },
+    {
+      "from": "draft",
+      "to": "publish",
+      "label": "human review"
+    },
+    {
+      "from": "publish",
+      "to": "answer",
+      "label": "published snapshot"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Knowledge graph · application modules",
+      "items": [
+        "MarkItDown → graphs.py builds document, row and value links.",
+        "graph_ai.py + ontology.py validate optional AI relationships."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Graphify · two local analysis roles",
+      "items": [
+        "Code Graph: code_graph_graphify.py uses Tree-sitter extraction.",
+        "Knowledge themes: graph_quality.py uses NetworkX + Leiden."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Graph RAG · retrieval then answer",
+      "items": [
+        "graph_ai.py: BM25 + optional NumPy vectors + graph walks.",
+        "Verify source, quote, digest and access; ai.py generates the answer."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Platform · storage, UI and security",
+      "items": [
+        "Django stores graph JSON; SQLite locally / PostgreSQL in production.",
+        "Canvas UI; policy.py, permissions.py, sensitivity.py protect access."
+      ]
+    }
+  ]
+}

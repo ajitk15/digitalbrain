@@ -3,7 +3,7 @@
 Turns the retrieval roadmap (the former `docs/diagrams/index.html` section 07, now
 in git history; current behaviour is `docs/index.html#components-retrieval-and-chat`) into
 phases that can each ship on their own. Every phase is measured with the benchmark
-(Knowledge → Benchmark, `manage.py benchmark`) before and after, and none of them
+(a version's score under Knowledge → Versions, `manage.py benchmark`) before and after, and none of them
 touches the three invariants: the publish gate, citation checks against live sources,
 and published-version-only answers.
 

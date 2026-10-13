@@ -1,0 +1,53 @@
+Digital Brain review — 12 October 2026 — revision 73bcfb3
+Ruff: PASS
+Migration drift: PASS (no changes detected)
+Production defaults: PASS (0 issues)
+Full suite with required Chrome browser tests: PASS
+Ran 1781 tests in 321.917 seconds; 1779 passed, 2 skipped.
+Skipped: PostgreSQL full text under SQLite; symlink creation unavailable.
+Scorecard after suite completion: PASS
+First, concurrent scorecard failed only latency; final run below supersedes it.
+
+
+Retrieval
+  Graph answers: right source found                    16 of 16
+  Graph answers: right source in top 3                 12 of 16
+  Graph answers: ranking quality (MRR)                 0.709
+  Keyword answers: right source found                  14 of 16
+  Keyword answers: right source in top 3               12 of 16
+  Keyword answers: ranking quality (MRR)               0.674
+
+Citation integrity
+  Citations that re-verify against their source        100.0 %
+  Citations still given after their source changed     0
+
+Agentic evidence
+  Planted-bug identifiers in the evidence              96.0 %
+  Tickets whose evidence cites the ticket itself       6 of 6
+
+Ontology
+  Relationship phrasings typed or refused correctly    100.0 %
+  Types and relations the extraction prompt states     100.0 %
+  Name merges that are right                           100.0 %
+  Same-thing names that merge                          100.0 %
+
+Personal data (PHI/PII)
+  Personal data found by the scan                      100.0 %
+  Scan findings that are real                          100.0 %
+  Restricted sources reaching any AI path              0
+  Records shown to someone their system denies         0
+
+HIPAA safeguards
+  Safeguard probes passing                             100.0 %
+
+AI cost control
+  Model calls re-running unchanged sources             0
+  Model calls after one source changes                 1
+  Model calls started past the monthly budget          0
+
+Speed
+  Graph answer, median                                 8.4 ms
+  Keyword answer, median                               5.4 ms
+
+34 sources, 16 questions, commit 73bcfb3
+No regressions against the baseline.

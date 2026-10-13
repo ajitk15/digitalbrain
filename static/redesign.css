@@ -533,18 +533,110 @@
    * size, the graph-usage pills flow inline instead of stacking, and the long
    * repository name truncates rather than forcing a third line.
    */
-  /*
-   * The Quality tab carried a four-tile strip whose Nodes and Relationships
-   * were repeated as tiles in the Health panel directly below it. Only the two
-   * figures the panels do not report survive, on one line, and the version
-   * reads the same here as it does in the graph toolbar and the versions table.
-   */
   .quality-title { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
-  .quality-facts {
-    font-size: var(--t-12);
-    margin: calc(-1 * var(--s-2)) 0 var(--s-3);
+
+  /*
+   * Quality at a glance: four questions, each a big figure, one bar and one
+   * line. The bar and the left edge take the verdict's colour, so the four read
+   * as good / fair / poor before a word is read. <progress> again, because a
+   * width from a template would need an inline style.
+   */
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s-3);
+    margin: var(--s-3) 0 var(--s-5);
   }
-  .quality-facts strong { color: var(--c-ink); font-variant-numeric: tabular-nums; }
+  .glance-card {
+    --tone: var(--c-ink-faint);
+    border: 1px solid var(--c-line);
+    border-left: 4px solid var(--tone);
+    border-radius: var(--r-lg);
+    background: var(--c-surface);
+    padding: var(--s-3) var(--s-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s-2);
+    min-width: 0;
+  }
+  .glance-good { --tone: var(--c-ok); }
+  .glance-fair { --tone: var(--c-warn); }
+  .glance-poor { --tone: var(--c-bad); }
+  .glance-card h3 { font-size: var(--t-12); font-weight: 600; color: var(--c-ink-2); margin: 0; }
+  .glance-figure {
+    font-size: var(--t-25);
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    margin: 0;
+    color: var(--c-ink);
+  }
+  .glance-none .glance-figure { font-size: var(--t-14); color: var(--c-ink-muted); font-weight: 500; }
+  .glance-meaning { font-size: var(--t-11); color: var(--c-ink-muted); margin: 0; }
+  .glance-link { font-size: var(--t-11); font-weight: 600; margin-top: auto; }
+  .glance-bar {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    height: 8px;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--c-line-soft);
+    overflow: hidden;
+    color: var(--tone, var(--c-brand));
+  }
+  .glance-bar::-webkit-progress-bar { background: var(--c-line-soft); }
+  .glance-bar::-webkit-progress-value { background: var(--tone, var(--c-brand)); border-radius: var(--r-pill); }
+  .glance-bar::-moz-progress-bar { background: var(--tone, var(--c-brand)); border-radius: var(--r-pill); }
+  @media (max-width: 900px) { .glance { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px) { .glance { grid-template-columns: 1fr; } }
+
+  /* Where the links come from, beside the biggest documents: two short bar lists. */
+  .quality-columns {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s-5);
+    margin-bottom: var(--s-4);
+  }
+  .quality-columns > section { min-width: 0; }
+  .kb-quality .quality-columns,
+  .quality-columns:has(> section:only-child) { grid-template-columns: 1fr; }
+  @media (max-width: 760px) { .quality-columns { grid-template-columns: 1fr; } }
+  .bar-list { width: 100%; border-collapse: collapse; font-size: var(--t-12); }
+  .bar-list td { padding: var(--s-1) 0; border: 0; vertical-align: middle; }
+  .bar-list td:first-child {
+    width: 45%;
+    padding-right: var(--s-3);
+    overflow-wrap: anywhere;
+    color: var(--c-ink-2);
+  }
+  .more-rows summary { font-size: var(--t-11); cursor: pointer; color: var(--c-brand-strong); margin-top: var(--s-1); }
+  .quality-about { font-size: var(--t-11); color: var(--c-ink-muted); margin-top: var(--s-4); }
+  .quality-about summary { cursor: pointer; font-weight: 600; color: var(--c-ink-2); }
+  .quality-about p { margin: var(--s-2) 0 0; }
+
+  /* A version's benchmark score in the Versions table: a short bar beside the link. */
+  .version-score { display: inline-flex; align-items: center; gap: var(--s-2); }
+  .version-score .share-bar { width: 48px; min-width: 48px; flex: none; }
+
+  /* The benchmark popup: three plain-language bars, then a version switcher. */
+  .bench-bars { display: grid; gap: var(--s-2); margin: var(--s-2) 0 var(--s-3); }
+  .bench-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 14rem) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--s-3);
+    font-size: var(--t-12);
+  }
+  .bench-bar-label { color: var(--c-ink-2); }
+  .bench-bar-label small { color: var(--c-ink-faint); }
+  .bench-bar strong { font-variant-numeric: tabular-nums; min-width: 4.5rem; text-align: right; }
+  .bench-switch { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); font-size: var(--t-12); }
+  .bench-switch .inline-action { margin-left: auto; }
+  @media (max-width: 560px) {
+    .bench-bar { grid-template-columns: 1fr auto; }
+    .bench-bar .glance-bar { grid-column: 1 / -1; grid-row: 2; }
+  }
 
   .sources-table table { font-size: var(--t-12); }
   .sources-table th { padding: var(--s-2) var(--s-3); }
@@ -3739,10 +3831,87 @@
 
 /* Benchmark: known questions scored against each graph version. */
 @layer redesign {
-  .bench-key { font-size: var(--t-11); margin: var(--s-3) 0 0; }
   .bench-run td small { margin: 0; }
   .bench-add { margin-top: var(--s-4); }
   .bench-fields { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) auto; gap: var(--s-3); align-items: end; }
   .bench-fields p { margin: 0; }
   @media (max-width: 700px) { .bench-fields { grid-template-columns: 1fr; } }
+}
+
+/* Quality dashboard: a reading order of priorities, signals, then evidence.
+   SVG rings use presentation attributes, so the visual works without script
+   and under the same strict CSP as the rest of the application. */
+@layer redesign {
+  .quality-health:has(.quality-dashboard) { padding: 0; background: none; border: 0; box-shadow: none; }
+  .quality-dashboard { display: grid; gap: var(--s-5); }
+  .quality-overview { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--s-8); background: var(--c-surface); border: 1px solid var(--c-line); border-top: 3px solid var(--c-brand); border-radius: var(--r-xl); padding: var(--s-5) var(--s-6); }
+  .quality-eyebrow { font-size: var(--t-11); font-weight: 650; letter-spacing: .12em; color: var(--c-brand-strong); margin: 0 0 var(--s-2); }
+  .quality-overview-copy > h3 { font-size: var(--t-20); font-weight: 650; letter-spacing: -.035em; line-height: 1.25; margin: 0 0 var(--s-2); }
+  .quality-overview-copy > p:not(.quality-eyebrow) { font-size: var(--t-12); color: var(--c-ink-3); margin: 0; max-width: 42ch; }
+  .quality-grade { display: flex; align-items: center; gap: var(--s-3); margin-top: var(--s-5); font-size: var(--t-12); color: var(--c-ink-2); }
+  .quality-grade .grade { font-size: var(--t-12); padding: var(--s-1) var(--s-3); }
+  .quality-grade-note { display: block; font-size: var(--t-11); color: var(--c-ink-muted); margin-top: 2px; }
+  .quality-next { min-width: 0; border-left: 1px solid var(--c-line-soft); padding-left: var(--s-6); }
+  .quality-next > h3 { font-size: var(--t-12); margin: 0 0 var(--s-2); color: var(--c-ink-2); }
+  .quality-action { display: grid; grid-template-columns: 30px minmax(0, 1fr) 16px; align-items: center; gap: var(--s-3); padding: var(--s-3) 0; color: var(--c-ink); border-bottom: 1px solid var(--c-line-soft); }
+  .quality-action:last-of-type { border-bottom: 0; }
+  .quality-action:hover { text-decoration: none; }
+  .quality-action:hover strong, .quality-action:focus-visible strong { color: var(--c-brand-strong); }
+  .quality-action-icon { width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--r-md); background: var(--c-warn-bg); color: var(--c-warn); }
+  .quality-action-poor .quality-action-icon { background: var(--c-bad-bg); color: var(--c-bad); }
+  .quality-action-none .quality-action-icon { background: var(--c-brand-tint); color: var(--c-brand-strong); }
+  .quality-action strong { display: block; font-size: var(--t-12); font-weight: 600; line-height: 1.4; }
+  .quality-action small { font-size: var(--t-11); color: var(--c-ink-3); margin: 2px 0; line-height: 1.4; }
+  .quality-action-label { display: block; color: var(--c-brand-strong); font-size: var(--t-11); font-weight: 550; }
+  .quality-action > svg { color: var(--c-ink-muted); }
+  .quality-more-signals { font-size: var(--t-11); margin: var(--s-2) 0 0; color: var(--c-ink-muted); }
+  .quality-clear { display: flex; gap: var(--s-3); padding: var(--s-5) 0; }
+  .quality-clear > svg { flex: none; color: var(--c-ok); }
+  .quality-clear strong { font-size: var(--t-13); font-weight: 600; }
+  .quality-clear p { color: var(--c-ink-3); font-size: var(--t-12); margin: var(--s-2) 0 0; }
+  .quality-dashboard .glance { gap: var(--s-4); margin: 0; }
+  .quality-dashboard .glance-card { border-left-width: 1px; border-radius: var(--r-xl); padding: var(--s-5); gap: var(--s-3); box-shadow: 0 2px 4px rgb(23 32 55 / .025); }
+  .quality-card-heading { display: flex; gap: var(--s-2); align-items: baseline; justify-content: space-between; }
+  .quality-dashboard .glance-card h3 { font-size: var(--t-12); line-height: 1.4; min-height: 2.8em; }
+  .quality-signal { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tone); }
+  .quality-card-value { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+  .quality-dashboard .glance-figure { font-size: var(--t-25); line-height: 1.2; white-space: nowrap; }
+  .quality-dashboard .glance-none .glance-figure { font-size: var(--t-14); white-space: normal; }
+  .quality-card-status { margin: var(--s-1) 0 0; color: var(--c-ink-3); font-size: var(--t-11); }
+  .quality-ring { width: 72px; height: 72px; flex: none; position: relative; }
+  .quality-ring > svg { width: 100%; height: 100%; }
+  .quality-ring circle { fill: none; stroke-width: 7; }
+  .quality-ring-track { stroke: var(--c-line-soft); }
+  .quality-ring-value { stroke: var(--tone); }
+  .quality-ring-unknown { stroke: var(--c-line-strong); }
+  .quality-ring > span { position: absolute; inset: 0; display: grid; place-items: center; color: var(--c-ink-3); }
+  .quality-dashboard .glance-meaning { line-height: 1.5; }
+  .quality-dashboard .glance-link { display: inline-flex; align-items: center; gap: var(--s-2); }
+  .quality-dashboard .quality-columns { gap: var(--s-5); margin: 0; }
+  .quality-dashboard .quality-columns > section { padding: var(--s-6); border: 1px solid var(--c-line); border-radius: var(--r-xl); background: var(--c-surface); }
+  .quality-dashboard .panel-label { font-size: var(--t-13); color: var(--c-ink); letter-spacing: 0; text-transform: none; margin: 0 0 var(--s-2); }
+  .quality-chart-note { font-size: var(--t-11); color: var(--c-ink-3); margin: 0 0 var(--s-5); }
+  .quality-dashboard .band-bar { height: 16px; border-radius: var(--r-sm); margin-bottom: var(--s-4); }
+  .quality-dashboard .band-legend { gap: var(--s-3); margin-bottom: var(--s-5); }
+  .quality-dashboard .band-legend li { font-size: var(--t-12); }
+  .quality-dashboard .bar-list td { padding-top: var(--s-3); padding-bottom: var(--s-3); border-bottom: 1px solid var(--c-line-soft); }
+  .quality-dashboard .bar-list tr:last-child td { border-bottom: 0; }
+  .quality-dashboard .share-bar { height: 7px; }
+  .quality-metrics { background: var(--c-surface); border: 1px solid var(--c-line); border-radius: var(--r-xl); }
+  .quality-metrics > summary { list-style: none; display: flex; justify-content: space-between; align-items: center; gap: var(--s-4); padding: var(--s-5) var(--s-6); cursor: pointer; }
+  .quality-metrics > summary::-webkit-details-marker { display: none; }
+  .quality-metrics > summary > span:first-child { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+  .quality-metrics > summary strong { font-size: var(--t-13); font-weight: 600; }
+  .quality-metrics > summary small { font-size: var(--t-11); margin: 0; color: var(--c-ink-3); }
+  .quality-disclosure-mark { font-size: var(--t-17); color: var(--c-ink-3); transition: transform .15s; }
+  .quality-metrics[open] .quality-disclosure-mark { transform: rotate(45deg); }
+  .quality-metrics-body { border-top: 1px solid var(--c-line-soft); padding: var(--s-6); }
+  .quality-metrics-body .tile-grid { margin: 0; }
+  .quality-dashboard .quality-about { margin: 0; padding: var(--s-4) var(--s-6); background: var(--c-subtle); border-radius: var(--r-lg); }
+  .quality-sidebar-report .quality-metrics > summary { padding: var(--s-3); }
+  .quality-sidebar-report .quality-metrics-body { padding: var(--s-3); }
+  .quality-sidebar-report .quality-metrics > summary small { display: none; }
+  @media (max-width: 1150px) { .quality-ring { width: 56px; height: 56px; } .quality-dashboard .glance-card { padding: var(--s-4); } .quality-overview { gap: var(--s-5); } }
+  @media (max-width: 900px) { .quality-overview { grid-template-columns: 1fr; } .quality-next { border-left: 0; border-top: 1px solid var(--c-line-soft); padding: var(--s-4) 0 0; } .quality-overview-copy > h3 { max-width: none; } }
+  @media (prefers-reduced-motion: reduce) { .quality-disclosure-mark { transition: none; } }
 }

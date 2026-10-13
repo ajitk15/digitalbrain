@@ -863,6 +863,17 @@ def graph_view(request, pk):
         scores = latest_runs(app, list(versions.object_list))
         for revision in versions.object_list:
             revision.benchmark = scores.get(revision.pk)
+    glance = quality_notes = quality_summary = None
+    if tab == "quality" and health:
+        # Benchmark is no longer a tab of its own: this version's score is one
+        # of the Quality headlines, and its questions open as a popup.
+        from .benchmark import latest_runs
+        from .graph_quality import at_a_glance, notes, quality_overview
+
+        scored = latest_runs(app, [selected]).get(selected.pk) if selected else None
+        glance = at_a_glance(health, graph.quality, sources_for(pk).count(), scored)
+        quality_summary = quality_overview(health, glance, graph.quality)
+        quality_notes = notes(graph.quality.get("warnings"))
     return render(
         request,
         "graph.html",
@@ -905,6 +916,9 @@ def graph_view(request, pk):
                 and active_graph.status in {"failed", "building"}
             ),
             "health": health,
+            "glance": glance,
+            "quality_notes": quality_notes,
+            "quality_summary": quality_summary,
             "graph_themes": graph_themes,
             "can_upload": can_upload,
             "recent_documents": recent_documents,

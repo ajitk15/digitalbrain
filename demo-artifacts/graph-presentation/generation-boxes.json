@@ -1,0 +1,222 @@
+[
+  {
+    "id": "intake",
+    "name": "Source intake",
+    "place": "Local server + source systems",
+    "tech": [
+      "Django forms and upload handling",
+      "Python file I/O, hashlib (SHA-256)",
+      "HTTP(S) connector clients; TLS"
+    ],
+    "purpose": "Receive documents and connector records in an application-scoped workflow, retain the original input, and identify content changes.",
+    "how": "Uploaded files enter private quarantine storage. Connector and link imports produce records or downloaded files that can be normalized. A SHA-256 digest identifies the received content and detects later changes; it is not encryption.",
+    "limit": "HTTP link fetching checks destinations, pins validated addresses, refuses automatic redirects, and bounds size/time. Source-system APIs may require configured credentials. Code repositories follow the separate Code Graph intake path.",
+    "refs": [
+      "platform_core/documents.py",
+      "platform_core/fetching.py",
+      "platform_core/connector_kinds.py"
+    ]
+  },
+  {
+    "id": "convert",
+    "name": "Scan and normalize documents",
+    "place": "Local subprocesses",
+    "tech": [
+      "Microsoft MarkItDown",
+      "pypdf",
+      "ClamAV / clamscan (external scanner)",
+      "Python subprocess and integrity checks"
+    ],
+    "purpose": "Convert different document formats into text/Markdown that one graph builder can read, while checking files before processing.",
+    "how": "MarkItDown reads a stored byte stream with plugins disabled. pypdf checks PDF constraints. ClamAV scans files when scanning is required. Conversion and scanning run with time and output limits; original size and hash are checked first.",
+    "limit": "Production requires a configured scanner and acceptable signatures. Scanner failure leaves the file private. Image-only PDFs need OCR. The bounded conversion subprocess is not a complete operating-system sandbox.",
+    "refs": [
+      "platform_core/processing.py",
+      "scripts/extract_text.py"
+    ]
+  },
+  {
+    "id": "scope",
+    "name": "Application access and source eligibility",
+    "place": "Local server",
+    "tech": [
+      "Django authentication, ORM and role checks",
+      "Python rules and regular expressions",
+      "Sensitivity labels and optional Jira permission lists"
+    ],
+    "purpose": "Keep graph building within one application and exclude inactive or restricted records from AI-readable knowledge.",
+    "how": "Django checks active users, organization membership, application grants, enabled features, and write roles. Answerable-source queries exclude archived/inactive and restricted entries. Personal-data pattern findings help a person decide whether to restrict a source.",
+    "limit": "Sensitivity findings do not automatically redact or classify every sensitive item. Generation is application-level, not a private graph for each viewer. Optional Jira source lists are checked for answer evidence; Sources and explorer retain application-level access.",
+    "refs": [
+      "platform_core/policy.py",
+      "platform_core/models.py",
+      "platform_core/sensitivity.py",
+      "platform_core/permissions.py"
+    ]
+  },
+  {
+    "id": "structure",
+    "name": "Build the structural Knowledge graph",
+    "place": "Local server; no model",
+    "tech": [
+      "Custom deterministic Python graph builder",
+      "Python re, json and hashlib",
+      "SHA-256-derived application-scoped node IDs"
+    ],
+    "purpose": "Capture document organization reproducibly: documents contain sections/rows, and records link to field-value nodes.",
+    "how": "The parser reads Markdown tables and nonempty prose lines. A repeated field/value identity can reuse a value node, connecting related rows. Every edge retains its source ID, content digest, line, and evidence text.",
+    "limit": "This is application code, not Graphify semantic extraction. A shared table value is a structural link, not proof of a dependency. Source, record and node limits can omit content; coverage warnings report the gap. No dedicated graph database is used for this builder.",
+    "refs": [
+      "platform_core/graphs.py"
+    ]
+  },
+  {
+    "id": "enrich",
+    "name": "Optional semantic relationship proposals",
+    "place": "Configured external provider",
+    "tech": [
+      "OpenAI client / OpenAI Agents SDK adapters",
+      "Claude Agent SDK adapter",
+      "JSON relationship output; application AI configuration"
+    ],
+    "purpose": "Add explicit domain relationships that a Markdown parser cannot understand, such as a ticket violating a requirement or a component depending on another component.",
+    "how": "An explicitly requested AI run sends bounded source excerpts to the selected provider/model. The response proposes subject, relation, object, types, source ID and an exact supporting quote. Only one selected provider handles a given run; these are not two models voting on every link.",
+    "limit": "This step is optional and can incur charges. Selected text leaves the application for the configured provider. Credentials, configured budgets, and usage receipts are managed by the application. Graphify's own semantic AI pass is not used here; proposals still require server validation.",
+    "refs": [
+      "platform_core/ai.py",
+      "platform_core/graph_ai.py",
+      "platform_core/agent_runtime/openai_runtime.py",
+      "platform_core/agent_runtime/claude_runtime.py"
+    ]
+  },
+  {
+    "id": "verify",
+    "name": "Validate evidence, types and entity names",
+    "place": "Local server",
+    "tech": [
+      "Python JSON, string and type checks",
+      "Application ontology registry",
+      "RapidFuzz Jaro-Winkler matching",
+      "Python normalization and stemming rules"
+    ],
+    "purpose": "Reject unsupported proposals and make accepted relationship names and entity identities consistent across sources.",
+    "how": "The validator requires known sources, real bounded quotes, supported entity names, and an allowed subject-type/relation/object-type combination. Duplicate proposals are removed. After acceptance, same-type entity names can merge using normalization and conservative similarity rules; numerical identifiers stay distinct.",
+    "limit": "RapidFuzz helps name merging; it does not verify factual truth. Quote/type validation is deterministic and does not call a judging LLM. An existing quote can still be misinterpreted, and a source can itself be incorrect. The validated graph still needs human semantic review.",
+    "refs": [
+      "platform_core/graph_ai.py",
+      "platform_core/ontology.py"
+    ]
+  },
+  {
+    "id": "save",
+    "name": "Store a numbered graph revision",
+    "place": "Application database",
+    "tech": [
+      "Django ORM, transactions and JSON fields",
+      "SQLite for local development",
+      "PostgreSQL with psycopg in production",
+      "SHA-256 input fingerprint"
+    ],
+    "purpose": "Persist a reproducible snapshot with graph data, quality measurements, source provenance, and selected generation settings.",
+    "how": "A transaction rechecks the input fingerprint and saves a numbered GraphRevision. KnowledgeGraph tracks build state. Graph nodes/edges are JSON in relational storage; old revisions remain distinguishable from new drafts.",
+    "limit": "This path does not persist the graph in Neo4j or another dedicated graph engine. Production PostgreSQL configuration uses certificate-verified database TLS, but encryption at rest and backup security require deployment evidence. A hash detects changes; it does not encrypt content.",
+    "refs": [
+      "platform_core/models.py",
+      "platform_core/graphs.py",
+      "digitalbrain/settings.py"
+    ]
+  },
+  {
+    "id": "publish",
+    "name": "Review quality and publish",
+    "place": "Local measurements + human action",
+    "tech": [
+      "Custom Python coverage/connectivity metrics",
+      "Application retrieval benchmark",
+      "Django write authorization and version publication"
+    ],
+    "purpose": "Show what was included, what is quoted, and whether known questions find expected sources before deliberately releasing a graph for answers.",
+    "how": "Quality reports content/source coverage, evidence bands, disconnected components and orphans. The normal benchmark runs the same retrieval and source-verification path against expected-source questions without an answer-model call. A person reviews a draft and publishes a source-consistent revision.",
+    "limit": "Structural health is not semantic accuracy. Benchmark retrieval is not final-answer correctness or a security certification. Automatic corpus measurements are not tests of each viewer's permission outcome. Published graph versions are required for graph-based answers.",
+    "refs": [
+      "platform_core/graph_quality.py",
+      "platform_core/benchmark.py",
+      "platform_core/graphs.py"
+    ]
+  },
+  {
+    "id": "rag",
+    "name": "Graph RAG retrieval and answer",
+    "place": "Local retrieval + optional provider requests",
+    "tech": [
+      "Custom BM25 word ranking",
+      "NumPy exact cosine similarity",
+      "OpenAI embeddings when configured",
+      "Reciprocal rank fusion and bounded graph traversal",
+      "Configured OpenAI / Claude answer runtime"
+    ],
+    "purpose": "Find relevant evidence through words, meaning and graph connections, then provide checked context to an answer model.",
+    "how": "BM25 ranks informative query words. Optional embeddings provide unit vectors, searched using NumPy; rank fusion combines the signals. Typed multi-hop/one-hop walks add candidates. Source activity, digest, exact quote and viewer access are checked before citation. The configured runtime can generate the answer from this evidence.",
+    "limit": "Graph RAG is the application’s retrieval-augmented generation pattern, not a Microsoft GraphRAG framework pipeline. Vectors choose candidates; they are not evidence. Embeddings/answer generation can cost money and send text externally. No dedicated vector database is used by the inspected NumPy search path.",
+    "refs": [
+      "platform_core/ranking.py",
+      "platform_core/embeddings.py",
+      "platform_core/graph_ai.py",
+      "platform_core/workbench.py"
+    ]
+  },
+  {
+    "id": "themes",
+    "name": "Graphify: Knowledge graph themes",
+    "place": "Local; no model request",
+    "tech": [
+      "Graphify: graphifyy distribution / graphify import",
+      "NetworkX in-memory graph",
+      "Leiden community detection",
+      "graspologic-native backend",
+      "Hub-based naming and cohesion score"
+    ],
+    "purpose": "Group already-linked Knowledge graph nodes into themes so the Quality view and graph explorer are easier to understand.",
+    "how": "Existing nodes/edges are projected into NetworkX. Graphify clusters them with Leiden, labels each community using its hub node, and computes cohesion. The same partition supports the Quality themes and Canvas colours/filters.",
+    "limit": "This Graphify use groups existing structure; it does not invent source facts or generate the Knowledge graph’s semantic relationships. Hub labels come from real nodes rather than an LLM summary. Cohesion describes connectivity, not correctness. The graphify.net hosted service is not called.",
+    "refs": [
+      "platform_core/graph_quality.py",
+      "pyproject.toml"
+    ]
+  },
+  {
+    "id": "bridge",
+    "name": "Link Knowledge evidence to Code snapshots",
+    "place": "Local read-only projection",
+    "tech": [
+      "Python regular expressions and set matching",
+      "Django ORM snapshot lookup",
+      "Explicit code paths and shared identifiers"
+    ],
+    "purpose": "Let someone move from a quoted knowledge claim to related code files while preserving each graph’s independent version history.",
+    "how": "The bridge extracts file-path and identifier references from source evidence and matches them to an indexed code snapshot. The graph explorer can display related files without changing the saved Knowledge or Code graph.",
+    "limit": "This bridge is custom application logic, not a Graphify AI inference or an LLM request. A path/identifier match means a reference exists; it does not prove that the implementation satisfies a requirement. It does not turn the separate Code Graph into the structural Knowledge graph.",
+    "refs": [
+      "platform_core/code_knowledge.py"
+    ]
+  },
+  {
+    "id": "code",
+    "name": "Graphify: static Code Graph extraction",
+    "place": "Local; bounded repository snapshots",
+    "tech": [
+      "Graphify: graphifyy / graphify.extract",
+      "Tree-sitter AST parsing",
+      "Native Python ast analysis and JS-family analyzer",
+      "Temporary source/cache directories"
+    ],
+    "purpose": "Understand source-code structure across languages and connect files through imports, calls and inheritance.",
+    "how": "The ingestion pipeline passes already-read, bounded source texts to Graphify’s AST extraction function in scratch directories. The adapter maps supported cross-file relationships into Code Graph records, alongside the native analyzer’s results. The full checkout and Git metadata are not passed to this extractor.",
+    "limit": "Only Graphify’s AST path is used: its model-based semantic extraction is not invoked, and this adapter does not call graphify.net. Static analysis can miss dynamic behavior and can report incomplete parsing; a failure can leave a partial snapshot with native results. Code Graph extraction has separate repository intake.",
+    "refs": [
+      "platform_core/code_graph_graphify.py",
+      "platform_core/code_graph_analysis.py",
+      "platform_core/code_graph_ingest.py"
+    ]
+  }
+]

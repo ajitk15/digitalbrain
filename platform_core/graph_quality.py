@@ -19,6 +19,7 @@ Two deliberate departures from the reference design this panel is modelled on:
 """
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -262,3 +263,191 @@ def health_report(data, quality):
         "bands": bands,
         "documents": document_share(data),
     }
+
+
+#: At or above this a headline reads as good; at or above FAIR_AT, fair.
+GOOD_AT = 90
+FAIR_AT = 60
+
+
+def _tone(percent):
+    return "good" if percent >= GOOD_AT else "fair" if percent >= FAIR_AT else "poor"
+
+
+def at_a_glance(health, quality, source_count, benchmark=None):
+    """The four headline answers the Quality tab opens with, in plain words.
+
+    Each is a question a reader actually has, one number, a bar and one line
+    saying what it means - the detail stays in the tiles below. Nothing new is
+    measured: every figure is one the panel already reported, gathered here.
+    `benchmark` is this version's latest BenchmarkRun, or None if unscored.
+    """
+    processed = quality.get("processed_sources") or 0
+    total = max(source_count or 0, processed)
+    read = _percent(processed, total)
+    connected = round(100 - health["orphan_percent"], 1)
+    cards = [
+        {
+            "key": "sources",
+            "question": "Sources in the graph",
+            "figure": f"{processed} of {total}",
+            "percent": read,
+            "tone": _tone(read),
+            "meaning": "Every source is read."
+            if processed >= total
+            else f"{total - processed} not read yet.",
+        },
+        {
+            "key": "evidence",
+            "question": "Links backed by a quote",
+            "figure": f"{health['evidence_percent']:g}%",
+            "percent": health["evidence_percent"],
+            "tone": _tone(health["evidence_percent"]),
+            "meaning": "Only quoted links can be cited in an answer.",
+        },
+        {
+            "key": "connected",
+            "question": "Nodes that connect",
+            "figure": f"{connected:g}%",
+            "percent": connected,
+            "tone": _tone(connected),
+            "meaning": "Isolated nodes never help an answer.",
+        },
+    ]
+    if benchmark and benchmark.questions:
+        found = _percent(benchmark.found, benchmark.questions)
+        cards.append(
+            {
+                "key": "retrieval",
+                "question": "Finds the right source",
+                "figure": f"{benchmark.found} of {benchmark.questions}",
+                "percent": found,
+                "tone": _tone(found),
+                "meaning": "Test questions that cite the source they should.",
+                "run": benchmark,
+            }
+        )
+    else:
+        cards.append(
+            {
+                "key": "retrieval",
+                "question": "Finds the right source",
+                "figure": "Not measured",
+                "percent": None,
+                "tone": "none",
+                "meaning": "Add test questions to measure it.",
+            }
+        )
+    return cards
+
+
+def quality_overview(health, cards, quality=None):
+    """Prioritize existing signals without presenting structure as answer accuracy."""
+    if not health.get("nodes"):
+        return {
+            "title": "Start with your source material",
+            "detail": "There is not enough graph data to assess quality yet.",
+            "actions": [{
+                "title": "Add sources and generate a graph",
+                "detail": "Quality signals appear when the graph contains knowledge.",
+                "route": "documents", "label": "View sources", "tone": "none",
+            }],
+            "additional": 0, "tone": "none",
+        }
+    by_key = {card["key"]: card for card in cards}
+    quality = quality or {}
+    actions = []
+    unquoted = health.get("bands", {}).get("unquoted", 0)
+    if unquoted:
+        actions.append({
+            "title": f"{unquoted} links need source evidence",
+            "detail": "Unquoted links cannot support a cited answer.",
+            "route": "documents", "label": "Review sources", "tone": "poor",
+        })
+    coverage = quality.get("coverage_percent")
+    incomplete = (
+        coverage is not None and coverage < 100
+        and (quality.get("table_rows", 0) or quality.get("sections", 0))
+    )
+    if incomplete:
+        actions.append({
+            "title": "Some source content was left out",
+            "detail": f"{coverage:g}% of source rows and sections are represented.",
+            "route": "documents", "label": "Review source coverage", "tone": "fair",
+        })
+    sources = by_key.get("sources", {})
+    if sources.get("percent") is not None and sources["percent"] < 100:
+        actions.append({
+            "title": "Bring the remaining sources into the graph",
+            "detail": sources["meaning"],
+            "route": "documents", "label": "View sources", "tone": "fair",
+        })
+    retrieval = by_key.get("retrieval", {})
+    if retrieval.get("percent") is None:
+        actions.append({
+            "title": "Measure how well answers find their sources",
+            "detail": "Retrieval has not been tested for this version.",
+            "route": "graph-benchmark", "label": "Add test questions", "tone": "none",
+        })
+    elif retrieval["percent"] < GOOD_AT:
+        actions.append({
+            "title": "Review the questions that missed their source",
+            "detail": f"{retrieval['figure']} test questions found the expected source.",
+            "route": "graph-benchmark", "label": "Review test results",
+            "tone": retrieval["tone"], "run": retrieval.get("run"),
+        })
+    if health.get("orphan_percent", 0) > ORPHAN_LIMIT:
+        actions.append({
+            "title": f"Connect {health['orphans']} isolated nodes",
+            "detail": "These nodes have no relationships to other knowledge.",
+            "route": "graph", "label": "Explore graph", "tone": "fair",
+        })
+    elif (
+        health.get("largest_percent", 100) < LARGEST_COMPONENT_FLOOR
+        or health.get("components", 0) > max(3, health["nodes"] // 20)
+    ):
+        actions.append({
+            "title": "Review disconnected clusters",
+            "detail": f"The largest cluster holds {health['largest_percent']:g}% of nodes.",
+            "route": "graph", "label": "Explore graph", "tone": "fair",
+        })
+    needs_review = any(action["tone"] in {"poor", "fair"} for action in actions)
+    if unquoted:
+        title = "Source evidence needs attention"
+    elif incomplete:
+        title = "Source coverage is incomplete"
+    elif sources.get("percent") is not None and sources["percent"] < 100:
+        title = "Some sources are missing"
+    elif retrieval.get("percent") is not None and retrieval["percent"] < GOOD_AT:
+        title = "Retrieval needs attention"
+    elif needs_review:
+        title = "Connections need attention"
+    else:
+        title = "Structure looks healthy"
+    return {
+        "title": title,
+        "detail": "Measured signals, prioritized by impact."
+        if needs_review else "Source evidence and graph connections are in good shape.",
+        "actions": actions[:3],
+        "additional": max(len(actions) - 3, 0),
+        "tone": "fair" if needs_review else "good",
+    }
+
+
+#: Run notes the Quality tab already shows as a figure, so repeating them as a
+#: notice says the same thing twice. Older versions stored them, so they are
+#: recognised by their wording rather than stopped at the source.
+_SHOWN_ELSEWHERE = (
+    re.compile(r"^\d+ empty table cells were found\.?$"),
+    re.compile(r"^\d+ repeated table rows were found\.?$"),
+    re.compile(r"^\d+ unsupported or invalid AI relationship\(s\) were excluded\.?$"),
+)
+
+
+def notes(warnings):
+    """A version's run notes, without the ones a tile or line already states."""
+    return [
+        warning
+        for warning in warnings or []
+        if not any(pattern.match(warning.strip()) for pattern in _SHOWN_ELSEWHERE)
+    ]

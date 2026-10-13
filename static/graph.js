@@ -27,14 +27,13 @@
   const filterBox = document.getElementById("graph-filters");
   const expandButton = document.getElementById("graph-expand");
   const resetButton = document.getElementById("graph-reset");
-  const expandCodeButton = document.getElementById("graph-expand-code");
+  // Related code used to wait behind its own button, after a search and a pick
+  // from the list: three steps to see one requirement beside its files. Now a
+  // focused node brings its code onto the canvas by itself, and this line only
+  // says what happened.
   const codeStatus = document.getElementById("graph-code-status");
-  function codeControl(message, action = null) {
-    if (!expandCodeButton) return;
-    expandCodeButton.disabled = !action;
-    expandCodeButton.onclick = action;
-    expandCodeButton.title = message;
-    codeStatus.textContent = message;
+  function codeControl(message) {
+    if (codeStatus) codeStatus.textContent = message;
   }
   const zoomIn = document.getElementById("graph-zoom-in");
   const zoomOut = document.getElementById("graph-zoom-out");
@@ -943,7 +942,7 @@
   }
 
   function start() {
-    codeControl("Select a node to find related code.");
+    codeControl("Related code appears with the node you find.");
     clearCodeOverlay();
     buildFilters();
     options();
@@ -980,7 +979,7 @@
   }
 
   function inspect(id) {
-    codeControl("Select a knowledge node to find related code.");
+    codeControl("Related code appears with the node you find.");
     const node = nodes.get(id);
     inspector.replaceChildren();
     const title = document.createElement("h2");
@@ -1111,14 +1110,13 @@
         ? "Explicit references, not proof that a requirement is satisfied."
         : "No verified code references found in the indexed snapshots.";
       if (data.links.length) {
-        codeControl(`${new Set(data.links.map((item) => item.file_id)).size} related code files.`, () => {
-          const shownCount = showCodeOverlay(id, data.links);
-          status.textContent = `${shownCount} code file(s) connected on the canvas. ` +
-            "Showing up to 30 files; references do not prove implementation correctness.";
-          codeStatus.textContent = `${shownCount} code files shown on the canvas.`;
-        });
+        const shownCount = showCodeOverlay(id, data.links);
+        status.textContent = `${shownCount} code file(s) connected on the canvas. ` +
+          "Showing up to 30 files; references do not prove implementation correctness.";
+        codeControl(`${shownCount} related code file${shownCount === 1 ? "" : "s"} shown.`);
       } else {
-        codeControl("No verified code references found for this node.");
+        if (clearCodeOverlay()) refresh(0.2);
+        codeControl("No verified code references for this node.");
       }
       for (const item of data.links) {
         const block = document.createElement("div");
@@ -1156,7 +1154,7 @@
 
   function clearCodeOverlay() {
     const codeIds = new Set(graph.nodes.filter((n) => n.kind === "code").map((n) => n.id));
-    if (!codeIds.size) return;
+    if (!codeIds.size) return false;
     for (let i = edges.length - 1; i >= 0; i -= 1) {
       if (edges[i].codeReference) edges.splice(i, 1);
     }
@@ -1172,6 +1170,7 @@
       codeIds.forEach((codeId) => adjacent.delete(codeId));
       degree.set(id, adjacent.size);
     });
+    return true;
   }
 
   function showCodeOverlay(origin, references) {
@@ -1199,17 +1198,20 @@
       });
     });
     degree.set(origin, neighbours.get(origin).size);
-    // A small connected view makes the requirement and its code legible together.
+    // Added beside what is already on screen, since it now arrives without being
+    // asked for: a search that replaced the view would lose the reader's place.
     // Overview restores the original graph; the exported snapshot is never changed.
-    visible = new Set([origin, ...neighbours.get(origin)]);
-    visible.forEach((id) => {
-      hidden.delete(nodes.get(id).kind);
+    visible.add(origin);
+    grouped.forEach((_, id) => {
+      visible.add(id);
       hiddenThemes.delete(themeOf(id));
     });
+    hidden.delete("code");
     hover = null;
     focus = origin;
-    follow = null;
-    autoFit = true;
+    follow = origin;
+    autoFit = false;
+    goal = centreGoal(sim.get(origin), Math.max(cam.k, 1.2));
     buildFilters();
     options();
     refresh(0.6);
@@ -1338,22 +1340,70 @@
     });
   }
 
+  // How well a label answers what was typed: the whole label, then its start,
+  // then the start of a word, then anywhere. Lower is better; -1 is no match.
+  function closeness(label, term) {
+    const text = label.toLowerCase();
+    if (text === term) return 0;
+    if (text.startsWith(term)) return 1;
+    const at = text.indexOf(term);
+    if (at < 0) return -1;
+    return /[^a-z0-9]/.test(text[at - 1]) ? 2 : 3;
+  }
+
+  // Best first, so the list and the canvas agree on what "the" match is. A
+  // value node ("Status: Done") joins hundreds of records and is rarely what
+  // a search means, so among equals the better-connected record or document wins.
+  function matches(term) {
+    if (!term) return graph.nodes;
+    return graph.nodes
+      .map((n) => ({ n, rank: closeness(n.label, term) }))
+      .filter((m) => m.rank >= 0)
+      .sort((a, b) =>
+        a.rank - b.rank ||
+        (a.n.kind === "value") - (b.n.kind === "value") ||
+        (degree.get(b.n.id) || 0) - (degree.get(a.n.id) || 0) ||
+        a.n.label.length - b.n.label.length)
+      .map((m) => m.n);
+  }
+
   function options() {
-    const term = search.value.toLowerCase();
+    const term = search.value.trim().toLowerCase();
+    const found = matches(term);
     select.replaceChildren();
     const prompt = document.createElement("option");
     prompt.value = "";
-    prompt.textContent = "Select a node…";
+    prompt.textContent = !term
+      ? "Select a node…"
+      : found.length
+        ? `${found.length} match${found.length === 1 ? "" : "es"}`
+        : "No node matches";
     select.append(prompt);
-    graph.nodes
-      .filter((n) => n.label.toLowerCase().includes(term))
-      .slice(0, 300)
-      .forEach((n) => {
-        const option = document.createElement("option");
-        option.value = n.id;
-        option.textContent = `${n.kind}: ${n.label}`;
-        select.append(option);
-      });
+    found.slice(0, 300).forEach((n) => {
+      const option = document.createElement("option");
+      option.value = n.id;
+      option.textContent = `${n.kind}: ${n.label}`;
+      select.append(option);
+    });
+    if (focus && nodes.has(focus) && select.querySelector(`option[value="${CSS.escape(focus)}"]`)) {
+      select.value = focus;
+    }
+    return found;
+  }
+
+  // Typing is enough: after a short pause the best match is focused on the
+  // canvas, which also fetches and draws its related code. Two characters
+  // first, so a single letter does not send the camera across the graph.
+  const SEARCH_PAUSE_MS = 300;
+  let searchTimer = null;
+  function findNow() {
+    window.clearTimeout(searchTimer);
+    const term = search.value.trim().toLowerCase();
+    const found = options();
+    if (term.length < 2 || !found.length) return;
+    const best = found[0];
+    if (best.id !== focus) focusOn(best.id);
+    select.value = best.id;
   }
 
   function nodeAt(sx, sy) {
@@ -1530,7 +1580,16 @@
     canvas.setAttribute("data-canvas", theme);
   }
 
-  search.addEventListener("input", options);
+  search.addEventListener("input", () => {
+    options();
+    window.clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(findNow, SEARCH_PAUSE_MS);
+  });
+  search.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    findNow();
+  });
   select.addEventListener("change", () => {
     if (select.value) focusOn(select.value);
   });
