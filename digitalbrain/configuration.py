@@ -29,6 +29,8 @@ def load_config():
         "scanner",
         "scan_documents",
         "keep_original_documents",
+        "ocr",
+        "tesseract_path",
         "claude_use_host_login",
         "allow_self_approval",
         "allow_demo_reset",
@@ -49,6 +51,15 @@ def load_config():
         raise ImproperlyConfigured("scan_documents must be a boolean.")
     if type(config.get("keep_original_documents", True)) is not bool:
         raise ImproperlyConfigured("keep_original_documents must be a boolean.")
+    if type(config.get("ocr", False)) is not bool:
+        raise ImproperlyConfigured("ocr must be a boolean.")
+    if not isinstance(config.get("tesseract_path", ""), str):
+        raise ImproperlyConfigured("tesseract_path must be a string.")
+    if config.get("tesseract_path") and not Path(config["tesseract_path"]).is_absolute():
+        # Like `scanner`: a relative name would be looked up wherever the
+        # process happens to run, which is not a decision about which program
+        # reads every scanned document.
+        raise ImproperlyConfigured("tesseract_path must be an absolute path.")
     if type(config.get("shared_streams", False)) is not bool:
         raise ImproperlyConfigured("shared_streams must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:

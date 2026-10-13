@@ -26,7 +26,7 @@ from .graphs import MAX_RECORDS_PER_SOURCE, walk
 from .models import KnowledgeEntry
 from .ticket_quality import PLACEHOLDER, Check, quote
 
-QUALITY_VERSION = 2
+QUALITY_VERSION = 3
 
 #: Text this short was most likely not read: a scanned page, an image, a
 #: template with nothing filled in.
@@ -34,6 +34,9 @@ MIN_CHARACTERS = 200
 #: What a table header says when nobody named the column: pandas' `Unnamed: 3`,
 #: a converter's `Column 2`, a spreadsheet's `nan`.
 GENERIC_HEADER = re.compile(r"^(?:unnamed:?\s*\d+|column\s*\d+|col\d+|nan|none)$", re.I)
+#: Below this mean word confidence an OCR page is hard to read: the extractor's
+#: LOW_CONFIDENCE, which reports it.
+LOW_CONFIDENCE = 60
 #: Above this share of empty cells a table says less than its shape suggests.
 EMPTY_CELLS = 0.3
 #: A prose document longer than this with no heading reads as one long list.
@@ -114,7 +117,7 @@ def readable_check(content, report):
     if len(content.strip()) < MIN_CHARACTERS:
         problems.append(f"only {plural(len(content.strip()), 'character')} of text were read")
         partial = False
-    garbled = content.count("�")
+    garbled = content.count("\ufffd")
     if garbled:
         problems.append(f"{plural(garbled, 'character')} could not be decoded")
         partial = partial and garbled * 100 < len(content)
@@ -126,16 +129,27 @@ def readable_check(content, report):
                         f"{', '.join(str(page) for page in blank[:SHOWN_LINES])}"
                         f"{' and more' if len(blank) > SHOWN_LINES else ''})")
         partial = partial and len(blank) * 2 < pages
+    scanned = report.get("ocr_pages") or []
     low = report.get("low_confidence_pages") or []
     if low:
-        problems.append(f"{plural(len(low), 'page')} read by OCR with low confidence")
+        # A poor scan is the one case where text was read and still cannot be
+        # trusted: it is said loudly, before anything is cited from it.
+        problems.append(f"{plural(len(low), 'page')} read by OCR with under "
+                        f"{LOW_CONFIDENCE}% confidence ({where(low).replace('line', 'page')})")
+        partial = False
     if not problems:
         read = f" from {plural(pages, 'page')}" if pages else ""
+        if scanned:
+            mean = round(sum(page["confidence"] for page in scanned) / len(scanned))
+            read += f", {len(scanned)} of them by OCR at {mean}% confidence"
         return Check("readable", label, 20, 20, "good",
                      f"{len(content):,} characters of text were read{read}.", "", rule)
     finding = sentence("; ".join(problems)) + "."
     improve = ("Upload the original Word, Excel or PowerPoint file rather than a scan or a "
                "PDF of one" + (", or turn on OCR so scanned pages are read." if blank else "."))
+    if low:
+        improve = ("Scan the pages again at 300 dpi or better, or upload the original "
+                   "document: text read with low confidence may be cited wrongly.")
     if partial:
         return Check("readable", label, 20, 10, "partial", finding, improve, rule)
     return Check("readable", label, 20, 0, "missing", finding, improve, rule)

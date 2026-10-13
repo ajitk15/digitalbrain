@@ -281,6 +281,19 @@ subprocess before the file can go) remain. A failed conversion always keeps its 
 (`active=False`, document released - the one-to-one allows one) and carries a
 restriction over. A failed re-conversion leaves the document ready on its old text.
 
+**OCR is local, off by default, and says which text it read.** `ocr = true` (with
+`tesseract_path` if Tesseract is not on PATH; the Dockerfile installs it) makes the
+extractor subprocess render each PDF page that has no text layer with pypdfium2, read it,
+and read `.png`/`.jpg`/`.tif` uploads. Images are refused without it. Tesseract is handed
+a file and makes no network call, so the subprocess's socket patch still holds. Each
+page read that way is headed `## Page N (read by OCR, C% confidence)` in the text itself,
+so a citation from it says so too. At most `MAX_OCR_PAGES` a document, which is
+equal in `processing` and the extractor and tested; over it the document fails rather
+than half-reads. A page under `LOW_CONFIDENCE` makes the Source check's "Readable text"
+missing: text read badly is the one case where a quote can verify exactly and still be
+wrong. `demo-artifacts/carepath-quality-samples/` holds scans and broken documents to
+try it on. It is outside `docs/`, so the scorecard does not read it.
+
 **Usage is never silently zero.** A missing or malformed token count is an error, not a
 free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed

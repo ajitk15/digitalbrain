@@ -59,6 +59,31 @@ def scanning_ready():
     return True
 
 
+#: Seconds a conversion may take. Longer with OCR on, and still inside the five
+#: minutes after which the worker treats a conversion as stuck and claims it again.
+CONVERSION_TIMEOUT = 45
+OCR_CONVERSION_TIMEOUT = 240
+#: `scripts/extract_text.MAX_OCR_PAGES`, said here without importing the converter
+#: into the web process. A test holds the two equal.
+MAX_OCR_PAGES = 50
+
+
+def tesseract_path():
+    """The Tesseract binary when OCR is on and one is installed, else ""."""
+    if not settings.OCR_ENABLED:
+        return ""
+    found = settings.TESSERACT_PATH or shutil.which("tesseract") or ""
+    if not found or not Path(found).is_absolute() or not Path(found).is_file():
+        return ""
+    return str(found)
+
+
+def ocr_ready():
+    """Whether scanned pages would be read right now, the way `scanning_ready` asks
+    about the scanner: OCR switched on and its binary present."""
+    return bool(tesseract_path())
+
+
 def process_document(user, app_id, document_id):
     app, _ = access(user, app_id, "knowledge", write=True)
     doc = Document.objects.exclude(status="deleted").get(application=app, pk=document_id)
@@ -114,6 +139,7 @@ def process_document(user, app_id, document_id):
             raise ValidationError("The scanner rejected this file. It will not be processed.")
         if scan.returncode != 0:
             raise ValidationError("Scanner unavailable or signatures stale. File remains private.")
+    ocr = tesseract_path()
     try:
         with tempfile.TemporaryDirectory() as scratch:
             report_path = Path(scratch) / "report.json"
@@ -124,10 +150,11 @@ def process_document(user, app_id, document_id):
                     str(path),
                     Path(doc.name).suffix.lower(),
                     str(report_path),
+                    ocr,
                 ],
                 stdin=subprocess.DEVNULL,
                 capture_output=True,
-                timeout=45,
+                timeout=OCR_CONVERSION_TIMEOUT if ocr else CONVERSION_TIMEOUT,
                 check=False,
             )
             report = read_report(report_path)
@@ -139,7 +166,12 @@ def process_document(user, app_id, document_id):
     except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
         raise ValidationError(
             "MarkItDown could not convert this file. It may be unsupported, empty, or exceed "
-            "1,000,000 Markdown characters. Image-only PDFs require OCR."
+            "1,000,000 Markdown characters. "
+            + (
+                f"Scanned pages are read by OCR, at most {MAX_OCR_PAGES} a document."
+                if ocr
+                else "Scanned PDFs and images need OCR, which is not on in this deployment."
+            )
         ) from None
     with transaction.atomic():
         app, _ = access(user, app_id, "knowledge", write=True)
@@ -178,13 +210,22 @@ def read_report(path):
         return {}
     if not isinstance(found, dict) or not isinstance(found.get("pages"), int):
         return {}
-    blank = found.get("pages_without_text")
-    return {
-        "pages": found["pages"],
-        "pages_without_text": (
-            [n for n in blank if isinstance(n, int)][:500] if isinstance(blank, list) else []
-        ),
-    }
+    def numbers(key):
+        value = found.get(key)
+        return [n for n in value if isinstance(n, int)][:500] if isinstance(value, list) else []
+
+    report = {"pages": found["pages"], "pages_without_text": numbers("pages_without_text")}
+    read = found.get("ocr_pages")
+    if isinstance(read, list):
+        report["ocr_pages"] = [
+            {"page": page["page"], "confidence": page["confidence"]}
+            for page in read[:MAX_OCR_PAGES]
+            if isinstance(page, dict)
+            and isinstance(page.get("page"), int)
+            and isinstance(page.get("confidence"), int)
+        ]
+        report["low_confidence_pages"] = numbers("low_confidence_pages")
+    return report
 
 
 def supersede(user, app_id, document, content):

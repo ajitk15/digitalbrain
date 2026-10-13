@@ -50,12 +50,17 @@ FROM python:${PYTHON_VERSION} AS runtime
 # rather than passing a file nobody checked. freshclam keeps them inside that
 # window. libmagic backs MarkItDown's type sniffing; git is here for Code
 # Graph, which reads a repository by cloning it rather than over the REST API.
+# tesseract reads scanned pages and images when `ocr = true`; it is installed
+# either way so switching it on is configuration, not a rebuild. English only:
+# another language is a deployment's choice of tesseract-ocr-<lang> package.
 RUN set -eu; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         clamav \
         libmagic1 \
         git \
+        tesseract-ocr \
+        tesseract-ocr-eng \
         ca-certificates \
         tini; \
     rm -rf /var/lib/apt/lists/*
