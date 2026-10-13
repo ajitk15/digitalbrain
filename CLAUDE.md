@@ -401,6 +401,26 @@ evidence shows on every item it produces.
 Neither path checks the live fingerprint — answering from a published snapshot is the point.
 Safety comes from per-edge verification instead: active source, matching digest, exact quote.
 
+**Sources are checked before a graph is built, and the check only suggests.**
+`source_quality.py` scores each *document* (not typed records, not imported tickets - a
+Jira ticket keeps `ticket_quality`) on a fixed rubric with no model, stored on
+`KnowledgeEntry.quality` with `QUALITY_VERSION`; a stale version is re-run on read and
+kept, and `manage.py check_sources` fills existing rows. Ready needs 80 **and** no check
+missing outright. `source_map.py` reads the set `graphs.sources_for` would build from -
+references defined and mentioned, table values keyed exactly as `build_graph` keys value
+nodes - cached per `graphs.fingerprint`, shown as the Check sources popup, one line on
+Sources and a warning on Generate. Nothing here ever disables Generate or leaves a
+source out. Both read tables through `graphs.walk`, the walk `build_graph` itself makes:
+**do not give either its own table parser**, or a finding will disagree with the graph.
+
+`walk` promotes a wholly bold first row under a blank header to the header - how
+MarkItDown writes a Word table whose header row is not marked as one. Stored text is
+untouched, so digests and quotes are too; the generator is `structural-v2` so every
+structural graph rebuilds once, as a draft. On CarePath it named 400 values that were
+"column N", added 8 cross-source joins, and took graph MRR 0.709 -> 0.716 with two
+questions ranked higher and none lower. A `**Label** | value` front-matter table is not
+promoted and not flagged.
+
 **Retrieval changes are measured, not asserted.** `benchmark.py` scores every saved graph
 version against an owner's questions (a version's score in Knowledge → Versions or Quality opens it, `manage.py benchmark`): is the
 expected source among the citations, in the top three, and at what rank. It calls

@@ -26,7 +26,7 @@ from .graphs import MAX_RECORDS_PER_SOURCE, walk
 from .models import KnowledgeEntry
 from .ticket_quality import PLACEHOLDER, Check, quote
 
-QUALITY_VERSION = 1
+QUALITY_VERSION = 2
 
 #: Text this short was most likely not read: a scanned page, an image, a
 #: template with nothing filled in.

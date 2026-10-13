@@ -48,7 +48,7 @@ def fingerprint(app_id):
     return hashlib.sha256(
         json.dumps(
             {
-                "generator": "structural-v1",
+                "generator": "structural-v2",
                 "ai": ai_settings,
                 "limits": [MAX_NODES, MAX_RECORDS_PER_SOURCE, MAX_SOURCES],
                 "sources": [(str(pk), digest) for pk, digest in records],
@@ -74,6 +74,14 @@ def is_separator(values):
     return bool(values) and all(re.fullmatch(r":?-{2,}:?", v.replace(" ", "")) for v in values)
 
 
+def is_bold_row(lines, index):
+    """A table row whose every cell is filled and wholly bold: `| **Step** | **Owner** |`."""
+    if index >= len(lines) or not is_table_line(lines[index]):
+        return False
+    values = cells(lines[index])
+    return all(re.fullmatch(r"\*\*[^*]+\*\*", value) for value in values)
+
+
 Line = namedtuple("Line", "kind index text headers values")
 
 
@@ -87,13 +95,25 @@ def walk(content):
     """
     lines = content.splitlines()
     headers = None
+    promoted = None
     for index, line in enumerate(lines):
         if is_table_line(line):
             values = cells(line)
             if is_separator(values):
                 continue
+            if index == promoted:
+                headers = [value.strip("*").strip() for value in values]
+                yield Line("header", index, line, headers, None)
+                continue
             if index + 1 < len(lines) and is_separator(cells(lines[index + 1])):
                 headers = values
+                # MarkItDown writes a Word table whose header row is not marked
+                # as one as a blank header, then the real header in bold as the
+                # first row. That row is the header: read as a record it named
+                # every column "column N" and joined nothing to anything.
+                if not any(values) and is_bold_row(lines, index + 2):
+                    promoted = index + 2
+                    continue
                 yield Line("header", index, line, values, None)
             elif headers:
                 yield Line("row", index, line, headers, values)
@@ -232,7 +252,7 @@ def build_graph(entries, source_count):
         "isolated_nodes": isolated,
         "warnings": warnings,
         "provenance_percent": 100 if edges else None,
-        "method": "Deterministic Markdown structure v1",
+        "method": "Deterministic Markdown structure v2",
         "semantic_accuracy": "Not measured; no inferred semantic relationships.",
     }
     return {"nodes": list(nodes.values()), "edges": edges, "sources": source_refs}, quality

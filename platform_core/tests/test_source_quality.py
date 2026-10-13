@@ -33,17 +33,25 @@ Document: POL-CAREPATH-007 · Version 1.2 · Owner: Integrated Care · 2026-03-0
 Every referral is acknowledged within one working day.
 """
 
-#: Two tables MarkItDown makes from Word: one with its real header as a bold
-#: first row under a blank one, and one a PDF broke so only its header is left.
+#: Two tables the graph reads badly: one with a blank header and nothing to put
+#: in its place, and one a PDF broke so only its header is left.
 FLAWED = """Release plan
 
 |  |  |
 | --- | --- |
-| **Step** | **Owner** |
+| Step | Owner |
 | Freeze | Delivery |
 
 | ID | Obligation |
 | --- | --- |
+"""
+
+
+#: How MarkItDown writes a Word table whose header row is not marked as one.
+BOLD_HEADER = """|  |  |
+| --- | --- |
+| **Step** | **Owner** |
+| Freeze | Delivery |
 """
 
 
@@ -73,6 +81,13 @@ class AssessTests(SimpleTestCase):
         self.assertIn("1 with a header and no rows (line 8)", tables.finding)
         self.assertIn("Header Row", tables.improve)
         self.assertIn("Word or Excel original", tables.improve)
+
+    def test_a_bold_first_row_under_a_blank_header_is_the_header(self):
+        """How MarkItDown writes a Word table whose header row is not marked as one."""
+        self.assertEqual(check(BOLD_HEADER, "tables").state, "good")
+        [table] = source_quality.tables_in(BOLD_HEADER)
+        self.assertEqual((table["line"], table["headers"], table["rows"]),
+                         (3, ["Step", "Owner"], [["Freeze", "Delivery"]]))
 
     def test_a_front_matter_table_is_not_a_blank_header(self):
         """`| **Version** | 1.2 |` rows name themselves; there is no column to name."""
@@ -173,17 +188,34 @@ Prose straight after a table.
             ("section", 7), ("section", 9), ("header", 11), ("row", 13),
         ])
 
+    def test_a_bold_row_under_a_blank_header_names_the_columns_in_the_graph(self):
+        entry = SimpleNamespace(pk=uuid.uuid4(), application_id=uuid.uuid4(), title="t",
+                                content=BOLD_HEADER, digest="d")
+        data, quality = build_graph([entry], 1)
+        self.assertEqual(quality["table_rows"], 1)
+        fields = sorted(node["field"] for node in data["nodes"] if node["kind"] == "value")
+        self.assertEqual(fields, ["Owner", "Step"])
+
+    def test_only_a_wholly_bold_row_is_promoted(self):
+        """Front matter (`| **Version** | 1.2 |`) and a row with a gap stay rows."""
+        for first in ("| **Version** | 1.2 |", "| **Step** |  |", "| Step | Owner |"):
+            with self.subTest(first=first):
+                content = "\n".join(["|  |  |", "| --- | --- |", first, "| a | b |"])
+                kinds = [item.kind for item in walk(content)]
+                self.assertEqual(kinds, ["header", "row", "row"])
+
     def test_the_graph_is_unchanged_by_moving_the_walk_out_of_it(self):
         """Pinned from the builder before `walk` existed: same text, same graph."""
         entry = SimpleNamespace(pk=uuid.UUID(int=7), application_id=uuid.UUID(int=1),
                                 title="Sample", content=self.SAMPLE, digest="d" * 64)
-        built = build_graph([entry], 1)
-        digest = hashlib.sha256(json.dumps(built, sort_keys=True).encode()).hexdigest()
+        graph, _ = build_graph([entry], 1)
+        digest = hashlib.sha256(json.dumps(graph, sort_keys=True).encode()).hexdigest()
         self.assertEqual(digest, PINNED_GRAPH)
 
 
-#: build_graph(WalkTests.SAMPLE) at 9e7dff0, before the walk was factored out.
-PINNED_GRAPH = "94687c34fc3b706f753ddbb61711b962d74972e59b6798d8ccf1351a7ee914f5"
+#: The graph build_graph(WalkTests.SAMPLE) made at 9e7dff0, before the walk was
+#: factored out. The sample has no blank header, so promoting a bold row leaves it be.
+PINNED_GRAPH = "03c3d28807f2b4b3be06db95e896b08e0d4b763221ee43446b9b9774490bcfef"
 
 
 @override_settings(**SETTINGS)
