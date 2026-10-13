@@ -538,6 +538,8 @@ def document_detail(request, pk, document_id):
         response = HttpResponse(body, content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{document.pk}.{extension}"'
         return response
+    from .source_quality import for_entries
+
     return render(
         request,
         "document_detail.html",
@@ -545,6 +547,7 @@ def document_detail(request, pk, document_id):
             "application": app,
             "document": document,
             "entry": entry,
+            "source_check": for_entries([entry])[entry.pk] if entry else None,
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []) if entry else [],
             "can_delete": grant.role == "owner"
             or (grant.role == "contributor" and document.uploaded_by_id == request.user.pk),

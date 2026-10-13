@@ -14,6 +14,7 @@ from .models import (
     KnowledgeSource,
 )
 from .services import feature_enabled
+from .source_quality import for_entries
 from .ticket_quality import assess
 
 #: Connector kinds whose records are tickets someone will work from, and so
@@ -187,6 +188,9 @@ def library_context(app, request):
     contents = dict(
         KnowledgeEntry.objects.filter(pk__in=scored).values_list("pk", "content")
     ) if scored else {}
+    # Documents get the source check, read from what was stored when they were
+    # converted rather than from their deferred text.
+    checks = for_entries([entry for entry in page_entries if entry.document_id])
     code_repositories = (
         {
             repository.external_id.lower(): repository
@@ -221,6 +225,7 @@ def library_context(app, request):
                 if origin and entry.pk in contents
                 else None
             ),
+            "check": checks.get(entry.pk) if entry else None,
             "created_at": created_at,
             "versions": usage.get(str(entry.pk), []) if entry else [],
             "code_repository": code_repository,
@@ -284,6 +289,7 @@ def library_context(app, request):
             else []
         )
         grouped_by_document = {entry.document_id: entry for entry in grouped_entries}
+        checks.update(for_entries(grouped_entries))
         usage.update(graph_usage(app, grouped_entries))
         for origin in origins:
             origin.rows = [

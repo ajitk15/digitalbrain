@@ -61,6 +61,7 @@ class QuestionForm(forms.Form):
 @transaction.atomic
 def add_knowledge(user, app_id, title, content, source="", document=None):
     from .sensitivity import RESTRICTED, STANDARD, scan
+    from .source_quality import run as check_source
 
     app, _ = access(user, app_id, "knowledge", write=True)
     # A restriction follows the record: the next import of the same ticket must
@@ -79,6 +80,9 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         document=document,
         digest=hashlib.sha256(content.encode()).hexdigest(),
         personal_data=scan(f"{title}\n{content}"),
+        # Documents only: a typed note or an imported ticket is not a document,
+        # and a ticket has its own score (`ticket_quality`).
+        quality=check_source(content) if document else {},
         sensitivity=RESTRICTED if inherited else STANDARD,
     )
     entry.full_clean()
@@ -318,10 +322,12 @@ def knowledge_detail(request, pk, entry_id):
         return redirect("knowledge", pk=pk)
     from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
+    from .source_quality import for_entries
     from .ticket_quality import parse as parse_ticket
 
     origin = entry_origin(app, entry) if not entry.document_id else None
     quality = ticket_quality(entry, origin) if origin else None
+    source_check = for_entries([entry])[entry.pk] if entry.document_id else None
     # A scored ticket is shown as a ticket: its Jira fields as chips and its
     # description as text, rather than the raw stored record.
     fields, description = parse_ticket(entry.content) if quality else ({}, "")
@@ -333,6 +339,7 @@ def knowledge_detail(request, pk, entry_id):
             "entry": entry,
             "origin": origin,
             "quality": quality,
+            "source_check": source_check,
             "ticket_fields": [
                 (label, fields[key])
                 for key, label in (

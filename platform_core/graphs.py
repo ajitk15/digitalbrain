@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from collections import namedtuple
 from datetime import timedelta
 
 from django.contrib import messages
@@ -63,6 +64,45 @@ def cells(line):
     ]
 
 
+def is_table_line(line):
+    stripped = line.strip()
+    return stripped.startswith("|") and "|" in stripped[1:]
+
+
+def is_separator(values):
+    """A Markdown table's `| --- | :--: |` line: structure, not a row."""
+    return bool(values) and all(re.fullmatch(r":?-{2,}:?", v.replace(" ", "")) for v in values)
+
+
+Line = namedtuple("Line", "kind index text headers values")
+
+
+def walk(content):
+    """What the graph reads in a source, one `Line` at a time.
+
+    "header" starts a table, "row" is a table row under it, "section" is a
+    line of text. Separators, and table lines with no header above them, yield
+    nothing. The source check (`source_quality`) reads the same walk, so what it
+    says about a table cannot disagree with what `build_graph` made of it.
+    """
+    lines = content.splitlines()
+    headers = None
+    for index, line in enumerate(lines):
+        if is_table_line(line):
+            values = cells(line)
+            if is_separator(values):
+                continue
+            if index + 1 < len(lines) and is_separator(cells(lines[index + 1])):
+                headers = values
+                yield Line("header", index, line, values, None)
+            elif headers:
+                yield Line("row", index, line, headers, values)
+            continue
+        headers = None
+        if line.strip() and not line.strip().startswith("|"):
+            yield Line("section", index, line, None, None)
+
+
 def build_graph(entries, source_count):
     namespace = str(entries[0].application_id) if entries else ""
     if any(str(entry.application_id) != namespace for entry in entries):
@@ -96,64 +136,50 @@ def build_graph(entries, source_count):
     for entry in entries:
         source_refs.append({"id": str(entry.pk), "title": entry.title, "digest": entry.digest})
         document = node("document", str(entry.pk), entry.title, knowledge_id=str(entry.pk))
-        lines = entry.content.splitlines()
-        headers = None
         row_seen = set()
         local_included = 0
         omitted = False
-        for index, line in enumerate(lines):
-            if line.strip().startswith("|") and "|" in line.strip()[1:]:
-                values = cells(line)
-                if all(re.fullmatch(r":?-{2,}:?", value.replace(" ", "")) for value in values):
+        for item in walk(entry.content):
+            index, line = item.index, item.text
+            if item.kind == "row":
+                headers, values = item.headers, item.values
+                total_rows += 1
+                signature = tuple(values)
+                if signature in row_seen:
+                    duplicate_rows += 1
+                row_seen.add(signature)
+                missing_values += sum(not value for value in values)
+                if (
+                    local_included >= MAX_RECORDS_PER_SOURCE
+                    or len(nodes) + 1 + len(values) > MAX_NODES
+                ):
+                    omitted = True
                     continue
-                if index + 1 < len(lines):
-                    following = cells(lines[index + 1])
-                    if following and all(
-                        re.fullmatch(r":?-{2,}:?", v.replace(" ", "")) for v in following
-                    ):
-                        headers = values
+                label = next((value for value in values if value), f"Row {index + 1}")
+                record = node(
+                    "record",
+                    f"{entry.pk}:{index}",
+                    label,
+                    knowledge_id=str(entry.pk),
+                    line=index + 1,
+                )
+                edge(document, record, "contains record", entry, index + 1, line)
+                for column, value in enumerate(values):
+                    if not value:
                         continue
-                if headers:
-                    total_rows += 1
-                    signature = tuple(values)
-                    if signature in row_seen:
-                        duplicate_rows += 1
-                    row_seen.add(signature)
-                    missing_values += sum(not value for value in values)
-                    if (
-                        local_included >= MAX_RECORDS_PER_SOURCE
-                        or len(nodes) + 1 + len(values) > MAX_NODES
-                    ):
-                        omitted = True
-                        continue
-                    label = next((value for value in values if value), f"Row {index + 1}")
-                    record = node(
-                        "record",
-                        f"{entry.pk}:{index}",
-                        label,
-                        knowledge_id=str(entry.pk),
-                        line=index + 1,
+                    field = headers[column] if column < len(headers) else f"column {column + 1}"
+                    field = field or f"column {column + 1}"
+                    value_node = node(
+                        "value",
+                        json.dumps([field.casefold(), value]),
+                        f"{field}: {value}",
+                        field=field,
+                        value=value[:1000],
                     )
-                    edge(document, record, "contains record", entry, index + 1, line)
-                    for column, value in enumerate(values):
-                        if not value:
-                            continue
-                        field = headers[column] if column < len(headers) else f"column {column + 1}"
-                        field = field or f"column {column + 1}"
-                        value_node = node(
-                            "value",
-                            json.dumps([field.casefold(), value]),
-                            f"{field}: {value}",
-                            field=field,
-                            value=value[:1000],
-                        )
-                        edge(record, value_node, field, entry, index + 1, line)
-                    included_rows += 1
-                    local_included += 1
-                    continue
-            else:
-                headers = None
-            if line.strip() and not line.strip().startswith("|"):
+                    edge(record, value_node, field, entry, index + 1, line)
+                included_rows += 1
+                local_included += 1
+            elif item.kind == "section":
                 total_sections += 1
                 if local_included >= MAX_RECORDS_PER_SOURCE or len(nodes) >= MAX_NODES:
                     omitted = True

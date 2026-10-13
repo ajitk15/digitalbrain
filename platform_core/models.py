@@ -374,6 +374,9 @@ class KnowledgeEntry(models.Model):
     #: What `sensitivity.scan` found when the source was added: {kind: count}.
     #: A suggestion for a person, never a label by itself.
     personal_data = models.JSONField(default=dict, blank=True)
+    #: What `source_quality.run` found when the source was added: the rules'
+    #: version and each check. Empty until checked; stale rules are re-run on read.
+    quality = models.JSONField(default=dict, blank=True)
     #: Who the source system lets open this record, as platform user ids. None
     #: means its system is not checked and every member may see it in answers;
     #: a list - empty until the first check - limits answers to those users.
