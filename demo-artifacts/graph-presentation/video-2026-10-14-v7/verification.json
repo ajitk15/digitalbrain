@@ -1,0 +1,22 @@
+{
+  "duration_seconds": 240,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "frames": 5760,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "voice": "Microsoft Heera",
+  "voice_locale": "en-IN",
+  "voice_type": "local synthesized narration",
+  "captions": "Burned in, selectable track and SRT",
+  "full_file_decode": "passed",
+  "audio_present": "passed",
+  "visual_review": "Passed: checked encoded AI and search frames for icon and plain-language label readability; no document identifiers in visible text, transcript or captions.",
+  "sha256": "1f93cd01ddf5493e72ec7d988a3c0ca4c331e4f339ad1c98b923dc6e86b948b6",
+  "bytes": 9187140,
+  "scope": "Actual CarePath source documents, converted and validated in v6 with prepared AI proposals. Plain-language display aliases preserve original evidence identifiers in supporting files. Embeddings and retrieval are illustrative, without live provider requests."
+}

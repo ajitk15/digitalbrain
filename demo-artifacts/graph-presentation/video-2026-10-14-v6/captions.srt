@@ -1,0 +1,239 @@
+1
+00:00:00,200 --> 00:00:04,139
+Let us build a Digital Brain using the CarePath documents
+
+2
+00:00:04,139 --> 00:00:08,078
+in our project. Start with just one file: user stories.
+
+3
+00:00:08,078 --> 00:00:12,016
+We will follow one example, tracking a referral. A referral
+
+4
+00:00:12,016 --> 00:00:15,955
+is a request for a patient to see another care
+
+5
+00:00:15,955 --> 00:00:19,500
+team. Watch how this one file becomes connected knowledge.
+
+6
+00:00:20,200 --> 00:00:24,596
+After upload checks, MarkItDown converts the Word file into readable
+
+7
+00:00:24,596 --> 00:00:28,992
+text. Here is the actual heading: U S zero eight,
+
+8
+00:00:28,992 --> 00:00:33,389
+Track a referral, F R zero eight. Below it is
+
+9
+00:00:33,389 --> 00:00:37,785
+the referral lifecycle. Django keeps this text with its source
+
+10
+00:00:37,785 --> 00:00:42,181
+identifier and content fingerprint. Every extracted fact can point back
+
+11
+00:00:42,181 --> 00:00:43,500
+to this file.
+
+12
+00:00:44,200 --> 00:00:48,157
+The normal graph begins with a document node. A node
+
+13
+00:00:48,157 --> 00:00:52,113
+is simply an item. Our Python builder adds section nodes
+
+14
+00:00:52,113 --> 00:00:56,070
+for the heading and ordinary text lines. Arrows connect the
+
+15
+00:00:56,070 --> 00:01:00,026
+document to those sections and mean contains section. The same
+
+16
+00:01:00,026 --> 00:01:03,983
+approach handles other content, including table rows and values. We
+
+17
+00:01:03,983 --> 00:01:07,939
+are showing a small part of this larger graph. So
+
+18
+00:01:07,939 --> 00:01:11,500
+far, we have captured the structure of the document.
+
+19
+00:01:12,200 --> 00:01:16,261
+Now enable optional A I enrichment. OpenAI or Claude reads
+
+20
+00:01:16,261 --> 00:01:20,322
+the text and proposes typed relationships. Look at the highlighted
+
+21
+00:01:20,322 --> 00:01:24,383
+heading. U S zero eight is a user story, and
+
+22
+00:01:24,383 --> 00:01:28,444
+F R zero eight is a requirement. They become two
+
+23
+00:01:28,444 --> 00:01:32,505
+business nodes, joined by references. The proposal carries the original
+
+24
+00:01:32,505 --> 00:01:36,566
+source and exact quotation. The document structure stays in the
+
+25
+00:01:36,566 --> 00:01:40,627
+graph underneath this new business layer. These links are still
+
+26
+00:01:40,627 --> 00:01:44,688
+proposals at this point; evidence checks decide whether they can
+
+27
+00:01:44,688 --> 00:01:45,500
+be accepted.
+
+28
+00:01:46,200 --> 00:01:50,148
+Now upload the architecture document. Its component table connects F
+
+29
+00:01:50,148 --> 00:01:54,097
+R zero eight to domain slash referral underscore state dot
+
+30
+00:01:54,097 --> 00:01:58,045
+py. That is the code module for the referral lifecycle.
+
+31
+00:01:58,045 --> 00:02:01,994
+The graph grows a code node and an implemented in
+
+32
+00:02:01,994 --> 00:02:05,942
+connection. Notice that F R zero eight is the same
+
+33
+00:02:05,942 --> 00:02:09,891
+requirement. Next, add the traceability spreadsheet. Its row connects Test
+
+34
+00:02:09,891 --> 00:02:13,839
+Lifecycle Map with F R zero eight. A test node
+
+35
+00:02:13,839 --> 00:02:17,788
+grows into the graph, joined by verifies. Three different files
+
+36
+00:02:17,788 --> 00:02:21,736
+now describe one connected story: what we need, where it
+
+37
+00:02:21,736 --> 00:02:24,500
+is implemented, and how it is tested.
+
+38
+00:02:25,200 --> 00:02:29,974
+Before accepting links, the application checks the source, exact quote,
+
+39
+00:02:29,974 --> 00:02:34,747
+named items, and allowed types and relationships. Matching names and
+
+40
+00:02:34,747 --> 00:02:39,521
+types become one shared requirement node. Each accepted connection keeps
+
+41
+00:02:39,521 --> 00:02:44,294
+its supporting document. F R zero eight joins the story,
+
+42
+00:02:44,294 --> 00:02:49,068
+code, and tests. These checks filter unsupported proposals; a person
+
+43
+00:02:49,068 --> 00:02:50,500
+still reviews meaning.
+
+44
+00:02:51,200 --> 00:02:55,415
+Prepare search adds a search structure beside the graph. With
+
+45
+00:02:55,415 --> 00:02:59,630
+embeddings enabled, OpenAI converts text into a numerical vector. Watch
+
+46
+00:02:59,630 --> 00:03:03,846
+the text become numbers and enter the search index. The
+
+47
+00:03:03,846 --> 00:03:08,061
+numbers represent meaning, not new graph facts. Later, a question
+
+48
+00:03:08,061 --> 00:03:12,276
+such as, how do we test referral tracking, gets its
+
+49
+00:03:12,276 --> 00:03:16,491
+own vector. Similarity search can find relevant text. Graph traversal
+
+50
+00:03:16,491 --> 00:03:20,706
+follows links to the requirement and tests. These vector values
+
+51
+00:03:20,706 --> 00:03:24,500
+are illustrative; unchanged text can reuse its stored vector.
+
+52
+00:03:25,200 --> 00:03:29,319
+Django saves a numbered draft. Graphify uses NetworkX and Leiden
+
+53
+00:03:29,319 --> 00:03:33,438
+clustering to organise existing graph nodes into themes for review.
+
+54
+00:03:33,438 --> 00:03:37,557
+The graph is now easier to explore across documents. Grouping
+
+55
+00:03:37,557 --> 00:03:41,676
+adds organisation; it does not add new facts or prove
+
+56
+00:03:41,676 --> 00:03:42,500
+a relationship.
+
+57
+00:03:43,200 --> 00:03:47,994
+A reviewer checks the evidence and publishes. Restricted sources are
+
+58
+00:03:47,994 --> 00:03:52,788
+excluded, and retrieval checks access and current evidence again. One
+
+59
+00:03:52,788 --> 00:03:57,582
+CarePath file has grown into connected stories, requirements, code, and
+
+60
+00:03:57,582 --> 00:03:59,500
+tests, with supporting sources.

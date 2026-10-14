@@ -1,0 +1,23 @@
+{
+  "duration_seconds": 240,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "frames": 5760,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "voice": "Microsoft Heera",
+  "voice_locale": "en-IN",
+  "voice_type": "local synthesized narration",
+  "captions": "Burned in, selectable track and SRT",
+  "full_file_decode": "passed",
+  "audio_present": "passed",
+  "visual_review": "Passed: reviewed exported AI proposal and search-index frames, compact captions, progressive graph preview and source labels.",
+  "sha256": "d310febd50a632fcf9f736ec25d6b0d78a959938943295d2bc627cf33c479b85",
+  "bytes": 9184017,
+  "scope": "Actual CarePath demo documents converted locally using MarkItDown; actual graph builder and validator with prepared AI proposals. Video shows a focused subset. Embedding values, search results and themes are illustrative. No live AI, embedding, publication or retrieval request.",
+  "source_revalidation": "carepath-revalidation.json: 4 shared business entities, 3 accepted business relationships; complete structural graph 459 nodes and 475 edges."
+}
