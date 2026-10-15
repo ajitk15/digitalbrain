@@ -1,0 +1,22 @@
+{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
+<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Code Graph</h1><p class="muted">Review a change against the indexed snapshot it starts from: what it touches, how far that reaches, and the requirements those files name.</p></div></div>
+{% include '_code_graph_tabs.html' %}
+<div class="split code-review-start"{% if pending %} data-document-pending{% endif %}>
+<section class="card"><div class="card-heading"><h2>Review changes</h2></div>
+{% if not repositories %}<p class="muted">Add a repository on the <a href="{% url 'code-graph' application.pk %}">Graph</a> tab first. A review compares a change with its indexed snapshot.</p>
+{% elif can_start %}<form method="post">{% csrf_token %}{{ form.non_field_errors }}
+<p>{{ form.repository.label_tag }}{{ form.repository }}</p>
+<fieldset class="purpose-cards"><legend>{{ form.kind.label }}</legend>{{ form.kind.errors }}{% for radio in form.kind %}<label class="purpose-card">{{ radio.tag }}<span><strong>{{ radio.choice_label }}</strong></span></label>{% endfor %}</fieldset>
+<p class="helptext">Working changes: what is on the server folder's disk now, compared with what was indexed. git is never run in the folder, so committed changes since the index count too. A branch or pull request: GitHub lists the files it touches, and only those are compared.</p>
+<p>{{ form.ref.label_tag }}{{ form.ref }}{{ form.ref.errors }}<span class="helptext">For "A GitHub branch".</span></p>
+<p>{{ form.number.label_tag }}{{ form.number }}{{ form.number.errors }}<span class="helptext">For "A pull request".</span></p>
+<div class="actions"><button class="button">{% icon "search" 13 %}Review changes</button></div></form>
+<p class="helptext">Free: the diff, the reach through the import graph and the requirement checks use no model. An AI review is a separate button on the result.</p>
+{% else %}<p class="muted">Owners and contributors start reviews. You can read the ones below.</p>{% endif %}
+</section>
+<section class="card"><div class="card-heading"><h2>Reviews</h2></div>
+{% if reviews %}<div class="table-wrap"><table><thead><tr><th>Change</th><th>Repository</th><th>Files</th><th>Status</th><th>AI</th></tr></thead><tbody>
+{% for item in reviews %}<tr><td><a href="{% url 'code-review' application.pk item.pk %}">{% if item.kind == 'local' %}Working changes{% elif item.kind == 'branch' %}Branch {{ item.ref }}{% else %}Pull request {{ item.number }}{% if item.ref %} · {{ item.ref }}{% endif %}{% endif %}</a><small>{{ item.created_at|date:"M d, H:i" }}</small></td><td>{{ item.repository.name }} <small>against v{{ item.snapshot.number }}</small></td><td>{% if item.status == 'ready' %}{{ item.summary.files|default:0 }}{% else %}–{% endif %}</td><td><span class="pill{% if item.status == 'failed' %} status-high{% endif %}">{{ item.get_status_display }}</span></td><td>{% if item.ai_status == 'ready' %}{{ item.ai_result.findings|length }} finding{{ item.ai_result.findings|length|pluralize }}{% elif item.ai_status %}{{ item.get_ai_status_display }}{% else %}<span class="muted">Not asked</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div>{% else %}<p class="muted">No reviews yet.</p>{% endif %}
+</section></div>
+{% endblock %}

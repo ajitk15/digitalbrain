@@ -17,7 +17,7 @@ from .code_graph_analysis import ROLES
 from .code_graph_ingest import refresh_head, register, register_local
 from .connectors import credential_location
 from .models import ApplicationGrant, CodeFile, CodeRepository
-from .services import audit
+from .services import audit, feature_enabled
 from .workbench import access
 
 
@@ -212,6 +212,19 @@ def language_mix(languages):
         row["label"] = "<0.1%" if row["share"] < 0.1 else f"{row['share']:.1f}%"
         offset += row["share"]
     return rows
+
+
+def tabs(app, active):
+    """The Code Graph tabs this application has, in order."""
+    found = [("graph", "Graph", reverse("code-graph", args=[app.pk]))]
+    if feature_enabled("code_review", app):
+        found.append(("reviews", "Reviews", reverse("code-reviews", args=[app.pk])))
+    if feature_enabled("code_docs", app):
+        found.append(("docs", "Documentation", reverse("code-docs", args=[app.pk])))
+    return [
+        {"key": key, "label": label, "url": url, "active": key == active}
+        for key, label, url in found
+    ]
 
 
 def can_manage(grant):
@@ -520,6 +533,7 @@ def code_graph(request, pk):
             # before anyone thinks to look at a connector screen, so the answer
             # belongs on this page too.
             "github_credential": credential_location(app, "github"),
+            "tabs": tabs(app, "graph"),
             "folders_enabled": code_graph_local.enabled(),
             "repository_folder": (
                 code_graph_local.path_of(repository)

@@ -1283,8 +1283,12 @@ class BranchDriftTests(TestCase):
         from platform_core.document_worker import LANES
 
         lanes = {name: [step.__name__ for step in steps_for()] for name, steps_for, _ in LANES}
+        # Reviews and reverse engineering share the lane; indexing stays first
+        # and the head check last.
         self.assertEqual(
-            lanes["code-graph"], ["process_next_repository", "process_next_head"]
+            lanes["code-graph"],
+            ["process_next_repository", "process_next_review", "process_next_review_ai",
+             "process_next_docs_ai", "process_next_head"],
         )
 
     def test_the_screen_says_which_it_is(self):

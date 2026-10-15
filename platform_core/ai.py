@@ -309,6 +309,10 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
     elif purpose == "document_review":
         if grant.role != "owner":
             raise PermissionDenied
+    elif purpose in {"code_review", "code_docs"}:
+        # Reads Code Graph's snapshots; pressed by someone who may index them.
+        access(user, app_id, "code_graph")
+        access(user, app_id, purpose, write=True)
     else:
         raise ValidationError("Unsupported AI purpose.")
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
@@ -357,6 +361,9 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         access(user, app_id, "code_factory", write=True)
     if purpose == "serviceops_triage":
         access(user, app_id, "service_ops", write=True)
+    if purpose in {"code_review", "code_docs"}:
+        access(user, app_id, "code_graph")
+        access(user, app_id, purpose, write=True)
     if receipt is not None:
         receipt.update(
             {

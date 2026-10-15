@@ -7,8 +7,10 @@ from platform_core import (
     api,
     automation_execution,
     benchmark,
+    code_docs,
     code_graph,
     code_knowledge,
+    code_review,
     connectors,
     documents,
     factory_views,
@@ -60,6 +62,17 @@ urlpatterns = [
         code_graph.code_file,
         name="code-file",
     ),
+    path(
+        "applications/<uuid:pk>/code-graph/reviews/",
+        code_review.code_reviews,
+        name="code-reviews",
+    ),
+    path(
+        "applications/<uuid:pk>/code-graph/reviews/<uuid:review_id>/",
+        code_review.code_review,
+        name="code-review",
+    ),
+    path("applications/<uuid:pk>/code-graph/docs/", code_docs.code_docs, name="code-docs"),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/delete/",
         documents.document_delete,

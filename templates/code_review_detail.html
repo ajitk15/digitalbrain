@@ -1,0 +1,36 @@
+{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
+<p><a href="{% url 'code-reviews' application.pk %}">← All reviews</a></p>
+<div class="page-heading"><div><p class="eyebrow">{{ review.repository.name }} · against snapshot v{{ review.snapshot.number }} <code>{{ review.snapshot.commit_sha|slice:':8' }}</code></p><h1>{% if review.kind == 'local' %}Working changes{% elif review.kind == 'branch' %}Branch {{ review.ref }}{% else %}Pull request {{ review.number }}{% endif %}</h1><p class="muted">{{ review.get_kind_display }}{% if review.head_repository %} · read from {{ review.head_repository }}{% if review.ref %} {{ review.ref }}{% endif %}{% endif %}{% if review.head_commit %} at <code>{{ review.head_commit|slice:':8' }}</code>{% endif %} · requested by {{ review.requested_by.username }} {{ review.created_at|timesince }} ago</p></div></div>
+{% include '_code_graph_tabs.html' %}
+<div{% if pending %} data-document-pending{% endif %}>
+{% if review.status == 'queued' or review.status == 'reading' %}<p class="notice" role="status">{% icon "info" %}<span>{{ review.get_status_display }}. This page refreshes on its own.</span></p>
+{% elif review.status == 'failed' %}<p class="notice notice-error" role="alert">{% icon "warning" %}<span>{{ review.error|default:"The change could not be read." }}</span></p>
+{% else %}
+{% for warning in review.warnings %}<p class="notice notice-warning">{% icon "warning" %}<span>{{ warning }}</span></p>{% endfor %}
+<div class="metrics"><div class="metric"><span>Files changed</span><strong>{{ summary.files }}</strong><span>+{{ summary.added }} −{{ summary.removed }} lines</span></div><div class="metric"><span>Files that depend on them</span><strong>{{ summary.dependents }}</strong><span>through the import graph</span></div><div class="metric"><span>Requirement passages</span><strong>{{ passages|length }}</strong><span>{% if revision %}knowledge graph v{{ revision.number }}{% else %}no published graph{% endif %}</span></div><div class="metric"><span>Routes changed</span><strong>{{ summary.routes|length }}</strong><span>added or removed</span></div></div>
+<div class="split">
+<section class="card"><div class="card-heading"><h2>Checks by rule</h2><span class="origin-tag origin-system">No model</span></div>
+{% if summary.checks %}<ul class="review-checks">{% for check in summary.checks %}<li class="{% if check.tone == 'ok' %}ba-gain{% else %}ba-loss{% endif %}">{% if check.tone == 'ok' %}{% icon "check" 12 %}{% else %}{% icon "warning" 12 %}{% endif %} {{ check.text }}</li>{% endfor %}</ul>{% else %}<p class="muted">Nothing to flag.</p>{% endif %}
+<h3>Requirements these files and lines name</h3>
+{% if passages %}<ul class="item-evidence">{% for item in passages %}<li><span class="origin-tag origin-knowledge_graph">Knowledge graph v{{ revision.number }}</span> <a href="{{ item.url }}">{{ item.title }} · line {{ item.line }}</a><p>“{{ item.quote }}”</p><small>{{ item.reason }}{% if item.code %} · <code>{{ item.code }}</code>{% endif %}. A reference, not proof it is met.</small></li>{% endfor %}</ul>
+{% elif revision %}<p class="muted">No published source names these files, or the identifiers on the changed lines.</p>{% else %}<p class="muted">Publish a knowledge graph to see the requirements these files rest on.</p>{% endif %}
+{% if summary.named %}<p class="muted"><small>Identifiers on changed lines: {% for item in summary.named %}<code>{{ item.identifier }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
+</section>
+<section class="card"><div class="card-heading"><h2>AI review</h2>{% if result.model %}<span class="origin-tag origin-system">{{ result.model }}</span>{% endif %}</div>
+{% if review.ai_status == 'queued' or review.ai_status == 'running' %}<p class="notice" role="status">{% icon "info" %}<span>The AI review is {{ review.get_ai_status_display|lower }}. This page refreshes on its own.</span></p>{% endif %}
+{% if review.ai_status == 'failed' %}<p class="notice notice-error" role="alert">{% icon "warning" %}<span>{{ review.ai_error }}</span></p>{% endif %}
+{% if review.ai_status == 'ready' %}
+{% for finding in findings %}<article class="review-finding review-{{ finding.severity }}"><p><span class="pill{% if finding.severity == 'high' %} status-high{% endif %}">{{ finding.severity_label }}</span> <span class="origin-tag origin-system">{{ finding.category_label }}</span> <strong>{{ finding.title }}</strong></p>{% if finding.explanation %}<p>{{ finding.explanation }}</p>{% endif %}
+<ul class="item-evidence">{% for quote in finding.quotes %}<li><span class="origin-tag {% if quote.kind == 'knowledge' %}origin-knowledge_graph{% else %}origin-code_graph{% endif %}">{% if quote.kind == 'diff' %}Change{% elif quote.kind == 'code' %}Code graph{% else %}Requirement{% endif %}</span> <small>{{ quote.title }}</small><pre class="source-text">{{ quote.text }}</pre></li>{% endfor %}</ul></article>
+{% empty %}<p class="muted">No findings. The model found nothing it could support with a quote.</p>{% endfor %}
+<p class="muted"><small>{% if result.dropped %}{{ result.dropped }} finding{{ result.dropped|pluralize }} left out: a quote was not found exactly in what it cited. {% endif %}{% if findings_gone %}{{ findings_gone }} no longer shown: the source it quoted has changed or been retired. {% endif %}Every quote is checked again against the stored change, the snapshot and the live source each time this page is drawn.</small></p>
+{% endif %}
+{% if can_ask %}{% if ai_configured %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="ai"><button class="button secondary">{% icon "send" 13 %}{% if review.ai_status == 'ready' %}Ask AI again{% else %}Ask AI to review{% endif %}</button></form><p class="muted"><small>A paid call under this application's AI budget, with a receipt. The same change is never paid for twice.</small></p>{% else %}<p class="muted">{% if grant.role == 'owner' %}Set up <a href="{% url 'ai-settings' application.pk %}">Code review in AI settings</a> to ask a model.{% else %}An owner can set up Code review in AI settings to ask a model.{% endif %}</p>{% endif %}{% elif review.ai_status != 'ready' and review.ai_status != 'queued' and review.ai_status != 'running' %}<p class="muted">Owners and contributors can ask for an AI review.</p>{% endif %}
+</section></div>
+<section class="card section"><div class="card-heading"><h2>Files</h2><span class="count">{{ files|length }}</span></div>
+{% for file in files %}<details class="review-file"{% if forloop.counter <= 3 %} open{% endif %}><summary><code>{{ file.path }}</code> <span class="pill">{{ file.get_change_display }}</span> <small>+{{ file.added }} −{{ file.removed }}{% for fact in summary.file_facts %}{% if fact.path == file.path and fact.dependents %} · {{ fact.dependents }} dependent{{ fact.dependents|pluralize }}{% endif %}{% endfor %}</small></summary>{% if file.diff %}<pre class="code-source">{{ file.diff }}</pre>{% else %}<p class="muted">No text difference.</p>{% endif %}</details>
+{% empty %}<p class="muted">Nothing the code graph reads has changed.</p>{% endfor %}
+</section>
+{% endif %}
+</div>
+{% endblock %}

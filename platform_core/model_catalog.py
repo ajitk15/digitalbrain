@@ -81,6 +81,17 @@ PURPOSE_NOTES = {
         "is about and is dropped if that quote is not in the document. Advisory: the rule-based "
         "content check and its score are unchanged."
     ),
+    "code_review": (
+        "Reviews a change in Code Graph - a folder's working changes, a branch or a pull "
+        "request - only when someone presses Ask AI on the review. Every finding quotes the "
+        "changed lines, the code around them or the requirement it rests on, and is dropped "
+        "if a quote is not found exactly. The same change is never paid for twice."
+    ),
+    "code_docs": (
+        "Describes each component of a repository's generated documentation in plain words, "
+        "only when someone asks on the Documentation tab. Every paragraph quotes the code it "
+        "rests on and is dropped if a quote is not in the file; it is labelled as AI-written."
+    ),
     "embeddings": (
         "Finds where to start looking by meaning, so a question worded differently from the "
         "source still reaches it. Relationships and passages are embedded when an AI graph run "

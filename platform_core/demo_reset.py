@@ -65,9 +65,12 @@ from .models import (
     BenchmarkRun,
     ChangePlan,
     ChatConversation,
+    CodeDocumentation,
     CodeFile,
     CodeRelationship,
     CodeRepository,
+    CodeReview,
+    CodeReviewFile,
     CodeSnapshot,
     Connector,
     Document,
@@ -114,7 +117,10 @@ ORDER = (
     (OpsEdge, "application_id__in"),
     (OpsNode, "application_id__in"),
     (OperationsGraph, "application_id__in"),
-    # The code graph.
+    # The code graph, and the reviews and documentation read from it.
+    (CodeReviewFile, "review__application_id__in"),
+    (CodeReview, "application_id__in"),
+    (CodeDocumentation, "application_id__in"),
     (CodeRelationship, "snapshot__repository__application_id__in"),
     (CodeFile, "snapshot__repository__application_id__in"),
     (CodeSnapshot, "repository__application_id__in"),
@@ -141,9 +147,13 @@ def imported(ids):
 
     An import is an ordinary entry with no document behind it, whose source is a
     record URL under its connector's namespace - the same test `connectors.prune`
-    uses to decide what a connector owns.
+    uses to decide what a connector owns. Documentation reverse-engineered from
+    the code graph is counted with them: it was made from the graph a reset
+    removes, and Code Graph is its connector.
     """
-    owned = Q(pk__in=[])
+    from .code_knowledge import DERIVED_PREFIX
+
+    owned = Q(application_id__in=ids, source__startswith=DERIVED_PREFIX)
     for connector in Connector.objects.filter(application_id__in=ids):
         try:
             namespace = kind_for(connector.kind).namespace(connector.config)

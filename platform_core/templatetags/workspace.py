@@ -118,7 +118,13 @@ def application_menu(context):
                 "document-delete",
             },
         ),
-        ("Code Graph", "code-graph", "code_graph", "code-graph", {"code-graph", "code-file"}),
+        (
+            "Code Graph",
+            "code-graph",
+            "code_graph",
+            "code-graph",
+            {"code-graph", "code-file", "code-reviews", "code-review", "code-docs"},
+        ),
         # Knowledge, Code Graph, Code Factory: what an application knows, what
         # its code is, and the pipeline that reads both. Chat sits after them
         # because it asks questions of that knowledge rather than building it,

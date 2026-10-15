@@ -258,6 +258,41 @@ own key, which bypasses per-application credentials and `AIUsage`, and its
 edges carry no quote for `graph_ai` to verify. A Graphify failure degrades a
 snapshot to partial, never to no snapshot.
 
+**Code review compares a change with its snapshot, and reads it like indexing
+does** (`code_review.py`, feature `code_review`, the Reviews tab on Code Graph).
+The base is always the repository's latest `CodeSnapshot`. Working changes in a
+folder are re-read through `local_sources` inside today's roots - git is still
+never run, so "changed" means "different on disk from what was indexed", and the
+page says so. A branch or pull request is read with the same clone indexing uses,
+and one GitHub compare call (`github_write.call`, so through `fetching`) names the
+files it touches against its merge base with the snapshot's commit; only those are
+compared, so a branch behind main does not read as undoing main, and a merge base
+other than the snapshot is said. A missing file counts as removed only when the
+head was read completely. The changed files' head text is kept
+(`CodeReviewFile`) so a quote from the change stays checkable after the branch
+moves. The checks by rule (reach through the import graph, routes and symbols
+added or removed, source with no test, requirement passages from
+`code_knowledge`) call no model. The AI review (purpose `code_review`) runs only
+on a button, on the code_graph worker lane as whoever pressed it; every finding
+quotes the diff, a dependent file or a requirement, a `requirement` finding must
+quote both a requirement and code, any quote not found exactly drops it, and each
+quote is checked again against the live text when the page is drawn. Results are
+cached in `DocumentAIResult` (task `change`) by the digest of what the model read.
+Nothing is posted to GitHub.
+
+**Reverse-engineered documentation is never requirement evidence for its own
+code** (`code_docs.py`, feature `code_docs`, the Documentation tab). It is written
+by rules from one snapshot - Python models by `ast`, routes as indexed, components
+as Graphify's Leiden clusters, traceability through `code_knowledge.links` - and
+every section is labelled read from code, inferred, verified reference or
+AI-written (purpose `code_docs`, on a button, every paragraph quoted and checked
+against the file). It becomes a knowledge source only when someone adds it, under
+`code-graph://<repository id>`, retiring the one before it (`active=False`).
+`code_knowledge.references` excludes that prefix (`DERIVED_PREFIX`), and with it
+every code-to-requirement link Code Factory and Code review use: a description
+derived from the code cannot show the code meets a requirement. Chat may cite it.
+A demonstration reset removes these entries with the code graph they came from.
+
 **SharePoint reads as the application, not as the user.** `sharepoint.py` uses
 app-only client credentials, so the app registration's grant is the boundary. Under
 `Sites.Read.All` an importing user can obtain documents they could not open

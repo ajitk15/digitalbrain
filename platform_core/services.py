@@ -39,6 +39,12 @@ FEATURES = {
     "chat": ("Knowledge chat", True),
     "knowledge": ("Knowledge sources", True),
     "code_graph": ("Code Graph", True),
+    # Both read Code Graph's snapshots and need it switched on as well. Not in
+    # PURPOSES: an Operations application made before these existed has no row
+    # for them, and a missing row reads as on - listing them there would make
+    # every such application look like an Engineering one too.
+    "code_review": ("Code review", True),
+    "code_docs": ("Reverse engineering", True),
     "code_factory": ("Code Factory plans", True),
     "connectors": ("External connectors", True),
     "service_ops": ("ServiceOps incident triage", True),
@@ -59,6 +65,8 @@ FEATURES = {
 #: Features screen group by it; nothing about whether a feature works does.
 FEATURE_AREAS = {
     "code_graph": "engineering",
+    "code_review": "engineering",
+    "code_docs": "engineering",
     "code_factory": "engineering",
     "service_ops": "operations",
     "connector_github": "connectors",

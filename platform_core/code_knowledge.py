@@ -25,6 +25,11 @@ PATH = re.compile(
 )
 MAX_FILES = 2000
 MAX_LINKS = 100
+#: Where documentation reverse-engineered from a repository is recorded
+#: (`code_docs.SOURCE_PREFIX`). Such a source describes the code, so it can never
+#: be the evidence that the code meets a requirement: it is left out here, and
+#: with it out of every code-to-requirement link Code Factory and Code review use.
+DERIVED_PREFIX = "code-graph://"
 
 
 def identifiers(text):
@@ -38,7 +43,7 @@ def references(revision):
     entries = {
         str(e.pk): e for e in KnowledgeEntry.objects.filter(
             application_id=revision.application_id, active=True, pk__in=source_ids
-        )
+        ).exclude(source__startswith=DERIVED_PREFIX)
     }
     checked, seen = {}, set()
     source_lines = {key: entry.content.splitlines() for key, entry in entries.items()}
@@ -61,7 +66,17 @@ def references(revision):
                 yield node, entry, line, quote
 
 
-def links(revision, snapshot, *, node_id=None, question=None, entry_id=None, file_id=None):
+def links(
+    revision,
+    snapshot,
+    *,
+    node_id=None,
+    question=None,
+    entry_id=None,
+    file_id=None,
+    file_ids=None,
+    limit=MAX_LINKS,
+):
     if (revision.application_id != snapshot.repository.application_id
             or snapshot.repository.retired_at is not None):
         return [], False
@@ -117,6 +132,8 @@ def links(revision, snapshot, *, node_id=None, question=None, entry_id=None, fil
         for file, code_line, code_quote, reason in candidates:
             if file_id is not None and str(file.pk) != str(file_id):
                 continue
+            if file_ids is not None and str(file.pk) not in file_ids:
+                continue
             key = (node, entry.pk, line, file.pk, reason)
             if key in seen:
                 continue
@@ -134,7 +151,7 @@ def links(revision, snapshot, *, node_id=None, question=None, entry_id=None, fil
                 "graph_url": reverse("graph", args=[revision.application_id])
                 + f"?version={revision.number}&node={node}",
             })
-            if len(result) >= MAX_LINKS:
+            if len(result) >= limit:
                 return result, True
     return result, capped
 

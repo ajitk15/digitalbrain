@@ -154,9 +154,20 @@ def code_graph_steps():
     Indexing first: a repository waiting to be read matters more than one whose
     branch may have advanced.
     """
+    from .code_docs import process_next_docs_ai
     from .code_graph_ingest import process_next_head, process_next_repository
+    from .code_review import process_next_review, process_next_review_ai
 
-    return (process_next_repository, process_next_head)
+    # A review reads a change the way indexing reads a repository, and its AI
+    # step waits on a provider the way a graph run does; both are asked for by
+    # someone waiting on the page, so they come before the branch check.
+    return (
+        process_next_repository,
+        process_next_review,
+        process_next_review_ai,
+        process_next_docs_ai,
+        process_next_head,
+    )
 
 
 def serviceops_steps():
