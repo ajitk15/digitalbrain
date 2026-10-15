@@ -1,0 +1,246 @@
+[
+ {
+  "file": "s00-00.wav",
+  "say": "Every I T team knows this situation."
+ },
+ {
+  "file": "s00-01.wav",
+  "say": "The rule is written in one document, the coding standard in another, the test finding is sitting in a spreadsheet, and the outage report is in Word."
+ },
+ {
+  "file": "s00-02.wav",
+  "say": "Each one knows a part of the story."
+ },
+ {
+  "file": "s00-03.wav",
+  "say": "Nobody sees the full picture, until something breaks."
+ },
+ {
+  "file": "s01-00.wav",
+  "say": "So let's start small, with just one file: our non-functional requirements spreadsheet."
+ },
+ {
+  "file": "s01-01.wav",
+  "say": "As soon as it's uploaded, it is scanned for viruses, and the platform keeps a fingerprint of the file."
+ },
+ {
+  "file": "s01-02.wav",
+  "say": "So far, nothing leaves the server."
+ },
+ {
+  "file": "s02-00.wav",
+  "say": "Next, Mark It Down converts the spreadsheet into Markdown."
+ },
+ {
+  "file": "s02-01.wav",
+  "say": "Each sheet becomes a heading, and each row becomes a line in a table."
+ },
+ {
+  "file": "s02-02.wav",
+  "say": "See this row: no unbounded queries."
+ },
+ {
+  "file": "s02-03.wav",
+  "say": "Every list A P I must cap its page size on the server."
+ },
+ {
+  "file": "s02-04.wav",
+  "say": "That is our rule for today."
+ },
+ {
+  "file": "s02-05.wav",
+  "say": "The conversion runs in a sealed process, with no network at all."
+ },
+ {
+  "file": "s02-06.wav",
+  "say": "And if a page is only a scanned image, Tesseract O C R can read it, and marks that text with how confident it is."
+ },
+ {
+  "file": "s02-07.wav",
+  "say": "The Markdown gets its own fingerprint, and every citation is checked against it later."
+ },
+ {
+  "file": "s03-00.wav",
+  "say": "Before building anything, the platform checks the document itself."
+ },
+ {
+  "file": "s03-01.wav",
+  "say": "Six simple checks, out of hundred."
+ },
+ {
+  "file": "s03-02.wav",
+  "say": "Is the text readable? Do the tables have proper column names? Are there headings? Does it say its version and owner? Is anything still marked T B D?"
+ },
+ {
+  "file": "s03-03.wav",
+  "say": "There is no A.I. here, so the same file always gets the same score."
+ },
+ {
+  "file": "s03-04.wav",
+  "say": "Our spreadsheet scores hundred. Ready."
+ },
+ {
+  "file": "s03-05.wav",
+  "say": "A raw export with no column names gets sixty, with the reason for every point lost."
+ },
+ {
+  "file": "s03-06.wav",
+  "say": "It only suggests. It never blocks."
+ },
+ {
+  "file": "s04-00.wav",
+  "say": "Now the graph."
+ },
+ {
+  "file": "s04-01.wav",
+  "say": "The document becomes one node, and each heading becomes a section."
+ },
+ {
+  "file": "s04-02.wav",
+  "say": "Each table row becomes a record, and each cell becomes a value."
+ },
+ {
+  "file": "s04-03.wav",
+  "say": "So our rule is linked to, verified by code review and automated test, and, on breach, blocks release."
+ },
+ {
+  "file": "s04-04.wav",
+  "say": "Three other rules also block release, so they meet at the same value node. That linking is free."
+ },
+ {
+  "file": "s04-05.wav",
+  "say": "Every node remembers its line, and its source fingerprint."
+ },
+ {
+  "file": "s04-06.wav",
+  "say": "No A.I. so far, and no cost."
+ },
+ {
+  "file": "s05-00.wav",
+  "say": "Same way, let's add four more files: the coding standard, the A P I specification, the test traceability matrix, and the outage postmortem."
+ },
+ {
+  "file": "s05-01.wav",
+  "say": "Each goes through the same steps: Markdown, quality check, structure."
+ },
+ {
+  "file": "s05-02.wav",
+  "say": "All four score hundred."
+ },
+ {
+  "file": "s05-03.wav",
+  "say": "The source check also notices that three of these files point to the same page-size rule."
+ },
+ {
+  "file": "s05-04.wav",
+  "say": "Now read them together, and the story is honestly quite shocking."
+ },
+ {
+  "file": "s05-05.wav",
+  "say": "In May, the test review found that patient search had no upper limit."
+ },
+ {
+  "file": "s05-06.wav",
+  "say": "In June, it was waived for the release."
+ },
+ {
+  "file": "s05-07.wav",
+  "say": "And in August, someone searched patients with a limit of one lakh records."
+ },
+ {
+  "file": "s05-08.wav",
+  "say": "The service read the whole table, and for forty-five minutes, sixty percent of requests failed."
+ },
+ {
+  "file": "s06-00.wav",
+  "say": "Structure tells us where things are written. To understand what they mean, we bring in A.I.."
+ },
+ {
+  "file": "s06-01.wav",
+  "say": "OpenAI or Claude reads each file, but it can only use a fixed vocabulary: eight types, like requirement, component and incident, and twelve relationships, like affects, violates and verifies."
+ },
+ {
+  "file": "s06-02.wav",
+  "say": "So it proposes: the outage affects the patient search A P I, and that A P I violates the page-size rule."
+ },
+ {
+  "file": "s06-03.wav",
+  "say": "Every proposal must carry an exact quote."
+ },
+ {
+  "file": "s06-04.wav",
+  "say": "If the quote is not found word for word, it is simply rejected."
+ },
+ {
+  "file": "s06-05.wav",
+  "say": "The same A P I, named the same way in two files, becomes one node."
+ },
+ {
+  "file": "s06-06.wav",
+  "say": "And only new or changed files go to the model, within the monthly budget."
+ },
+ {
+  "file": "s07-00.wav",
+  "say": "Next, we prepare for search."
+ },
+ {
+  "file": "s07-01.wav",
+  "say": "A keyword index, B M 25, is always built. It is fast, and it is free."
+ },
+ {
+  "file": "s07-02.wav",
+  "say": "If the owner switches on embeddings, each passage also gets a vector, so a question can match by meaning, and not just by words."
+ },
+ {
+  "file": "s07-03.wav",
+  "say": "Both rankings are combined, and the graph can walk two steps along these relationships to collect connected evidence."
+ },
+ {
+  "file": "s08-00.wav",
+  "say": "Every build is saved as a numbered draft."
+ },
+ {
+  "file": "s08-01.wav",
+  "say": "Graphify groups the nodes into themes using Lyden clustering, so the graph is easier to explore."
+ },
+ {
+  "file": "s08-02.wav",
+  "say": "And the draft is tested on its own: on CarePath's sixteen test questions, the right document comes back for fifteen."
+ },
+ {
+  "file": "s09-00.wav",
+  "say": "Finally, a person reviews the draft and publishes it."
+ },
+ {
+  "file": "s09-01.wav",
+  "say": "Only the published version answers questions."
+ },
+ {
+  "file": "s09-02.wav",
+  "say": "So let's ask: why did the service go down on the fourteenth of August?"
+ },
+ {
+  "file": "s09-03.wav",
+  "say": "The answer points to the postmortem, the test-review finding, and the page-size rule."
+ },
+ {
+  "file": "s09-04.wav",
+  "say": "And every citation is checked again, live: the source is still active, the fingerprint has not changed, and the quote is still there."
+ },
+ {
+  "file": "s09-05.wav",
+  "say": "Restricted documents are never used."
+ },
+ {
+  "file": "s09-06.wav",
+  "say": "So, one spreadsheet became Markdown, then a small graph."
+ },
+ {
+  "file": "s09-07.wav",
+  "say": "Four files later, the graph tells the complete story: the rule, the gap, the waiver, and the outage."
+ },
+ {
+  "file": "s09-08.wav",
+  "say": "And every line points back to where it came from."
+ }
+]

@@ -1,0 +1,22 @@
+{
+  "duration_seconds": 240,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "frames": 5760,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "voice": "Microsoft Heera",
+  "voice_locale": "en-IN",
+  "voice_type": "local synthesized narration",
+  "captions": "Burned in, selectable track and SRT",
+  "full_file_decode": "passed",
+  "audio_present": "passed",
+  "visual_review": "Passed: inspected encoded structural layer and AI relationship layer, circular nodes, labels and captions.",
+  "sha256": "dfea02479d21315331936b072da40db0c87d8e54de764de709fb74d1a6dcb68d",
+  "bytes": 10134875,
+  "scope": "Actual synthetic graph functions with prepared AI proposals. Upload/conversion, embedding provider call, storage and publication are illustrated. Graphify themes use actual synthetic grouping. Not a live application screen recording."
+}

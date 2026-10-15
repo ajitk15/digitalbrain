@@ -1,0 +1,53 @@
+;FFMETADATA1
+title=Digital Brain - Graph generation in two minutes
+comment=Teaching demo: real builder and validator; controlled AI proposals.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=9000
+title=How simple words become a graph
+[CHAPTER]
+TIMEBASE=1/1000
+START=9000
+END=21000
+title=Read a short note
+[CHAPTER]
+TIMEBASE=1/1000
+START=21000
+END=33000
+title=Find the document parts
+[CHAPTER]
+TIMEBASE=1/1000
+START=33000
+END=49000
+title=Connect the key items
+[CHAPTER]
+TIMEBASE=1/1000
+START=49000
+END=63000
+title=Check the quoted words
+[CHAPTER]
+TIMEBASE=1/1000
+START=63000
+END=75000
+title=Keep one item; keep its source
+[CHAPTER]
+TIMEBASE=1/1000
+START=75000
+END=88000
+title=See the real builder output
+[CHAPTER]
+TIMEBASE=1/1000
+START=88000
+END=100000
+title=Save and review
+[CHAPTER]
+TIMEBASE=1/1000
+START=100000
+END=110000
+title=Publish the reviewed version
+[CHAPTER]
+TIMEBASE=1/1000
+START=110000
+END=120000
+title=Read. Find. Connect. Check.

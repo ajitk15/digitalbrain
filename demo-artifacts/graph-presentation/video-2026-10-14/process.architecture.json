@@ -1,0 +1,286 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Digital Brain \u00b7 read, connect, check, review and publish",
+    "quality_profile": "showcase",
+    "locale": "en"
+  },
+  "components": [
+    {
+      "id": "source",
+      "type": "external",
+      "label": "Read a short library note",
+      "sublabel": "The library app uses a book list.",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "convert",
+      "type": "backend",
+      "label": "Read the file",
+      "sublabel": "MarkItDown \u00b7 normalized text",
+      "pos": [
+        40,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "structure",
+      "type": "backend",
+      "label": "Find document parts",
+      "sublabel": "Python \u00b7 document and section nodes",
+      "pos": [
+        300,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "propose",
+      "type": "cloud",
+      "label": "Connect key items",
+      "sublabel": "Optional AI \u00b7 app uses book list",
+      "pos": [
+        300,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "quote",
+      "type": "security",
+      "label": "Check the quoted words",
+      "sublabel": "Exact quote and names in source",
+      "pos": [
+        560,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "types",
+      "type": "security",
+      "label": "Check allowed connections",
+      "sublabel": "Ontology \u00b7 allowed types and labels",
+      "pos": [
+        560,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "save",
+      "type": "database",
+      "label": "Save a numbered draft",
+      "sublabel": "Django JSON \u00b7 source + fingerprint",
+      "pos": [
+        820,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "quality",
+      "type": "backend",
+      "label": "Review graph and evidence",
+      "sublabel": "Coverage, missing links and quotes",
+      "pos": [
+        820,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "publish",
+      "type": "frontend",
+      "label": "Publish reviewed version",
+      "sublabel": "Human action \u00b7 published snapshot",
+      "pos": [
+        1080,
+        150
+      ],
+      "size": [
+        220,
+        100
+      ]
+    },
+    {
+      "id": "themes",
+      "type": "backend",
+      "label": "Group connected items",
+      "sublabel": "Graphify + NetworkX / Leiden",
+      "pos": [
+        1080,
+        350
+      ],
+      "size": [
+        220,
+        100
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "1 \u00b7 Ingest and read",
+      "wraps": [
+        "source",
+        "convert"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "2 \u00b7 Build relationships",
+      "wraps": [
+        "structure",
+        "propose"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "security-group",
+      "label": "3 \u00b7 Validate evidence",
+      "wraps": [
+        "quote",
+        "types"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "4 \u00b7 Save and review",
+      "wraps": [
+        "save",
+        "quality"
+      ],
+      "pad": 18
+    },
+    {
+      "kind": "region",
+      "label": "5 \u00b7 Publish and explore",
+      "wraps": [
+        "publish",
+        "themes"
+      ],
+      "pad": 18
+    }
+  ],
+  "connections": [
+    {
+      "from": "source",
+      "to": "convert"
+    },
+    {
+      "from": "convert",
+      "to": "structure",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "structure",
+      "to": "propose",
+      "label": "if enabled",
+      "labelDy": 35
+    },
+    {
+      "from": "propose",
+      "to": "quote",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "quote",
+      "to": "types",
+      "variant": "security"
+    },
+    {
+      "from": "types",
+      "to": "save",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "structure",
+      "to": "save",
+      "label": "structural-only path",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "top",
+      "via": [
+        [
+          410,
+          80
+        ],
+        [
+          930,
+          80
+        ]
+      ]
+    },
+    {
+      "from": "save",
+      "to": "quality"
+    },
+    {
+      "from": "quality",
+      "to": "publish",
+      "label": "human review",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "publish",
+      "to": "themes",
+      "label": "view only",
+      "labelDy": 35
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Simple source example",
+      "items": [
+        "The library app uses a book list.",
+        "The exact words remain attached to the accepted link."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What is optional",
+      "items": [
+        "Without AI: document structure only; no proposed meaning links.",
+        "Embeddings are optional; Graphify themes do not create facts."
+      ]
+    }
+  ]
+}

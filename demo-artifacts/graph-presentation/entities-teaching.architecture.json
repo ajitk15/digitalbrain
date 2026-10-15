@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "Steps 4–6: Propose, check and join business connections", "locale": "en", "quality_profile": "showcase", "viewBox": [1100, 640]},
+  "components": [
+    {"id": "claims-guide", "type": "external", "label": "Claims Guide", "sublabel": "Runbook entity", "pos": [70, 275], "size": [230, 90]},
+    {"id": "claims-portal", "type": "backend", "label": "Claims Portal", "sublabel": "One shared Component", "pos": [450, 275], "size": [250, 90]},
+    {"id": "policy-database", "type": "database", "label": "Policy Database", "sublabel": "Component · policy details", "pos": [820, 70], "size": [250, 90]},
+    {"id": "claims-database", "type": "database", "label": "Claims Database", "sublabel": "Component · claim records", "pos": [820, 490], "size": [250, 90]}
+  ],
+  "connections": [
+    {"id": "guide-explains-portal", "from": "claims-guide", "to": "claims-portal", "label": "explains"},
+    {"id": "portal-uses-policy", "from": "claims-portal", "to": "policy-database", "label": "uses"},
+    {"id": "portal-uses-claims", "from": "claims-portal", "to": "claims-database", "label": "uses"}
+  ],
+  "cards": [
+    {"dot": "violet", "title": "AI proposes; Python checks", "items": ["OpenAI / Claude proposals carry exact source quotations.", "Quote, names and allowed types are checked before accepting a link."]},
+    {"dot": "emerald", "title": "Four business nodes, three connections", "items": ["The complete graph also includes document and provenance nodes.", "Stored labels: uses → depends on; explains → covers."]}
+  ]
+}

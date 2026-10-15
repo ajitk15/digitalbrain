@@ -1,0 +1,87 @@
+1
+00:00:00,200 --> 00:00:05,083
+Let's see how Digital Brain turns a short library note into a graph, using
+
+2
+00:00:05,083 --> 00:00:08,223
+simple phases and a repeatable run of our project.
+
+3
+00:00:09,200 --> 00:00:15,146
+The library app uses a book list. A help guide explains the app. The
+
+4
+00:00:15,146 --> 00:00:19,818
+book list is a small data store. These notes provide evidence.
+
+5
+00:00:21,200 --> 00:00:27,584
+Mark It Down reads uploaded files. Python finds documents and sections. Each item becomes
+
+6
+00:00:27,584 --> 00:00:32,600
+a node; a connection is an edge. Meaning links come later.
+
+7
+00:00:33,200 --> 00:00:39,938
+Optional OpenAI or Claude enrichment finds key items: library app and book list. It
+
+8
+00:00:39,938 --> 00:00:46,675
+proposes their uses connection, item types, source identifier, and exact quote. Similar connection words
+
+9
+00:00:46,675 --> 00:00:48,600
+get one standard label.
+
+10
+00:00:49,200 --> 00:00:54,885
+The server checks the quote, named items, and allowed types. An invented toy-list quote
+
+11
+00:00:54,885 --> 00:01:00,570
+is rejected because it is absent from the note. These filters reduce errors; they
+
+12
+00:01:00,570 --> 00:01:02,600
+do not prove every interpretation.
+
+13
+00:01:03,200 --> 00:01:09,280
+Both notes refer to one library app, so matching names are merged. Every connection
+
+14
+00:01:09,280 --> 00:01:14,057
+keeps its source, quote, and content fingerprint to detect later changes.
+
+15
+00:01:15,200 --> 00:01:21,131
+Our actual builder run accepts two meaning links, merges the shared app, and rejects
+
+16
+00:01:21,131 --> 00:01:27,062
+the invented quote. AI proposals are controlled here; no live model call is made.
+
+17
+00:01:28,200 --> 00:01:34,584
+Django saves a numbered draft. Review quality and evidence. Graphify groups existing connected nodes
+
+18
+00:01:34,584 --> 00:01:39,600
+using Network X and Leiden clustering; it does not invent facts.
+
+19
+00:01:40,200 --> 00:01:47,511
+A person publishes the reviewed graph. Answers check current evidence and viewer access. Restricted
+
+20
+00:01:47,511 --> 00:01:49,600
+sources stay outside AI.
+
+21
+00:01:50,200 --> 00:01:56,182
+A graph connects useful items and keeps their original evidence. AI suggests links. The
+
+22
+00:01:56,182 --> 00:01:59,600
+application checks them. A person reviews and publishes.

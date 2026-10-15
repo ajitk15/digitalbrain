@@ -1,0 +1,24 @@
+{
+  "duration_seconds": 240,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "frames": 5760,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "voice": "Microsoft Heera",
+  "voice_locale": "en-IN",
+  "voice_type": "local synthesized narration",
+  "captions": "Burned in, selectable track and SRT",
+  "full_file_decode": "passed",
+  "audio_present": "passed",
+  "visual_review": "passed",
+  "visual_review_scope": "Encoded frames from all nine chapters, additional structure and extraction frames, and corrected closing scene inspected for readability and overlap.",
+  "caption_alignment": "Phrase timing estimated from narration length; not word-aligned transcription.",
+  "sha256": "fbfe6898d24bf3be5fc68c4d567908c1a0ce822ca5d6ecf4c4b300c436c724ee",
+  "bytes": 8346461,
+  "scope": "Actual synthetic graph functions with prepared AI proposals. Upload/conversion, embedding provider call, storage and publication are illustrated. Graphify themes use actual synthetic grouping. Not a live application screen recording."
+}

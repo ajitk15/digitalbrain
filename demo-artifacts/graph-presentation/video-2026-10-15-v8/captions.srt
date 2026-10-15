@@ -1,0 +1,379 @@
+1
+00:00:00,500 --> 00:00:05,687
+Most of an application's documentation is spread across many different files.
+
+2
+00:00:06,137 --> 00:00:11,605
+The requirement lives in a spreadsheet, the coding standard in a Markdown file,
+
+3
+00:00:11,605 --> 00:00:16,588
+the API in its specification, the test results in a traceability matrix,
+
+4
+00:00:16,588 --> 00:00:18,803
+and the outage in a Word report.
+
+5
+00:00:19,253 --> 00:00:24,274
+Each file holds one piece of the story, but none of them can tell it alone.
+
+6
+00:00:24,724 --> 00:00:29,184
+So nobody puts the pieces together, until one afternoon in August,
+
+7
+00:00:29,184 --> 00:00:32,225
+a single search takes the whole service down.
+
+8
+00:00:33,542 --> 00:00:38,722
+Let's see how Digital Brain, a Python platform, brings that story together,
+
+9
+00:00:38,722 --> 00:00:44,455
+starting with just one of these files: the non-functional requirements spreadsheet.
+
+10
+00:00:44,905 --> 00:00:47,230
+As soon as the file is uploaded,
+
+11
+00:00:47,230 --> 00:00:53,330
+the platform performs a security check and takes a unique SHA-256 fingerprint of it,
+
+12
+00:00:53,330 --> 00:00:56,381
+so we can always tell if it changes later.
+
+13
+00:00:57,667 --> 00:01:03,789
+Next, MarkItDown, an open-source converter, turns the spreadsheet into Markdown:
+
+14
+00:01:03,789 --> 00:01:07,462
+plain text that both people and an LLM can read.
+
+15
+00:01:07,912 --> 00:01:12,452
+Each sheet becomes a heading, and each row becomes a line in a table.
+
+16
+00:01:12,902 --> 00:01:15,339
+Now look at this highlighted row.
+
+17
+00:01:15,619 --> 00:01:19,555
+It says something simple: when someone asks for a list,
+
+18
+00:01:19,555 --> 00:01:23,206
+the server must limit how many items it sends back.
+
+19
+00:01:23,656 --> 00:01:25,715
+We'll call it the page-size rule,
+
+20
+00:01:25,715 --> 00:01:30,020
+and the rest of this story is about what happened when it was broken.
+
+21
+00:01:30,470 --> 00:01:33,623
+The Markdown also gets a fingerprint of its own,
+
+22
+00:01:33,623 --> 00:01:38,155
+because every answer will later be checked against exactly this text.
+
+23
+00:01:39,458 --> 00:01:45,195
+Before building anything, there is one more question to ask: can we trust this file?
+
+24
+00:01:45,645 --> 00:01:48,999
+A graph is only as good as what goes into it.
+
+25
+00:01:49,279 --> 00:01:55,037
+A table with no column names gives you nodes called "column one" and "column two",
+
+26
+00:01:55,037 --> 00:02:00,092
+a half-finished document marked TBD gives answers that are not true yet,
+
+27
+00:02:00,092 --> 00:02:03,463
+and a badly scanned page, read by Tesseract OCR,
+
+28
+00:02:03,463 --> 00:02:06,623
+can match a quote exactly and still be wrong.
+
+29
+00:02:07,073 --> 00:02:10,790
+So the platform scores every document out of hundred,
+
+30
+00:02:10,790 --> 00:02:14,017
+using six rule-based checks written in Python,
+
+31
+00:02:14,017 --> 00:02:18,646
+with no LLM involved, so the same file always gets the same score.
+
+32
+00:02:19,096 --> 00:02:21,790
+Our spreadsheet scores a full hundred.
+
+33
+00:02:22,070 --> 00:02:25,732
+A raw export with no column names scores only sixty,
+
+34
+00:02:25,732 --> 00:02:29,957
+and the platform shows exactly which points it lost and why.
+
+35
+00:02:30,407 --> 00:02:36,740
+The score is advice, not a gate: the owner decides whether to fix the file or go ahead.
+
+36
+00:02:38,042 --> 00:02:43,569
+Now Python code builds the first graph, and it uses just four kinds of node.
+
+37
+00:02:44,019 --> 00:02:47,250
+The whole spreadsheet becomes a document node.
+
+38
+00:02:47,530 --> 00:02:50,837
+Each heading inside it becomes a section node,
+
+39
+00:02:50,837 --> 00:02:53,999
+like Availability, Performance and Security.
+
+40
+00:02:54,449 --> 00:02:59,274
+Each table row becomes a record node, and here is our page-size rule.
+
+41
+00:02:59,724 --> 00:03:02,772
+And each cell in that row becomes a value node:
+
+42
+00:03:02,772 --> 00:03:06,468
+the rule is checked by code review and an automated test,
+
+43
+00:03:06,468 --> 00:03:09,321
+and if it is broken, the release is blocked.
+
+44
+00:03:09,771 --> 00:03:14,897
+Three other rules also block the release, so they share this same value node,
+
+45
+00:03:14,897 --> 00:03:17,826
+and that is how related rules get connected.
+
+46
+00:03:18,276 --> 00:03:21,537
+Every node keeps the exact line it came from,
+
+47
+00:03:21,537 --> 00:03:26,247
+and since no LLM has been used so far, all of this costs nothing.
+
+48
+00:03:27,542 --> 00:03:31,731
+Now let's add the other four files: the coding standard,
+
+49
+00:03:31,731 --> 00:03:37,566
+the API specification, the test traceability matrix and the outage postmortem.
+
+50
+00:03:38,016 --> 00:03:42,751
+Each one goes through the same steps, and all four score a full hundred.
+
+51
+00:03:43,201 --> 00:03:47,908
+Looking across the files, the source check notices something interesting:
+
+52
+00:03:47,908 --> 00:03:50,939
+three of them point to the same page-size rule.
+
+53
+00:03:51,389 --> 00:03:56,270
+And when we read them together, the story they tell is quite insightful.
+
+54
+00:03:56,720 --> 00:04:02,602
+In May, the test review found that patient search had no upper limit on its page size.
+
+55
+00:04:03,052 --> 00:04:07,113
+In June, that finding was waived so the release could go ahead,
+
+56
+00:04:07,113 --> 00:04:10,077
+bundled with two others under a single reason.
+
+57
+00:04:10,527 --> 00:04:15,640
+Then in August, someone searched patients with a limit of one lakh records.
+
+58
+00:04:16,090 --> 00:04:18,991
+The service tried to read the whole table,
+
+59
+00:04:18,991 --> 00:04:23,481
+and for forty-five minutes, sixty percent of all requests failed.
+
+60
+00:04:24,792 --> 00:04:29,317
+We could see that story because we read all five files ourselves.
+
+61
+00:04:29,767 --> 00:04:33,525
+The graph cannot, yet: it links things inside each file,
+
+62
+00:04:33,525 --> 00:04:36,275
+but it cannot tell that the outage in the
+
+63
+00:04:36,275 --> 00:04:39,563
+Word report is about the rule in the spreadsheet.
+
+64
+00:04:40,013 --> 00:04:45,474
+To connect the files by meaning, we bring in an LLM, OpenAI or Claude.
+
+65
+00:04:45,924 --> 00:04:51,917
+It reads each file, but it may only use a short, fixed list: eight kinds of thing,
+
+66
+00:04:51,917 --> 00:04:58,201
+like a requirement or an incident, and twelve kinds of link, like affects or violates.
+
+67
+00:04:58,651 --> 00:05:03,286
+To keep costs low, it reads only files that are new or have changed,
+
+68
+00:05:03,286 --> 00:05:05,944
+and it stays within the monthly budget.
+
+69
+00:05:06,394 --> 00:05:12,311
+So it suggests links like these: the August outage affected the patient search API,
+
+70
+00:05:12,311 --> 00:05:15,019
+and that API broke the page-size rule.
+
+71
+00:05:15,469 --> 00:05:18,298
+The same standard of quality applies here:
+
+72
+00:05:18,298 --> 00:05:22,607
+the LLM must prove every link with an exact quote from the file,
+
+73
+00:05:22,607 --> 00:05:25,705
+and only links with a matching quote are kept.
+
+74
+00:05:26,155 --> 00:05:32,128
+If the quote is not in the file word for word, the link is thrown away, like this one.
+
+75
+00:05:32,578 --> 00:05:38,577
+And when two files name the same API in the same way, they are joined into one node.
+
+76
+00:05:39,027 --> 00:05:43,274
+Now the outage, the API and the rule form one connected chain,
+
+77
+00:05:43,274 --> 00:05:48,959
+so a question about the outage can be traced all the way back to the rule it broke.
+
+78
+00:05:50,250 --> 00:05:55,755
+Before anyone asks a question, the platform gets ready to search in two ways.
+
+79
+00:05:56,205 --> 00:06:02,913
+A BM25 keyword index finds passages by their exact words, which is fast and free.
+
+80
+00:06:03,363 --> 00:06:07,948
+If the owner turns on embeddings, each passage also gets a vector,
+
+81
+00:06:07,948 --> 00:06:10,657
+so a question can match by meaning too.
+
+82
+00:06:11,107 --> 00:06:16,531
+Then, from the best matches, the search follows the graph's links two steps further,
+
+83
+00:06:16,531 --> 00:06:21,373
+which is how a question about the outage can reach the rule and the waiver.
+
+84
+00:06:22,667 --> 00:06:24,905
+Every build is saved as a draft,
+
+85
+00:06:24,905 --> 00:06:29,592
+and Graphify groups its nodes into themes so people can explore it.
+
+86
+00:06:30,042 --> 00:06:33,476
+Before anyone relies on it, the draft is tested:
+
+87
+00:06:33,476 --> 00:06:39,199
+on CarePath's sixteen test questions, the right document comes back for fifteen.
+
+88
+00:06:39,649 --> 00:06:42,485
+Once a person reviews it and publishes it,
+
+89
+00:06:42,485 --> 00:06:45,592
+only that published version answers questions.
+
+90
+00:06:46,042 --> 00:06:51,045
+So let's ask: why did the service go down on the fourteenth of August?
+
+91
+00:06:51,495 --> 00:06:56,768
+The answer points to the postmortem, the test finding and the page-size rule,
+
+92
+00:06:56,768 --> 00:07:00,808
+and each source is checked again, live, before it is shown.
+
+93
+00:07:01,258 --> 00:07:03,470
+The pieces were always there.
+
+94
+00:07:03,750 --> 00:07:08,954
+Now, for the first time, they tell the story together: the rule, the gap,
+
+95
+00:07:08,954 --> 00:07:13,944
+the waiver and the outage, each pointing back to where it was written.

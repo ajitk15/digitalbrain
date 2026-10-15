@@ -1,0 +1,323 @@
+1
+00:00:00,500 --> 00:00:03,329
+Every IT team knows this situation.
+
+2
+00:00:03,609 --> 00:00:08,017
+The rule is written in one document, the coding standard in another,
+
+3
+00:00:08,017 --> 00:00:13,138
+the test finding is sitting in a spreadsheet, and the outage report is in Word.
+
+4
+00:00:13,588 --> 00:00:16,148
+Each one knows a part of the story.
+
+5
+00:00:16,428 --> 00:00:20,247
+Nobody sees the full picture, until something breaks.
+
+6
+00:00:21,542 --> 00:00:27,847
+So let's start small, with just one file: our non-functional requirements spreadsheet.
+
+7
+00:00:28,297 --> 00:00:31,832
+As soon as it's uploaded, it is scanned for viruses,
+
+8
+00:00:31,832 --> 00:00:35,163
+and the platform keeps a fingerprint of the file.
+
+9
+00:00:35,613 --> 00:00:38,553
+So far, nothing leaves the server.
+
+10
+00:00:39,833 --> 00:00:44,232
+Next, MarkItDown converts the spreadsheet into Markdown.
+
+11
+00:00:44,512 --> 00:00:49,051
+Each sheet becomes a heading, and each row becomes a line in a table.
+
+12
+00:00:49,501 --> 00:00:52,623
+See this row: no unbounded queries.
+
+13
+00:00:52,903 --> 00:00:56,959
+Every list API must cap its page size on the server.
+
+14
+00:00:57,239 --> 00:00:59,324
+That is our rule for today.
+
+15
+00:00:59,604 --> 00:01:04,211
+The conversion runs in a sealed process, with no network at all.
+
+16
+00:01:04,661 --> 00:01:09,404
+And if a page is only a scanned image, Tesseract OCR can read it,
+
+17
+00:01:09,404 --> 00:01:12,688
+and marks that text with how confident it is.
+
+18
+00:01:13,138 --> 00:01:19,008
+The Markdown gets its own fingerprint, and every citation is checked against it later.
+
+19
+00:01:20,292 --> 00:01:24,868
+Before building anything, the platform checks the document itself.
+
+20
+00:01:25,318 --> 00:01:28,379
+Six simple checks, out of hundred.
+
+21
+00:01:28,659 --> 00:01:34,532
+Is the text readable? Do the tables have proper column names? Are there headings?
+
+22
+00:01:34,532 --> 00:01:39,173
+Does it say its version and owner? Is anything still marked TBD?
+
+23
+00:01:39,623 --> 00:01:44,539
+There is no AI here, so the same file always gets the same score.
+
+24
+00:01:44,989 --> 00:01:48,161
+Our spreadsheet scores hundred. Ready.
+
+25
+00:01:48,441 --> 00:01:54,251
+A raw export with no column names gets sixty, with the reason for every point lost.
+
+26
+00:01:54,701 --> 00:01:57,953
+It only suggests. It never blocks.
+
+27
+00:01:59,250 --> 00:02:00,786
+Now the graph.
+
+28
+00:02:01,066 --> 00:02:05,605
+The document becomes one node, and each heading becomes a section.
+
+29
+00:02:06,055 --> 00:02:10,428
+Each table row becomes a record, and each cell becomes a value.
+
+30
+00:02:10,878 --> 00:02:16,268
+So our rule is linked to, verified by code review and automated test,
+
+31
+00:02:16,268 --> 00:02:18,690
+and, on breach, blocks release.
+
+32
+00:02:19,140 --> 00:02:21,824
+Three other rules also block release,
+
+33
+00:02:21,824 --> 00:02:26,032
+so they meet at the same value node. That linking is free.
+
+34
+00:02:26,482 --> 00:02:30,776
+Every node remembers its line, and its source fingerprint.
+
+35
+00:02:31,056 --> 00:02:34,007
+No AI so far, and no cost.
+
+36
+00:02:35,292 --> 00:02:39,774
+Same way, let's add four more files: the coding standard,
+
+37
+00:02:39,774 --> 00:02:45,987
+the API specification, the test traceability matrix, and the outage postmortem.
+
+38
+00:02:46,437 --> 00:02:51,819
+Each goes through the same steps: Markdown, quality check, structure.
+
+39
+00:02:52,269 --> 00:02:54,249
+All four score hundred.
+
+40
+00:02:54,529 --> 00:02:57,386
+The source check also notices that three of
+
+41
+00:02:57,386 --> 00:03:00,376
+these files point to the same page-size rule.
+
+42
+00:03:00,826 --> 00:03:05,431
+Now read them together, and the story is honestly quite shocking.
+
+43
+00:03:05,881 --> 00:03:10,664
+In May, the test review found that patient search had no upper limit.
+
+44
+00:03:11,114 --> 00:03:14,058
+In June, it was waived for the release.
+
+45
+00:03:14,338 --> 00:03:19,425
+And in August, someone searched patients with a limit of one lakh records.
+
+46
+00:03:19,875 --> 00:03:22,191
+The service read the whole table,
+
+47
+00:03:22,191 --> 00:03:26,471
+and for forty-five minutes, sixty percent of requests failed.
+
+48
+00:03:27,792 --> 00:03:32,892
+Structure tells us where things are written. To understand what they mean,
+
+49
+00:03:32,892 --> 00:03:33,925
+we bring in AI.
+
+50
+00:03:34,375 --> 00:03:40,875
+OpenAI or Claude reads each file, but it can only use a fixed vocabulary: eight types,
+
+51
+00:03:40,875 --> 00:03:43,974
+like requirement, component and incident,
+
+52
+00:03:43,974 --> 00:03:48,660
+and twelve relationships, like affects, violates and verifies.
+
+53
+00:03:49,110 --> 00:03:53,577
+So it proposes: the outage affects the patient search API,
+
+54
+00:03:53,577 --> 00:03:56,734
+and that API violates the page-size rule.
+
+55
+00:03:57,184 --> 00:04:00,350
+Every proposal must carry an exact quote.
+
+56
+00:04:00,630 --> 00:04:05,273
+If the quote is not found word for word, it is simply rejected.
+
+57
+00:04:05,723 --> 00:04:11,123
+The same API, named the same way in two files, becomes one node.
+
+58
+00:04:11,573 --> 00:04:16,704
+And only new or changed files go to the model, within the monthly budget.
+
+59
+00:04:18,000 --> 00:04:20,687
+Next, we prepare for search.
+
+60
+00:04:20,967 --> 00:04:27,739
+A keyword index, BM25, is always built. It is fast, and it is free.
+
+61
+00:04:28,189 --> 00:04:33,066
+If the owner switches on embeddings, each passage also gets a vector,
+
+62
+00:04:33,066 --> 00:04:37,166
+so a question can match by meaning, and not just by words.
+
+63
+00:04:37,616 --> 00:04:39,312
+Both rankings are combined,
+
+64
+00:04:39,312 --> 00:04:41,323
+and the graph can walk two steps
+
+65
+00:04:41,323 --> 00:04:44,841
+along these relationships to collect connected evidence.
+
+66
+00:04:46,125 --> 00:04:49,118
+Every build is saved as a numbered draft.
+
+67
+00:04:49,398 --> 00:04:53,655
+Graphify groups the nodes into themes using Leiden clustering,
+
+68
+00:04:53,655 --> 00:04:55,989
+so the graph is easier to explore.
+
+69
+00:04:56,439 --> 00:05:01,476
+And the draft is tested on its own: on CarePath's sixteen test questions,
+
+70
+00:05:01,476 --> 00:05:04,375
+the right document comes back for fifteen.
+
+71
+00:05:05,667 --> 00:05:09,857
+Finally, a person reviews the draft and publishes it.
+
+72
+00:05:10,137 --> 00:05:13,254
+Only the published version answers questions.
+
+73
+00:05:13,534 --> 00:05:18,537
+So let's ask: why did the service go down on the fourteenth of August?
+
+74
+00:05:18,987 --> 00:05:24,791
+The answer points to the postmortem, the test-review finding, and the page-size rule.
+
+75
+00:05:25,241 --> 00:05:30,042
+And every citation is checked again, live: the source is still active,
+
+76
+00:05:30,042 --> 00:05:34,293
+the fingerprint has not changed, and the quote is still there.
+
+77
+00:05:34,743 --> 00:05:37,659
+Restricted documents are never used.
+
+78
+00:05:37,939 --> 00:05:42,556
+So, one spreadsheet became Markdown, then a small graph.
+
+79
+00:05:42,836 --> 00:05:47,020
+Four files later, the graph tells the complete story:
+
+80
+00:05:47,020 --> 00:05:50,653
+the rule, the gap, the waiver, and the outage.
+
+81
+00:05:51,103 --> 00:05:54,488
+And every line points back to where it came from.

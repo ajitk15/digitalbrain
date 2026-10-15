@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "Step 3: Capture document structure", "locale": "en", "quality_profile": "showcase", "viewBox": [1100, 640]},
+  "components": [
+    {"id": "policy-document", "type": "external", "label": "Policy System.pdf", "sublabel": "Document node", "pos": [70, 70], "size": [280, 90]},
+    {"id": "policy-section", "type": "backend", "label": "Overview", "sublabel": "Section in Policy System", "pos": [700, 70], "size": [310, 90]},
+    {"id": "claims-document", "type": "external", "label": "Claims Processing.docx", "sublabel": "Document node", "pos": [70, 280], "size": [280, 90]},
+    {"id": "claims-section", "type": "backend", "label": "Overview", "sublabel": "Section in Claims Processing", "pos": [700, 280], "size": [310, 90]},
+    {"id": "guide-document", "type": "external", "label": "Claims Guide.docx", "sublabel": "Document node", "pos": [70, 490], "size": [280, 90]},
+    {"id": "guide-section", "type": "backend", "label": "Overview", "sublabel": "Section in Claims Guide", "pos": [700, 490], "size": [310, 90]}
+  ],
+  "connections": [
+    {"id": "policy-structure", "from": "policy-document", "to": "policy-section", "label": "contains section"},
+    {"id": "claims-structure", "from": "claims-document", "to": "claims-section", "label": "contains section"},
+    {"id": "guide-structure", "from": "guide-document", "to": "guide-section", "label": "contains section"}
+  ],
+  "cards": [
+    {"dot": "slate", "title": "What Python identifies", "items": ["Files become document nodes; headings become section nodes.", "Identical headings remain separate because they belong to different documents."]},
+    {"dot": "cyan", "title": "Structure comes before meaning", "items": ["These arrows describe document organisation.", "Business relationships are proposed in the optional AI step."]}
+  ]
+}

@@ -1,0 +1,48 @@
+;FFMETADATA1
+title=Digital Brain - one rule, five files, one story
+comment=Indian English narration (Microsoft Heera, en-IN), natural speed.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=33042
+title=One story, many files
+[CHAPTER]
+TIMEBASE=1/1000
+START=33042
+END=57167
+title=One file goes in
+[CHAPTER]
+TIMEBASE=1/1000
+START=57167
+END=98958
+title=Turn it into text
+[CHAPTER]
+TIMEBASE=1/1000
+START=98958
+END=157542
+title=Is this file good enough?
+[CHAPTER]
+TIMEBASE=1/1000
+START=157542
+END=207042
+title=Four kinds of node
+[CHAPTER]
+TIMEBASE=1/1000
+START=207042
+END=264292
+title=Four files, one story
+[CHAPTER]
+TIMEBASE=1/1000
+START=264292
+END=349750
+title=AI connects the files
+[CHAPTER]
+TIMEBASE=1/1000
+START=349750
+END=382167
+title=Make it searchable
+[CHAPTER]
+TIMEBASE=1/1000
+START=382167
+END=434750
+title=Test, publish, ask

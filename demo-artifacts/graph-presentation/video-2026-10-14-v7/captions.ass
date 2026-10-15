@@ -1,0 +1,68 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Segoe UI,25,&H00FFFFFF,&H00FFFFFF,&H004D3217,&H004D3217,0,0,0,0,100,100,0,0,1,0,0,2,50,50,16,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.20,0:00:04.14,Default,,0,0,0,,Let us build a Digital Brain using the CarePath documents
+Dialogue: 0,0:00:04.14,0:00:08.08,Default,,0,0,0,,in our project. Start with just one file: user stories.
+Dialogue: 0,0:00:08.08,0:00:12.02,Default,,0,0,0,,We will follow one example, tracking a referral. A referral
+Dialogue: 0,0:00:12.02,0:00:15.96,Default,,0,0,0,,is a request for a patient to see another care
+Dialogue: 0,0:00:15.96,0:00:19.50,Default,,0,0,0,,team. Watch how this one file becomes connected knowledge.
+Dialogue: 0,0:00:20.20,0:00:24.51,Default,,0,0,0,,After upload checks, MarkItDown converts the Word file into readable
+Dialogue: 0,0:00:24.51,0:00:28.83,Default,,0,0,0,,text. The heading describes a user story: track a referral.
+Dialogue: 0,0:00:28.83,0:00:33.14,Default,,0,0,0,,Below it is the referral lifecycle. We use short, readable
+Dialogue: 0,0:00:33.14,0:00:37.46,Default,,0,0,0,,labels on screen. Django keeps the original text with its
+Dialogue: 0,0:00:37.46,0:00:41.77,Default,,0,0,0,,source identity and content fingerprint, so each fact can point
+Dialogue: 0,0:00:41.77,0:00:43.50,Default,,0,0,0,,back to the file.
+Dialogue: 0,0:00:44.20,0:00:48.16,Default,,0,0,0,,The normal graph begins with a document node. A node
+Dialogue: 0,0:00:48.16,0:00:52.11,Default,,0,0,0,,is simply an item. Our Python builder adds section nodes
+Dialogue: 0,0:00:52.11,0:00:56.07,Default,,0,0,0,,for the heading and ordinary text lines. Arrows connect the
+Dialogue: 0,0:00:56.07,0:01:00.03,Default,,0,0,0,,document to those sections and mean contains section. The same
+Dialogue: 0,0:01:00.03,0:01:03.98,Default,,0,0,0,,approach handles other content, including table rows and values. We
+Dialogue: 0,0:01:03.98,0:01:07.94,Default,,0,0,0,,are showing a small part of this larger graph. So
+Dialogue: 0,0:01:07.94,0:01:11.50,Default,,0,0,0,,far, we have captured the structure of the document.
+Dialogue: 0,0:01:12.20,0:01:16.52,Default,,0,0,0,,Now enable optional A I enrichment. OpenAI or Claude reads
+Dialogue: 0,0:01:16.52,0:01:20.85,Default,,0,0,0,,the text and proposes typed relationships. Look at the two
+Dialogue: 0,0:01:20.85,0:01:25.17,Default,,0,0,0,,icons. One represents the user story, and the other represents
+Dialogue: 0,0:01:25.17,0:01:29.50,Default,,0,0,0,,its referral tracking requirement. They become two business nodes joined
+Dialogue: 0,0:01:29.50,0:01:33.82,Default,,0,0,0,,by references. Each proposal keeps the original source and exact
+Dialogue: 0,0:01:33.82,0:01:38.15,Default,,0,0,0,,quotation, even though we use simpler labels here. The document
+Dialogue: 0,0:01:38.15,0:01:42.47,Default,,0,0,0,,structure remains underneath this new business layer. Evidence checks\Ndecide
+Dialogue: 0,0:01:42.47,0:01:45.50,Default,,0,0,0,,whether these proposed links can be accepted.
+Dialogue: 0,0:01:46.20,0:01:50.60,Default,,0,0,0,,Now upload the system design document. Its component table connects
+Dialogue: 0,0:01:50.60,0:01:55.00,Default,,0,0,0,,referral tracking to the code that manages the referral lifecycle.
+Dialogue: 0,0:01:55.00,0:01:59.41,Default,,0,0,0,,The graph grows a referral code node and an implemented
+Dialogue: 0,0:01:59.41,0:02:03.81,Default,,0,0,0,,in connection. Notice that it joins the same referral tracking
+Dialogue: 0,0:02:03.81,0:02:08.21,Default,,0,0,0,,requirement. Next, add the test coverage spreadsheet. Its row connects
+Dialogue: 0,0:02:08.21,0:02:12.61,Default,,0,0,0,,the referral lifecycle tests to this requirement. A referral tests
+Dialogue: 0,0:02:12.61,0:02:17.02,Default,,0,0,0,,node grows into the graph, joined by verifies. Three files
+Dialogue: 0,0:02:17.02,0:02:21.42,Default,,0,0,0,,now explain one connected story: what we need, where it
+Dialogue: 0,0:02:21.42,0:02:24.50,Default,,0,0,0,,is implemented, and how it is tested.
+Dialogue: 0,0:02:25.20,0:02:30.16,Default,,0,0,0,,Before accepting links, the application checks the source, exact quote,
+Dialogue: 0,0:02:30.16,0:02:35.12,Default,,0,0,0,,named items, and allowed types and relationships. Matching names and
+Dialogue: 0,0:02:35.12,0:02:40.08,Default,,0,0,0,,types become one shared requirement node. Each accepted connection keeps
+Dialogue: 0,0:02:40.08,0:02:45.04,Default,,0,0,0,,its supporting document. Referral tracking joins the story, code, and
+Dialogue: 0,0:02:45.04,0:02:50.00,Default,,0,0,0,,tests. These checks filter unsupported proposals; a person still reviews
+Dialogue: 0,0:02:50.00,0:02:50.50,Default,,0,0,0,,meaning.
+Dialogue: 0,0:02:51.20,0:02:55.42,Default,,0,0,0,,Prepare search adds a search structure beside the graph. With
+Dialogue: 0,0:02:55.42,0:02:59.63,Default,,0,0,0,,embeddings enabled, OpenAI converts text into a numerical vector. Watch
+Dialogue: 0,0:02:59.63,0:03:03.85,Default,,0,0,0,,the text become numbers and enter the search index. The
+Dialogue: 0,0:03:03.85,0:03:08.06,Default,,0,0,0,,numbers represent meaning, not new graph facts. Later, a question
+Dialogue: 0,0:03:08.06,0:03:12.28,Default,,0,0,0,,such as, how do we test referral tracking, gets its
+Dialogue: 0,0:03:12.28,0:03:16.49,Default,,0,0,0,,own vector. Similarity search can find relevant text. Graph traversal
+Dialogue: 0,0:03:16.49,0:03:20.71,Default,,0,0,0,,follows links to the requirement and tests. These vector values
+Dialogue: 0,0:03:20.71,0:03:24.50,Default,,0,0,0,,are illustrative; unchanged text can reuse its stored vector.
+Dialogue: 0,0:03:25.20,0:03:29.32,Default,,0,0,0,,Django saves a numbered draft. Graphify uses NetworkX and Leiden
+Dialogue: 0,0:03:29.32,0:03:33.44,Default,,0,0,0,,clustering to organise existing graph nodes into themes for review.
+Dialogue: 0,0:03:33.44,0:03:37.56,Default,,0,0,0,,The graph is now easier to explore across documents. Grouping
+Dialogue: 0,0:03:37.56,0:03:41.68,Default,,0,0,0,,adds organisation; it does not add new facts or prove
+Dialogue: 0,0:03:41.68,0:03:42.50,Default,,0,0,0,,a relationship.
+Dialogue: 0,0:03:43.20,0:03:47.99,Default,,0,0,0,,A reviewer checks the evidence and publishes. Restricted sources are
+Dialogue: 0,0:03:47.99,0:03:52.79,Default,,0,0,0,,excluded, and retrieval checks access and current evidence again. One
+Dialogue: 0,0:03:52.79,0:03:57.58,Default,,0,0,0,,CarePath file has grown into connected stories, requirements, code, and
+Dialogue: 0,0:03:57.58,0:03:59.50,Default,,0,0,0,,tests, with supporting sources.

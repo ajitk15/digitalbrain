@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "command": "deliver",
+  "type": "architecture",
+  "input": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\video-2026-10-14\\process.architecture.json",
+  "output": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\video-2026-10-14\\process-diagram.html",
+  "specification": {
+    "sha256": "d5a930b70904c6ea19ac190f24164839d62b5b669ada29cfc90a438f3634dbb8",
+    "bytes": 5579
+  },
+  "artifact": {
+    "sha256": "f00636bb13aae56cb92d05a13fde16c2b5ea03e56ef979ff31415be224cc3559",
+    "bytes": 717145
+  },
+  "validation": {
+    "checksPassed": 9,
+    "checkCount": 9,
+    "compositionProfile": "showcase",
+    "compositionStatus": "pass",
+    "errors": 0,
+    "warnings": 0
+  }
+}

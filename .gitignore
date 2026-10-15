@@ -23,3 +23,8 @@ design/*/[a-z]*-*.html
 
 # Local demo run output: records the operator's own Jira site and issue keys.
 demo-artifacts/demo-kit/jira-created.json
+
+# Rendered presentation video and narration audio: rebuilt by the scripts
+# beside them, and too large for git (one passed GitHub's 100 MB limit).
+demo-artifacts/graph-presentation/**/*.mp4
+demo-artifacts/graph-presentation/**/*.wav

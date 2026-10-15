@@ -1,0 +1,48 @@
+;FFMETADATA1
+title=Digital Brain - Graph generation
+comment=Indian English narrated teaching demo. Prepared AI proposals; real graph functions.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=22000
+title=Upload source documents
+[CHAPTER]
+TIMEBASE=1/1000
+START=22000
+END=47000
+title=Convert files into readable text
+[CHAPTER]
+TIMEBASE=1/1000
+START=47000
+END=86000
+title=Build the document structure
+[CHAPTER]
+TIMEBASE=1/1000
+START=86000
+END=130000
+title=Extract business relationships
+[CHAPTER]
+TIMEBASE=1/1000
+START=130000
+END=156000
+title=Check the supporting evidence
+[CHAPTER]
+TIMEBASE=1/1000
+START=156000
+END=178000
+title=Join matching business entities
+[CHAPTER]
+TIMEBASE=1/1000
+START=178000
+END=202000
+title=Prepare search embeddings
+[CHAPTER]
+TIMEBASE=1/1000
+START=202000
+END=218000
+title=Save and organise the draft
+[CHAPTER]
+TIMEBASE=1/1000
+START=218000
+END=240000
+title=Review and publish

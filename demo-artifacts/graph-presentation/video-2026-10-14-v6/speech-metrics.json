@@ -1,0 +1,74 @@
+[
+  {
+    "scene": 1,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 22.11,
+    "tempo": 1.1455958549222798,
+    "chapter_seconds": 20
+  },
+  {
+    "scene": 2,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 26.556,
+    "tempo": 1.1397424892703862,
+    "chapter_seconds": 24
+  },
+  {
+    "scene": 3,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 32.472,
+    "tempo": 1.1894505494505494,
+    "chapter_seconds": 28
+  },
+  {
+    "scene": 4,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 39.598,
+    "tempo": 1.1891291291291293,
+    "chapter_seconds": 34
+  },
+  {
+    "scene": 5,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 46.241,
+    "tempo": 1.20733681462141,
+    "chapter_seconds": 39
+  },
+  {
+    "scene": 6,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 30.696,
+    "tempo": 1.2132806324110672,
+    "chapter_seconds": 26
+  },
+  {
+    "scene": 7,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 41.994,
+    "tempo": 1.261081081081081,
+    "chapter_seconds": 34
+  },
+  {
+    "scene": 8,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 21.809,
+    "tempo": 1.2606358381502891,
+    "chapter_seconds": 18
+  },
+  {
+    "scene": 9,
+    "voice": "Microsoft Heera",
+    "language": "en-IN",
+    "raw_seconds": 20.12,
+    "tempo": 1.2343558282208589,
+    "chapter_seconds": 17
+  }
+]

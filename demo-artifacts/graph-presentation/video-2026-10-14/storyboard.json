@@ -1,0 +1,72 @@
+[
+  {
+    "duration": 9,
+    "title": "How simple words become a graph",
+    "stage": 0,
+    "visual": "intro",
+    "narration": "Let's see how Digital Brain turns a short library note into a graph, using simple phases and a repeatable run of our project."
+  },
+  {
+    "duration": 12,
+    "title": "Read a short note",
+    "stage": 0,
+    "visual": "source",
+    "narration": "The library app uses a book list. A help guide explains the app. The book list is a small data store. These notes provide evidence."
+  },
+  {
+    "duration": 12,
+    "title": "Find the document parts",
+    "stage": 1,
+    "visual": "structure",
+    "narration": "Mark It Down reads uploaded files. Python finds documents and sections. Each item becomes a node; a connection is an edge. Meaning links come later."
+  },
+  {
+    "duration": 16,
+    "title": "Connect the key items",
+    "stage": 2,
+    "visual": "proposal",
+    "narration": "Optional OpenAI or Claude enrichment finds key items: library app and book list. It proposes their uses connection, item types, source identifier, and exact quote. Similar connection words get one standard label."
+  },
+  {
+    "duration": 14,
+    "title": "Check the quoted words",
+    "stage": 3,
+    "visual": "validation",
+    "narration": "The server checks the quote, named items, and allowed types. An invented toy-list quote is rejected because it is absent from the note. These filters reduce errors; they do not prove every interpretation."
+  },
+  {
+    "duration": 12,
+    "title": "Keep one item; keep its source",
+    "stage": 3,
+    "visual": "merge",
+    "narration": "Both notes refer to one library app, so matching names are merged. Every connection keeps its source, quote, and content fingerprint to detect later changes."
+  },
+  {
+    "duration": 13,
+    "title": "See the real builder output",
+    "stage": 3,
+    "visual": "live",
+    "narration": "Our actual builder run accepts two meaning links, merges the shared app, and rejects the invented quote. AI proposals are controlled here; no live model call is made."
+  },
+  {
+    "duration": 12,
+    "title": "Save and review",
+    "stage": 4,
+    "visual": "draft",
+    "narration": "Django saves a numbered draft. Review quality and evidence. Graphify groups existing connected nodes using Network X and Leiden clustering; it does not invent facts."
+  },
+  {
+    "duration": 10,
+    "title": "Publish the reviewed version",
+    "stage": 6,
+    "visual": "publish",
+    "narration": "A person publishes the reviewed graph. Answers check current evidence and viewer access. Restricted sources stay outside AI."
+  },
+  {
+    "duration": 10,
+    "title": "Read. Find. Connect. Check.",
+    "stage": 6,
+    "visual": "summary",
+    "narration": "A graph connects useful items and keeps their original evidence. AI suggests links. The application checks them. A person reviews and publishes."
+  }
+]

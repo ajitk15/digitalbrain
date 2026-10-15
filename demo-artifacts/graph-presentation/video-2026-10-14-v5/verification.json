@@ -1,0 +1,22 @@
+{
+  "duration_seconds": 240,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "frames": 5760,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "voice": "Microsoft Heera",
+  "voice_locale": "en-IN",
+  "voice_type": "local synthesized narration",
+  "captions": "Burned in, selectable track and SRT",
+  "full_file_decode": "passed",
+  "audio_present": "passed",
+  "visual_review": "Passed: inspected encoded structural reveal, AI relationship growth and final publication frames; circular node labels, step rail and captions readable.",
+  "sha256": "17583c9614aa8c13a3b3121ee23b210b3582ad528af8baf60b04f3b98d85c139",
+  "bytes": 10492053,
+  "scope": "Illustrated project pipeline using fictional insurance documents and prepared AI proposals. Synthetic graph functions were previously validated. Upload/conversion, provider calls, storage and publication are illustrated; the theme boundary is illustrative. Not a live application recording."
+}

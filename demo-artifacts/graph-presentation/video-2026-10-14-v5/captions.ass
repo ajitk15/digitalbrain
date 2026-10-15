@@ -1,0 +1,67 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 0
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Segoe UI,36,&H00FFFFFF,&H00FFFFFF,&H004D3217,&H004D3217,0,0,0,0,100,100,0,0,1,0,0,2,130,130,45,1
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.20,0:00:04.38,Default,,0,0,0,,Let’s build a Digital Brain from three health insurance documents.
+Dialogue: 0,0:00:04.38,0:00:08.55,Default,,0,0,0,,We upload a Policy System note, a Claims Processing note,
+Dialogue: 0,0:00:08.55,0:00:12.73,Default,,0,0,0,,and a Claims Guide. The first explains where policy details
+Dialogue: 0,0:00:12.73,0:00:16.91,Default,,0,0,0,,come from, the second describes claim records, and the third
+Dialogue: 0,0:00:16.91,0:00:21.08,Default,,0,0,0,,explains the portal. We’ll follow their actual sentences into the
+Dialogue: 0,0:00:21.08,0:00:21.50,Default,,0,0,0,,graph.
+Dialogue: 0,0:00:22.20,0:00:26.70,Default,,0,0,0,,The application checks access and file integrity. MarkItDown converts the
+Dialogue: 0,0:00:26.70,0:00:31.20,Default,,0,0,0,,PDF and Word files into readable text. Here, each document
+Dialogue: 0,0:00:31.20,0:00:35.70,Default,,0,0,0,,becomes an Overview heading followed by its sentence. Django stores
+Dialogue: 0,0:00:35.70,0:00:40.20,Default,,0,0,0,,this text as a knowledge source. A source identifier tells
+Dialogue: 0,0:00:40.20,0:00:44.70,Default,,0,0,0,,us where it came from; a SHA-256 fingerprint helps detect
+Dialogue: 0,0:00:44.70,0:00:46.50,Default,,0,0,0,,whether the content changes.
+Dialogue: 0,0:00:47.20,0:00:51.60,Default,,0,0,0,,Now we request graph generation. First, our Python builder creates
+Dialogue: 0,0:00:51.60,0:00:56.00,Default,,0,0,0,,a node for each document. A node simply means an
+Dialogue: 0,0:00:56.00,0:01:00.41,Default,,0,0,0,,item in the graph. It also creates section nodes from
+Dialogue: 0,0:01:00.41,0:01:04.81,Default,,0,0,0,,headings and ordinary text lines. Watch the Policy System document
+Dialogue: 0,0:01:04.81,0:01:09.21,Default,,0,0,0,,connect to its Overview heading and its source sentence. These
+Dialogue: 0,0:01:09.21,0:01:13.61,Default,,0,0,0,,arrows say ‘contains section.’ The other documents follow the same
+Dialogue: 0,0:01:13.61,0:01:18.02,Default,,0,0,0,,pattern. Tables, when present, produce records and field values. At
+Dialogue: 0,0:01:18.02,0:01:22.42,Default,,0,0,0,,this stage, we have captured document structure; we have not
+Dialogue: 0,0:01:22.42,0:01:25.50,Default,,0,0,0,,inferred which business system uses which database.
+Dialogue: 0,0:01:26.20,0:01:31.01,Default,,0,0,0,,With optional AI enrichment enabled, OpenAI or Claude reads the
+Dialogue: 0,0:01:31.01,0:01:35.82,Default,,0,0,0,,text and proposes business relationships. Let’s examine the first sentence.
+Dialogue: 0,0:01:35.82,0:01:40.63,Default,,0,0,0,,‘Claims portal’ is one item, ‘policy database’ is another, and
+Dialogue: 0,0:01:40.63,0:01:45.44,Default,,0,0,0,,‘uses’ connects them. We display that as two nodes joined
+Dialogue: 0,0:01:45.44,0:01:50.26,Default,,0,0,0,,by an arrow. The proposal also identifies their types, the
+Dialogue: 0,0:01:50.26,0:01:55.07,Default,,0,0,0,,source document and the exact quote. The second document proposes
+Dialogue: 0,0:01:55.07,0:01:59.88,Default,,0,0,0,,another uses connection, this time to Claims Database. The third
+Dialogue: 0,0:01:59.88,0:02:04.69,Default,,0,0,0,,proposes Claims Guide explains Claims Portal. These are suggestions first.
+Dialogue: 0,0:02:04.69,0:02:09.50,Default,,0,0,0,,They become accepted connections only after the application checks them.
+Dialogue: 0,0:02:10.20,0:02:14.49,Default,,0,0,0,,Each proposal passes through checks. Does the source exist? Is
+Dialogue: 0,0:02:14.49,0:02:18.78,Default,,0,0,0,,the exact quote present? Are the named items in it?
+Dialogue: 0,0:02:18.78,0:02:23.06,Default,,0,0,0,,Are their types and relationship allowed? Our valid examples pass.
+Dialogue: 0,0:02:23.06,0:02:27.35,Default,,0,0,0,,An invented sentence saying the portal uses a Payment Database
+Dialogue: 0,0:02:27.35,0:02:31.64,Default,,0,0,0,,fails because that quote is absent. These checks filter unsupported
+Dialogue: 0,0:02:31.64,0:02:35.50,Default,,0,0,0,,proposals; they do not replace human review of meaning.
+Dialogue: 0,0:02:36.20,0:02:40.38,Default,,0,0,0,,The three proposals mention the same Claims Portal. Matching names
+Dialogue: 0,0:02:40.38,0:02:44.55,Default,,0,0,0,,and types become one shared node. Now the business view
+Dialogue: 0,0:02:44.55,0:02:48.73,Default,,0,0,0,,has four nodes and three connections. Select an arrow, and
+Dialogue: 0,0:02:48.73,0:02:52.91,Default,,0,0,0,,its original document and supporting quote can explain why it
+Dialogue: 0,0:02:52.91,0:02:57.08,Default,,0,0,0,,exists. The full graph also retains document structure and evidence
+Dialogue: 0,0:02:57.08,0:02:57.50,Default,,0,0,0,,links.
+Dialogue: 0,0:02:58.20,0:03:02.60,Default,,0,0,0,,When search embeddings are enabled for this requested AI run,
+Dialogue: 0,0:03:02.60,0:03:06.99,Default,,0,0,0,,OpenAI converts relationship text and document passages into numerical\Nvectors.
+Dialogue: 0,0:03:06.99,0:03:11.39,Default,,0,0,0,,Django stores them for later meaning-based search. The vectors help
+Dialogue: 0,0:03:11.39,0:03:15.78,Default,,0,0,0,,find information when a question is asked; they do not
+Dialogue: 0,0:03:15.78,0:03:20.18,Default,,0,0,0,,create or prove the graph connections. Unchanged text can reuse
+Dialogue: 0,0:03:20.18,0:03:21.50,Default,,0,0,0,,its stored vector.
+Dialogue: 0,0:03:22.20,0:03:26.84,Default,,0,0,0,,Django saves a numbered draft. For review, Graphify uses NetworkX
+Dialogue: 0,0:03:26.84,0:03:31.47,Default,,0,0,0,,and Leiden clustering to organise existing connected nodes into themes.
+Dialogue: 0,0:03:31.47,0:03:36.11,Default,,0,0,0,,It groups the graph we built; it does not invent
+Dialogue: 0,0:03:36.11,0:03:37.50,Default,,0,0,0,,the underlying facts.
+Dialogue: 0,0:03:38.20,0:03:42.93,Default,,0,0,0,,A reviewer checks the draft and publishes it. Restricted sources
+Dialogue: 0,0:03:42.93,0:03:47.67,Default,,0,0,0,,are excluded from graph generation. Later, graph answers check current
+Dialogue: 0,0:03:47.67,0:03:52.40,Default,,0,0,0,,evidence and user access again. We have turned three documents
+Dialogue: 0,0:03:52.40,0:03:57.13,Default,,0,0,0,,into connected knowledge, with proof behind the connections. Next, we’ll
+Dialogue: 0,0:03:57.13,0:03:59.50,Default,,0,0,0,,see how retrieval uses it.

@@ -1,0 +1,881 @@
+{
+ "total": 434.75,
+ "scenes": [
+  {
+   "id": "problem",
+   "title": "One story, many files",
+   "tech": [],
+   "footnote": "",
+   "start": 0.0,
+   "duration": 33.0417,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 5.687,
+     "text": "Most of an application's documentation is spread across many different files."
+    },
+    {
+     "start": 6.137,
+     "end": 18.803,
+     "text": "The requirement lives in a spreadsheet, the coding standard in a Markdown file, the API in its specification, the test results in a traceability matrix, and the outage in a Word report."
+    },
+    {
+     "start": 19.253,
+     "end": 24.274,
+     "text": "Each file holds one piece of the story, but none of them can tell it alone."
+    },
+    {
+     "start": 24.724,
+     "end": 32.225,
+     "text": "So nobody puts the pieces together, until one afternoon in August, a single search takes the whole service down."
+    }
+   ]
+  },
+  {
+   "id": "upload",
+   "title": "One file goes in",
+   "tech": [
+    "Python \u00b7 Django",
+    "ClamAV security check",
+    "SHA-256 fingerprint"
+   ],
+   "footnote": "",
+   "start": 33.0417,
+   "duration": 24.125,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 11.414,
+     "text": "Let's see how Digital Brain, a Python platform, brings that story together, starting with just one of these files: the non-functional requirements spreadsheet."
+    },
+    {
+     "start": 11.864,
+     "end": 23.339,
+     "text": "As soon as the file is uploaded, the platform performs a security check and takes a unique SHA-256 fingerprint of it, so we can always tell if it changes later."
+    }
+   ]
+  },
+  {
+   "id": "markdown",
+   "title": "Turn it into text",
+   "tech": [
+    "MarkItDown",
+    "Markdown",
+    "SHA-256 fingerprint"
+   ],
+   "footnote": "ID column hidden for readability. The stored record keeps it.",
+   "start": 57.1667,
+   "duration": 41.7917,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 10.296,
+     "text": "Next, MarkItDown, an open-source converter, turns the spreadsheet into Markdown: plain text that both people and an LLM can read."
+    },
+    {
+     "start": 10.746,
+     "end": 15.285,
+     "text": "Each sheet becomes a heading, and each row becomes a line in a table."
+    },
+    {
+     "start": 15.735,
+     "end": 18.172,
+     "text": "Now look at this highlighted row."
+    },
+    {
+     "start": 18.452,
+     "end": 26.039,
+     "text": "It says something simple: when someone asks for a list, the server must limit how many items it sends back."
+    },
+    {
+     "start": 26.489,
+     "end": 32.853,
+     "text": "We'll call it the page-size rule, and the rest of this story is about what happened when it was broken."
+    },
+    {
+     "start": 33.303,
+     "end": 40.988,
+     "text": "The Markdown also gets a fingerprint of its own, because every answer will later be checked against exactly this text."
+    }
+   ]
+  },
+  {
+   "id": "quality",
+   "title": "Is this file good enough?",
+   "tech": [
+    "Python source check",
+    "Tesseract OCR confidence",
+    "No LLM \u00b7 same score every time"
+   ],
+   "footnote": "Scores are from the real CarePath files. The three failure cards are examples.",
+   "start": 98.9583,
+   "duration": 58.5833,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 6.237,
+     "text": "Before building anything, there is one more question to ask: can we trust this file?"
+    },
+    {
+     "start": 6.687,
+     "end": 10.04,
+     "text": "A graph is only as good as what goes into it."
+    },
+    {
+     "start": 10.32,
+     "end": 27.665,
+     "text": "A table with no column names gives you nodes called \"column one\" and \"column two\", a half-finished document marked TBD gives answers that are not true yet, and a badly scanned page, read by Tesseract OCR, can match a quote exactly and still be wrong."
+    },
+    {
+     "start": 28.115,
+     "end": 39.688,
+     "text": "So the platform scores every document out of hundred, using six rule-based checks written in Python, with no LLM involved, so the same file always gets the same score."
+    },
+    {
+     "start": 40.138,
+     "end": 42.832,
+     "text": "Our spreadsheet scores a full hundred."
+    },
+    {
+     "start": 43.112,
+     "end": 50.998,
+     "text": "A raw export with no column names scores only sixty, and the platform shows exactly which points it lost and why."
+    },
+    {
+     "start": 51.448,
+     "end": 57.782,
+     "text": "The score is advice, not a gate: the owner decides whether to fix the file or go ahead."
+    }
+   ]
+  },
+  {
+   "id": "structure",
+   "title": "Four kinds of node",
+   "tech": [
+    "Python graph builder",
+    "No LLM \u00b7 no cost"
+   ],
+   "footnote": "Focused view: a few of the sheet's 31 rows and lines.",
+   "start": 157.5417,
+   "duration": 49.5,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 6.027,
+     "text": "Now Python code builds the first graph, and it uses just four kinds of node."
+    },
+    {
+     "start": 6.477,
+     "end": 9.709,
+     "text": "The whole spreadsheet becomes a document node."
+    },
+    {
+     "start": 9.989,
+     "end": 16.458,
+     "text": "Each heading inside it becomes a section node, like Availability, Performance and Security."
+    },
+    {
+     "start": 16.908,
+     "end": 21.733,
+     "text": "Each table row becomes a record node, and here is our page-size rule."
+    },
+    {
+     "start": 22.183,
+     "end": 31.779,
+     "text": "And each cell in that row becomes a value node: the rule is checked by code review and an automated test, and if it is broken, the release is blocked."
+    },
+    {
+     "start": 32.229,
+     "end": 40.285,
+     "text": "Three other rules also block the release, so they share this same value node, and that is how related rules get connected."
+    },
+    {
+     "start": 40.735,
+     "end": 48.705,
+     "text": "Every node keeps the exact line it came from, and since no LLM has been used so far, all of this costs nothing."
+    }
+   ]
+  },
+  {
+   "id": "files",
+   "title": "Four files, one story",
+   "tech": [
+    "Same pipeline \u00b7 4",
+    "Source check across files"
+   ],
+   "footnote": "Dates and figures are from the CarePath postmortem and traceability matrix.",
+   "start": 207.0417,
+   "duration": 57.25,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 10.524,
+     "text": "Now let's add the other four files: the coding standard, the API specification, the test traceability matrix and the outage postmortem."
+    },
+    {
+     "start": 10.974,
+     "end": 15.71,
+     "text": "Each one goes through the same steps, and all four score a full hundred."
+    },
+    {
+     "start": 16.16,
+     "end": 23.897,
+     "text": "Looking across the files, the source check notices something interesting: three of them point to the same page-size rule."
+    },
+    {
+     "start": 24.347,
+     "end": 29.228,
+     "text": "And when we read them together, the story they tell is quite insightful."
+    },
+    {
+     "start": 29.678,
+     "end": 35.56,
+     "text": "In May, the test review found that patient search had no upper limit on its page size."
+    },
+    {
+     "start": 36.01,
+     "end": 43.036,
+     "text": "In June, that finding was waived so the release could go ahead, bundled with two others under a single reason."
+    },
+    {
+     "start": 43.486,
+     "end": 48.598,
+     "text": "Then in August, someone searched patients with a limit of one lakh records."
+    },
+    {
+     "start": 49.048,
+     "end": 56.439,
+     "text": "The service tried to read the whole table, and for forty-five minutes, sixty percent of all requests failed."
+    }
+   ]
+  },
+  {
+   "id": "ai",
+   "title": "AI connects the files",
+   "tech": [
+    "LLM: OpenAI or Claude",
+    "Fixed vocabulary",
+    "Exact-quote check",
+    "Entity merge"
+   ],
+   "footnote": "Proposals shown are illustrative. Each must pass the vocabulary and exact-quote checks.",
+   "start": 264.2917,
+   "duration": 85.4583,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 5.026,
+     "text": "We could see that story because we read all five files ourselves."
+    },
+    {
+     "start": 5.476,
+     "end": 15.271,
+     "text": "The graph cannot, yet: it links things inside each file, but it cannot tell that the outage in the Word report is about the rule in the spreadsheet."
+    },
+    {
+     "start": 15.721,
+     "end": 21.182,
+     "text": "To connect the files by meaning, we bring in an LLM, OpenAI or Claude."
+    },
+    {
+     "start": 21.632,
+     "end": 33.91,
+     "text": "It reads each file, but it may only use a short, fixed list: eight kinds of thing, like a requirement or an incident, and twelve kinds of link, like affects or violates."
+    },
+    {
+     "start": 34.36,
+     "end": 41.652,
+     "text": "To keep costs low, it reads only files that are new or have changed, and it stays within the monthly budget."
+    },
+    {
+     "start": 42.102,
+     "end": 50.728,
+     "text": "So it suggests links like these: the August outage affected the patient search API, and that API broke the page-size rule."
+    },
+    {
+     "start": 51.178,
+     "end": 61.413,
+     "text": "The same standard of quality applies here: the LLM must prove every link with an exact quote from the file, and only links with a matching quote are kept."
+    },
+    {
+     "start": 61.863,
+     "end": 67.837,
+     "text": "If the quote is not in the file word for word, the link is thrown away, like this one."
+    },
+    {
+     "start": 68.287,
+     "end": 74.286,
+     "text": "And when two files name the same API in the same way, they are joined into one node."
+    },
+    {
+     "start": 74.736,
+     "end": 84.667,
+     "text": "Now the outage, the API and the rule form one connected chain, so a question about the outage can be traced all the way back to the rule it broke."
+    }
+   ]
+  },
+  {
+   "id": "search",
+   "title": "Make it searchable",
+   "tech": [
+    "BM25 keyword index",
+    "Embeddings \u00b7 optional",
+    "NumPy",
+    "Two-hop graph walk"
+   ],
+   "footnote": "Index terms and vector values are illustrative.",
+   "start": 349.75,
+   "duration": 32.4167,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 6.005,
+     "text": "Before anyone asks a question, the platform gets ready to search in two ways."
+    },
+    {
+     "start": 6.455,
+     "end": 13.163,
+     "text": "A BM25 keyword index finds passages by their exact words, which is fast and free."
+    },
+    {
+     "start": 13.613,
+     "end": 20.907,
+     "text": "If the owner turns on embeddings, each passage also gets a vector, so a question can match by meaning too."
+    },
+    {
+     "start": 21.357,
+     "end": 31.623,
+     "text": "Then, from the best matches, the search follows the graph's links two steps further, which is how a question about the outage can reach the rule and the waiver."
+    }
+   ]
+  },
+  {
+   "id": "publish",
+   "title": "Test, publish, ask",
+   "tech": [
+    "Versioned drafts",
+    "Graphify",
+    "Benchmark",
+    "Publish gate",
+    "Live citation check"
+   ],
+   "footnote": "Theme names and answer wording illustrative. Benchmark from the CarePath scorecard baseline.",
+   "start": 382.1667,
+   "duration": 52.5833,
+   "cues": [
+    {
+     "start": 0.5,
+     "end": 7.426,
+     "text": "Every build is saved as a draft, and Graphify groups its nodes into themes so people can explore it."
+    },
+    {
+     "start": 7.876,
+     "end": 17.032,
+     "text": "Before anyone relies on it, the draft is tested: on CarePath's sixteen test questions, the right document comes back for fifteen."
+    },
+    {
+     "start": 17.482,
+     "end": 23.425,
+     "text": "Once a person reviews it and publishes it, only that published version answers questions."
+    },
+    {
+     "start": 23.875,
+     "end": 28.878,
+     "text": "So let's ask: why did the service go down on the fourteenth of August?"
+    },
+    {
+     "start": 29.328,
+     "end": 38.642,
+     "text": "The answer points to the postmortem, the test finding and the page-size rule, and each source is checked again, live, before it is shown."
+    },
+    {
+     "start": 39.092,
+     "end": 41.304,
+     "text": "The pieces were always there."
+    },
+    {
+     "start": 41.584,
+     "end": 51.777,
+     "text": "Now, for the first time, they tell the story together: the rule, the gap, the waiver and the outage, each pointing back to where it was written."
+    }
+   ]
+  }
+ ],
+ "captions": [
+  {
+   "a": 0.5,
+   "b": 5.687,
+   "text": "Most of an application's documentation is spread across many different files."
+  },
+  {
+   "a": 6.137,
+   "b": 11.605,
+   "text": "The requirement lives in a spreadsheet, the coding standard in a Markdown file,"
+  },
+  {
+   "a": 11.605,
+   "b": 16.588,
+   "text": "the API in its specification, the test results in a traceability matrix,"
+  },
+  {
+   "a": 16.588,
+   "b": 18.803,
+   "text": "and the outage in a Word report."
+  },
+  {
+   "a": 19.253,
+   "b": 24.274,
+   "text": "Each file holds one piece of the story, but none of them can tell it alone."
+  },
+  {
+   "a": 24.724,
+   "b": 29.184,
+   "text": "So nobody puts the pieces together, until one afternoon in August,"
+  },
+  {
+   "a": 29.184,
+   "b": 32.225,
+   "text": "a single search takes the whole service down."
+  },
+  {
+   "a": 33.542,
+   "b": 38.722,
+   "text": "Let's see how Digital Brain, a Python platform, brings that story together,"
+  },
+  {
+   "a": 38.722,
+   "b": 44.455,
+   "text": "starting with just one of these files: the non-functional requirements spreadsheet."
+  },
+  {
+   "a": 44.905,
+   "b": 47.23,
+   "text": "As soon as the file is uploaded,"
+  },
+  {
+   "a": 47.23,
+   "b": 53.33,
+   "text": "the platform performs a security check and takes a unique SHA-256 fingerprint of it,"
+  },
+  {
+   "a": 53.33,
+   "b": 56.381,
+   "text": "so we can always tell if it changes later."
+  },
+  {
+   "a": 57.667,
+   "b": 63.789,
+   "text": "Next, MarkItDown, an open-source converter, turns the spreadsheet into Markdown:"
+  },
+  {
+   "a": 63.789,
+   "b": 67.462,
+   "text": "plain text that both people and an LLM can read."
+  },
+  {
+   "a": 67.912,
+   "b": 72.452,
+   "text": "Each sheet becomes a heading, and each row becomes a line in a table."
+  },
+  {
+   "a": 72.902,
+   "b": 75.339,
+   "text": "Now look at this highlighted row."
+  },
+  {
+   "a": 75.619,
+   "b": 79.555,
+   "text": "It says something simple: when someone asks for a list,"
+  },
+  {
+   "a": 79.555,
+   "b": 83.206,
+   "text": "the server must limit how many items it sends back."
+  },
+  {
+   "a": 83.656,
+   "b": 85.715,
+   "text": "We'll call it the page-size rule,"
+  },
+  {
+   "a": 85.715,
+   "b": 90.02,
+   "text": "and the rest of this story is about what happened when it was broken."
+  },
+  {
+   "a": 90.47,
+   "b": 93.623,
+   "text": "The Markdown also gets a fingerprint of its own,"
+  },
+  {
+   "a": 93.623,
+   "b": 98.155,
+   "text": "because every answer will later be checked against exactly this text."
+  },
+  {
+   "a": 99.458,
+   "b": 105.195,
+   "text": "Before building anything, there is one more question to ask: can we trust this file?"
+  },
+  {
+   "a": 105.645,
+   "b": 108.999,
+   "text": "A graph is only as good as what goes into it."
+  },
+  {
+   "a": 109.279,
+   "b": 115.037,
+   "text": "A table with no column names gives you nodes called \"column one\" and \"column two\","
+  },
+  {
+   "a": 115.037,
+   "b": 120.092,
+   "text": "a half-finished document marked TBD gives answers that are not true yet,"
+  },
+  {
+   "a": 120.092,
+   "b": 123.463,
+   "text": "and a badly scanned page, read by Tesseract OCR,"
+  },
+  {
+   "a": 123.463,
+   "b": 126.623,
+   "text": "can match a quote exactly and still be wrong."
+  },
+  {
+   "a": 127.073,
+   "b": 130.79,
+   "text": "So the platform scores every document out of hundred,"
+  },
+  {
+   "a": 130.79,
+   "b": 134.017,
+   "text": "using six rule-based checks written in Python,"
+  },
+  {
+   "a": 134.017,
+   "b": 138.646,
+   "text": "with no LLM involved, so the same file always gets the same score."
+  },
+  {
+   "a": 139.096,
+   "b": 141.79,
+   "text": "Our spreadsheet scores a full hundred."
+  },
+  {
+   "a": 142.07,
+   "b": 145.732,
+   "text": "A raw export with no column names scores only sixty,"
+  },
+  {
+   "a": 145.732,
+   "b": 149.957,
+   "text": "and the platform shows exactly which points it lost and why."
+  },
+  {
+   "a": 150.407,
+   "b": 156.74,
+   "text": "The score is advice, not a gate: the owner decides whether to fix the file or go ahead."
+  },
+  {
+   "a": 158.042,
+   "b": 163.569,
+   "text": "Now Python code builds the first graph, and it uses just four kinds of node."
+  },
+  {
+   "a": 164.019,
+   "b": 167.25,
+   "text": "The whole spreadsheet becomes a document node."
+  },
+  {
+   "a": 167.53,
+   "b": 170.837,
+   "text": "Each heading inside it becomes a section node,"
+  },
+  {
+   "a": 170.837,
+   "b": 173.999,
+   "text": "like Availability, Performance and Security."
+  },
+  {
+   "a": 174.449,
+   "b": 179.274,
+   "text": "Each table row becomes a record node, and here is our page-size rule."
+  },
+  {
+   "a": 179.724,
+   "b": 182.772,
+   "text": "And each cell in that row becomes a value node:"
+  },
+  {
+   "a": 182.772,
+   "b": 186.468,
+   "text": "the rule is checked by code review and an automated test,"
+  },
+  {
+   "a": 186.468,
+   "b": 189.321,
+   "text": "and if it is broken, the release is blocked."
+  },
+  {
+   "a": 189.771,
+   "b": 194.897,
+   "text": "Three other rules also block the release, so they share this same value node,"
+  },
+  {
+   "a": 194.897,
+   "b": 197.826,
+   "text": "and that is how related rules get connected."
+  },
+  {
+   "a": 198.276,
+   "b": 201.537,
+   "text": "Every node keeps the exact line it came from,"
+  },
+  {
+   "a": 201.537,
+   "b": 206.247,
+   "text": "and since no LLM has been used so far, all of this costs nothing."
+  },
+  {
+   "a": 207.542,
+   "b": 211.731,
+   "text": "Now let's add the other four files: the coding standard,"
+  },
+  {
+   "a": 211.731,
+   "b": 217.566,
+   "text": "the API specification, the test traceability matrix and the outage postmortem."
+  },
+  {
+   "a": 218.016,
+   "b": 222.751,
+   "text": "Each one goes through the same steps, and all four score a full hundred."
+  },
+  {
+   "a": 223.201,
+   "b": 227.908,
+   "text": "Looking across the files, the source check notices something interesting:"
+  },
+  {
+   "a": 227.908,
+   "b": 230.939,
+   "text": "three of them point to the same page-size rule."
+  },
+  {
+   "a": 231.389,
+   "b": 236.27,
+   "text": "And when we read them together, the story they tell is quite insightful."
+  },
+  {
+   "a": 236.72,
+   "b": 242.602,
+   "text": "In May, the test review found that patient search had no upper limit on its page size."
+  },
+  {
+   "a": 243.052,
+   "b": 247.113,
+   "text": "In June, that finding was waived so the release could go ahead,"
+  },
+  {
+   "a": 247.113,
+   "b": 250.077,
+   "text": "bundled with two others under a single reason."
+  },
+  {
+   "a": 250.527,
+   "b": 255.64,
+   "text": "Then in August, someone searched patients with a limit of one lakh records."
+  },
+  {
+   "a": 256.09,
+   "b": 258.991,
+   "text": "The service tried to read the whole table,"
+  },
+  {
+   "a": 258.991,
+   "b": 263.481,
+   "text": "and for forty-five minutes, sixty percent of all requests failed."
+  },
+  {
+   "a": 264.792,
+   "b": 269.317,
+   "text": "We could see that story because we read all five files ourselves."
+  },
+  {
+   "a": 269.767,
+   "b": 273.525,
+   "text": "The graph cannot, yet: it links things inside each file,"
+  },
+  {
+   "a": 273.525,
+   "b": 276.275,
+   "text": "but it cannot tell that the outage in the"
+  },
+  {
+   "a": 276.275,
+   "b": 279.563,
+   "text": "Word report is about the rule in the spreadsheet."
+  },
+  {
+   "a": 280.013,
+   "b": 285.474,
+   "text": "To connect the files by meaning, we bring in an LLM, OpenAI or Claude."
+  },
+  {
+   "a": 285.924,
+   "b": 291.917,
+   "text": "It reads each file, but it may only use a short, fixed list: eight kinds of thing,"
+  },
+  {
+   "a": 291.917,
+   "b": 298.201,
+   "text": "like a requirement or an incident, and twelve kinds of link, like affects or violates."
+  },
+  {
+   "a": 298.651,
+   "b": 303.286,
+   "text": "To keep costs low, it reads only files that are new or have changed,"
+  },
+  {
+   "a": 303.286,
+   "b": 305.944,
+   "text": "and it stays within the monthly budget."
+  },
+  {
+   "a": 306.394,
+   "b": 312.311,
+   "text": "So it suggests links like these: the August outage affected the patient search API,"
+  },
+  {
+   "a": 312.311,
+   "b": 315.019,
+   "text": "and that API broke the page-size rule."
+  },
+  {
+   "a": 315.469,
+   "b": 318.298,
+   "text": "The same standard of quality applies here:"
+  },
+  {
+   "a": 318.298,
+   "b": 322.607,
+   "text": "the LLM must prove every link with an exact quote from the file,"
+  },
+  {
+   "a": 322.607,
+   "b": 325.705,
+   "text": "and only links with a matching quote are kept."
+  },
+  {
+   "a": 326.155,
+   "b": 332.128,
+   "text": "If the quote is not in the file word for word, the link is thrown away, like this one."
+  },
+  {
+   "a": 332.578,
+   "b": 338.577,
+   "text": "And when two files name the same API in the same way, they are joined into one node."
+  },
+  {
+   "a": 339.027,
+   "b": 343.274,
+   "text": "Now the outage, the API and the rule form one connected chain,"
+  },
+  {
+   "a": 343.274,
+   "b": 348.959,
+   "text": "so a question about the outage can be traced all the way back to the rule it broke."
+  },
+  {
+   "a": 350.25,
+   "b": 355.755,
+   "text": "Before anyone asks a question, the platform gets ready to search in two ways."
+  },
+  {
+   "a": 356.205,
+   "b": 362.913,
+   "text": "A BM25 keyword index finds passages by their exact words, which is fast and free."
+  },
+  {
+   "a": 363.363,
+   "b": 367.948,
+   "text": "If the owner turns on embeddings, each passage also gets a vector,"
+  },
+  {
+   "a": 367.948,
+   "b": 370.657,
+   "text": "so a question can match by meaning too."
+  },
+  {
+   "a": 371.107,
+   "b": 376.531,
+   "text": "Then, from the best matches, the search follows the graph's links two steps further,"
+  },
+  {
+   "a": 376.531,
+   "b": 381.373,
+   "text": "which is how a question about the outage can reach the rule and the waiver."
+  },
+  {
+   "a": 382.667,
+   "b": 384.905,
+   "text": "Every build is saved as a draft,"
+  },
+  {
+   "a": 384.905,
+   "b": 389.592,
+   "text": "and Graphify groups its nodes into themes so people can explore it."
+  },
+  {
+   "a": 390.042,
+   "b": 393.476,
+   "text": "Before anyone relies on it, the draft is tested:"
+  },
+  {
+   "a": 393.476,
+   "b": 399.199,
+   "text": "on CarePath's sixteen test questions, the right document comes back for fifteen."
+  },
+  {
+   "a": 399.649,
+   "b": 402.485,
+   "text": "Once a person reviews it and publishes it,"
+  },
+  {
+   "a": 402.485,
+   "b": 405.592,
+   "text": "only that published version answers questions."
+  },
+  {
+   "a": 406.042,
+   "b": 411.045,
+   "text": "So let's ask: why did the service go down on the fourteenth of August?"
+  },
+  {
+   "a": 411.495,
+   "b": 416.768,
+   "text": "The answer points to the postmortem, the test finding and the page-size rule,"
+  },
+  {
+   "a": 416.768,
+   "b": 420.808,
+   "text": "and each source is checked again, live, before it is shown."
+  },
+  {
+   "a": 421.258,
+   "b": 423.47,
+   "text": "The pieces were always there."
+  },
+  {
+   "a": 423.75,
+   "b": 428.954,
+   "text": "Now, for the first time, they tell the story together: the rule, the gap,"
+  },
+  {
+   "a": 428.954,
+   "b": 433.944,
+   "text": "the waiver and the outage, each pointing back to where it was written."
+  }
+ ]
+}

@@ -1,0 +1,222 @@
+[
+ {
+  "file": "s00-00.wav",
+  "say": "Most of an application's documentation is spread across many different files."
+ },
+ {
+  "file": "s00-01.wav",
+  "say": "The requirement lives in a spreadsheet, the coding standard in a Markdown file, the A P I in its specification, the test results in a traceability matrix, and the outage in a Word report."
+ },
+ {
+  "file": "s00-02.wav",
+  "say": "Each file holds one piece of the story, but none of them can tell it alone."
+ },
+ {
+  "file": "s00-03.wav",
+  "say": "So nobody puts the pieces together, until one afternoon in August, a single search takes the whole service down."
+ },
+ {
+  "file": "s01-00.wav",
+  "say": "Let's see how Digital Brain, a Python platform, brings that story together, starting with just one of these files: the non-functional requirements spreadsheet."
+ },
+ {
+  "file": "s01-01.wav",
+  "say": "As soon as the file is uploaded, the platform performs a security check and takes a unique SHA-256 fingerprint of it, so we can always tell if it changes later."
+ },
+ {
+  "file": "s02-00.wav",
+  "say": "Next, Mark It Down, an open-source converter, turns the spreadsheet into Markdown: plain text that both people and an LLM can read."
+ },
+ {
+  "file": "s02-01.wav",
+  "say": "Each sheet becomes a heading, and each row becomes a line in a table."
+ },
+ {
+  "file": "s02-02.wav",
+  "say": "Now look at this highlighted row."
+ },
+ {
+  "file": "s02-03.wav",
+  "say": "It says something simple: when someone asks for a list, the server must limit how many items it sends back."
+ },
+ {
+  "file": "s02-04.wav",
+  "say": "We'll call it the page-size rule, and the rest of this story is about what happened when it was broken."
+ },
+ {
+  "file": "s02-05.wav",
+  "say": "The Markdown also gets a fingerprint of its own, because every answer will later be checked against exactly this text."
+ },
+ {
+  "file": "s03-00.wav",
+  "say": "Before building anything, there is one more question to ask: can we trust this file?"
+ },
+ {
+  "file": "s03-01.wav",
+  "say": "A graph is only as good as what goes into it."
+ },
+ {
+  "file": "s03-02.wav",
+  "say": "A table with no column names gives you nodes called \"column one\" and \"column two\", a half-finished document marked T B D gives answers that are not true yet, and a badly scanned page, read by Tesseract O C R, can match a quote exactly and still be wrong."
+ },
+ {
+  "file": "s03-03.wav",
+  "say": "So the platform scores every document out of hundred, using six rule-based checks written in Python, with no LLM involved, so the same file always gets the same score."
+ },
+ {
+  "file": "s03-04.wav",
+  "say": "Our spreadsheet scores a full hundred."
+ },
+ {
+  "file": "s03-05.wav",
+  "say": "A raw export with no column names scores only sixty, and the platform shows exactly which points it lost and why."
+ },
+ {
+  "file": "s03-06.wav",
+  "say": "The score is advice, not a gate: the owner decides whether to fix the file or go ahead."
+ },
+ {
+  "file": "s04-00.wav",
+  "say": "Now Python code builds the first graph, and it uses just four kinds of node."
+ },
+ {
+  "file": "s04-01.wav",
+  "say": "The whole spreadsheet becomes a document node."
+ },
+ {
+  "file": "s04-02.wav",
+  "say": "Each heading inside it becomes a section node, like Availability, Performance and Security."
+ },
+ {
+  "file": "s04-03.wav",
+  "say": "Each table row becomes a record node, and here is our page-size rule."
+ },
+ {
+  "file": "s04-04.wav",
+  "say": "And each cell in that row becomes a value node: the rule is checked by code review and an automated test, and if it is broken, the release is blocked."
+ },
+ {
+  "file": "s04-05.wav",
+  "say": "Three other rules also block the release, so they share this same value node, and that is how related rules get connected."
+ },
+ {
+  "file": "s04-06.wav",
+  "say": "Every node keeps the exact line it came from, and since no LLM has been used so far, all of this costs nothing."
+ },
+ {
+  "file": "s05-00.wav",
+  "say": "Now let's add the other four files: the coding standard, the A P I specification, the test traceability matrix and the outage postmortem."
+ },
+ {
+  "file": "s05-01.wav",
+  "say": "Each one goes through the same steps, and all four score a full hundred."
+ },
+ {
+  "file": "s05-02.wav",
+  "say": "Looking across the files, the source check notices something interesting: three of them point to the same page-size rule."
+ },
+ {
+  "file": "s05-03.wav",
+  "say": "And when we read them together, the story they tell is quite insightful."
+ },
+ {
+  "file": "s05-04.wav",
+  "say": "In May, the test review found that patient search had no upper limit on its page size."
+ },
+ {
+  "file": "s05-05.wav",
+  "say": "In June, that finding was waived so the release could go ahead, bundled with two others under a single reason."
+ },
+ {
+  "file": "s05-06.wav",
+  "say": "Then in August, someone searched patients with a limit of one lakh records."
+ },
+ {
+  "file": "s05-07.wav",
+  "say": "The service tried to read the whole table, and for forty-five minutes, sixty percent of all requests failed."
+ },
+ {
+  "file": "s06-00.wav",
+  "say": "We could see that story because we read all five files ourselves."
+ },
+ {
+  "file": "s06-01.wav",
+  "say": "The graph cannot, yet: it links things inside each file, but it cannot tell that the outage in the Word report is about the rule in the spreadsheet."
+ },
+ {
+  "file": "s06-02.wav",
+  "say": "To connect the files by meaning, we bring in an LLM, OpenAI or Claude."
+ },
+ {
+  "file": "s06-03.wav",
+  "say": "It reads each file, but it may only use a short, fixed list: eight kinds of thing, like a requirement or an incident, and twelve kinds of link, like affects or violates."
+ },
+ {
+  "file": "s06-04.wav",
+  "say": "To keep costs low, it reads only files that are new or have changed, and it stays within the monthly budget."
+ },
+ {
+  "file": "s06-05.wav",
+  "say": "So it suggests links like these: the August outage affected the patient search A P I, and that A P I broke the page-size rule."
+ },
+ {
+  "file": "s06-06.wav",
+  "say": "The same standard of quality applies here: the LLM must prove every link with an exact quote from the file, and only links with a matching quote are kept."
+ },
+ {
+  "file": "s06-07.wav",
+  "say": "If the quote is not in the file word for word, the link is thrown away, like this one."
+ },
+ {
+  "file": "s06-08.wav",
+  "say": "And when two files name the same A P I in the same way, they are joined into one node."
+ },
+ {
+  "file": "s06-09.wav",
+  "say": "Now the outage, the A P I and the rule form one connected chain, so a question about the outage can be traced all the way back to the rule it broke."
+ },
+ {
+  "file": "s07-00.wav",
+  "say": "Before anyone asks a question, the platform gets ready to search in two ways."
+ },
+ {
+  "file": "s07-01.wav",
+  "say": "A B M 25 keyword index finds passages by their exact words, which is fast and free."
+ },
+ {
+  "file": "s07-02.wav",
+  "say": "If the owner turns on embeddings, each passage also gets a vector, so a question can match by meaning too."
+ },
+ {
+  "file": "s07-03.wav",
+  "say": "Then, from the best matches, the search follows the graph's links two steps further, which is how a question about the outage can reach the rule and the waiver."
+ },
+ {
+  "file": "s08-00.wav",
+  "say": "Every build is saved as a draft, and Graphify groups its nodes into themes so people can explore it."
+ },
+ {
+  "file": "s08-01.wav",
+  "say": "Before anyone relies on it, the draft is tested: on CarePath's sixteen test questions, the right document comes back for fifteen."
+ },
+ {
+  "file": "s08-02.wav",
+  "say": "Once a person reviews it and publishes it, only that published version answers questions."
+ },
+ {
+  "file": "s08-03.wav",
+  "say": "So let's ask: why did the service go down on the fourteenth of August?"
+ },
+ {
+  "file": "s08-04.wav",
+  "say": "The answer points to the postmortem, the test finding and the page-size rule, and each source is checked again, live, before it is shown."
+ },
+ {
+  "file": "s08-05.wav",
+  "say": "The pieces were always there."
+ },
+ {
+  "file": "s08-06.wav",
+  "say": "Now, for the first time, they tell the story together: the rule, the gap, the waiver and the outage, each pointing back to where it was written."
+ }
+]

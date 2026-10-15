@@ -1,0 +1,19 @@
+{
+  "file": "carepath-one-rule-five-files.mp4",
+  "duration_seconds": 434.8,
+  "resolution": [
+    1920,
+    1080
+  ],
+  "frame_rate": 24,
+  "chapters": 9,
+  "video_codec": "H.264",
+  "audio_codec": "AAC",
+  "mean_volume_db": -16.1,
+  "voice": "Microsoft Heera (en-IN), engine speaking rate 1.2, no time-stretch",
+  "captions": "Burned in, by clause, plus a selectable SRT track",
+  "full_file_decode": "passed",
+  "sha256": "3caf9a2461dda67a5ee0571366087913c3f26f362090909aa8cef1542ef3b885",
+  "bytes": 104474643,
+  "scope": "Real CarePath files, scores and dates; quality scores from the platform's own rubric; benchmark figure from the scorecard baseline. AI proposals, theme names, index terms, vector values and the answer wording are illustrative and footnoted on screen. Not a live screen recording."
+}

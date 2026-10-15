@@ -1,0 +1,330 @@
+{
+  "entity_nodes": 4,
+  "business_edges": 3,
+  "total_nodes": 13,
+  "total_edges": 15,
+  "structural_counts": {
+    "nodes": 9,
+    "edges": 6
+  },
+  "invented_quote_rejected": "quote not in source",
+  "graph_walk_reached_related_database": true,
+  "graphify_themes": {
+    "count": 3,
+    "rows": [
+      {
+        "rank": 1,
+        "label": "claims portal",
+        "nodes": 5,
+        "percent": 38.5,
+        "documents": 1,
+        "cohesion": 50
+      },
+      {
+        "rank": 2,
+        "label": "Claims Guide.docx",
+        "nodes": 4,
+        "percent": 30.8,
+        "documents": 1,
+        "cohesion": 50
+      },
+      {
+        "rank": 3,
+        "label": "Claims Processing.docx",
+        "nodes": 4,
+        "percent": 30.8,
+        "documents": 1,
+        "cohesion": 50
+      }
+    ]
+  },
+  "sources": [
+    {
+      "pk": "00000000-0000-0000-0000-000000000201",
+      "application_id": "00000000-0000-0000-0000-000000000101",
+      "title": "Policy System.pdf",
+      "content": "## Overview\n\nThe claims portal uses the policy database to check policy details.",
+      "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58"
+    },
+    {
+      "pk": "00000000-0000-0000-0000-000000000202",
+      "application_id": "00000000-0000-0000-0000-000000000101",
+      "title": "Claims Processing.docx",
+      "content": "## Overview\n\nThe claims portal uses the claims database to store claim records.",
+      "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201"
+    },
+    {
+      "pk": "00000000-0000-0000-0000-000000000203",
+      "application_id": "00000000-0000-0000-0000-000000000101",
+      "title": "Claims Guide.docx",
+      "content": "## Overview\n\nThe claims guide explains the claims portal.",
+      "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf"
+    }
+  ],
+  "graph": {
+    "nodes": [
+      {
+        "id": "1a82a005a5e9ab056c9d2474",
+        "kind": "document",
+        "label": "Policy System.pdf",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201"
+      },
+      {
+        "id": "022a34bef481079ee90e50ee",
+        "kind": "section",
+        "label": "Overview",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1
+      },
+      {
+        "id": "516a56225764f500322e9fee",
+        "kind": "section",
+        "label": "The claims portal uses the policy database to check policy details.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3
+      },
+      {
+        "id": "2ff3fcda943354702eb59ac9",
+        "kind": "document",
+        "label": "Claims Processing.docx",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202"
+      },
+      {
+        "id": "625a01c2af3383162cdd9bd1",
+        "kind": "section",
+        "label": "Overview",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1
+      },
+      {
+        "id": "c088a8cf4683a324a1b91898",
+        "kind": "section",
+        "label": "The claims portal uses the claims database to store claim records.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3
+      },
+      {
+        "id": "6855631cbbaf8d4a193237d5",
+        "kind": "document",
+        "label": "Claims Guide.docx",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203"
+      },
+      {
+        "id": "1d30faf0b73c94e81e2f2a9f",
+        "kind": "section",
+        "label": "Overview",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "line": 1
+      },
+      {
+        "id": "70b520f4b538d4041d9b0e52",
+        "kind": "section",
+        "label": "The claims guide explains the claims portal.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "line": 3
+      },
+      {
+        "id": "b05c42844e7311cba87dcc51",
+        "kind": "entity",
+        "type": "Component",
+        "label": "policy database",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3
+      },
+      {
+        "id": "c05590cddb9afec907fcb217",
+        "kind": "entity",
+        "type": "Component",
+        "label": "claims database",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3
+      },
+      {
+        "id": "03914a66ed900ab3f357fca9",
+        "kind": "entity",
+        "type": "Runbook",
+        "label": "claims guide",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "line": 3
+      },
+      {
+        "id": "bf4e8e52acb9c7715c34bd31",
+        "kind": "entity",
+        "type": "Component",
+        "label": "claims portal",
+        "aliases": [
+          "claims portal"
+        ],
+        "knowledge_ids": [
+          "00000000-0000-0000-0000-000000000201",
+          "00000000-0000-0000-0000-000000000202",
+          "00000000-0000-0000-0000-000000000203"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "022a34bef481079ee90e50ee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1,
+        "evidence": "## Overview",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58"
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "516a56225764f500322e9fee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3,
+        "evidence": "The claims portal uses the policy database to check policy details.",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "625a01c2af3383162cdd9bd1",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1,
+        "evidence": "## Overview",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "c088a8cf4683a324a1b91898",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3,
+        "evidence": "The claims portal uses the claims database to store claim records.",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201"
+      },
+      {
+        "source": "6855631cbbaf8d4a193237d5",
+        "target": "1d30faf0b73c94e81e2f2a9f",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "line": 1,
+        "evidence": "## Overview",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf"
+      },
+      {
+        "source": "6855631cbbaf8d4a193237d5",
+        "target": "70b520f4b538d4041d9b0e52",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "line": 3,
+        "evidence": "The claims guide explains the claims portal.",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf"
+      },
+      {
+        "source": "bf4e8e52acb9c7715c34bd31",
+        "target": "b05c42844e7311cba87dcc51",
+        "relation": "depends on",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58",
+        "line": 3,
+        "evidence": "The claims portal uses the policy database to check policy details.",
+        "inferred": true
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "bf4e8e52acb9c7715c34bd31",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58",
+        "line": 3,
+        "evidence": "The claims portal uses the policy database to check policy details."
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "b05c42844e7311cba87dcc51",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58",
+        "line": 3,
+        "evidence": "The claims portal uses the policy database to check policy details."
+      },
+      {
+        "source": "bf4e8e52acb9c7715c34bd31",
+        "target": "c05590cddb9afec907fcb217",
+        "relation": "depends on",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201",
+        "line": 3,
+        "evidence": "The claims portal uses the claims database to store claim records.",
+        "inferred": true
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "bf4e8e52acb9c7715c34bd31",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201",
+        "line": 3,
+        "evidence": "The claims portal uses the claims database to store claim records."
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "c05590cddb9afec907fcb217",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201",
+        "line": 3,
+        "evidence": "The claims portal uses the claims database to store claim records."
+      },
+      {
+        "source": "03914a66ed900ab3f357fca9",
+        "target": "bf4e8e52acb9c7715c34bd31",
+        "relation": "covers",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf",
+        "line": 3,
+        "evidence": "The claims guide explains the claims portal.",
+        "inferred": true
+      },
+      {
+        "source": "6855631cbbaf8d4a193237d5",
+        "target": "03914a66ed900ab3f357fca9",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf",
+        "line": 3,
+        "evidence": "The claims guide explains the claims portal."
+      },
+      {
+        "source": "6855631cbbaf8d4a193237d5",
+        "target": "bf4e8e52acb9c7715c34bd31",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000203",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf",
+        "line": 3,
+        "evidence": "The claims guide explains the claims portal."
+      }
+    ],
+    "sources": [
+      {
+        "id": "00000000-0000-0000-0000-000000000201",
+        "title": "Policy System.pdf",
+        "digest": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58"
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000202",
+        "title": "Claims Processing.docx",
+        "digest": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201"
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000203",
+        "title": "Claims Guide.docx",
+        "digest": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf"
+      }
+    ],
+    "ontology": 1,
+    "ai_sources": {
+      "00000000-0000-0000-0000-000000000201": "4b37f180993cdf3793e8d7b315507ced4d04f1059448bce7b42663f527a15e58",
+      "00000000-0000-0000-0000-000000000202": "0c8fb446b2478b687ee177fb5dd726ba360a8428f3ca06629535da39f8025201",
+      "00000000-0000-0000-0000-000000000203": "32dca02e61da6b5ed94a9f44e66a371e4e4afd7f96c1cb07c5faf10106e926cf"
+    }
+  },
+  "scope": "Normalized synthetic text; prepared AI proposals. No upload conversion, provider request, embedding request, persistence, publication, or end-to-end answer executed."
+}

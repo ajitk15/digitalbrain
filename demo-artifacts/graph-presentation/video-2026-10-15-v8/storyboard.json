@@ -1,0 +1,163 @@
+[
+ {
+  "id": "problem",
+  "title": "One story, many files",
+  "tech": [],
+  "footnote": "",
+  "sentences": [
+   "Most of an application's documentation is spread across many different files.",
+   "The requirement lives in a spreadsheet, the coding standard in a Markdown file, the API in its specification, the test results in a traceability matrix, and the outage in a Word report.",
+   "Each file holds one piece of the story, but none of them can tell it alone.",
+   "So nobody puts the pieces together, until one afternoon in August, a single search takes the whole service down."
+  ]
+ },
+ {
+  "id": "upload",
+  "title": "One file goes in",
+  "tech": [
+   "Python · Django",
+   "ClamAV security check",
+   "SHA-256 fingerprint"
+  ],
+  "footnote": "",
+  "sentences": [
+   "Let's see how Digital Brain, a Python platform, brings that story together, starting with just one of these files: the non-functional requirements spreadsheet.",
+   "As soon as the file is uploaded, the platform performs a security check and takes a unique SHA-256 fingerprint of it, so we can always tell if it changes later."
+  ]
+ },
+ {
+  "id": "markdown",
+  "title": "Turn it into text",
+  "tech": [
+   "MarkItDown",
+   "Markdown",
+   "SHA-256 fingerprint"
+  ],
+  "footnote": "ID column hidden for readability. The stored record keeps it.",
+  "sentences": [
+   "Next, MarkItDown, an open-source converter, turns the spreadsheet into Markdown: plain text that both people and an LLM can read.",
+   "Each sheet becomes a heading, and each row becomes a line in a table.",
+   "Now look at this highlighted row.",
+   "It says something simple: when someone asks for a list, the server must limit how many items it sends back.",
+   "We'll call it the page-size rule, and the rest of this story is about what happened when it was broken.",
+   "The Markdown also gets a fingerprint of its own, because every answer will later be checked against exactly this text."
+  ]
+ },
+ {
+  "id": "quality",
+  "title": "Is this file good enough?",
+  "tech": [
+   "Python source check",
+   "Tesseract OCR confidence",
+   "No LLM · same score every time"
+  ],
+  "footnote": "Scores are from the real CarePath files. The three failure cards are examples.",
+  "sentences": [
+   "Before building anything, there is one more question to ask: can we trust this file?",
+   "A graph is only as good as what goes into it.",
+   "A table with no column names gives you nodes called \"column one\" and \"column two\", a half-finished document marked TBD gives answers that are not true yet, and a badly scanned page, read by Tesseract OCR, can match a quote exactly and still be wrong.",
+   "So the platform scores every document out of hundred, using six rule-based checks written in Python, with no LLM involved, so the same file always gets the same score.",
+   "Our spreadsheet scores a full hundred.",
+   "A raw export with no column names scores only sixty, and the platform shows exactly which points it lost and why.",
+   "The score is advice, not a gate: the owner decides whether to fix the file or go ahead."
+  ]
+ },
+ {
+  "id": "structure",
+  "title": "Four kinds of node",
+  "tech": [
+   "Python graph builder",
+   "No LLM · no cost"
+  ],
+  "footnote": "Focused view: a few of the sheet's 31 rows and lines.",
+  "sentences": [
+   "Now Python code builds the first graph, and it uses just four kinds of node.",
+   "The whole spreadsheet becomes a document node.",
+   "Each heading inside it becomes a section node, like Availability, Performance and Security.",
+   "Each table row becomes a record node, and here is our page-size rule.",
+   "And each cell in that row becomes a value node: the rule is checked by code review and an automated test, and if it is broken, the release is blocked.",
+   "Three other rules also block the release, so they share this same value node, and that is how related rules get connected.",
+   "Every node keeps the exact line it came from, and since no LLM has been used so far, all of this costs nothing."
+  ]
+ },
+ {
+  "id": "files",
+  "title": "Four files, one story",
+  "tech": [
+   "Same pipeline · 4",
+   "Source check across files"
+  ],
+  "footnote": "Dates and figures are from the CarePath postmortem and traceability matrix.",
+  "sentences": [
+   "Now let's add the other four files: the coding standard, the API specification, the test traceability matrix and the outage postmortem.",
+   "Each one goes through the same steps, and all four score a full hundred.",
+   "Looking across the files, the source check notices something interesting: three of them point to the same page-size rule.",
+   "And when we read them together, the story they tell is quite insightful.",
+   "In May, the test review found that patient search had no upper limit on its page size.",
+   "In June, that finding was waived so the release could go ahead, bundled with two others under a single reason.",
+   "Then in August, someone searched patients with a limit of one lakh records.",
+   "The service tried to read the whole table, and for forty-five minutes, sixty percent of all requests failed."
+  ]
+ },
+ {
+  "id": "ai",
+  "title": "AI connects the files",
+  "tech": [
+   "LLM: OpenAI or Claude",
+   "Fixed vocabulary",
+   "Exact-quote check",
+   "Entity merge"
+  ],
+  "footnote": "Proposals shown are illustrative. Each must pass the vocabulary and exact-quote checks.",
+  "sentences": [
+   "We could see that story because we read all five files ourselves.",
+   "The graph cannot, yet: it links things inside each file, but it cannot tell that the outage in the Word report is about the rule in the spreadsheet.",
+   "To connect the files by meaning, we bring in an LLM, OpenAI or Claude.",
+   "It reads each file, but it may only use a short, fixed list: eight kinds of thing, like a requirement or an incident, and twelve kinds of link, like affects or violates.",
+   "To keep costs low, it reads only files that are new or have changed, and it stays within the monthly budget.",
+   "So it suggests links like these: the August outage affected the patient search API, and that API broke the page-size rule.",
+   "The same standard of quality applies here: the LLM must prove every link with an exact quote from the file, and only links with a matching quote are kept.",
+   "If the quote is not in the file word for word, the link is thrown away, like this one.",
+   "And when two files name the same API in the same way, they are joined into one node.",
+   "Now the outage, the API and the rule form one connected chain, so a question about the outage can be traced all the way back to the rule it broke."
+  ]
+ },
+ {
+  "id": "search",
+  "title": "Make it searchable",
+  "tech": [
+   "BM25 keyword index",
+   "Embeddings · optional",
+   "NumPy",
+   "Two-hop graph walk"
+  ],
+  "footnote": "Index terms and vector values are illustrative.",
+  "sentences": [
+   "Before anyone asks a question, the platform gets ready to search in two ways.",
+   "A BM25 keyword index finds passages by their exact words, which is fast and free.",
+   "If the owner turns on embeddings, each passage also gets a vector, so a question can match by meaning too.",
+   "Then, from the best matches, the search follows the graph's links two steps further, which is how a question about the outage can reach the rule and the waiver."
+  ]
+ },
+ {
+  "id": "publish",
+  "title": "Test, publish, ask",
+  "tech": [
+   "Versioned drafts",
+   "Graphify",
+   "Benchmark",
+   "Publish gate",
+   "Live citation check"
+  ],
+  "footnote": "Theme names and answer wording illustrative. Benchmark from the CarePath scorecard baseline.",
+  "sentences": [
+   "Every build is saved as a draft, and Graphify groups its nodes into themes so people can explore it.",
+   "Before anyone relies on it, the draft is tested: on CarePath's sixteen test questions, the right document comes back for fifteen.",
+   "Once a person reviews it and publishes it, only that published version answers questions.",
+   "So let's ask: why did the service go down on the fourteenth of August?",
+   "The answer points to the postmortem, the test finding and the page-size rule, and each source is checked again, live, before it is shown.",
+   "The pieces were always there.",
+   "Now, for the first time, they tell the story together: the rule, the gap, the waiver and the outage, each pointing back to where it was written."
+  ]
+ }
+]

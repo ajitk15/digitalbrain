@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-14",
+  "duration_seconds": 120,
+  "resolution": "1920x1080",
+  "frames": 2880,
+  "frame_rate": 24,
+  "video": "H.264",
+  "audio": "AAC English narration",
+  "captions": "burned-in plus selectable subtitle track and SRT sidecar",
+  "full_decode": "passed",
+  "audio_present": "passed",
+  "video_sha256": "4c41dd69e4ea227267912cb0757af4eb15cf7ac581d4648d7abcfb0e3cedb076",
+  "live_example": {
+    "structural_builder": "passed",
+    "enrichment_and_merging": "passed",
+    "semantic_links": 2,
+    "entity_nodes": 3,
+    "shared_library_app_nodes": 1,
+    "invented_quote_rejected": true,
+    "rejection_reason": "quote not in source",
+    "graphify_themes": "executed",
+    "ai_provider": "controlled proposals; no live call",
+    "persistence_and_publication": "explained; not performed",
+    "production_source_records": "not loaded or modified"
+  },
+  "diagram": {
+    "type": "architecture",
+    "validation": "9/9 showcase; zero errors/warnings",
+    "specification_sha256": "d5a930b70904c6ea19ac190f24164839d62b5b669ada29cfc90a438f3634dbb8",
+    "artifact_sha256": "f00636bb13aae56cb92d05a13fde16c2b5ea03e56ef979ff31415be224cc3559",
+    "browser_evidence": "passed",
+    "visual_review": "passed: endpoint light/dark rendered screenshots inspected",
+    "correction_rounds": 1,
+    "artifact_path": "C:\\Workspace\\digitalbrian\\demo-artifacts\\graph-presentation\\video-2026-10-14\\process-diagram.html"
+  },
+  "video_visual_review": "passed: sampled encoded frames from all ten chapters; caption placement and diagram readability checked",
+  "chapters": 10
+}

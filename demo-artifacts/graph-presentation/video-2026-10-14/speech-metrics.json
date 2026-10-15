@@ -1,0 +1,62 @@
+[
+  {
+    "scene": 1,
+    "raw_seconds": 8.022812,
+    "tempo": 1,
+    "chapter_seconds": 9
+  },
+  {
+    "scene": 2,
+    "raw_seconds": 10.617778,
+    "tempo": 1,
+    "chapter_seconds": 12
+  },
+  {
+    "scene": 3,
+    "raw_seconds": 11.997687,
+    "tempo": 1.0524,
+    "chapter_seconds": 12
+  },
+  {
+    "scene": 4,
+    "raw_seconds": 15.771746,
+    "tempo": 1.0241,
+    "chapter_seconds": 16
+  },
+  {
+    "scene": 5,
+    "raw_seconds": 13.811973,
+    "tempo": 1.0307,
+    "chapter_seconds": 14
+  },
+  {
+    "scene": 6,
+    "raw_seconds": 10.85737,
+    "tempo": 1,
+    "chapter_seconds": 12
+  },
+  {
+    "scene": 7,
+    "raw_seconds": 11.862268,
+    "tempo": 1,
+    "chapter_seconds": 13
+  },
+  {
+    "scene": 8,
+    "raw_seconds": 12.35737,
+    "tempo": 1.084,
+    "chapter_seconds": 12
+  },
+  {
+    "scene": 9,
+    "raw_seconds": 9.472925,
+    "tempo": 1.0078,
+    "chapter_seconds": 10
+  },
+  {
+    "scene": 10,
+    "raw_seconds": 11.527619,
+    "tempo": 1.2263,
+    "chapter_seconds": 10
+  }
+]

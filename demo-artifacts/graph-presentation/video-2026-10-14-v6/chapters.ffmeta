@@ -1,0 +1,48 @@
+;FFMETADATA1
+title=Digital Brain - Graph generation
+comment=Indian English narrated teaching demo. Prepared AI proposals; real graph functions.
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=20000
+title=Start with one file
+[CHAPTER]
+TIMEBASE=1/1000
+START=20000
+END=44000
+title=Read its content
+[CHAPTER]
+TIMEBASE=1/1000
+START=44000
+END=72000
+title=Build the normal graph
+[CHAPTER]
+TIMEBASE=1/1000
+START=72000
+END=106000
+title=Add AI meaning
+[CHAPTER]
+TIMEBASE=1/1000
+START=106000
+END=145000
+title=Connect more files
+[CHAPTER]
+TIMEBASE=1/1000
+START=145000
+END=171000
+title=Validate and merge
+[CHAPTER]
+TIMEBASE=1/1000
+START=171000
+END=205000
+title=Prepare search
+[CHAPTER]
+TIMEBASE=1/1000
+START=205000
+END=223000
+title=Organise the graph
+[CHAPTER]
+TIMEBASE=1/1000
+START=223000
+END=240000
+title=Review and publish

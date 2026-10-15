@@ -1,0 +1,387 @@
+{
+  "sources": [
+    {
+      "pk": "00000000-0000-0000-0000-000000000201",
+      "application_id": "00000000-0000-0000-0000-000000000101",
+      "title": "Library note",
+      "content": "## Book list\n\nThe library app uses a book list.",
+      "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+    },
+    {
+      "pk": "00000000-0000-0000-0000-000000000202",
+      "application_id": "00000000-0000-0000-0000-000000000101",
+      "title": "Help guide",
+      "content": "## Help\n\nThe help guide explains the library app.",
+      "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+    }
+  ],
+  "proposals": {
+    "00000000-0000-0000-0000-000000000201": [
+      {
+        "subject": "library app",
+        "subject_type": "Component",
+        "relation": "uses",
+        "object": "book list",
+        "object_type": "Component",
+        "source_id": "00000000-0000-0000-0000-000000000201",
+        "quote": "The library app uses a book list."
+      }
+    ],
+    "00000000-0000-0000-0000-000000000202": [
+      {
+        "subject": "Help guide",
+        "subject_type": "Runbook",
+        "relation": "explains",
+        "object": "library app",
+        "object_type": "Component",
+        "source_id": "00000000-0000-0000-0000-000000000202",
+        "quote": "The help guide explains the library app."
+      }
+    ]
+  },
+  "structural": {
+    "nodes": [
+      {
+        "id": "1a82a005a5e9ab056c9d2474",
+        "kind": "document",
+        "label": "Library note",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201"
+      },
+      {
+        "id": "022a34bef481079ee90e50ee",
+        "kind": "section",
+        "label": "Book list",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1
+      },
+      {
+        "id": "516a56225764f500322e9fee",
+        "kind": "section",
+        "label": "The library app uses a book list.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3
+      },
+      {
+        "id": "2ff3fcda943354702eb59ac9",
+        "kind": "document",
+        "label": "Help guide",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202"
+      },
+      {
+        "id": "625a01c2af3383162cdd9bd1",
+        "kind": "section",
+        "label": "Help",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1
+      },
+      {
+        "id": "c088a8cf4683a324a1b91898",
+        "kind": "section",
+        "label": "The help guide explains the library app.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3
+      }
+    ],
+    "edges": [
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "022a34bef481079ee90e50ee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1,
+        "evidence": "## Book list",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "516a56225764f500322e9fee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3,
+        "evidence": "The library app uses a book list.",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "625a01c2af3383162cdd9bd1",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1,
+        "evidence": "## Help",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "c088a8cf4683a324a1b91898",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3,
+        "evidence": "The help guide explains the library app.",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      }
+    ],
+    "sources": [
+      {
+        "id": "00000000-0000-0000-0000-000000000201",
+        "title": "Library note",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000202",
+        "title": "Help guide",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      }
+    ]
+  },
+  "enriched": {
+    "nodes": [
+      {
+        "id": "1a82a005a5e9ab056c9d2474",
+        "kind": "document",
+        "label": "Library note",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201"
+      },
+      {
+        "id": "022a34bef481079ee90e50ee",
+        "kind": "section",
+        "label": "Book list",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1
+      },
+      {
+        "id": "516a56225764f500322e9fee",
+        "kind": "section",
+        "label": "The library app uses a book list.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3
+      },
+      {
+        "id": "2ff3fcda943354702eb59ac9",
+        "kind": "document",
+        "label": "Help guide",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202"
+      },
+      {
+        "id": "625a01c2af3383162cdd9bd1",
+        "kind": "section",
+        "label": "Help",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1
+      },
+      {
+        "id": "c088a8cf4683a324a1b91898",
+        "kind": "section",
+        "label": "The help guide explains the library app.",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3
+      },
+      {
+        "id": "5373066c3a0ddecc0f520473",
+        "kind": "entity",
+        "type": "Component",
+        "label": "book list",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3
+      },
+      {
+        "id": "d67125fc7d44d2a3cd282e3d",
+        "kind": "entity",
+        "type": "Runbook",
+        "label": "Help guide",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3
+      },
+      {
+        "id": "4aab14b7635e2f0998641edd",
+        "kind": "entity",
+        "type": "Component",
+        "label": "library app",
+        "aliases": [
+          "library app"
+        ],
+        "knowledge_ids": [
+          "00000000-0000-0000-0000-000000000201",
+          "00000000-0000-0000-0000-000000000202"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "022a34bef481079ee90e50ee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 1,
+        "evidence": "## Book list",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "516a56225764f500322e9fee",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "line": 3,
+        "evidence": "The library app uses a book list.",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "625a01c2af3383162cdd9bd1",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 1,
+        "evidence": "## Help",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "c088a8cf4683a324a1b91898",
+        "relation": "contains section",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "line": 3,
+        "evidence": "The help guide explains the library app.",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      },
+      {
+        "source": "4aab14b7635e2f0998641edd",
+        "target": "5373066c3a0ddecc0f520473",
+        "relation": "depends on",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060",
+        "line": 3,
+        "evidence": "The library app uses a book list.",
+        "inferred": true
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "4aab14b7635e2f0998641edd",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060",
+        "line": 3,
+        "evidence": "The library app uses a book list."
+      },
+      {
+        "source": "1a82a005a5e9ab056c9d2474",
+        "target": "5373066c3a0ddecc0f520473",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000201",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060",
+        "line": 3,
+        "evidence": "The library app uses a book list."
+      },
+      {
+        "source": "d67125fc7d44d2a3cd282e3d",
+        "target": "4aab14b7635e2f0998641edd",
+        "relation": "covers",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837",
+        "line": 3,
+        "evidence": "The help guide explains the library app.",
+        "inferred": true
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "d67125fc7d44d2a3cd282e3d",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837",
+        "line": 3,
+        "evidence": "The help guide explains the library app."
+      },
+      {
+        "source": "2ff3fcda943354702eb59ac9",
+        "target": "4aab14b7635e2f0998641edd",
+        "relation": "mentions entity",
+        "knowledge_id": "00000000-0000-0000-0000-000000000202",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837",
+        "line": 3,
+        "evidence": "The help guide explains the library app."
+      }
+    ],
+    "sources": [
+      {
+        "id": "00000000-0000-0000-0000-000000000201",
+        "title": "Library note",
+        "digest": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060"
+      },
+      {
+        "id": "00000000-0000-0000-0000-000000000202",
+        "title": "Help guide",
+        "digest": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+      }
+    ],
+    "ontology": 1,
+    "ai_sources": {
+      "00000000-0000-0000-0000-000000000201": "42e2c1a6b0c515e9ace5476d16f1501598c701ee3146e9cff5716c0557af1060",
+      "00000000-0000-0000-0000-000000000202": "2818318b031329e5b54c35ef7eaab8bb018cfb8cfa075257edac6e93a24e5837"
+    }
+  },
+  "quality": {
+    "result": "AI review recommended",
+    "source_count": 2,
+    "processed_sources": 2,
+    "nodes": 9,
+    "edges": 10,
+    "table_rows": 0,
+    "included_rows": 0,
+    "sections": 4,
+    "included_sections": 4,
+    "coverage_percent": 100.0,
+    "empty_cells": 0,
+    "duplicate_rows": 0,
+    "isolated_nodes": 0,
+    "warnings": [
+      "AI enrichment covers at most 25 sources / 24,000 characters per source and 60 relationships with quotes up to 300 characters. Quotes are verified; relationship meaning still needs human review."
+    ],
+    "provenance_percent": 100,
+    "method": "Markdown structure + openai / controlled-teaching-example",
+    "semantic_accuracy": "Not measured; exact quote and entity presence validated.",
+    "semantic_relationships": 2,
+    "rejected_relationships": 0,
+    "outside_ontology": 0,
+    "rejection_reasons": {},
+    "merged_entities": 1,
+    "ontology": 1,
+    "semantic_sources": 2,
+    "reused_sources": 0,
+    "reused_relationships": 0,
+    "pending_sources": 0,
+    "provider": "openai",
+    "model": "controlled-teaching-example"
+  },
+  "themes": {
+    "count": 2,
+    "rows": [
+      {
+        "rank": 1,
+        "label": "Help guide",
+        "nodes": 5,
+        "percent": 55.6,
+        "documents": 1,
+        "cohesion": 50
+      },
+      {
+        "rank": 2,
+        "label": "Library note",
+        "nodes": 4,
+        "percent": 44.4,
+        "documents": 1,
+        "cohesion": 50
+      }
+    ]
+  },
+  "verification": {
+    "structural_builder": "passed",
+    "enrichment_and_merging": "passed",
+    "semantic_links": 2,
+    "entity_nodes": 3,
+    "shared_library_app_nodes": 1,
+    "invented_quote_rejected": true,
+    "rejection_reason": "quote not in source",
+    "graphify_themes": "executed",
+    "ai_provider": "controlled proposals; no live call",
+    "persistence_and_publication": "explained; not performed",
+    "production_source_records": "not loaded or modified"
+  }
+}

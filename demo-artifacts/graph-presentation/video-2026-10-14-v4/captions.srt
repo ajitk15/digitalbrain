@@ -1,0 +1,227 @@
+1
+00:00:00,200 --> 00:00:04,376
+Let’s build a Digital Brain from three health insurance documents.
+
+2
+00:00:04,376 --> 00:00:08,553
+We upload a Policy System note, a Claims Processing note,
+
+3
+00:00:08,553 --> 00:00:12,729
+and a Claims Guide. The first explains where policy details
+
+4
+00:00:12,729 --> 00:00:16,906
+come from, the second describes claim records, and the third
+
+5
+00:00:16,906 --> 00:00:21,082
+explains the portal. We’ll follow their actual sentences into the
+
+6
+00:00:21,082 --> 00:00:21,500
+graph.
+
+7
+00:00:22,200 --> 00:00:26,700
+The application checks access and file integrity. MarkItDown converts the
+
+8
+00:00:26,700 --> 00:00:31,200
+PDF and Word files into readable text. Here, each document
+
+9
+00:00:31,200 --> 00:00:35,700
+becomes an Overview heading followed by its sentence. Django stores
+
+10
+00:00:35,700 --> 00:00:40,200
+this text as a knowledge source. A source identifier tells
+
+11
+00:00:40,200 --> 00:00:44,700
+us where it came from; a SHA-256 fingerprint helps detect
+
+12
+00:00:44,700 --> 00:00:46,500
+whether the content changes.
+
+13
+00:00:47,200 --> 00:00:51,602
+Now we request graph generation. First, our Python builder creates
+
+14
+00:00:51,602 --> 00:00:56,005
+a node for each document. A node simply means an
+
+15
+00:00:56,005 --> 00:01:00,407
+item in the graph. It also creates section nodes from
+
+16
+00:01:00,407 --> 00:01:04,809
+headings and ordinary text lines. Watch the Policy System document
+
+17
+00:01:04,809 --> 00:01:09,211
+connect to its Overview heading and its source sentence. These
+
+18
+00:01:09,211 --> 00:01:13,614
+arrows say ‘contains section.’ The other documents follow the same
+
+19
+00:01:13,614 --> 00:01:18,016
+pattern. Tables, when present, produce records and field values. At
+
+20
+00:01:18,016 --> 00:01:22,418
+this stage, we have captured document structure; we have not
+
+21
+00:01:22,418 --> 00:01:25,500
+inferred which business system uses which database.
+
+22
+00:01:26,200 --> 00:01:31,011
+With optional AI enrichment enabled, OpenAI or Claude reads the
+
+23
+00:01:31,011 --> 00:01:35,822
+text and proposes business relationships. Let’s examine the first sentence.
+
+24
+00:01:35,822 --> 00:01:40,633
+‘Claims portal’ is one item, ‘policy database’ is another, and
+
+25
+00:01:40,633 --> 00:01:45,444
+‘uses’ connects them. We display that as two nodes joined
+
+26
+00:01:45,444 --> 00:01:50,256
+by an arrow. The proposal also identifies their types, the
+
+27
+00:01:50,256 --> 00:01:55,067
+source document and the exact quote. The second document proposes
+
+28
+00:01:55,067 --> 00:01:59,878
+another uses connection, this time to Claims Database. The third
+
+29
+00:01:59,878 --> 00:02:04,689
+proposes Claims Guide explains Claims Portal. These are suggestions first.
+
+30
+00:02:04,689 --> 00:02:09,500
+They become accepted connections only after the application checks them.
+
+31
+00:02:10,200 --> 00:02:14,488
+Each proposal passes through checks. Does the source exist? Is
+
+32
+00:02:14,488 --> 00:02:18,776
+the exact quote present? Are the named items in it?
+
+33
+00:02:18,776 --> 00:02:23,064
+Are their types and relationship allowed? Our valid examples pass.
+
+34
+00:02:23,064 --> 00:02:27,353
+An invented sentence saying the portal uses a Payment Database
+
+35
+00:02:27,353 --> 00:02:31,641
+fails because that quote is absent. These checks filter unsupported
+
+36
+00:02:31,641 --> 00:02:35,500
+proposals; they do not replace human review of meaning.
+
+37
+00:02:36,200 --> 00:02:40,376
+The three proposals mention the same Claims Portal. Matching names
+
+38
+00:02:40,376 --> 00:02:44,553
+and types become one shared node. Now the business view
+
+39
+00:02:44,553 --> 00:02:48,729
+has four nodes and three connections. Select an arrow, and
+
+40
+00:02:48,729 --> 00:02:52,906
+its original document and supporting quote can explain why it
+
+41
+00:02:52,906 --> 00:02:57,082
+exists. The full graph also retains document structure and evidence
+
+42
+00:02:57,082 --> 00:02:57,500
+links.
+
+43
+00:02:58,200 --> 00:03:02,596
+When search embeddings are enabled for this requested AI run,
+
+44
+00:03:02,596 --> 00:03:06,992
+OpenAI converts relationship text and document passages into numerical vectors.
+
+45
+00:03:06,992 --> 00:03:11,389
+Django stores them for later meaning-based search. The vectors help
+
+46
+00:03:11,389 --> 00:03:15,785
+find information when a question is asked; they do not
+
+47
+00:03:15,785 --> 00:03:20,181
+create or prove the graph connections. Unchanged text can reuse
+
+48
+00:03:20,181 --> 00:03:21,500
+its stored vector.
+
+49
+00:03:22,200 --> 00:03:26,836
+Django saves a numbered draft. For review, Graphify uses NetworkX
+
+50
+00:03:26,836 --> 00:03:31,473
+and Leiden clustering to organise existing connected nodes into themes.
+
+51
+00:03:31,473 --> 00:03:36,109
+It groups the graph we built; it does not invent
+
+52
+00:03:36,109 --> 00:03:37,500
+the underlying facts.
+
+53
+00:03:38,200 --> 00:03:42,933
+A reviewer checks the draft and publishes it. Restricted sources
+
+54
+00:03:42,933 --> 00:03:47,667
+are excluded from graph generation. Later, graph answers check current
+
+55
+00:03:47,667 --> 00:03:52,400
+evidence and user access again. We have turned three documents
+
+56
+00:03:52,400 --> 00:03:57,133
+into connected knowledge, with proof behind the connections. Next, we’ll
+
+57
+00:03:57,133 --> 00:03:59,500
+see how retrieval uses it.

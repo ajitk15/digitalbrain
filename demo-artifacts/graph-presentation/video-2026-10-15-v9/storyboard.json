@@ -1,0 +1,143 @@
+[
+  {
+    "id": "problem",
+    "title": "The problem",
+    "tech": [],
+    "footnote": "",
+    "sentences": [
+      "Every IT team knows this situation.",
+      "The rule is written in one document, the coding standard in another, the test finding is sitting in a spreadsheet, and the outage report is in Word.",
+      "Each one knows a part of the story.",
+      "Nobody sees the full picture, until something breaks."
+    ]
+  },
+  {
+    "id": "upload",
+    "title": "One file goes in",
+    "tech": ["Django", "ClamAV virus scan", "SHA-256 fingerprint"],
+    "footnote": "",
+    "sentences": [
+      "So let's start small, with just one file: our non-functional requirements spreadsheet.",
+      "As soon as it's uploaded, it is scanned for viruses, and the platform keeps a fingerprint of the file.",
+      "So far, nothing leaves the server."
+    ]
+  },
+  {
+    "id": "markdown",
+    "title": "Into Markdown",
+    "tech": ["MarkItDown", "Sealed offline conversion", "Tesseract OCR · optional"],
+    "footnote": "ID column hidden for readability. The stored record keeps it.",
+    "sentences": [
+      "Next, MarkItDown converts the spreadsheet into Markdown.",
+      "Each sheet becomes a heading, and each row becomes a line in a table.",
+      "See this row: no unbounded queries.",
+      "Every list API must cap its page size on the server.",
+      "That is our rule for today.",
+      "The conversion runs in a sealed process, with no network at all.",
+      "And if a page is only a scanned image, Tesseract OCR can read it, and marks that text with how confident it is.",
+      "The Markdown gets its own fingerprint, and every citation is checked against it later."
+    ]
+  },
+  {
+    "id": "quality",
+    "title": "Is this file good enough?",
+    "tech": ["Rule-based source check", "No AI · same score every time"],
+    "footnote": "Scores are from the real CarePath files.",
+    "sentences": [
+      "Before building anything, the platform checks the document itself.",
+      "Six simple checks, out of hundred.",
+      "Is the text readable? Do the tables have proper column names? Are there headings? Does it say its version and owner? Is anything still marked TBD?",
+      "There is no AI here, so the same file always gets the same score.",
+      "Our spreadsheet scores hundred. Ready.",
+      "A raw export with no column names gets sixty, with the reason for every point lost.",
+      "It only suggests. It never blocks."
+    ]
+  },
+  {
+    "id": "structure",
+    "title": "The structure graph",
+    "tech": ["Python graph builder", "No AI · no cost"],
+    "footnote": "Focused view: a few of the sheet's 31 rows and lines.",
+    "sentences": [
+      "Now the graph.",
+      "The document becomes one node, and each heading becomes a section.",
+      "Each table row becomes a record, and each cell becomes a value.",
+      "So our rule is linked to, verified by code review and automated test, and, on breach, blocks release.",
+      "Three other rules also block release, so they meet at the same value node. That linking is free.",
+      "Every node remembers its line, and its source fingerprint.",
+      "No AI so far, and no cost."
+    ]
+  },
+  {
+    "id": "files",
+    "title": "Four more files",
+    "tech": ["Same pipeline × 4", "Source check across files"],
+    "footnote": "Dates and figures are from the CarePath postmortem and traceability matrix.",
+    "sentences": [
+      "Same way, let's add four more files: the coding standard, the API specification, the test traceability matrix, and the outage postmortem.",
+      "Each goes through the same steps: Markdown, quality check, structure.",
+      "All four score hundred.",
+      "The source check also notices that three of these files point to the same page-size rule.",
+      "Now read them together, and the story is honestly quite shocking.",
+      "In May, the test review found that patient search had no upper limit.",
+      "In June, it was waived for the release.",
+      "And in August, someone searched patients with a limit of one lakh records.",
+      "The service read the whole table, and for forty-five minutes, sixty percent of requests failed."
+    ]
+  },
+  {
+    "id": "ai",
+    "title": "AI adds the meaning",
+    "tech": ["OpenAI or Claude", "Fixed vocabulary", "Exact-quote check", "Entity merge"],
+    "footnote": "Proposals shown are illustrative. Each must pass the vocabulary and exact-quote checks.",
+    "sentences": [
+      "Structure tells us where things are written. To understand what they mean, we bring in AI.",
+      "OpenAI or Claude reads each file, but it can only use a fixed vocabulary: eight types, like requirement, component and incident, and twelve relationships, like affects, violates and verifies.",
+      "So it proposes: the outage affects the patient search API, and that API violates the page-size rule.",
+      "Every proposal must carry an exact quote.",
+      "If the quote is not found word for word, it is simply rejected.",
+      "The same API, named the same way in two files, becomes one node.",
+      "And only new or changed files go to the model, within the monthly budget."
+    ]
+  },
+  {
+    "id": "search",
+    "title": "Ready for questions",
+    "tech": ["BM25 keyword index", "OpenAI embeddings · optional", "NumPy", "Two-hop graph walk"],
+    "footnote": "Index terms and vector values are illustrative.",
+    "sentences": [
+      "Next, we prepare for search.",
+      "A keyword index, BM25, is always built. It is fast, and it is free.",
+      "If the owner switches on embeddings, each passage also gets a vector, so a question can match by meaning, and not just by words.",
+      "Both rankings are combined, and the graph can walk two steps along these relationships to collect connected evidence."
+    ]
+  },
+  {
+    "id": "draft",
+    "title": "Saved, organised, measured",
+    "tech": ["Versioned drafts", "Graphify", "NetworkX", "Leiden clustering", "Benchmark"],
+    "footnote": "Theme names illustrative. Benchmark figure from the CarePath scorecard baseline.",
+    "sentences": [
+      "Every build is saved as a numbered draft.",
+      "Graphify groups the nodes into themes using Leiden clustering, so the graph is easier to explore.",
+      "And the draft is tested on its own: on CarePath's sixteen test questions, the right document comes back for fifteen."
+    ]
+  },
+  {
+    "id": "publish",
+    "title": "Publish, then ask",
+    "tech": ["Human review", "Publish gate", "Live citation check", "Access rules"],
+    "footnote": "Answer wording illustrative. Citations are the expected evidence for these five files.",
+    "sentences": [
+      "Finally, a person reviews the draft and publishes it.",
+      "Only the published version answers questions.",
+      "So let's ask: why did the service go down on the fourteenth of August?",
+      "The answer points to the postmortem, the test-review finding, and the page-size rule.",
+      "And every citation is checked again, live: the source is still active, the fingerprint has not changed, and the quote is still there.",
+      "Restricted documents are never used.",
+      "So, one spreadsheet became Markdown, then a small graph.",
+      "Four files later, the graph tells the complete story: the rule, the gap, the waiver, and the outage.",
+      "And every line points back to where it came from."
+    ]
+  }
+]
