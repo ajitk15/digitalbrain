@@ -448,7 +448,10 @@ sections and table columns that identify it, and the checks its content must pas
 quoted by line, a timed timeline, owned actions...). It types a document from **its own
 content** - title, headings, tables - and only weakly from the file name, because people
 name files any way they like; no model, so the same text always gets the same type and
-says which lines chose it. Nothing clearly ahead (`MIN_SCORE`, `MIN_MARGIN`) is **Other**,
+says which lines chose it. Only a document's **own** number counts - the first in its
+opening - never one it cites (a release plan listing TST-CAREPATH-002 is not a test plan);
+a `Document: … Version: … Owner:` control line is not a title, and nor is the first of
+several top-level headings; one heading answers for one section. Nothing clearly ahead (`MIN_SCORE`, `MIN_MARGIN`) is **Other**,
 judged by the source check alone: a confident wrong type would judge a document against
 the wrong list. It is stored inside `KnowledgeEntry.quality` beside the source check as a
 **separate** "Content check" score, so the source check's six checks and verdict are

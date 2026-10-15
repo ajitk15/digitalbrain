@@ -30,7 +30,7 @@ from .graphs import walk
 from .ticket_quality import NOT_REQUIREMENTS, Check, quote
 
 #: Part of what is stored with a result, so a registry change re-runs it.
-REGISTRY_VERSION = 1
+REGISTRY_VERSION = 2
 OTHER = "other"
 #: A type needs this much evidence, and this far ahead of the next one, to be
 #: chosen. Below either, the document is Other and says what it looked like.
@@ -78,17 +78,40 @@ ACCEPTANCE = re.compile(r"acceptance criteria|\bgiven\b.{1,200}\bwhen\b.{1,200}\
 ADR_STATUS = re.compile(
     r"\bstatus\b\W{0,6}(proposed|accepted|rejected|superseded|deprecated|draft)\b", re.I
 )
+#: A decision record by number or name: ADR-0001, ADR 4, "decision record".
+DECISION_RECORD = r"\bADR[- ]?\d+\b|\bdecision records?\b"
+#: An exit criterion a test run can be held to: 85% coverage, no open Sev-2.
+MEASURABLE_EXIT = (
+    r"\d+(?:\.\d+)?\s*%|\b(?:no|zero|0)\s+(?:open\s+)?(?:sev(?:erity)?[- ]?[1-4]"
+    r"|p[1-4]\b|critical|high|blocker)"
+)
 MARKDOWN_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 SLIDE = re.compile(r"^<!--\s*slide number:\s*\d+\s*-->$", re.I)
 BOLD_LINE = re.compile(r"^\*{1,2}([^*]{2,80})\*{1,2}:?$")
 UNDERLINE = re.compile(r"^[=\-~_*\s]{4,}$")
+#: The labels of a document's control line: "Document: OPS-CAREPATH-011 - Version
+#: 1.0 - Owner: Ward Manager". Two of them make a line metadata, not a title.
+METADATA = re.compile(
+    r"\b(?:document|version|revision|status|owner|author|release date|reviewed"
+    r"|classification)\b",
+    re.I,
+)
+#: A document number, the shape BRD-CAREPATH-001 takes.
+DOCUMENT_NUMBER = re.compile(r"(?<![\w-])([A-Z]{2,5})-(?:[A-Z][A-Z0-9]*-)+\d+\b")
 
 
 @lru_cache(maxsize=8192)
 def fold(word):
-    """`ranking.term`, then a final "e" dropped from a long word: `stem` turns
-    "consequences" into "consequenc" and leaves "consequence" whole."""
-    word = ranking.term(word)
+    """`ranking.term` until it stops changing, then a final "e" dropped from a
+    long word. Once is not enough: `stem` takes one ending at a time, so
+    "findings" became "finding" while "finding" became "find", and a heading in
+    the plural never matched a section named in the singular. And `stem` turns
+    "consequences" into "consequenc" but leaves "consequence" whole."""
+    for _ in range(3):
+        folded = ranking.term(word)
+        if folded == word:
+            break
+        word = folded
     return word[:-1] if len(word) >= 6 and word.endswith("e") else word
 
 
@@ -188,6 +211,11 @@ class Parsed:
     def opening(self):
         return self.content[:OPENING]
 
+    @property
+    def number(self):
+        """The first document number in the opening: the document's own."""
+        return DOCUMENT_NUMBER.search(self.opening)
+
 
 def clean_heading(text):
     """A heading's words without its numbering, markup or trailing references."""
@@ -219,6 +247,7 @@ def parse(content, title=""):
     headings, tables = [], []
     after_slide = False
     first = True
+    opening_line = None
     for item in walk(content):
         if item.kind == "header":
             tables.append({"line": item.index + 1, "headers": item.headers, "rows": []})
@@ -238,9 +267,13 @@ def parse(content, title=""):
         # The first line is the title when it reads as one: a Word title paragraph,
         # a text file's banner, the first slide's heading.
         if first and len(text.split()) <= 16 and not text.endswith(".") and (
+            len({label.casefold() for label in METADATA.findall(text)}) < 2
+        ) and (
             not found or (found[0] == 2 and not MARKDOWN_HEADING.match(text))
         ):
             found = (1, found[1] if found else text)
+        if first:
+            opening_line = item.index + 1
         first = False
         if found:
             level, name = found
@@ -254,7 +287,13 @@ def parse(content, title=""):
                 break
         body = "\n".join(lines[heading.line:end])
         heading.words = len(re.findall(r"[^\W_]{2,}", body))
-    top = next((h for h in headings if h.level == 1), None)
+    # The title is the first line read as one, or the document's only top-level
+    # heading. Several top-level headings below an opening that is not a title
+    # are its sections: "# Before the patient leaves" is not a name.
+    tops = [h for h in headings if h.level == 1]
+    top = next((h for h in tops if h.line == opening_line), None) or (
+        tops[0] if len(tops) == 1 else None
+    )
     named = top.text if top else ""
     for table in tables:
         for row in table["rows"]:
@@ -267,12 +306,17 @@ def parse(content, title=""):
 
 def matched_sections(parsed, kind):
     """{section key: the heading that names it}, first heading wins; the title is
-    the document's name, not one of its sections."""
-    found = {}
+    the document's name, not one of its sections. A heading answers for one
+    section: "Before the patient leaves" is a procedure or a prerequisite, and
+    counting it as both scored one heading twice."""
+    found, used = {}, set()
     for section in kind.sections:
         for heading in parsed.headings:
-            if heading.line != parsed.title_line and section.matches(heading.tokens):
+            if heading.line == parsed.title_line or heading.line in used:
+                continue
+            if section.matches(heading.tokens):
                 found[section.key] = heading
+                used.add(heading.line)
                 break
     return found
 
@@ -302,10 +346,13 @@ def score(parsed, kind):
         if name:
             points += 2
             evidence.append(f"its file name says “{name}”")
+    # A document's own number - the first BRD-CAREPATH-001 its opening shows, or
+    # ADR-0001 in its title - not one it cites: a release plan listing the test
+    # plan TST-CAREPATH-002 among its criteria is not a test plan, and NFR-03 is
+    # a row, not a number.
+    own = parsed.number
     for prefix in kind.prefixes:
-        # A document's own number - BRD-CAREPATH-001, or ADR-0001 in its title -
-        # not a requirement the opening happens to list: NFR-03 is a row.
-        match = re.search(rf"(?<![\w-]){prefix}-(?:[A-Z][A-Z0-9]*-)+\d+\b", parsed.opening) or (
+        match = (own if own and own.group(1) == prefix else None) or (
             re.search(rf"(?<![\w-]){prefix}-\d[\d-]*\b", parsed.title)
         )
         if match:
@@ -907,7 +954,15 @@ TYPES = [
             recommended("risks", "Risks and trade-offs", "risk", "deferred", "trade off",
                         "limitation", "decision", "residual"),
         ),
-        rules=(rule("references", 15),),
+        rules=(
+            rule("references", 15),
+            rule("opening", 10, label="Points at its decisions",
+                 pattern=DECISION_RECORD,
+                 what="which recorded decisions it rests on",
+                 improve="Name the decision records behind each choice (ADR-0001), so a "
+                         "reader can see why it is built this way and what would change it.",
+                 key="decisions", anywhere=True),
+        ),
         description="How the system is built, and why that way.",
     ),
     DocumentType(
@@ -968,7 +1023,15 @@ TYPES = [
             recommended("tooling", "Tooling", "tool", "lint", "automation"),
             recommended("review", "Review checklist", "review", "checklist"),
         ),
-        rules=(rule("steps", 10),),
+        columns=(("tool", "linter", "formatter", "analyser", "analyzer"),
+                 ("gate", "enforced", "enforcement", "ci", "pipeline")),
+        rules=(
+            rule("steps", 10),
+            rule("columns", 15, label="Says how each rule is enforced",
+                 groups=(("tool", "linter", "formatter", "analyser", "analyzer", "check"),
+                         ("gate", "enforced", "enforcement", "ci", "pipeline", "when")),
+                 what="tools", key="enforced"),
+        ),
         description="The rules a team holds itself to, and how they are checked.",
     ),
     DocumentType(
@@ -990,7 +1053,16 @@ TYPES = [
             recommended("exclusions", "What is not covered", "not covered", "risk",
                         "limitation", "exclusion", "out of scope"),
         ),
-        rules=(rule("references", 15),),
+        rules=(
+            rule("references", 15),
+            rule("opening", 15, label="Exit criteria can be measured",
+                 pattern=MEASURABLE_EXIT,
+                 what="a measurable exit criterion (a coverage or pass rate, or no open "
+                      "defects of a severity)",
+                 improve="State when testing is done in numbers - “line coverage at least "
+                         "85%”, “no open Sev-1 or Sev-2 defects” - so done is not a matter of "
+                         "opinion.", key="exit", anywhere=True),
+        ),
         description="What will be tested, how, and when testing is done.",
     ),
     DocumentType(
@@ -1025,6 +1097,9 @@ TYPES = [
             recommended("overview", "Overview", "overview", "glance", "model", "purpose",
                         "service", "architecture"),
         ),
+        columns=(("step", "action", "task", "command"),
+                 ("check", "verify", "expected", "recorded in", "evidence"),
+                 ("escalat", "if it fails", "on failure", "rollback")),
         patterns=((STEP, "numbered steps"),),
         rules=(
             rule("steps", 20),
@@ -1053,7 +1128,18 @@ TYPES = [
                         "waiver"),
             recommended("rollback", "Rollback", "rollback", "roll back", "back out"),
         ),
-        rules=(rule("references", 10),),
+        rules=(
+            rule("references", 10),
+            rule("columns", 15, label="Each criterion has a status",
+                 groups=(("criterion", "criteria", "gate", "check"),
+                         ("status", "met", "result", "verdict", "actual")),
+                 what="release criteria", key="criteria"),
+            rule("columns", 10, label="The schedule has dates and owners",
+                 groups=(("date", "when", "time", "day"),
+                         ("activity", "step", "task", "what", "milestone"),
+                         ("owner", "who", "responsible")),
+                 what="schedule", key="schedule"),
+        ),
         description="What ships, when, and what must be true first.",
     ),
     DocumentType(
@@ -1074,6 +1160,7 @@ TYPES = [
                  what="which version it describes",
                  improve="Put the version number and release date at the top.",
                  key="version"),
+            rule("references", 10, what="tickets or requirements"),
         ),
         description="What changed for the people who use it.",
     ),
@@ -1122,6 +1209,12 @@ TYPES = [
                          ("target", "objective", "threshold"),
                          ("window", "period", "measured over")),
                  what="objectives", key="slo"),
+            rule("opening", 10, label="Targets are numbers",
+                 pattern=r"\d+(?:\.\d+)?\s*(?:%|ms\b|seconds?\b|minutes?\b)",
+                 what="a numeric target",
+                 improve="Give each objective a number and a unit - 99.9% over 30 days, p95 "
+                         "under 300 ms - so a breach is a fact rather than a feeling.",
+                 key="numeric", anywhere=True),
         ),
         description="How reliable the service promises to be, and how that is measured.",
     ),
@@ -1138,6 +1231,25 @@ TYPES = [
             recommended("exceptions", "Exceptions", "exception", "waiver", "emergency"),
             recommended("records", "Records and review", "record", "review", "audit",
                         "compliance", "enforcement"),
+        ),
+        rules=(
+            rule("opening", 15, label="Says who decides",
+                 pattern=r"\b(?:approv\w*|decid\w*|authori[sz]\w*|signed off) by\b"
+                         r"|\baccountable\b|\bwho decides\b|\bapprover\b"
+                         # or a column saying it for each case: | **Approval** |
+                         r"|\|\s*\**\s*(?:approval|approver|approved by|authori[sz]ed by"
+                         r"|decided by|authority)\s*\**\s*\|",
+                 what="who approves or decides",
+                 improve="Name the role that approves, decides or grants an exception, so "
+                         "nobody has to guess whose call it is.", key="decides",
+                 anywhere=True),
+            rule("opening", 10, label="Says when it is reviewed",
+                 pattern=r"\b(?:next review|review(?:ed)? (?:date|due|annually|every|by)"
+                         r"|effective (?:date|from)|valid until)\b",
+                 what="when it takes effect or is next reviewed",
+                 improve="Add “Next review: <date>” to the opening: a policy nobody has "
+                         "reread is followed as it was, not as it should be.",
+                 key="review", anywhere=True),
         ),
         description="What people must do, who decides, and what happens otherwise.",
     ),
@@ -1188,6 +1300,22 @@ TYPES = [
             recommended("recommendation", "Recommendation", "recommendation", "outcome",
                         "decision", "proposal"),
             recommended("actions", "Actions", "action", "next step"),
+        ),
+        columns=(("gate", "criterion", "criteria"),
+                 ("verdict", "met", "pass fail", "rag"),
+                 ("finding", "issue"),
+                 ("severity", "rating")),
+        rules=(
+            rule("opening", 15, label="Records the decision",
+                 pattern=r"\b(?:approved|rejected|deferred|declined|no[- ]go|decided)\b"
+                         r"|\bdecision:",
+                 what="what was decided",
+                 improve="Say what was decided and by whom, so the pack is a record and "
+                         "not only the case that was made.", key="decision", anywhere=True),
+            rule("columns", 10, label="Findings are rated",
+                 groups=(("finding", "issue", "risk", "gap"),
+                         ("severity", "rating", "priority", "impact", "rag")),
+                 what="findings", key="findings"),
         ),
         description="What a group is asked to decide, on what evidence.",
     ),

@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-15T13:03:53+00:00",
- "commit": "975768b",
+ "generated_at": "2026-10-15T13:35:33+00:00",
+ "commit": "e49bbea",
  "corpus": {
   "sources": 42,
   "questions": 16
@@ -132,7 +132,7 @@
    "unit": "%",
    "better": "higher",
    "tolerance": 0,
-   "value": 85.7
+   "value": 100.0
   },
   "phi_recall": {
    "aspect": "Personal data (PHI/PII)",
@@ -417,38 +417,7 @@
   },
   "document_types": {
    "typed": 35,
-   "mistyped": [
-    {
-     "document": "03-build/coding-standards.md",
-     "expected": "standards",
-     "got": "standards",
-     "got_untitled": "other"
-    },
-    {
-     "document": "05-release/release-plan.docx",
-     "expected": "release_plan",
-     "got": "release_plan",
-     "got_untitled": "other"
-    },
-    {
-     "document": "05-release/release-readiness-review.pptx",
-     "expected": "review",
-     "got": "review",
-     "got_untitled": "other"
-    },
-    {
-     "document": "08-quality-samples/audit-letter-mixed.pdf",
-     "expected": "other",
-     "got": "other",
-     "got_untitled": "policy"
-    },
-    {
-     "document": "08-quality-samples/discharge-checklist.docx",
-     "expected": "runbook",
-     "got": "runbook",
-     "got_untitled": "other"
-    }
-   ]
+   "mistyped": []
   },
   "personal_data": {
    "phi_misses": [],
