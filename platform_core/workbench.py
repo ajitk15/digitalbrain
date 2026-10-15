@@ -82,7 +82,7 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         personal_data=scan(f"{title}\n{content}"),
         # Documents only: a typed note or an imported ticket is not a document,
         # and a ticket has its own score (`ticket_quality`).
-        quality=check_source(content, document.conversion_report) if document else {},
+        quality=check_source(content, document.conversion_report, title) if document else {},
         sensitivity=RESTRICTED if inherited else STANDARD,
     )
     entry.full_clean()
@@ -277,6 +277,37 @@ def knowledge(request, pk):
     return documents(request, pk)
 
 
+def set_document_type(request, app, entry):
+    """A person says what kind of document this is, or hands it back to the rules.
+
+    Documents only - a ticket has its own score. The choice is a registry key or
+    blank; anything else is refused rather than stored. The check is worked out
+    again at once, so the page shows the document judged as what it now is.
+    """
+    from .document_types import BY_KEY
+    from .source_quality import run as check_source
+
+    chosen = request.POST.get("document_type", "")
+    if not entry.document_id or (chosen and chosen not in BY_KEY):
+        return HttpResponse("Unknown document type.", status=400)
+    document = entry.document
+    with transaction.atomic():
+        entry.document_type = chosen
+        entry.quality = check_source(entry.content, document.conversion_report, entry.title,
+                                     chosen)
+        entry.save(update_fields=["document_type", "quality"])
+        audit(request.user, "knowledge.type_set", entry.pk, app.product.portfolio.organization,
+              {"document_type": chosen or "detected"})
+    messages.success(
+        request,
+        f"Checked as {BY_KEY[chosen].label.lower()}." if chosen
+        else "Checked as the type the rules detect.",
+    )
+    if request.POST.get("next") == "document":
+        return redirect("document-detail", pk=app.pk, document_id=document.pk)
+    return redirect("knowledge-detail", pk=app.pk, entry_id=entry.pk)
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def knowledge_detail(request, pk, entry_id):
@@ -312,6 +343,8 @@ def knowledge_detail(request, pk, entry_id):
                 else "AI may use this source again.",
             )
             return redirect("knowledge-detail", pk=pk, entry_id=entry.pk)
+        if action == "set_type":
+            return set_document_type(request, app, entry)
         if action != "archive":
             return HttpResponse("Unknown action.", status=400)
         with transaction.atomic():
@@ -320,6 +353,7 @@ def knowledge_detail(request, pk, entry_id):
             audit(request.user, "knowledge.archived", entry.pk, app.product.portfolio.organization)
         messages.success(request, "Source archived. New answers will exclude it.")
         return redirect("knowledge", pk=pk)
+    from .document_types import CHOICES as TYPE_CHOICES
     from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
     from .source_quality import for_entries
@@ -340,6 +374,7 @@ def knowledge_detail(request, pk, entry_id):
             "origin": origin,
             "quality": quality,
             "source_check": source_check,
+            "type_choices": TYPE_CHOICES,
             "ticket_fields": [
                 (label, fields[key])
                 for key, label in (

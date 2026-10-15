@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-13T09:40:39+00:00",
- "commit": "c053178",
+ "generated_at": "2026-10-15T13:03:53+00:00",
+ "commit": "975768b",
  "corpus": {
   "sources": 42,
   "questions": 16
@@ -117,6 +117,22 @@
    "better": "higher",
    "tolerance": 0,
    "value": 100.0
+  },
+  "document_type_accuracy": {
+   "aspect": "Document types",
+   "label": "Documents typed as a person would",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "document_type_untitled_accuracy": {
+   "aspect": "Document types",
+   "label": "Typed right with no title or file name to go on",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 85.7
   },
   "phi_recall": {
    "aspect": "Personal data (PHI/PII)",
@@ -398,6 +414,41 @@
   "ontology": {
    "typing_errors": [],
    "merge_errors": []
+  },
+  "document_types": {
+   "typed": 35,
+   "mistyped": [
+    {
+     "document": "03-build/coding-standards.md",
+     "expected": "standards",
+     "got": "standards",
+     "got_untitled": "other"
+    },
+    {
+     "document": "05-release/release-plan.docx",
+     "expected": "release_plan",
+     "got": "release_plan",
+     "got_untitled": "other"
+    },
+    {
+     "document": "05-release/release-readiness-review.pptx",
+     "expected": "review",
+     "got": "review",
+     "got_untitled": "other"
+    },
+    {
+     "document": "08-quality-samples/audit-letter-mixed.pdf",
+     "expected": "other",
+     "got": "other",
+     "got_untitled": "policy"
+    },
+    {
+     "document": "08-quality-samples/discharge-checklist.docx",
+     "expected": "runbook",
+     "got": "runbook",
+     "got_untitled": "other"
+    }
+   ]
   },
   "personal_data": {
    "phi_misses": [],

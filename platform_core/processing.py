@@ -235,14 +235,17 @@ def supersede(user, app_id, document, content):
     A document has one entry, so the old one gives the document up and goes
     inactive - which takes it out of answers and of published versions the way
     any superseded source leaves them. A restriction carries over: converting
-    again must never quietly make a restricted source usable.
+    again must never quietly make a restricted source usable, and a document type
+    a person set carries over too.
     """
     from .sensitivity import RESTRICTED
     from .source_quality import run as check_source
 
     previous = KnowledgeEntry.objects.select_for_update().filter(document=document).first()
     if previous and previous.active and previous.content == content:
-        previous.quality = check_source(content, document.conversion_report)
+        previous.quality = check_source(
+            content, document.conversion_report, document.name, previous.document_type
+        )
         previous.save(update_fields=["quality"])
         return previous
     if previous:
@@ -253,6 +256,14 @@ def supersede(user, app_id, document, content):
     if previous and previous.sensitivity == RESTRICTED:
         entry.sensitivity = RESTRICTED
         entry.save(update_fields=["sensitivity"])
+    # So does the type a person set: new text of the same document is the same
+    # kind of document, and checking it as whatever the rules guess would undo them.
+    if previous and previous.document_type:
+        entry.document_type = previous.document_type
+        entry.quality = check_source(
+            content, document.conversion_report, document.name, entry.document_type
+        )
+        entry.save(update_fields=["document_type", "quality"])
     return entry
 
 

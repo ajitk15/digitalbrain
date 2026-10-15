@@ -101,6 +101,21 @@ METRICS = {
     ),
     "merge_precision": ("Ontology", "Name merges that are right", "%", "higher", 0),
     "merge_recall": ("Ontology", "Same-thing names that merge", "%", "higher", 0),
+    # Document types - what each document is, against labels a person gave.
+    "document_type_accuracy": (
+        "Document types",
+        "Documents typed as a person would",
+        "%",
+        "higher",
+        0,
+    ),
+    "document_type_untitled_accuracy": (
+        "Document types",
+        "Typed right with no title or file name to go on",
+        "%",
+        "higher",
+        0,
+    ),
     # Personal and health data.
     "phi_recall": (
         "Personal data (PHI/PII)",
@@ -499,6 +514,43 @@ def ontology_quality():
     }, {"typing_errors": wrong, "merge_errors": merge_errors}
 
 
+def document_typing():
+    """Every document typed by `document_types`, against benchmarks/document-types.json.
+
+    Twice: as uploaded, with its file name (not its folder, which says the answer),
+    and with its title line and file name removed, which is how well the type is
+    read from what the document contains. No database, no model.
+    """
+    from .document_types import classify, parse
+
+    labels = json.loads((BENCH / "document-types.json").read_text(encoding="utf-8"))
+    labels = labels["documents"]
+    right = untitled = typed = 0
+    wrong = []
+    for path in sorted(p for p in DOCS.rglob("*") if p.is_file()):
+        text = convert(path)
+        if text is None:
+            continue
+        name = path.relative_to(DOCS).as_posix()
+        # A document nobody labelled fails the metric rather than leaving it.
+        expected = labels.get(name, "unlabelled")
+        got = classify(text, path.name)["key"]
+        title_line = parse(text).title_line
+        lines = text.splitlines()
+        bare = "\n".join(lines[: title_line - 1] + lines[title_line:]) if title_line else text
+        got_bare = classify(bare)["key"]
+        typed += 1
+        right += got == expected
+        untitled += got_bare == expected
+        if got != expected or got_bare != expected:
+            wrong.append({"document": name, "expected": expected, "got": got,
+                          "got_untitled": got_bare})
+    return {
+        "document_type_accuracy": round(100 * right / typed, 1) if typed else 0.0,
+        "document_type_untitled_accuracy": round(100 * untitled / typed, 1) if typed else 0.0,
+    }, {"typed": typed, "mistyped": wrong}
+
+
 def personal_data(ws, revision):
     """The scan against labelled samples, then restriction and permissions on every path."""
     from types import SimpleNamespace as Scope
@@ -853,6 +905,8 @@ def measure():
         found, details["seeded_tickets"] = agentic(ws, revision)
         values.update(found)
         found, details["ontology"] = ontology_quality()
+        values.update(found)
+        found, details["document_types"] = document_typing()
         values.update(found)
         data, details["personal_data"] = personal_data(ws, revision)
         values.update(data)

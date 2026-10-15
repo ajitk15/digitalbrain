@@ -440,6 +440,28 @@ Sources and a warning on Generate. Nothing here ever disables Generate or leaves
 source out. Both read tables through `graphs.walk`, the walk `build_graph` itself makes:
 **do not give either its own table parser**, or a finding will disagree with the graph.
 
+**What a document is decides what it is judged against** (`document_types.py`). A closed
+registry like `ontology.TYPES` - business requirements, ADR, runbook, postmortem and
+sixteen more, plus Other - each naming the title words, document-number prefixes,
+sections and table columns that identify it, and the checks its content must pass
+(required sections, numbered requirements, a rationale and measure column, vague words
+quoted by line, a timed timeline, owned actions...). It types a document from **its own
+content** - title, headings, tables - and only weakly from the file name, because people
+name files any way they like; no model, so the same text always gets the same type and
+says which lines chose it. Nothing clearly ahead (`MIN_SCORE`, `MIN_MARGIN`) is **Other**,
+judged by the source check alone: a confident wrong type would judge a document against
+the wrong list. It is stored inside `KnowledgeEntry.quality` beside the source check as a
+**separate** "Content check" score, so the source check's six checks and verdict are
+unchanged. An owner or contributor can set the type (`KnowledgeEntry.document_type`, a
+registry key or blank, audited); a person's choice always wins, survives "Convert again",
+and the page still says what the rules would have chosen. `REGISTRY_VERSION` re-runs
+stored results like `QUALITY_VERSION` does. The scorecard types every CarePath document
+against `benchmarks/document-types.json`, as uploaded and with its title and file name
+removed - the second is the honest measure of reading content rather than names. An AI
+fallback for documents the rules leave as Other, and an AI content review, are not built:
+if they are, they must be opt-in, go through `budget.check`, and quote what they claim the
+way `graph_ai` does.
+
 `walk` promotes a wholly bold first row under a blank header to the header - how
 MarkItDown writes a Word table whose header row is not marked as one. Stored text is
 untouched, so digests and quotes are too; the generator is `structural-v2` so every

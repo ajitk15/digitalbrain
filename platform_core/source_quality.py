@@ -16,17 +16,22 @@ score. The result is stored on `KnowledgeEntry.quality` when a document's text
 is added.
 `QUALITY_VERSION` is part of what is stored; a rule change bumps it, and a
 stored result from older rules is worked out again when it is next read.
+
+Beside it, what kind of document this is and how good it is as one
+(`document_types`), as a second score: the six checks here say whether the
+text can be read, and do not change with its kind.
 """
 
 import re
 from collections import Counter
 from dataclasses import asdict
 
+from . import document_types
 from .graphs import MAX_RECORDS_PER_SOURCE, walk
 from .models import KnowledgeEntry
 from .ticket_quality import PLACEHOLDER, Check, quote
 
-QUALITY_VERSION = 3
+QUALITY_VERSION = 4
 
 #: Text this short was most likely not read: a scanned page, an image, a
 #: template with nothing filled in.
@@ -321,8 +326,33 @@ def verdict(score, checks):
 TONES = {"Ready": "good", "Needs work": "fair", "Poor": "poor"}
 
 
-def run(content, report=None):
-    """The stored form: the rules' version and each check, as plain values."""
+def kind_of(content, title="", document_type=""):
+    """What the document is: the type a person set, else the one the rules detect.
+
+    The detected type is kept either way, so the page can say what the rules
+    would have chosen beside what a person did.
+    """
+    detected = document_types.classify(content, title)
+    chosen = document_types.BY_KEY.get(document_type)
+    if not chosen:
+        return {**detected, "source": "rules", "override": ""}
+    return {
+        **detected,
+        "key": chosen.key,
+        "label": chosen.label,
+        "source": "person",
+        "override": chosen.key,
+        "detected": {"key": detected["key"], "label": detected["label"]},
+    }
+
+
+def run(content, report=None, title="", document_type=""):
+    """The stored form: the rules' version and each check, as plain values.
+
+    Beside the source check, what kind of document it is and the checks for
+    that kind (`document_types`): a separate score, so a document that reads
+    well is not marked down for being a kind with no content rules.
+    """
     content = content or ""
     checks = [
         readable_check(content, report),
@@ -332,12 +362,20 @@ def run(content, report=None):
         finished_check(content),
         limits_check(content),
     ]
-    return {"version": QUALITY_VERSION, "checks": [asdict(check) for check in checks]}
+    kind = kind_of(content, title, document_type)
+    return {
+        "version": QUALITY_VERSION,
+        "types": document_types.REGISTRY_VERSION,
+        "checks": [asdict(check) for check in checks],
+        "type": kind,
+        "type_checks": [
+            asdict(check) for check in document_types.checks(content, kind["key"], title)
+        ],
+    }
 
 
-def result(stored):
-    """What a page shows, from the stored form: the shape `ticket_quality.assess` has."""
-    checks = [Check(**check) for check in stored["checks"]]
+def scored(checks):
+    """The result shape `ticket_quality.assess` has, for a list of checks."""
     points = sum(check.points for check in checks)
     earned = sum(check.earned for check in checks)
     score = round(100 * earned / points) if points else 0
@@ -357,12 +395,34 @@ def result(stored):
     }
 
 
-def assess(content, report=None):
-    return result(run(content, report))
+def result(stored):
+    """What a page shows, from the stored form: the source check, the document's
+    type, and - when its type has content rules - how good it is as one."""
+    shown = scored([Check(**check) for check in stored["checks"]])
+    kind = stored.get("type") or {}
+    type_checks = [Check(**check) for check in stored.get("type_checks", [])]
+    shown["type"] = kind
+    shown["content"] = scored(type_checks) if type_checks else None
+    if shown["content"]:
+        shown["content"]["title"] = f"Content check · {kind['label']}"
+    if kind:
+        runner = document_types.BY_KEY.get(kind.get("runner_up") or "")
+        shown["type"] = {**kind, "runner_up_label": runner.label if runner else ""}
+    return shown
 
 
-def current(stored):
-    return bool(stored) and stored.get("version") == QUALITY_VERSION
+def assess(content, report=None, title="", document_type=""):
+    return result(run(content, report, title, document_type))
+
+
+def current(stored, document_type=""):
+    """Worked out under today's rules and today's registry, for the type a person set."""
+    return (
+        bool(stored)
+        and stored.get("version") == QUALITY_VERSION
+        and stored.get("types") == document_types.REGISTRY_VERSION
+        and (stored.get("type") or {}).get("override", "") == (document_type or "")
+    )
 
 
 def for_entries(entries):
@@ -375,15 +435,17 @@ def for_entries(entries):
     results = {}
     stale = []
     for entry in entries:
-        if current(entry.quality):
+        if current(entry.quality, entry.document_type):
             results[entry.pk] = result(entry.quality)
         else:
             stale.append(entry.pk)
     if stale:
-        for pk, content, report in KnowledgeEntry.objects.filter(pk__in=stale).values_list(
-            "pk", "content", "document__conversion_report"
+        for pk, content, report, title, document_type in KnowledgeEntry.objects.filter(
+            pk__in=stale
+        ).values_list(
+            "pk", "content", "document__conversion_report", "title", "document_type"
         ):
-            stored = run(content, report)
+            stored = run(content, report, title, document_type)
             KnowledgeEntry.objects.filter(pk=pk).update(quality=stored)
             results[pk] = result(stored)
     return results

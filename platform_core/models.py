@@ -383,6 +383,9 @@ class KnowledgeEntry(models.Model):
     #: What `source_quality.run` found when the source was added: the rules'
     #: version and each check. Empty until checked; stale rules are re-run on read.
     quality = models.JSONField(default=dict, blank=True)
+    #: The kind of document a person said this is, a `document_types` key. Blank
+    #: means the type the rules detect, which `quality` records either way.
+    document_type = models.CharField(max_length=40, blank=True)
     #: Who the source system lets open this record, as platform user ids. None
     #: means its system is not checked and every member may see it in answers;
     #: a list - empty until the first check - limits answers to those users.
