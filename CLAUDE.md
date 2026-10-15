@@ -448,7 +448,10 @@ sections and table columns that identify it, and the checks its content must pas
 quoted by line, a timed timeline, owned actions...). It types a document from **its own
 content** - title, headings, tables - and only weakly from the file name, because people
 name files any way they like; no model, so the same text always gets the same type and
-says which lines chose it. Nothing clearly ahead (`MIN_SCORE`, `MIN_MARGIN`) is **Other**,
+says which lines chose it. Only a document's **own** number counts - the first in its
+opening - never one it cites (a release plan listing TST-CAREPATH-002 is not a test plan);
+a `Document: … Version: … Owner:` control line is not a title, and nor is the first of
+several top-level headings; one heading answers for one section. Nothing clearly ahead (`MIN_SCORE`, `MIN_MARGIN`) is **Other**,
 judged by the source check alone: a confident wrong type would judge a document against
 the wrong list. It is stored inside `KnowledgeEntry.quality` beside the source check as a
 **separate** "Content check" score, so the source check's six checks and verdict are
@@ -481,7 +484,10 @@ Prompt 1 named a type for two of seven Other documents - an on-call handover tha
 mentioned "the deployment runbook", an overview from its index tables; prompt 2
 (`TYPING_VERSION`, part of the cache key) took precision 77.8% -> 100% at recall 87.5% on
 claude-sonnet-5. It was tuned on those same fifteen items, so treat the pack as a floor,
-not proof, and add to it before trusting a new model.
+not proof, and add to it before trusting a new model. Those figures are the registry-1
+pack: registry 2 types four of its CarePath documents by rule, so the pack was rebuilt
+(twelve items, four of them a type and eight Other) and has not been re-measured. Its
+recall now rests on the four written items alone - more are the first thing to add.
 
 `walk` promotes a wholly bold first row under a blank header to the header - how
 MarkItDown writes a Word table whose header row is not marked as one. Stored text is

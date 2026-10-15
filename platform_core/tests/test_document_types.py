@@ -198,6 +198,79 @@ class OtherTypeTests(SimpleTestCase):
                                           "runbook")}
         self.assertEqual(found["type-exercised"].state, "missing")
 
+    def test_a_policy_says_who_decides_in_prose_or_in_a_column(self):
+        rules = "Change policy\n\n## Classes of change\n\n"
+        prose = rules + "A schema change is approved by the release review.\n"
+        column = rules + "| Class | Approval |\n| --- | --- |\n| Normal | Release review |\n"
+        silent = rules + "A schema change goes to the release review.\n"
+        for text, state in ((prose, "good"), (column, "good"), (silent, "missing")):
+            found = {c.key: c for c in checks(text, "policy")}
+            self.assertEqual(found["type-decides"].state, state, text)
+        self.assertEqual(found["type-review"].state, "missing")
+
+    def test_a_review_records_what_was_decided(self):
+        text = ("Readiness review\n\n## Purpose\n\nDecide whether the release goes to the "
+                "pilot clinics on Thursday, given the open findings below.\n\n"
+                "| Finding | Severity |\n| --- | --- |\n| Unbounded search | High |\n")
+        found = {c.key: c for c in checks(text, "review")}
+        self.assertEqual(found["type-decision"].state, "missing")
+        self.assertEqual(found["type-findings"].state, "good")
+        found = {c.key: c for c in checks(text + "\n## Decision\n\nApproved under waiver.\n",
+                                          "review")}
+        self.assertEqual(found["type-decision"].state, "good")
+
+    def test_a_test_plan_states_when_testing_is_done_in_numbers(self):
+        text = "Test plan\n\n## Exit criteria\n\nTesting is done when the team is happy.\n"
+        found = {c.key: c for c in checks(text, "test_plan")}
+        self.assertEqual(found["type-exit"].state, "missing")
+        for done in ("Line coverage at or above 85%.", "No open Sev-2 defects."):
+            found = {c.key: c for c in checks(text + done, "test_plan")}
+            self.assertEqual(found["type-exit"].state, "good", done)
+
+    def test_a_release_plan_gives_each_criterion_a_status(self):
+        text = ("Release plan\n\n## Release criteria\n\n| Criterion | Source |\n| --- | --- |\n"
+                "| Tests pass | Test plan |\n")
+        found = {c.key: c for c in checks(text, "release_plan")}
+        self.assertEqual(found["type-criteria"].finding,
+                         "The table at line 5 has criterion but no column for status.")
+
+
+class ReadingContentTests(SimpleTestCase):
+    """What the type is read from when the title and file name say nothing."""
+
+    def test_a_plural_heading_names_a_section_named_in_the_singular(self):
+        self.assertEqual(document_types.tokens("Open findings"),
+                         document_types.tokens("open finding"))
+        parsed = document_types.parse("Board pack\n\n## Open findings\n\nThree, all high.\n")
+        found = document_types.matched_sections(parsed, document_types.BY_KEY["review"])
+        self.assertEqual(found["findings"].text, "Open findings")
+
+    def test_a_control_line_is_not_a_title(self):
+        letter = ("Document GOV-CAREPATH-014  Version 1.0  Owner: Information Governance Lead\n\n"
+                  "Dear colleagues, thank you for the notes from last week's visit.\n")
+        self.assertEqual(document_types.parse(letter).title, "")
+        self.assertEqual(classify(letter)["key"], "other")
+
+    def test_only_its_own_number_counts_not_one_it_cites(self):
+        text = ("Document: REL-CAREPATH-001 · Version: 1.0 · Owner: Delivery Manager\n\n"
+                "Release depends on the test plan TST-CAREPATH-002 being executed.\n")
+        parsed = document_types.parse(text)
+        self.assertEqual(parsed.number.group(0), "REL-CAREPATH-001")
+        _, evidence = document_types.score(parsed, document_types.BY_KEY["test_plan"])
+        self.assertFalse(any("document number" in line for line in evidence))
+
+    def test_several_top_level_headings_are_sections_not_a_title(self):
+        text = ("Document: OPS-CAREPATH-011 - Version 1.0 - Owner: Ward Manager\n\n"
+                "# Before the patient leaves\n\nMedicines are reconciled by the pharmacist.\n\n"
+                "# After the patient leaves\n\nThe referral is acknowledged within a day.\n")
+        parsed = document_types.parse(text)
+        self.assertEqual(parsed.title, "")
+        found = document_types.matched_sections(parsed, document_types.BY_KEY["runbook"])
+        self.assertEqual(found["procedure"].text, "Before the patient leaves")
+        # One heading answers for one section: "Before" is not also the prerequisites.
+        self.assertNotIn("prerequisites", found)
+        self.assertEqual(found["verification"].text, "After the patient leaves")
+
 
 class StoredTests(SimpleTestCase):
     def test_the_stored_check_carries_the_type_and_a_separate_score(self):
