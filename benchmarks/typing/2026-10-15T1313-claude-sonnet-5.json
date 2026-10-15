@@ -1,0 +1,240 @@
+{
+ "generated_at": "2026-10-15T13:13:56+00:00",
+ "model": "claude-sonnet-5",
+ "provider": "claude",
+ "registry_version": 1,
+ "prompt_version": 1,
+ "metrics": {
+  "items": 15,
+  "recall": 87.5,
+  "precision": 77.8,
+  "wrong_type": 0,
+  "false_positive_on_other": 2,
+  "quote_refused": 0
+ },
+ "details": [
+  {
+   "id": "carepath/00-overview/sdlc-map.pptx",
+   "label": "other",
+   "verdict": "accepted",
+   "key": "design",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "Phases\n| # | Phase | Produced | Owner | Gate out |",
+    "Artifact index\n| Phase | Document | Path |"
+   ],
+   "tokens": [
+    2690,
+    64
+   ]
+  },
+  {
+   "id": "carepath/03-build/coding-standards.md",
+   "label": "standards",
+   "verdict": "accepted",
+   "key": "standards",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "House rules, not a style guide. Formatting is `ruff`'s problem; what follows is\nthe part a linter cannot check.",
+    "## Review checklist"
+   ],
+   "tokens": [
+    2522,
+    70
+   ]
+  },
+  {
+   "id": "carepath/05-release/release-plan.docx",
+   "label": "release_plan",
+   "verdict": "accepted",
+   "key": "release_plan",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "Document: REL-CAREPATH-001 · Version: 1.0 · Status: Executed · Owner: Delivery Manager · Release date: 2026-06-04",
+    "## Release criteria",
+    "## Schedule"
+   ],
+   "tokens": [
+    2626,
+    112
+   ]
+  },
+  {
+   "id": "carepath/05-release/release-readiness-review.pptx",
+   "label": "review",
+   "verdict": "accepted",
+   "key": "review",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "Decide whether CarePath 1.0.0 releases to the pilot on 4 June",
+    "Approved: release to pilot on 2026-06-04 under waiver W-01"
+   ],
+   "tokens": [
+    2208,
+    74
+   ]
+  },
+  {
+   "id": "carepath/08-quality-samples/bed-capacity-export.xlsx",
+   "label": "other",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1303,
+    48
+   ]
+  },
+  {
+   "id": "carepath/08-quality-samples/discharge-checklist.docx",
+   "label": "runbook",
+   "verdict": "accepted",
+   "key": "runbook",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "OPS-CAREPATH-011 - Version 1.0 - Status: Active - Owner: Ward Manager, Riverside General - 2026-09-01",
+    "# Before the patient leaves",
+    "# After the patient leaves"
+   ],
+   "tokens": [
+    1553,
+    94
+   ]
+  },
+  {
+   "id": "carepath/08-quality-samples/discharge-summary-template.md",
+   "label": "other",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1138,
+    181
+   ]
+  },
+  {
+   "id": "carepath/08-quality-samples/on-call-handover.txt",
+   "label": "other",
+   "verdict": "accepted",
+   "key": "runbook",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "Please read the deployment runbook before Thursday.",
+    "Owner for the follow-up is TBD."
+   ],
+   "tokens": [
+    1498,
+    52
+   ]
+  },
+  {
+   "id": "carepath/08-quality-samples/staff-canteen-menu.md",
+   "label": "other",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1324,
+    61
+   ]
+  },
+  {
+   "id": "written/weekly-sync",
+   "label": "review",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1300,
+    69
+   ]
+  },
+  {
+   "id": "written/outage-summary",
+   "label": "postmortem",
+   "verdict": "accepted",
+   "key": "postmortem",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "On Tuesday the referral service stopped accepting new referrals for 47 minutes.",
+    "The rotation job had never been run against the referral database, because it was added to the rotation list after the last test."
+   ],
+   "tokens": [
+    1356,
+    86
+   ]
+  },
+  {
+   "id": "written/what-changed",
+   "label": "release_notes",
+   "verdict": "accepted",
+   "key": "release_notes",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "CarePath 2.4 is available from today.",
+    "Nothing needs to be done to upgrade: the change was applied overnight."
+   ],
+   "tokens": [
+    1271,
+    61
+   ]
+  },
+  {
+   "id": "written/what-could-go-wrong",
+   "label": "risk_register",
+   "verdict": "accepted",
+   "key": "risk_register",
+   "reason": "",
+   "proposed": "",
+   "quotes": [
+    "Things that could stop the pilot, as of February:"
+   ],
+   "tokens": [
+    1272,
+    37
+   ]
+  },
+  {
+   "id": "written/lunch-rota",
+   "label": "other",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1220,
+    55
+   ]
+  },
+  {
+   "id": "written/letter",
+   "label": "other",
+   "verdict": "refused",
+   "key": "other",
+   "reason": "model said Other",
+   "proposed": "other",
+   "quotes": [],
+   "tokens": [
+    1226,
+    64
+   ]
+  }
+ ]
+}

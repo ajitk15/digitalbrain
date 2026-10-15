@@ -196,7 +196,10 @@ DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 #: `graphs.requested_configuration`), and the structural rebuild never makes one. An
 #: owner can still switch it off in AI settings. Reranking is here: it is a
 #: paid call on every question, worth it only once the benchmark says so.
-SEEDED_DISABLED = {"reranking"}
+#: Document typing is here: once on, it spends on every document the rules
+#: cannot type, with nobody asking. Document review is not, for the reason
+#: graph generation is not: it spends only when an owner presses its button.
+SEEDED_DISABLED = {"reranking", "document_typing"}
 
 
 def configured_providers():
@@ -298,6 +301,14 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         # Reorders evidence already verified for this user; knowledge access,
         # checked above, is what reading it needs.
         pass
+    elif purpose == "document_typing":
+        # Runs as whoever converted the document, or pressed the button: someone
+        # who may change knowledge, as setting a type by hand needs.
+        if grant.role not in {"owner", "contributor"}:
+            raise PermissionDenied
+    elif purpose == "document_review":
+        if grant.role != "owner":
+            raise PermissionDenied
     else:
         raise ValidationError("Unsupported AI purpose.")
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()

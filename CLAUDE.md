@@ -457,10 +457,31 @@ registry key or blank, audited); a person's choice always wins, survives "Conver
 and the page still says what the rules would have chosen. `REGISTRY_VERSION` re-runs
 stored results like `QUALITY_VERSION` does. The scorecard types every CarePath document
 against `benchmarks/document-types.json`, as uploaded and with its title and file name
-removed - the second is the honest measure of reading content rather than names. An AI
-fallback for documents the rules leave as Other, and an AI content review, are not built:
-if they are, they must be opt-in, go through `budget.check`, and quote what they claim the
-way `graph_ai` does.
+removed - the second is the honest measure of reading content rather than names.
+
+**AI may help with the type, never above the rules** (`document_ai.py`). Two purposes,
+both through `ai.invoke_ai` (grants, `budget.check`, an `AIUsage` receipt), both cached in
+`DocumentAIResult` by text digest and rubric so the same text is never paid for twice -
+a refused verdict included - and neither reads a source `answerable()` excludes.
+`document_typing` (**seeded off**, `ai.SEEDED_DISABLED`) is asked only where the rules
+say Other with low confidence and no person set a type: after conversion in the worker,
+charged to whoever converted it, or by an owner's or contributor's "Ask AI what it is".
+The model picks one registry key and quotes the lines that show it; a key outside the
+registry, Other, no quote or **any** quote not in `KnowledgeEntry.content` exactly leaves
+it Other. An accepted type is `quality["type"]` with `source="ai"` and its quotes, which
+`source_quality.ai_named` checks against the text again every time the check is worked
+out; content checks then judge it as that type. A person's type still wins.
+`document_review` (seeded on, like graph generation: it spends only on an owner's button)
+judges clarity, testability, contradictions and gaps for the current type; a finding whose
+quote is not in the text is dropped, and the card sits beside the Content check as advice
+and never changes its score. Both are plain POST forms. Measure a prompt or model change
+with `manage.py typing_pack <app> --as <user> --record` (paid, one call per item of
+`benchmarks/typing-pack.json`: documents the rules leave as Other, labelled by a person).
+Prompt 1 named a type for two of seven Other documents - an on-call handover that
+mentioned "the deployment runbook", an overview from its index tables; prompt 2
+(`TYPING_VERSION`, part of the cache key) took precision 77.8% -> 100% at recall 87.5% on
+claude-sonnet-5. It was tuned on those same fifteen items, so treat the pack as a floor,
+not proof, and add to it before trusting a new model.
 
 `walk` promotes a wholly bold first row under a blank header to the header - how
 MarkItDown writes a Word table whose header row is not marked as one. Stored text is

@@ -9,6 +9,7 @@ from collections import Counter
 
 from django.core.management.base import BaseCommand
 
+from platform_core.document_ai import cached_type
 from platform_core.models import KnowledgeEntry
 from platform_core.source_quality import result, run
 
@@ -25,12 +26,14 @@ class Command(BaseCommand):
             entries = entries.filter(application_id=options["application"])
         verdicts = Counter()
         for entry in entries.select_related("document").only(
-            "id", "content", "quality", "title", "document_type",
+            "id", "content", "quality", "title", "document_type", "application_id", "digest",
             "document__conversion_report",
         ).iterator(chunk_size=200):
+            # A type a model already named for this text is kept, never asked for:
+            # this command spends nothing.
             stored = run(
                 entry.content, entry.document.conversion_report, entry.title,
-                entry.document_type,
+                entry.document_type, cached_type(entry.application_id, entry.digest),
             )
             verdicts[result(stored)["verdict"]] += 1
             if stored != entry.quality:

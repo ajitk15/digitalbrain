@@ -68,6 +68,19 @@ PURPOSE_NOTES = {
         "switch it on only after `manage.py benchmark --rerank` shows it helps. It can only "
         "reorder evidence that was already verified, never add to it."
     ),
+    "document_typing": (
+        "Names the type of a document the rules leave as Other, when they are not confident. "
+        "The model picks one type from the registry and quotes the lines that show it; any "
+        "quote not found in the document exactly leaves it Other. A paid call per new or "
+        "changed document the rules cannot type, never repeated for the same text. A type a "
+        "person sets always wins."
+    ),
+    "document_review": (
+        "Reviews a document for clarity, testability, contradictions and obvious gaps, as the "
+        "type it is - only when an owner asks on its page. Every finding quotes the passage it "
+        "is about and is dropped if that quote is not in the document. Advisory: the rule-based "
+        "content check and its score are unchanged."
+    ),
     "embeddings": (
         "Finds where to start looking by meaning, so a question worded differently from the "
         "source still reaches it. Relationships and passages are embedded when an AI graph run "

@@ -326,15 +326,46 @@ def verdict(score, checks):
 TONES = {"Ready": "good", "Needs work": "fair", "Poor": "poor"}
 
 
-def kind_of(content, title="", document_type=""):
-    """What the document is: the type a person set, else the one the rules detect.
+def ai_named(detected, ai_type, content):
+    """The type a model named for this text (`document_ai`), if it may be used.
+
+    Only where the rules said Other, only a verdict the checks accepted, and
+    only while every quote it rests on is still in the text exactly - checked
+    again here, as a citation is, rather than trusted because it once was.
+    """
+    if not ai_type or detected["key"] != document_types.OTHER:
+        return None
+    kind = document_types.BY_KEY.get(ai_type.get("key") or "")
+    quotes = ai_type.get("quotes") or []
+    if (ai_type.get("verdict") != "accepted" or not kind or kind.key == document_types.OTHER
+            or not quotes or not all(quote.get("text", "") in content for quote in quotes)):
+        return None
+    return kind
+
+
+def kind_of(content, title="", document_type="", ai_type=None):
+    """What the document is: the type a person set, else the one the rules detect,
+    else - where the rules said Other - the one a model named and quoted.
 
     The detected type is kept either way, so the page can say what the rules
-    would have chosen beside what a person did.
+    would have chosen beside what a person or a model did.
     """
     detected = document_types.classify(content, title)
     chosen = document_types.BY_KEY.get(document_type)
     if not chosen:
+        named = ai_named(detected, ai_type, content)
+        if named:
+            return {
+                **detected,
+                "key": named.key,
+                "label": named.label,
+                "confidence": "ai",
+                "source": "ai",
+                "override": "",
+                "quotes": ai_type["quotes"],
+                "model": ai_type.get("model", ""),
+                "detected": {"key": detected["key"], "label": detected["label"]},
+            }
         return {**detected, "source": "rules", "override": ""}
     return {
         **detected,
@@ -346,12 +377,13 @@ def kind_of(content, title="", document_type=""):
     }
 
 
-def run(content, report=None, title="", document_type=""):
+def run(content, report=None, title="", document_type="", ai_type=None):
     """The stored form: the rules' version and each check, as plain values.
 
     Beside the source check, what kind of document it is and the checks for
     that kind (`document_types`): a separate score, so a document that reads
-    well is not marked down for being a kind with no content rules.
+    well is not marked down for being a kind with no content rules. `ai_type`
+    is a stored `document_ai` typing verdict for this exact text, if any.
     """
     content = content or ""
     checks = [
@@ -362,7 +394,7 @@ def run(content, report=None, title="", document_type=""):
         finished_check(content),
         limits_check(content),
     ]
-    kind = kind_of(content, title, document_type)
+    kind = kind_of(content, title, document_type, ai_type)
     return {
         "version": QUALITY_VERSION,
         "types": document_types.REGISTRY_VERSION,
@@ -411,8 +443,8 @@ def result(stored):
     return shown
 
 
-def assess(content, report=None, title="", document_type=""):
-    return result(run(content, report, title, document_type))
+def assess(content, report=None, title="", document_type="", ai_type=None):
+    return result(run(content, report, title, document_type, ai_type))
 
 
 def current(stored, document_type=""):
@@ -440,12 +472,16 @@ def for_entries(entries):
         else:
             stale.append(entry.pk)
     if stale:
-        for pk, content, report, title, document_type in KnowledgeEntry.objects.filter(
-            pk__in=stale
-        ).values_list(
-            "pk", "content", "document__conversion_report", "title", "document_type"
-        ):
-            stored = run(content, report, title, document_type)
+        from .document_ai import cached_types
+
+        rows = KnowledgeEntry.objects.filter(pk__in=stale).values_list(
+            "pk", "content", "document__conversion_report", "title", "document_type",
+            "application_id", "digest",
+        )
+        rows = list(rows)
+        typed = cached_types((app_id, digest) for *_, app_id, digest in rows)
+        for pk, content, report, title, document_type, app_id, digest in rows:
+            stored = run(content, report, title, document_type, typed.get((app_id, digest)))
             KnowledgeEntry.objects.filter(pk=pk).update(quality=stored)
             results[pk] = result(stored)
     return results

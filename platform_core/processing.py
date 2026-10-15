@@ -238,13 +238,15 @@ def supersede(user, app_id, document, content):
     again must never quietly make a restricted source usable, and a document type
     a person set carries over too.
     """
+    from .document_ai import cached_type
     from .sensitivity import RESTRICTED
     from .source_quality import run as check_source
 
     previous = KnowledgeEntry.objects.select_for_update().filter(document=document).first()
     if previous and previous.active and previous.content == content:
         previous.quality = check_source(
-            content, document.conversion_report, document.name, previous.document_type
+            content, document.conversion_report, document.name, previous.document_type,
+            cached_type(app_id, previous.digest),
         )
         previous.save(update_fields=["quality"])
         return previous
@@ -261,7 +263,8 @@ def supersede(user, app_id, document, content):
     if previous and previous.document_type:
         entry.document_type = previous.document_type
         entry.quality = check_source(
-            content, document.conversion_report, document.name, entry.document_type
+            content, document.conversion_report, document.name, entry.document_type,
+            cached_type(app_id, entry.digest),
         )
         entry.save(update_fields=["document_type", "quality"])
     return entry
@@ -291,7 +294,7 @@ def convert_document(user, app_id, document_id):
     """Persist actionable conversion failures without removing the uploaded original."""
     app, _ = access(user, app_id, "knowledge", write=True)
     try:
-        return process_document(user, app_id, document_id)
+        entry = process_document(user, app_id, document_id)
     except ValidationError as error:
         with transaction.atomic():
             doc = Document.objects.select_for_update().get(pk=document_id, application=app)
@@ -301,3 +304,10 @@ def convert_document(user, app_id, document_id):
                     user, "document.conversion_failed", doc.pk, app.product.portfolio.organization
                 )
         raise
+    # After the text is committed, and never a reason the conversion failed: a
+    # document the rules call Other may be typed by a model, when an owner has
+    # switched that on, charged to whoever converted it.
+    from .document_ai import classify_quietly
+
+    classify_quietly(user, entry)
+    return entry

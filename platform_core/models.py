@@ -1602,6 +1602,8 @@ AI_PURPOSES = [
     ("conversation_title", "Conversation titles"),
     ("embeddings", "Search embeddings"),
     ("reranking", "Answer reranking"),
+    ("document_typing", "Document typing"),
+    ("document_review", "Document review"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -1908,4 +1910,41 @@ class ExternalIdentity(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["user", "system", "site"], name="unique_identity")
+        ]
+
+
+class DocumentAIResult(models.Model):
+    """What a model said about a document's text, kept so it is paid for once.
+
+    Content-addressed like `Embedding`: `digest` is the SHA-256 of the exact
+    text the model read (`KnowledgeEntry.digest`), and `rubric` names the rules
+    it was asked under - the registry version for typing, the review rubric and
+    the type it reviewed against for a review - so a rule change asks again and
+    nothing else does. Scoped to one application: one application's spend never
+    serves another. A verdict the checks refused is kept too, with why: the
+    call was paid for, and asking again would pay for the same refusal.
+
+    Every quote in `result` was found in the text exactly when it was stored.
+    See `document_ai.py`.
+    """
+
+    TASKS = [("typing", "Document typing"), ("review", "Document review")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    task = models.CharField(max_length=8, choices=TASKS)
+    digest = models.CharField(max_length=64)
+    rubric = models.CharField(max_length=80)
+    result = models.JSONField(default=dict)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "task", "digest", "rubric"],
+                name="unique_document_ai_result",
+            )
         ]

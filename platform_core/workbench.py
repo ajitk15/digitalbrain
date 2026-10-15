@@ -60,10 +60,12 @@ class QuestionForm(forms.Form):
 
 @transaction.atomic
 def add_knowledge(user, app_id, title, content, source="", document=None):
+    from .document_ai import cached_type
     from .sensitivity import RESTRICTED, STANDARD, scan
     from .source_quality import run as check_source
 
     app, _ = access(user, app_id, "knowledge", write=True)
+    digest = hashlib.sha256(content.encode()).hexdigest()
     # A restriction follows the record: the next import of the same ticket must
     # not quietly make it usable again.
     inherited = bool(source) and (
@@ -78,11 +80,14 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         content=content,
         source=source,
         document=document,
-        digest=hashlib.sha256(content.encode()).hexdigest(),
+        digest=digest,
         personal_data=scan(f"{title}\n{content}"),
         # Documents only: a typed note or an imported ticket is not a document,
-        # and a ticket has its own score (`ticket_quality`).
-        quality=check_source(content, document.conversion_report, title) if document else {},
+        # and a ticket has its own score (`ticket_quality`). A type a model
+        # already named for this exact text is kept; nothing is asked here.
+        quality=check_source(
+            content, document.conversion_report, title, ai_type=cached_type(app.pk, digest)
+        ) if document else {},
         sensitivity=RESTRICTED if inherited else STANDARD,
     )
     entry.full_clean()
@@ -284,6 +289,7 @@ def set_document_type(request, app, entry):
     blank; anything else is refused rather than stored. The check is worked out
     again at once, so the page shows the document judged as what it now is.
     """
+    from .document_ai import cached_type
     from .document_types import BY_KEY
     from .source_quality import run as check_source
 
@@ -294,7 +300,7 @@ def set_document_type(request, app, entry):
     with transaction.atomic():
         entry.document_type = chosen
         entry.quality = check_source(entry.content, document.conversion_report, entry.title,
-                                     chosen)
+                                     chosen, cached_type(app.pk, entry.digest))
         entry.save(update_fields=["document_type", "quality"])
         audit(request.user, "knowledge.type_set", entry.pk, app.product.portfolio.organization,
               {"document_type": chosen or "detected"})
@@ -303,9 +309,49 @@ def set_document_type(request, app, entry):
         f"Checked as {BY_KEY[chosen].label.lower()}." if chosen
         else "Checked as the type the rules detect.",
     )
-    if request.POST.get("next") == "document":
-        return redirect("document-detail", pk=app.pk, document_id=document.pk)
+    return back_to_source(request, app, entry)
+
+
+def back_to_source(request, app, entry):
+    if request.POST.get("next") == "document" and entry.document_id:
+        return redirect("document-detail", pk=app.pk, document_id=entry.document_id)
     return redirect("knowledge-detail", pk=app.pk, entry_id=entry.pk)
+
+
+def ask_ai_about_document(request, app, grant, entry, action):
+    """The two document AI buttons (`document_ai`): what kind of document this is,
+    when the rules could not say, and an advisory review. Plain POSTs; each
+    spends through `invoke_ai`, so its grant check and the budget decide."""
+    from . import document_ai
+
+    if not entry.document_id:
+        return HttpResponse("Only documents have a type.", status=400)
+    if action == "ai_review" and grant.role != "owner":
+        raise PermissionDenied
+    try:
+        if action == "ai_type":
+            verdict = document_ai.classify(request.user, entry)
+            if verdict is None:
+                messages.info(request, "Nothing to ask: the type is already settled, or "
+                                       "Document typing is off in AI settings.")
+            elif verdict["verdict"] == "accepted":
+                messages.success(request, f"AI named it {verdict['label'].lower()}, quoting "
+                                          "lines found in the document.")
+            else:
+                messages.warning(request, f"Left as Other: {verdict['reason']}.")
+            details = {"verdict": verdict["verdict"] if verdict else "not asked",
+                       "type": verdict["key"] if verdict else ""}
+        else:
+            found = document_ai.review(request.user, entry)
+            messages.success(request, f"AI review: {len(found['findings'])} finding(s), each "
+                                      "quoted from the document.")
+            details = {"findings": len(found["findings"]), "dropped": found["dropped"]}
+    except (ValidationError, ImproperlyConfigured) as error:
+        messages.error(request, " ".join(getattr(error, "messages", None) or [str(error)]))
+        return back_to_source(request, app, entry)
+    audit(request.user, f"knowledge.{action}", entry.pk, app.product.portfolio.organization,
+          details)
+    return back_to_source(request, app, entry)
 
 
 @login_required
@@ -345,6 +391,8 @@ def knowledge_detail(request, pk, entry_id):
             return redirect("knowledge-detail", pk=pk, entry_id=entry.pk)
         if action == "set_type":
             return set_document_type(request, app, entry)
+        if action in {"ai_type", "ai_review"}:
+            return ask_ai_about_document(request, app, grant, entry, action)
         if action != "archive":
             return HttpResponse("Unknown action.", status=400)
         with transaction.atomic():
@@ -353,6 +401,7 @@ def knowledge_detail(request, pk, entry_id):
             audit(request.user, "knowledge.archived", entry.pk, app.product.portfolio.organization)
         messages.success(request, "Source archived. New answers will exclude it.")
         return redirect("knowledge", pk=pk)
+    from .document_ai import panel as document_ai_panel
     from .document_types import CHOICES as TYPE_CHOICES
     from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
@@ -375,6 +424,7 @@ def knowledge_detail(request, pk, entry_id):
             "quality": quality,
             "source_check": source_check,
             "type_choices": TYPE_CHOICES,
+            "document_ai": document_ai_panel(app, grant, entry, source_check),
             "ticket_fields": [
                 (label, fields[key])
                 for key, label in (

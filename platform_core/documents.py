@@ -572,9 +572,11 @@ def document_detail(request, pk, document_id):
         response = HttpResponse(body, content_type=content_type)
         response["Content-Disposition"] = f'attachment; filename="{document.pk}.{extension}"'
         return response
+    from .document_ai import panel as document_ai_panel
     from .document_types import CHOICES as TYPE_CHOICES
     from .source_quality import for_entries
 
+    source_check = for_entries([entry])[entry.pk] if entry else None
     return render(
         request,
         "document_detail.html",
@@ -583,8 +585,9 @@ def document_detail(request, pk, document_id):
             "grant": grant,
             "document": document,
             "entry": entry,
-            "source_check": for_entries([entry])[entry.pk] if entry else None,
+            "source_check": source_check,
             "type_choices": TYPE_CHOICES,
+            "document_ai": document_ai_panel(app, grant, entry, source_check),
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []) if entry else [],
             "can_delete": grant.role == "owner"
             or (grant.role == "contributor" and document.uploaded_by_id == request.user.pk),
