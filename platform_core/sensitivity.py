@@ -14,7 +14,12 @@ already-published graph version at once - no rebuild has to happen first.
 Personal data is *suggested*, never decided: `scan` counts the patterns that
 usually mean a person (email addresses, telephone numbers, US social security
 numbers, payment card numbers that pass the Luhn check, and dates of birth
-where the text says so) and the source page says what it found. Labelling stays
+where the text says so) and the source page says what it found. Health
+identifiers - a medical record number, a health plan member number, an NHS
+number, a named patient - are counted too, and make the finding PHI rather than
+PII (`category`): HIPAA treats them as identifying a patient wherever they
+appear. Each one needs its label ("MRN", "Member ID", "Patient name:") beside
+the value, so a document about MRNs is not a document holding one. Labelling stays
 a person's call, because a runbook's on-call number is not a patient's. A
 restriction carries over to the next import of the same record, so a sync
 cannot quietly lift it.
@@ -42,7 +47,29 @@ PATTERNS = {
         r"(?:\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2},? \d{4})",
         re.IGNORECASE,
     ),
+    # Health identifiers. Each needs its label next to the value, so text
+    # about MRNs ("a duplicate MRN is refused") is not text holding one.
+    "medical record number": re.compile(
+        r"\b(?:mrn|medical[ _]record[ _](?:number|no\.?|#))\W{0,4}[A-Z]{0,4}-?\d{5,10}\b",
+        re.IGNORECASE,
+    ),
+    "health plan member number": re.compile(
+        r"\b(?:member|subscriber|policy|medicaid|medicare|beneficiary|insurance)[ _]?"
+        r"(?:id|number|no\.?|#)\W{0,4}[A-Z]{0,4}[ -]?\d[\dA-Z-]{5,}\b",
+        re.IGNORECASE,
+    ),
+    "NHS number": re.compile(
+        r"\bNHS(?:[ _](?:number|no\.?|#))?\W{0,4}\d{3}[ -]?\d{3}[ -]?\d{4}\b"
+    ),
+    "patient name": re.compile(
+        r"\b(?i:patient)(?:'s)?(?:[ _](?i:full[ _])?(?i:name))?[ \t]*:[ \t]*"
+        r"[A-Z][a-z'-]+(?:[ \t]+[A-Z][a-z'-]+)+"
+    ),
 }
+#: The kinds that are health identifiers. Any of them makes a finding PHI.
+PHI_KINDS = frozenset(
+    {"medical record number", "health plan member number", "NHS number", "patient name"}
+)
 CARD = re.compile(r"(?<![\w-])(?:\d[ -]?){13,19}(?![\w-])")
 #: Enough to judge a source; a million characters of logs is not read twice over.
 SCAN_LIMIT = 200000
@@ -62,10 +89,30 @@ def luhn(digits):
 def scan(text):
     """{kind: count} of what looks like personal data. Empty when nothing does."""
     text = text[:SCAN_LIMIT]
-    found = {kind: len(pattern.findall(text)) for kind, pattern in PATTERNS.items()}
+    # A health identifier claims its digits: an NHS number is not also a
+    # telephone number because it is ten digits in three groups.
+    claimed = [m.span() for kind in PHI_KINDS for m in PATTERNS[kind].finditer(text)]
+
+    def counted(kind, match):
+        return kind in PHI_KINDS or not any(
+            start < match.end() and match.start() < end for start, end in claimed
+        )
+
+    found = {
+        kind: sum(counted(kind, match) for match in pattern.finditer(text))
+        for kind, pattern in PATTERNS.items()
+    }
     cards = [re.sub(r"\D", "", match) for match in CARD.findall(text)]
     found["payment card number"] = sum(13 <= len(card) <= 19 and luhn(card) for card in cards)
     return {kind: count for kind, count in found.items() if count}
+
+
+def category(findings):
+    """"PHI" when a health identifier was found, "PII" for any other personal
+    data, "" for none. A tag on the Sources list, so it says which in one word."""
+    if not findings:
+        return ""
+    return "PHI" if PHI_KINDS & set(findings) else "PII"
 
 
 def summary(findings):

@@ -7,6 +7,10 @@ there as JSON: for a PDF, its page count and the pages that held no text. With
 a fourth, the path of a Tesseract binary, pages with no text layer and images
 are read by OCR - locally, by a program that is handed a file and makes no
 network call - and the text says which pages were read that way.
+
+When conversion is refused, the report says why instead (`failure_report`):
+one reason from `REASONS` and the page counts behind it, so the person who
+uploaded the file is told "this PDF is a scan" rather than "could not convert".
 """
 
 import json
@@ -33,6 +37,30 @@ LOW_CONFIDENCE = 60
 #: 300 dpi: what Tesseract is trained on. PDF user space is 72 per inch.
 RENDER_SCALE = 300 / 72
 OCR_TIMEOUT = 60
+#: Why a conversion was refused, as the report names it. A closed set: the
+#: server turns each into a sentence and ignores anything else.
+REASONS = {
+    "too_large", "archive_limits", "encrypted", "too_many_pages", "image_needs_ocr",
+    "ocr_page_limit", "ocr_failed", "ocr_no_text", "scanned", "empty", "oversized",
+}
+
+
+class Refused(ValueError):
+    """A conversion refused for a reason a person can be told: one of `REASONS`,
+    and the facts that explain it (page counts, never text from the file)."""
+
+    def __init__(self, message, reason, **facts):
+        super().__init__(message)
+        self.reason = reason
+        self.facts = facts
+
+
+def failure_report(error):
+    """What the report says about a refusal: its reason and facts, or "unknown"
+    when the error was not one this module raised on purpose."""
+    if isinstance(error, Refused) and error.reason in REASONS:
+        return {"failure": error.reason, **error.facts}
+    return {"failure": "unknown"}
 
 
 def tesseract(binary):
@@ -47,7 +75,7 @@ def tesseract(binary):
             check=False,
         )
         if done.returncode != 0:
-            raise ValueError("OCR failed")
+            raise Refused("OCR failed", "ocr_failed")
         return words_of(done.stdout.decode("utf-8", "replace"))
 
     return read
@@ -123,7 +151,7 @@ def picture(path, ocr, scratch):
         with Image.open(path) as image:
             frames = getattr(image, "n_frames", 1)
             if frames > MAX_OCR_PAGES:
-                raise ValueError("OCR page limit")
+                raise Refused("OCR page limit", "ocr_page_limit", pages=frames)
             images = []
             for frame in range(frames):
                 image.seek(frame)
@@ -149,26 +177,29 @@ def extract_with_report(path, suffix, ocr=None):
     off, and a page with no text layer is reported rather than read.
     """
     if path.stat().st_size > 20 * 1024 * 1024:
-        raise ValueError("Input limit")
+        raise Refused("Input limit", "too_large")
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
             members = archive.infolist()
             if len(members) > 2000 or sum(x.file_size for x in members) > 30000000:
-                raise ValueError("Archive limits")
+                raise Refused("Archive limits", "archive_limits")
     if suffix in IMAGES:
         if ocr is None:
-            raise ValueError("Images need OCR")
+            raise Refused("Images need OCR", "image_needs_ocr")
         with tempfile.TemporaryDirectory() as scratch:
             frames, (read, found, empty) = picture(path, ocr, scratch)
         result = "\n\n".join(read)
         if not result.strip() or len(result) > LIMIT:
-            raise ValueError("No text read")
+            raise Refused("No text read", "oversized" if result.strip() else "ocr_no_text",
+                          pages=frames)
         return result, finish({"pages": frames}, found, empty)
     report, read = {}, []
     if suffix == ".pdf":
         reader = PdfReader(path, strict=True)
-        if reader.is_encrypted or len(reader.pages) > 200:
-            raise ValueError("PDF limits")
+        if reader.is_encrypted:
+            raise Refused("PDF limits", "encrypted")
+        if len(reader.pages) > 200:
+            raise Refused("PDF limits", "too_many_pages", pages=len(reader.pages))
         # A scanned page has no text layer. MarkItDown skips it without a word,
         # so it is counted here, where a person can be told - and read, with OCR on.
         blank = [
@@ -179,7 +210,7 @@ def extract_with_report(path, suffix, ocr=None):
         report = {"pages": len(reader.pages), "pages_without_text": blank}
         if ocr is not None and blank:
             if len(blank) > MAX_OCR_PAGES:
-                raise ValueError("OCR page limit")
+                raise Refused("OCR page limit", "ocr_page_limit", pages=len(blank))
             with tempfile.TemporaryDirectory() as scratch:
                 read, found, empty = scanned_pdf(path, blank, ocr, scratch)
             report = finish(report, found, empty)
@@ -196,7 +227,14 @@ def extract_with_report(path, suffix, ocr=None):
     if read:
         result = "\n\n".join([result.strip(), *read]).strip()
     if not result.strip() or len(result) > LIMIT or "\x00" in result:
-        raise ValueError("Empty, binary or oversized conversion")
+        pages, blank = report.get("pages") or 0, report.get("pages_without_text") or []
+        if not result.strip() and pages and len(blank) == pages:
+            # Every page is a picture of text. Said as that, because "empty" is
+            # what a person hears as "the file is broken".
+            reason = "ocr_no_text" if ocr is not None else "scanned"
+            raise Refused("Empty, binary or oversized conversion", reason, pages=pages)
+        reason = "oversized" if len(result) > LIMIT else "empty"
+        raise Refused("Empty, binary or oversized conversion", reason)
     return result, report
 
 
@@ -213,5 +251,7 @@ if __name__ == "__main__":
         if len(sys.argv) > 3 and sys.argv[3]:
             Path(sys.argv[3]).write_text(json.dumps(found), encoding="utf-8")
         sys.stdout.buffer.write(value.encode("utf-8"))
-    except Exception:
+    except Exception as error:  # noqa: BLE001 - every failure exits 2; the report says which
+        if len(sys.argv) > 3 and sys.argv[3]:
+            Path(sys.argv[3]).write_text(json.dumps(failure_report(error)), encoding="utf-8")
         sys.exit(2)

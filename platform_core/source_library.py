@@ -1,11 +1,12 @@
 """One inventory for uploaded documents and searchable imported records."""
 
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from django.core.paginator import Paginator
 from django.db.models import CharField, Count, Prefetch, Q, Value
 
-from . import source_map
+from . import sensitivity, source_map
 from .models import (
     CodeRepository,
     Connector,
@@ -21,6 +22,36 @@ from .ticket_quality import assess
 #: Connector kinds whose records are tickets someone will work from, and so
 #: worth scoring for readiness. ServiceNow incidents and automations are not.
 SCORED_KINDS = {"jira"}
+
+#: What a file is, by its extension, in the words someone who uploaded it uses.
+#: Anything else is shown as its extension.
+FILE_TYPES = {
+    ".pdf": "PDF",
+    ".doc": "Word", ".docx": "Word",
+    ".xls": "Excel", ".xlsx": "Excel",
+    ".ppt": "PowerPoint", ".pptx": "PowerPoint",
+    ".csv": "CSV",
+    ".md": "Markdown", ".markdown": "Markdown",
+    ".htm": "HTML", ".html": "HTML",
+    ".txt": "Text",
+    ".json": "JSON", ".xml": "XML",
+    ".rtf": "Rich text", ".epub": "EPUB",
+    ".png": "Image", ".jpg": "Image", ".jpeg": "Image", ".tif": "Image", ".tiff": "Image",
+}
+
+
+def file_type(name):
+    """("PDF", "pdf") for "folder/report.PDF": a label and the bare extension."""
+    suffix = PurePosixPath(name.replace("\\", "/")).suffix.lower()
+    return FILE_TYPES.get(suffix, suffix[1:].upper() or "File"), suffix[1:]
+
+
+def personal(entry):
+    """The PHI / PII tag for a row: which, and what was found, in words."""
+    found = entry.personal_data if entry else None
+    if not found:
+        return None
+    return {"category": sensitivity.category(found), "summary": sensitivity.summary(found)}
 
 
 def repository_of(url):
@@ -227,6 +258,8 @@ def library_context(app, request):
                 else None
             ),
             "check": checks.get(entry.pk) if entry else None,
+            "file_type": file_type(doc.name) if doc else None,
+            "personal": personal(entry),
             "created_at": created_at,
             "versions": usage.get(str(entry.pk), []) if entry else [],
             "code_repository": code_repository,
@@ -239,9 +272,9 @@ def library_context(app, request):
         entry = by_document.get(pk) if doc else by_id.get(pk)
         rows.append(build_row(doc, entry, created_at))
     page.object_list = rows
-    # Only a page that holds a scored ticket gets the column, so a library of
-    # uploaded files is not given a column of dashes.
-    quality_column = any(row["quality"] for row in rows)
+    # Only a page that holds a scored ticket or a checked document gets the
+    # column, so a page of unscored records is not given a column of dashes.
+    quality_column = any(row["quality"] or row["check"] for row in rows)
 
     origins = list(
         KnowledgeSource.objects.filter(application=app)

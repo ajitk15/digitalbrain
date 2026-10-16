@@ -20,7 +20,7 @@ from platform_core.models import (
     OrganizationMember,
     User,
 )
-from platform_core.sensitivity import scan, summary
+from platform_core.sensitivity import category, scan, summary
 from platform_core.workbench import add_knowledge, retrieve
 
 from . import test_documents
@@ -47,6 +47,34 @@ class ScanTests(SimpleTestCase):
         self.assertEqual(
             scan("Release 1.0.2 shipped 2026-08-14. Order 1234 5678 9012 3456. Port 8080."), {}
         )
+
+    def test_health_identifiers_are_found_by_their_label(self):
+        found = scan(
+            "MRN: RGH-0142857. Member ID: XJ4-882193. NHS number 943 476 5919. "
+            "Patient name: Amara Okonjo."
+        )
+        self.assertEqual(
+            found,
+            {
+                "medical record number": 1,
+                "health plan member number": 1,
+                # Its own kind, not also a telephone number its digits resemble.
+                "NHS number": 1,
+                "patient name": 1,
+            },
+        )
+
+    def test_text_about_identifiers_is_not_an_identifier(self):
+        self.assertEqual(
+            scan("POST /patients returns 409 on a duplicate MRN. The mrn column is "
+                 "validated as AAA-1234567. Every patient name is masked."),
+            {},
+        )
+
+    def test_a_health_identifier_makes_it_phi_and_anything_else_pii(self):
+        self.assertEqual(category({"email address": 1}), "PII")
+        self.assertEqual(category({"email address": 1, "medical record number": 2}), "PHI")
+        self.assertEqual(category({}), "")
 
     def test_summary_reads_as_words(self):
         self.assertEqual(
@@ -107,6 +135,18 @@ class RestrictionTests(TestCase):
         self.assertEqual(self.secret.sensitivity, "standard")
         response = self.client.get(reverse("knowledge-detail", args=[self.app.pk, self.secret.pk]))
         self.assertContains(response, "1 email address")
+        self.assertContains(response, "personally identifiable information")
+
+    def test_the_sources_list_tags_phi_and_pii_and_says_which(self):
+        phi = add_knowledge(self.owner, self.app.pk, "Referral", "MRN: RGH-0142857 referred.")
+        self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, 'class="data-tag tag-pii"')
+        self.assertContains(response, "<strong>PII</strong> 1 email address")
+        self.assertContains(response, 'class="data-tag tag-phi"')
+        self.assertContains(response, "<strong>PHI</strong> 1 medical record number")
+        page = self.client.get(reverse("knowledge-detail", args=[self.app.pk, phi.pk]))
+        self.assertContains(page, "protected health information")
 
     def test_a_restricted_source_is_out_of_search_graph_and_tools(self):
         self.publish()

@@ -17,7 +17,7 @@ from digitalbrain import configuration
 from platform_core import processing, source_quality
 from platform_core.models import Document, KnowledgeEntry
 from scripts import extract_text
-from scripts.extract_text import extract_with_report, words_of
+from scripts.extract_text import extract_with_report, failure_report, words_of
 
 from . import test_document_originals
 from .test_document_originals import PDF, SETTINGS, with_blank_page
@@ -54,6 +54,11 @@ def picture(path, size=(400, 200), frames=1):
 
 
 class ExtractionTests(SimpleTestCase):
+    def test_a_refusal_reports_its_reason_and_nothing_else_does(self):
+        refused = extract_text.Refused("PDF limits", "too_many_pages", pages=201)
+        self.assertEqual(failure_report(refused), {"failure": "too_many_pages", "pages": 201})
+        self.assertEqual(failure_report(ValueError("x")), {"failure": "unknown"})
+
     def test_tesseract_tsv_becomes_lines_and_a_mean_confidence(self):
         text, confidence = words_of(TSV)
         self.assertEqual(text, "Urgent referrals\nescalate\n\nBR-02")
@@ -207,7 +212,8 @@ def in_process(read):
         path, suffix, report_path, binary = args[2:6]
         try:
             text, report = extract_with_report(Path(path), suffix, read if binary else None)
-        except ValueError:
+        except ValueError as error:
+            Path(report_path).write_text(json.dumps(failure_report(error)), encoding="utf-8")
             return subprocess.CompletedProcess(args, 1, b"", b"")
         Path(report_path).write_text(json.dumps(report), encoding="utf-8")
         return subprocess.CompletedProcess(args, 0, text.encode("utf-8"), b"")
@@ -254,6 +260,31 @@ class PipelineTests(TestCase):
         self.assertEqual(document.status, "failed")
         self.assertIn("need OCR, which is not on", document.conversion_error)
         self.assertFalse(Document.objects.filter(status="ready").exists())
+
+    @override_settings(OCR_ENABLED=False)
+    def test_with_ocr_off_a_scanned_pdf_says_it_is_a_scan(self):
+        from pypdf import PdfWriter
+
+        blank = PdfWriter()
+        blank.add_blank_page(612, 792)
+        blank.add_blank_page(612, 792)
+        data = BytesIO()
+        blank.write(data)
+        document = self.upload("referral-sla-scanned.pdf", data.getvalue())
+        with patch("platform_core.processing.subprocess.run", in_process(reader())):
+            self.convert()
+        document.refresh_from_db()
+        self.assertEqual(document.status, "failed")
+        self.assertIn("This PDF is a scan: none of its 2 pages has a text layer",
+                      document.conversion_error)
+        self.assertIn("set ocr = true", document.conversion_error)
+        self.assertNotIn("MarkItDown could not convert", document.conversion_error)
+
+    def test_an_unexplained_failure_keeps_the_general_sentence(self):
+        self.assertIn("MarkItDown could not convert this file",
+                      processing.failure_message(None, ""))
+        self.assertIn("MarkItDown could not convert this file",
+                      processing.failure_message({"failure": "unknown", "pages": 0}, ""))
 
     def png(self):
         from PIL import Image

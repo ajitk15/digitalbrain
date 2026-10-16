@@ -76,6 +76,9 @@ document check is for everything else.
 
 **Screens.**
 - Sources table: a Ready / Needs work / Poor pill per row, beside "Personal data?".
+  (Since built differently: a Quality column names each verdict's check - Readable,
+  Content - and the check that decided it; Document type and File type are columns; and
+  personal data is a PHI or PII tag.)
 - Source page (`document_detail`, `knowledge_detail`): a "Source check" card listing
   the checks, gaps first, with the line each finding came from.
 

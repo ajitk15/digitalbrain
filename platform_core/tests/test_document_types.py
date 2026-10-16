@@ -326,7 +326,10 @@ class DocumentTypeScreenTests(TestCase):
     def test_the_sources_table_shows_the_type(self):
         self.document()
         response = self.client.get(reverse("documents", args=[self.app.pk]))
-        self.assertContains(response, " · Business requirements document</small>")
+        self.assertContains(response, "<th>Document type</th>", html=False)
+        self.assertContains(
+            response, '<span class="doc-type">Business requirements document</span>'
+        )
 
     def test_an_owner_sets_the_type_and_it_is_checked_again(self):
         document, entry = self.document()

@@ -325,6 +325,44 @@ def verdict(score, checks):
 
 TONES = {"Ready": "good", "Needs work": "fair", "Poor": "poor"}
 
+#: The verdict rule, said once in words, so a page never shows a verdict
+#: without the rule that produced it.
+VERDICT_RULE = ("Ready needs 80 or more out of 100 and no check failed outright. "
+                "55 to 79 is Needs work, and under 55 is Poor.")
+
+
+def decisive(score, checks):
+    """The check that kept a source from Ready: the first one that failed
+    outright when the score alone was enough, else the one that lost the most.
+    None when it is Ready.
+
+    A score of 85 marked Needs work reads as a contradiction until it says
+    which check failed - that is the case this exists for.
+    """
+    if verdict(score, checks) == "Ready":
+        return None
+    failed = [check for check in checks if check.state == "missing"]
+    if score >= 80 and failed:
+        return max(failed, key=lambda check: check.missing_points)
+    gaps = [check for check in checks if check.state != "good"]
+    return max(gaps, key=lambda check: check.missing_points) if gaps else None
+
+
+def why(score, checks):
+    """One sentence on why the verdict is what it is, in plain words."""
+    said = verdict(score, checks)
+    if said == "Ready":
+        return f"Ready: {score} out of 100, and no check failed outright."
+    check = decisive(score, checks)
+    if check is None:
+        return f"{said}: {score} out of 100. {VERDICT_RULE}"
+    if score >= 80:
+        return (f"{said} although it scored {score}, because one check failed outright - "
+                f"{check.label}: {check.finding}")
+    floor = "Ready needs 80" if said == "Needs work" else "under 55 is Poor"
+    return (f"{said}: {score} out of 100, and {floor}. The most points were lost on "
+            f"{check.label} (-{check.missing_points}): {check.finding}")
+
 
 def ai_named(detected, ai_type, content):
     """The type a model named for this text (`document_ai`), if it may be used.
@@ -416,6 +454,9 @@ def scored(checks):
         "score": score,
         "tone": TONES[said],
         "verdict": said,
+        "why": why(score, checks),
+        "rule": VERDICT_RULE,
+        "decisive": decisive(score, checks),
         "checks": checks,
         "strengths": [check for check in checks if check.state == "good"],
         "gaps": sorted(

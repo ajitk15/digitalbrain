@@ -673,7 +673,10 @@ hands a source to a model or verifies a citation goes through
 Code Factory intake and history resend. Because citations verify against `sources_for`,
 restricting takes a source out of already-published versions at once. People with access
 still read it. Personal data (`sensitivity.scan`) is only a suggestion on the source page;
-a person decides. Anyone who may change knowledge can restrict; only an owner lifts it; a
+a person decides. It is tagged **PHI** when a labelled health identifier is among what was
+found (MRN, health plan member number, NHS number, `Patient name:`; `PHI_KINDS`) and
+**PII** otherwise - each needs its label beside the value, so text *about* MRNs is not
+flagged, and `benchmarks/phi-samples.json` holds both kinds of case. Anyone who may change knowledge can restrict; only an owner lifts it; a
 re-import of the same record stays restricted.
 
 **AI graph runs are incremental** (`graph_ai.reusable`). A source whose id and digest match

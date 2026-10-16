@@ -140,6 +140,7 @@ def process_document(user, app_id, document_id):
         if scan.returncode != 0:
             raise ValidationError("Scanner unavailable or signatures stale. File remains private.")
     ocr = tesseract_path()
+    refused = None
     try:
         with tempfile.TemporaryDirectory() as scratch:
             report_path = Path(scratch) / "report.json"
@@ -158,21 +159,14 @@ def process_document(user, app_id, document_id):
                 check=False,
             )
             report = read_report(report_path)
+            refused = read_failure(report_path) if converted.returncode != 0 else None
         if converted.returncode != 0 or len(converted.stdout) > 4000000:
             raise ValueError
         content = converted.stdout.decode("utf-8").strip()
         if not content or len(content) > 1000000 or "\x00" in content:
             raise ValueError
     except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
-        raise ValidationError(
-            "MarkItDown could not convert this file. It may be unsupported, empty, or exceed "
-            "1,000,000 Markdown characters. "
-            + (
-                f"Scanned pages are read by OCR, at most {MAX_OCR_PAGES} a document."
-                if ocr
-                else "Scanned PDFs and images need OCR, which is not on in this deployment."
-            )
-        ) from None
+        raise ValidationError(failure_message(refused, ocr)) from None
     with transaction.atomic():
         app, _ = access(user, app_id, "knowledge", write=True)
         locked = Document.objects.select_for_update().get(pk=doc.pk, application=app)
@@ -200,6 +194,84 @@ def process_document(user, app_id, document_id):
             details={"security_scan_required": settings.DOCUMENT_SCAN_REQUIRED},
         )
         return entry
+
+
+#: How to turn OCR on, said where a file needed it. An operator's step, so it
+#: names the setting rather than a button.
+TURN_ON_OCR = ("An administrator can install Tesseract and set ocr = true in the "
+               "deployment's configuration; then Retry reads it.")
+
+
+def pages(count):
+    return f"{count} page{'s' if count != 1 else ''}"
+
+
+def failure_message(refused, ocr):
+    """Why a file was not converted, in words its uploader can act on.
+
+    `refused` is the extractor's own reason (`read_failure`). Without one - a
+    crash, a timeout, a converter that gave up without saying - the old
+    general sentence is all that can honestly be said.
+    """
+    reason, count = (refused or {}).get("failure"), (refused or {}).get("pages") or 0
+    said = {
+        "scanned": (
+            f"This PDF is a scan: none of its {pages(count)} has a text layer, only "
+            "pictures of text, so there is nothing to convert. Scanned PDFs need OCR, "
+            f"which is not on in this deployment. {TURN_ON_OCR}"
+        ),
+        "image_needs_ocr": (
+            "This file is an image, and images need OCR, which is not on in this "
+            f"deployment. {TURN_ON_OCR}"
+        ),
+        "ocr_no_text": (
+            f"OCR found no text on {'any of its ' + pages(count) if count else 'it'}. "
+            "A blank or very faint scan reads this way: scan it again at a higher quality."
+        ),
+        "ocr_failed": "OCR could not read a page: Tesseract failed. Check its installation, "
+                      "then Retry.",
+        "ocr_page_limit": (
+            f"{pages(count)} need OCR, and at most {MAX_OCR_PAGES} are read in one "
+            "document. Split it into smaller files."
+        ),
+        "too_many_pages": f"It has {pages(count)}, and at most 200 are read. Split it into "
+                          "smaller files.",
+        "encrypted": "The PDF is password-protected. Upload a copy without a password.",
+        "too_large": "It is over 20 MB, the most one file can be. Split it or export a "
+                     "smaller copy.",
+        "archive_limits": "It unpacks to more than 2,000 parts or 30 MB. Split it into "
+                          "smaller files.",
+        "oversized": "Its text is over 1,000,000 characters, the most one source holds. "
+                     "Split it into smaller documents.",
+        "empty": "No text was found in it. It may be empty, or a format MarkItDown "
+                 "does not read.",
+    }.get(reason)
+    if said:
+        return said
+    return (
+        "MarkItDown could not convert this file. It may be unsupported, empty, or exceed "
+        "1,000,000 Markdown characters. "
+        + (
+            f"Scanned pages are read by OCR, at most {MAX_OCR_PAGES} a document."
+            if ocr
+            else "Scanned PDFs and images need OCR, which is not on in this deployment."
+        )
+    )
+
+
+def read_failure(path):
+    """The extractor's reason for refusing a file, held to its closed set."""
+    try:
+        found = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(found, dict) or not isinstance(found.get("failure"), str):
+        return None
+    count = found.get("pages")
+    return {
+        "failure": found["failure"][:40],
+        "pages": count if isinstance(count, int) and 0 <= count < 100000 else 0,
+    }
 
 
 def read_report(path):

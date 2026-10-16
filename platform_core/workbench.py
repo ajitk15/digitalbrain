@@ -403,6 +403,7 @@ def knowledge_detail(request, pk, entry_id):
         return redirect("knowledge", pk=pk)
     from .document_ai import panel as document_ai_panel
     from .document_types import CHOICES as TYPE_CHOICES
+    from .sensitivity import category as personal_category
     from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
     from .source_quality import for_entries
@@ -440,6 +441,7 @@ def knowledge_detail(request, pk, entry_id):
             "source_link": entry.source if entry.source.startswith(("https://", "http://")) else "",
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
             "personal_data": personal_summary(entry.personal_data),
+            "personal_category": personal_category(entry.personal_data),
             "grant": grant,
         },
     )

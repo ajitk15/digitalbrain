@@ -660,9 +660,9 @@
   .sources-table details summary { font-size: var(--t-10); font-weight: 500; }
   /* Short cells that were breaking mid-word ("Det/ails", "View/content"); the
      Source column absorbs the width instead, and it is the one with room. */
-  .sources-table td:nth-child(2),
+  .sources-table td:nth-child(3),
   .sources-table td:last-child { white-space: nowrap; }
-  .sources-table td:first-child { width: 40%; }
+  .sources-table td:first-child { width: 26%; }
 
   .source-intake { container-type: inline-size; }
   .source-intake .intake-columns {
@@ -3975,4 +3975,100 @@
   @media (max-width: 1150px) { .quality-ring { width: 56px; height: 56px; } .quality-dashboard .glance-card { padding: var(--s-4); } .quality-overview { gap: var(--s-5); } }
   @media (max-width: 900px) { .quality-overview { grid-template-columns: 1fr; } .quality-next { border-left: 0; border-top: 1px solid var(--c-line-soft); padding: var(--s-4) 0 0; } .quality-overview-copy > h3 { max-width: none; } }
   @media (prefers-reduced-motion: reduce) { .quality-disclosure-mark { transition: none; } }
+}
+
+/* ---------------------------------------------------------------------------
+   Sources: what a source is, how good it is and why, and what it holds.
+
+   The verdict used to be a bare pill shown only when a source was not Ready,
+   so "Needs work" at 85 read as a contradiction. Each verdict now names its
+   check (Readable, Content) and the line under it names the check that
+   decided it. PHI and PII are tags of their own colour rather than a quiet
+   "Personal data?" pill, because a reader scanning the list must not miss one.
+   --------------------------------------------------------------------------- */
+@layer redesign {
+  .sources-table .doc-type { display: block; font-weight: 500; color: var(--c-ink); min-width: 12ch; }
+  .sources-table .doc-type.is-other { color: var(--c-ink-muted); font-weight: 400; font-style: italic; }
+  .file-type {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid var(--c-line-strong);
+    border-radius: var(--r-sm);
+    font-size: var(--t-10);
+    font-weight: 600;
+    letter-spacing: .2px;
+    color: var(--c-ink-3);
+    background: var(--c-subtle);
+    white-space: nowrap;
+  }
+  .file-type.file-pdf { color: var(--c-bad); border-color: var(--c-bad-line); background: var(--c-bad-bg); }
+  .file-type.file-docx, .file-type.file-doc { color: var(--c-brand-strong); border-color: var(--c-brand-border); background: var(--c-brand-tint); }
+  .file-type.file-xlsx, .file-type.file-xls, .file-type.file-csv { color: var(--c-ok); border-color: var(--c-ok-line); background: var(--c-ok-bg); }
+  .file-type.file-pptx, .file-type.file-ppt { color: var(--c-warn); border-color: var(--c-warn-line); background: var(--c-warn-bg); }
+
+  .quality-cell { min-width: 22ch; }
+  /* A path such as 06-operate/operations-runbook.txt broke at every hyphen
+     once two columns joined the table; the name keeps room for itself. */
+  .sources-table td:first-child, .origin-table td:first-child { min-width: 26ch; }
+  .grade-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+    border-radius: var(--r-sm);
+    font-size: var(--t-11);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .grade-chip:hover { text-decoration: none; filter: brightness(.97); }
+  .grade-chip strong { font-variant-numeric: tabular-nums; }
+  /* Lighter by weight, not opacity: faded text on a tinted chip fails contrast. */
+  .grade-chip-name { font-weight: 400; }
+  .grade-chip + .grade-chip, .grade-chip-why + .grade-chip { margin-top: var(--s-1); }
+  .sources-table small.grade-chip-why { display: block; margin: 2px 0 0; font-size: var(--t-10); color: var(--c-ink-3); line-height: 1.35; max-width: 36ch; }
+  .grade-chip-why strong { font-weight: 600; color: var(--c-ink); }
+
+  .data-tags { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
+  /* The category is a solid badge that never breaks; what was found wraps
+     after it. "P / HI" split over two lines was the first thing seen. */
+  .data-tag {
+    display: inline-block;
+    padding: 2px 7px 2px 2px;
+    border: 1px solid;
+    border-radius: var(--r-sm);
+    font-size: var(--t-10);
+    line-height: 1.5;
+  }
+  .data-tag:hover { text-decoration: none; filter: brightness(.97); }
+  .data-tag strong {
+    display: inline-block;
+    margin-right: 5px;
+    padding: 0 5px;
+    border-radius: 3px;
+    letter-spacing: .5px;
+    white-space: nowrap;
+    color: var(--c-surface);
+  }
+  .data-tag.tag-phi { color: var(--c-bad); background: var(--c-bad-bg); border-color: var(--c-bad); }
+  .data-tag.tag-phi strong { background: var(--c-bad); }
+  .data-tag.tag-pii { color: var(--c-warn); background: var(--c-warn-bg); border-color: var(--c-warn); }
+  .data-tag.tag-pii strong { background: var(--c-warn); }
+  .data-tag.tag-restricted { padding-left: 7px; }
+  .data-tag.tag-restricted svg { vertical-align: -2px; margin-right: 3px; }
+  .data-tag.tag-restricted { color: var(--c-ink-3); background: var(--c-subtle); border-color: var(--c-line-strong); }
+
+  .row-tools { display: flex; align-items: center; gap: var(--s-1); }
+  .row-tools .inline-action { display: inline-flex; margin: 0; }
+
+  /* The verdict on a source page: the rule and the deciding check, first. */
+  .quality-why { margin: 0 0 var(--s-3); padding: var(--s-3) var(--s-4); border-left: 3px solid var(--c-line-strong); background: var(--c-subtle); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+  .quality-why.grade-fair { border-left-color: var(--c-warn); }
+  .quality-why.grade-poor { border-left-color: var(--c-bad); }
+  .quality-why.grade-good { border-left-color: var(--c-ok); }
+  .quality-why p { margin: 0; color: var(--c-ink); }
+  .quality-why small { margin-top: var(--s-1); color: var(--c-ink-3); }
+  /* The reason on the card's one line, readable without opening it: a row of
+     its own under the title, grade and hint. */
+  .ticket-quality > summary small.ticket-quality-why { flex-basis: 100%; margin: 0 0 0 18px; font-size: var(--t-12); color: var(--c-ink); }
 }

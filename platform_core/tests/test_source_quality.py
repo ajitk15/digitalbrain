@@ -152,6 +152,34 @@ class AssessTests(SimpleTestCase):
         self.assertEqual(source_quality.verdict(85, checks), "Needs work")
         self.assertEqual(source_quality.verdict(85, checks[:1]), "Ready")
 
+    def test_a_high_score_marked_needs_work_names_the_check_that_failed(self):
+        """85 and Needs work reads as a contradiction until it says which check."""
+        checks = [source_quality.Check("a", "Readable text", 85, 85, "good", "Fine.", "", ""),
+                  source_quality.Check("b", "Structure", 15, 0, "missing",
+                                       "19 lines and no heading.", "Add headings.", "")]
+        shown = source_quality.scored(checks)
+        self.assertEqual(shown["verdict"], "Needs work")
+        self.assertEqual(shown["decisive"].label, "Structure")
+        self.assertIn("although it scored 85", shown["why"])
+        self.assertIn("failed outright - Structure: 19 lines and no heading.", shown["why"])
+        self.assertIn("Ready needs 80", shown["rule"])
+
+    def test_a_low_score_names_where_most_points_were_lost(self):
+        checks = [source_quality.Check("a", "Readable text", 50, 40, "partial", "Thin.", "", ""),
+                  source_quality.Check("b", "Structure", 50, 20, "partial", "Few headings.", "",
+                                       "")]
+        shown = source_quality.scored(checks)
+        self.assertEqual(shown["verdict"], "Needs work")
+        self.assertEqual(shown["decisive"].label, "Structure")
+        self.assertIn("60 out of 100, and Ready needs 80", shown["why"])
+        self.assertIn("Structure (-30): Few headings.", shown["why"])
+
+    def test_ready_says_so_and_names_no_check(self):
+        checks = [source_quality.Check("a", "A", 100, 100, "good", "", "", "")]
+        shown = source_quality.scored(checks)
+        self.assertIsNone(shown["decisive"])
+        self.assertEqual(shown["why"], "Ready: 100 out of 100, and no check failed outright.")
+
     def test_the_check_reads_the_rows_the_graph_reads(self):
         """One walk for both, so a table finding cannot disagree with the graph."""
         content = GOOD + "\n" + FLAWED
@@ -251,9 +279,14 @@ class SourceCheckScreenTests(TestCase):
         response = self.client.get(reverse("documents", args=[self.app.pk]))
         detail = reverse("document-detail", args=[self.app.pk, document.pk])
         self.assertContains(response, f'href="{detail}#source-check"')
-        self.assertContains(response, ">Poor</a>", count=1)
-        # A ready source carries no pill: only what needs a look is marked.
-        self.assertNotContains(response, ">Ready</a>")
+        # Every checked source says its verdict, by name, in the Quality
+        # column; the one that is not Ready says which check decided it.
+        self.assertContains(response, "<th>Quality</th>", html=False)
+        self.assertContains(response, 'Readable</span><strong>', count=2)
+        self.assertContains(response, "</strong>Ready</a>")
+        self.assertContains(response, "</strong>Poor</a>")
+        self.assertContains(response, 'class="grade-chip-why">')
+        self.assertContains(response, "<strong>Tables the graph can read</strong>")
 
     def test_the_document_page_explains_the_check(self):
         document, _ = self.document(FLAWED)
@@ -262,6 +295,36 @@ class SourceCheckScreenTests(TestCase):
         self.assertContains(response, "Source check")
         self.assertContains(response, "biggest gain: tables the graph can read +25")
         self.assertContains(response, "nothing stops a graph being built")
+
+    def test_the_document_page_says_why_on_the_cards_own_line(self):
+        document, _ = self.document(FLAWED)
+        response = self.client.get(reverse("document-detail", args=[self.app.pk, document.pk]))
+        self.assertContains(response, '<small class="ticket-quality-why">Poor:')
+        self.assertContains(response, "How the verdict is decided.")
+        self.assertContains(response, "Here it was decided by <strong>Tables the graph can read")
+
+    def test_the_sources_table_has_a_document_type_and_a_file_type(self):
+        self.document(GOOD, name="policies/referral.docx")
+        self.document(FLAWED, name="export.xlsx")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, "<th>Document type</th>", html=False)
+        self.assertContains(response, "<th>File type</th>", html=False)
+        self.assertContains(
+            response, '<span class="file-type file-docx" title="DOCX file">Word</span>'
+        )
+        self.assertContains(
+            response, '<span class="file-type file-xlsx" title="XLSX file">Excel</span>'
+        )
+
+    def test_delete_and_retry_are_icons_that_still_say_what_they_do(self):
+        document, _ = self.document(GOOD)
+        Document.objects.filter(pk=document.pk).update(status="failed")
+        response = self.client.get(reverse("documents", args=[self.app.pk]))
+        self.assertContains(response, 'aria-label="Retry converting plan.docx"')
+        self.assertContains(response, 'aria-label="Delete plan.docx"')
+        self.assertContains(response, reverse("document-retry", args=[self.app.pk, document.pk]))
+        self.assertNotContains(response, ">Retry</button>")
+        self.assertNotContains(response, ">Delete</a>")
 
     def test_the_record_page_shows_the_check_and_a_viewer_sees_it(self):
         _, entry = self.document(FLAWED)
