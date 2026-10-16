@@ -136,6 +136,21 @@ account is paying. The AI settings notice says that too, so the page cannot impl
 warning nobody sees. Mount `claude_<application id>` before other people use that
 instance, rather than putting the banner back.
 
+**Single sign-on authenticates and grants nothing** (`sso.py`,
+`docs/single-sign-on.md`). Microsoft Entra ID OpenID Connect, code flow with
+PKCE, pinned to one tenant: `load_config` refuses `common`/`organizations`, and
+the ID token must be RS256 by a key the tenant publishes (fetched through
+`fetching`, never taken from the token), with exact `iss`, `aud`, `tid` and
+`nonce`. The client secret is the mounted file `entra_client_secret`. Accounts
+are keyed on tenant + object id (`SignInIdentity`, deliberately not
+`ExternalIdentity`, whose rows are written by email lookups); a first sign-in
+links by sign-in name only when exactly one user matches, that user is not
+linked elsewhere and **is not a platform administrator** - an operator links
+those with `manage.py link_sso`. `entra_create_users` (off) makes an account
+with no password, no membership and no grant. Entra groups and roles are never
+read: mapping them to grants would let the directory widen access without an
+audited grant here.
+
 **API tokens are users, not a second permission model.** `api_auth.authenticate`
 returns (user, application); `api.authorize` then runs the same `access()` checks a
 session request runs. Never add a token role or a token-specific permission table -

@@ -21,6 +21,7 @@ dependencies = [
   "graspologic-native>=1.3,<2",
   "numpy>=2.0,<3",
   "rapidfuzz>=3.0,<4",
+  "PyJWT[crypto]>=2.10,<3",
 ]
 
 [dependency-groups]

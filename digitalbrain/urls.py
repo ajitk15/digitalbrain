@@ -19,6 +19,7 @@ from platform_core import (
     serviceops,
     serviceops_testing,
     source_map,
+    sso,
     views,
     workbench,
 )
@@ -258,7 +259,9 @@ urlpatterns = [
     ),
     path("health/live", views.live, name="live"),
     path("health/ready", views.ready, name="ready"),
-    path("accounts/login/", auth.LoginView.as_view(), name="login"),
+    path("accounts/login/", sso.LoginView.as_view(), name="login"),
+    path("accounts/sso/start/", sso.start, name="sso-start"),
+    path("accounts/sso/callback/", sso.callback, name="sso-callback"),
     path("accounts/logout/", auth.LogoutView.as_view(), name="logout"),
     path(
         "accounts/password/",

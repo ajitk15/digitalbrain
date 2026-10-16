@@ -67,6 +67,16 @@ IMPORT_MAX_FILES = CONFIG.get("import_max_files", 100)
 # itself is mounted per application as sharepoint_APPLICATION_UUID.
 SHAREPOINT_TENANT = CONFIG.get("sharepoint_tenant", "")
 SHAREPOINT_CLIENT_ID = CONFIG.get("sharepoint_client_id", "")
+#: Sign in with Microsoft Entra ID (OpenID Connect), pinned to one tenant. Empty
+#: means the button is not offered. The client secret is mounted as
+#: `entra_client_secret`. Signing in proves who someone is and grants nothing:
+#: access still comes only from application grants. See platform_core/sso.py.
+ENTRA_TENANT = CONFIG.get("entra_tenant", "").lower()
+ENTRA_CLIENT_ID = CONFIG.get("entra_client_id", "").lower()
+#: Give someone the tenant knows, but this platform does not, an account with no
+#: access at all on their first sign-in. Off unless written down: by default an
+#: administrator creates the account first and the first sign-in links to it.
+ENTRA_CREATE_USERS = bool(CONFIG.get("entra_create_users", False))
 DEBUG = False
 SECRET_DIRECTORY = CONFIG["secret_directory"]
 #: Where a credential set in the browser is written. Empty means an operator has

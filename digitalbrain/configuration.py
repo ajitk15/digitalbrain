@@ -9,6 +9,7 @@ from django.core.exceptions import ImproperlyConfigured
 from django.views.decorators.debug import sensitive_variables
 
 ROOT = Path(__file__).resolve().parent.parent
+GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
 def load_config():
@@ -42,6 +43,9 @@ def load_config():
         "sharepoint_tenant",
         "sharepoint_client_id",
         "shared_streams",
+        "entra_tenant",
+        "entra_client_id",
+        "entra_create_users",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -120,6 +124,22 @@ def load_config():
             raise ImproperlyConfigured(f"{field} must be a string.")
         if value and not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", value):
             raise ImproperlyConfigured(f"{field} contains unexpected characters.")
+    entra = [config.get(field, "") for field in ("entra_tenant", "entra_client_id")]
+    if any(not isinstance(value, str) for value in entra):
+        raise ImproperlyConfigured("entra_tenant and entra_client_id must be strings.")
+    if any(entra) and not all(entra):
+        raise ImproperlyConfigured("Set both entra_tenant and entra_client_id, or neither.")
+    if any(entra) and not all(GUID.fullmatch(value) for value in entra):
+        # A tenant id rather than "common" or "organizations": signing in is
+        # pinned to one directory, so a token another tenant issued - where
+        # anyone can name themselves anything - never reaches account linking.
+        raise ImproperlyConfigured(
+            "entra_tenant and entra_client_id must be the directory (tenant) id and the "
+            "application (client) id, each a GUID. Multi-tenant names such as common or "
+            "organizations are refused."
+        )
+    if type(config.get("entra_create_users", False)) is not bool:
+        raise ImproperlyConfigured("entra_create_users must be a boolean.")
     hosts = config.get("fetch_allow_hosts", [])
     if not isinstance(hosts, list) or any(not isinstance(h, str) or not h.strip() for h in hosts):
         raise ImproperlyConfigured("fetch_allow_hosts must be a list of hostnames.")

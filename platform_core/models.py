@@ -2056,6 +2056,41 @@ class ExternalIdentity(models.Model):
         ]
 
 
+class SignInIdentity(models.Model):
+    """The Microsoft Entra ID account that signs a platform user in.
+
+    Kept apart from `ExternalIdentity` on purpose: that table says who someone
+    is in Jira for filtering answers and is written by email lookups, while a
+    row here lets its holder sign in. Keyed on the tenant and the account's
+    object id (`oid`), which Entra never reuses or lets anyone rename; the
+    sign-in name is kept only to show. Once linked, an account is matched by
+    `oid` alone, so a name reassigned in the directory later cannot take it.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sign_in_identities"
+    )
+    tenant = models.CharField(max_length=36)
+    subject = models.CharField(max_length=36)
+    name = models.CharField(max_length=254, blank=True)
+    method = models.CharField(
+        max_length=8,
+        choices=[
+            ("name", "Matched by sign-in name"),
+            ("created", "Created at first sign-in"),
+            ("manual", "Linked by an operator"),
+        ],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_signed_in_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tenant", "subject"], name="unique_sign_in_subject"),
+            models.UniqueConstraint(fields=["user", "tenant"], name="unique_sign_in_user"),
+        ]
+
+
 class DocumentAIResult(models.Model):
     """What a model said about a document's text, kept so it is paid for once.
 
