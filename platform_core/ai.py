@@ -11,7 +11,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import transaction
-from django.http import Http404
+from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
@@ -24,18 +24,32 @@ from .model_catalog import (
     MODEL_CHOICES,
     PRICING_NOTE,
     PURPOSE_NOTES,
-    price_reference,
 )
 from .models import AI_PURPOSES, AIConfiguration
 from .policy import application_for
 from .services import audit, record_ai_usage
 from .workbench import access
 
+#: What each changeable reply cap is, said once on its task's form.
+LIMIT_HELP = {
+    "plan_drafting": "One cap for every Code Factory agent, including the model's thinking.",
+    "serviceops_triage": "The triage reply, including the model's thinking.",
+    "chat": "The longest answer, including any thinking.",
+    "graph_retrieval": "The longest answer, including any thinking.",
+}
+
 
 class AIForm(forms.ModelForm):
+    """One task's model, and its reply cap where an owner may change it.
+
+    Prices are not here: they belong to a model, not a task, and are set once per
+    model in the Prices table (`PriceForm`). Switching a task on or off is the
+    row's own switch on the list.
+    """
+
     model_choice = forms.ChoiceField(choices=MODEL_CHOICES, label="Model", initial="custom")
 
-    def __init__(self, *args, limit_default=None, purpose=None, **kwargs):
+    def __init__(self, *args, purpose=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["model"].required = False
         self.embeddings = purpose == "embeddings"
@@ -44,27 +58,18 @@ class AIForm(forms.ModelForm):
             # be offering a setting that can only fail.
             self.fields["model_choice"].choices = EMBEDDING_CHOICES
             self.fields["provider"].choices = [("openai", "OpenAI")]
-            self.fields["output_rate"].help_text = "Embeddings bill input only; leave at 0."
-        # Code Factory only: one output cap for all of its agents. Blank means the
-        # default, so an owner who never sets it keeps whatever the default becomes.
-        if limit_default is None:
+        limits = output_limits().get(purpose)
+        if limits is None:
             del self.fields["output_limit"]
         else:
-            from .code_factory import MAX_OUTPUT_LIMIT, MIN_OUTPUT_LIMIT
-
+            default, lowest, highest = limits
             field = self.fields["output_limit"]
-            field.min_value, field.max_value = MIN_OUTPUT_LIMIT, MAX_OUTPUT_LIMIT
-            field.validators += [
-                MinValueValidator(MIN_OUTPUT_LIMIT),
-                MaxValueValidator(MAX_OUTPUT_LIMIT),
-            ]
-            field.widget.attrs.update(
-                placeholder=str(limit_default), min=MIN_OUTPUT_LIMIT, max=MAX_OUTPUT_LIMIT
-            )
+            field.min_value, field.max_value = lowest, highest
+            field.validators += [MinValueValidator(lowest), MaxValueValidator(highest)]
+            field.widget.attrs.update(placeholder=str(default), min=lowest, max=highest)
             field.help_text = (
-                f"Blank uses the default, {limit_default:,}. One cap for every Code Factory "
-                "agent, including the model's thinking. It stops a runaway reply; "
-                "you are billed only for what is written."
+                f"Blank uses the default, {default:,}. {LIMIT_HELP[purpose]} It stops a "
+                "runaway reply; you are billed only for what is written."
             )
         if self.instance.pk:
             selected = f"{self.instance.provider}:{self.instance.model}"
@@ -80,9 +85,9 @@ class AIForm(forms.ModelForm):
         choice = values.get("model_choice")
         if choice and choice != "custom":
             values["provider"], values["model"] = choice.split(":", 1)
-        if values.get("enabled") and not values.get("model"):
-            self.add_error("model", "Select a listed model or enter a custom model ID.")
         model = values.get("model", "")
+        if not model:
+            self.add_error("model", "Select a listed model or enter a custom model ID.")
         if model and (len(model) > 160 or any(c.isspace() for c in model)):
             self.add_error("model", "Use a valid model ID without spaces.")
         if values.get("provider") == "openai" and model.startswith("claude-"):
@@ -97,26 +102,44 @@ class AIForm(forms.ModelForm):
 
     class Meta:
         model = AIConfiguration
-        fields = [
-            "model_choice",
-            "provider",
-            "model",
-            "input_rate",
-            "output_rate",
-            "output_limit",
-            "enabled",
-        ]
+        fields = ["model_choice", "provider", "model", "output_limit"]
         labels = {
             "model": "Custom model ID",
             "provider": "Provider for custom model",
-            "input_rate": "Input price (USD / 1 million tokens)",
-            "output_rate": "Output price (USD / 1 million tokens)",
             "output_limit": "Output limit (tokens)",
         }
         help_texts = {
             "model": "Only needed for Custom. Your provider account must have access to the model.",
-            "input_rate": "Use your contracted price. Recorded costs are estimates.",
         }
+
+
+def embedding_model(model):
+    """Embedding models bill input only: their output price is always zero."""
+    return model.startswith("text-embedding-")
+
+
+class PriceForm(forms.Form):
+    """One model's price, shared by every task that uses it in this application."""
+
+    key = forms.CharField(widget=forms.HiddenInput, max_length=180)
+    input_rate = forms.DecimalField(
+        label="Input (USD / 1M tokens)", min_value=0, max_digits=12, decimal_places=6
+    )
+    output_rate = forms.DecimalField(
+        label="Output (USD / 1M tokens)", min_value=0, max_digits=12, decimal_places=6
+    )
+
+
+PriceFormSet = forms.formset_factory(PriceForm, extra=0, max_num=40, validate_max=True)
+
+
+class AllModelsForm(forms.Form):
+    model_choice = forms.ChoiceField(
+        label="Model for every task",
+        choices=[group for group in MODEL_CHOICES if group[0] != "Custom"],
+        help_text="Search embeddings keep their own model. A task can still be changed "
+        "on its own afterwards.",
+    )
 
 
 class BudgetForm(forms.Form):
@@ -200,6 +223,58 @@ DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 #: cannot type, with nobody asking. Document review is not, for the reason
 #: graph generation is not: it spends only when an owner presses its button.
 SEEDED_DISABLED = {"reranking", "document_typing"}
+
+#: Chat and graph answers: the range an owner may set their reply cap to. The
+#: default stays `ANSWER_TOKENS`; the ceiling is a guard against a typo.
+MIN_ANSWER_TOKENS = 1024
+MAX_ANSWER_TOKENS = 16000
+MIN_TRIAGE_TOKENS = 4096
+MAX_TRIAGE_TOKENS = 32000
+
+
+def output_limits():
+    """{purpose: (default, lowest, highest)} for the reply caps an owner may change.
+
+    Only tasks whose reply is open-ended, or that a thinking model has already
+    cut off in a live run: an answer in prose, a Code Factory phase, a triage.
+    The rest stay fixed in code because their reply is bounded by what they are
+    asked for - a title, a ranking, one type, twelve relationships a source, a
+    capped number of findings - and graph extraction's cap is sized to its
+    schema by a test. A cap is not what is billed, so raising one costs nothing
+    until a reply needs it.
+    """
+    from .agent_runtime.runtime import ANSWER_TOKENS
+    from .code_factory import MAX_OUTPUT_LIMIT, MIN_OUTPUT_LIMIT, OUTPUT_LIMIT
+    from .serviceops_triage import TRIAGE_OUTPUT_LIMIT
+
+    answer = (ANSWER_TOKENS, MIN_ANSWER_TOKENS, MAX_ANSWER_TOKENS)
+    return {
+        "chat": answer,
+        "graph_retrieval": answer,
+        "plan_drafting": (OUTPUT_LIMIT, MIN_OUTPUT_LIMIT, MAX_OUTPUT_LIMIT),
+        "serviceops_triage": (TRIAGE_OUTPUT_LIMIT, MIN_TRIAGE_TOKENS, MAX_TRIAGE_TOKENS),
+    }
+
+
+def reply_cap(app_id, purpose, config=None):
+    """The output cap for one call: the owner's setting, else the task's default.
+
+    Read at the moment of each call, so a cap raised after a cut-off reply applies
+    to the next one. A stored value outside the allowed range is ignored rather
+    than trusted. `config`, when the caller already holds the row, saves a query.
+    """
+    default, lowest, highest = output_limits()[purpose]
+    if config is None:
+        value = (
+            AIConfiguration.objects.filter(application_id=app_id, purpose=purpose)
+            .values_list("output_limit", flat=True)
+            .first()
+        )
+    else:
+        value = getattr(config, "output_limit", None)
+    if isinstance(value, int) and lowest <= value <= highest:
+        return value
+    return default
 
 
 def configured_providers():
@@ -326,6 +401,9 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
 
     check_budget(app.pk)
     token = provider_credential(config, app)
+    if purpose in output_limits():
+        # A caller that names its own cap keeps it; otherwise the owner's applies.
+        options.setdefault("max_tokens", reply_cap(app.pk, purpose, config))
     adapter = completion
     if config.provider == "claude":
         from .claude_agents import completion as adapter
@@ -518,6 +596,9 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
     from .agent_runtime.tools import CitationRecorder, ToolScope
 
     runtime = openai_runtime if config.provider == "openai" else claude_runtime
+    # A graph conversation is answered by the graph retrieval configuration, and
+    # its receipts say so: they used to be filed as chat whatever answered them.
+    purpose = getattr(config, "purpose", "chat")
     scope = ToolScope(user_id=user.pk, app_id=app.pk, purpose="chat")
     recorder = CitationRecorder(scope)
     # Evidence computed before the run seeds the answer, so a single-turn reply is
@@ -535,6 +616,7 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
                 recorder,
                 session.emit,
                 session.cancel,
+                max_tokens=reply_cap(app.pk, purpose, config),
             )
         )
     except (PermissionDenied, Http404):
@@ -544,123 +626,416 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
             "AI response unavailable. Check the model, credential and provider limits. "
             "The request may have been billed by the provider; it is not retried automatically."
         ) from None
-    record_turns(user, app, config, "chat", turns)
+    record_turns(user, app, config, purpose, turns)
     access(user, app.pk, "knowledge")
     access(user, app.pk, "chat")
     return answer, recorder.verified_citations()
 
 
-def code_factory_default():
-    from .code_factory import OUTPUT_LIMIT
+def owned_application(request, pk):
+    """AI settings are owner-only: the application, or 404/403 like every screen."""
+    app, grant = application_for(request.user, pk)
+    if grant.role != "owner":
+        raise PermissionDenied
+    return app
 
-    return OUTPUT_LIMIT
+
+def visible_tasks(app):
+    """[(group label, [(purpose, label)])] for the tasks this application can run.
+
+    A task whose feature is switched off is left out, with its label in the
+    second value so the page can say what is not shown and why.
+    """
+    from .model_catalog import TASK_GROUPS
+    from .services import feature_enabled
+
+    labels = dict(AI_PURPOSES)
+    groups, hidden = [], []
+    for group, tasks in TASK_GROUPS:
+        shown = []
+        for purpose, feature in tasks:
+            if feature_enabled(feature, app):
+                shown.append((purpose, labels[purpose]))
+            else:
+                hidden.append(labels[purpose])
+        if shown:
+            groups.append((group, shown))
+    return groups, hidden
+
+
+def model_price(app, provider, model):
+    """(input, output) for a model newly given to a task in this application.
+
+    The price this application already uses for that model, so one model has one
+    price; else the published list price; else zero, which the Prices table then
+    flags because an unpriced model makes spend and the budget read $0.
+    """
+    from .model_catalog import list_price
+
+    used = (
+        AIConfiguration.objects.filter(application=app, provider=provider, model=model)
+        .order_by("-updated_at")
+        .first()
+    )
+    if used is not None:
+        rates = (used.input_rate, used.output_rate)
+    else:
+        listed = list_price(provider, model)
+        rates = (Decimal(listed[0]), Decimal(listed[1])) if listed else (Decimal(0), Decimal(0))
+    return rates[0], Decimal(0) if embedding_model(model) else rates[1]
+
+
+def models_in_use(configs):
+    """{"provider:model": [rows]} in first-use order: what the Prices table lists."""
+    found = {}
+    for config in configs:
+        if config.model:
+            found.setdefault(f"{config.provider}:{config.model}", []).append(config)
+    return found
+
+
+def price_rows(found, formset):
+    """One Prices row per model, with its form and what the page says about it."""
+    from .model_catalog import list_price, model_label
+
+    rows = []
+    for form in formset:
+        key = form["key"].value()
+        if key not in found:
+            continue
+        provider, model = key.split(":", 1)
+        configs = found[key]
+        listed = list_price(provider, model)
+        newest = max(configs, key=lambda config: config.updated_at)
+        rows.append(
+            {
+                "form": form,
+                "label": model_label(model),
+                "tasks": len(configs),
+                "listed": listed,
+                "embedding": embedding_model(model),
+                "unpriced": not newest.input_rate and not newest.output_rate,
+                "mixed": len({(c.input_rate, c.output_rate) for c in configs}) > 1,
+            }
+        )
+    return rows
+
+
+def plain_price(value):
+    """A stored rate as people write it: 2.00, not 2.000000; 0.025 stays 0.025."""
+    value = value.normalize()
+    return f"{value:.2f}" if value.as_tuple().exponent >= -2 else f"{value:f}"
+
+
+def price_initial(found):
+    initial = []
+    for key, configs in found.items():
+        newest = max(configs, key=lambda config: config.updated_at)
+        initial.append(
+            {
+                "key": key,
+                "input_rate": plain_price(newest.input_rate),
+                "output_rate": plain_price(newest.output_rate),
+            }
+        )
+    return initial
+
+
+def save_prices(request, app, found):
+    """Set each listed model's price on every task that uses it. None, or the formset."""
+    formset = PriceFormSet(request.POST, prefix="price")
+    if not formset.is_valid():
+        return formset
+    changed = {}
+    with transaction.atomic():
+        for form in formset:
+            key = form.cleaned_data.get("key")
+            if key not in found:
+                # Only models this page listed; a key never names anything else.
+                raise PermissionDenied("Unknown model.")
+            provider, model = key.split(":", 1)
+            output = Decimal(0) if embedding_model(model) else form.cleaned_data["output_rate"]
+            rates = (form.cleaned_data["input_rate"], output)
+            rows = AIConfiguration.objects.filter(application=app, provider=provider, model=model)
+            if rows.exclude(input_rate=rates[0], output_rate=rates[1]).update(
+                input_rate=rates[0], output_rate=rates[1]
+            ):
+                changed[key] = [str(rates[0]), str(rates[1])]
+        if changed:
+            audit(
+                request.user,
+                "ai.prices_set",
+                app.pk,
+                app.product.portfolio.organization,
+                details={"prices": changed},
+            )
+    messages.success(request, "Prices saved." if changed else "Prices unchanged.")
+    return None
+
+
+def switch_task(request, app, purpose):
+    """The row's switch: on or off, and nothing else about the task changes."""
+    value = request.POST.get("enabled")
+    if value not in {"0", "1"}:
+        return HttpResponseBadRequest("Say on or off.")
+    label = dict(AI_PURPOSES)[purpose]
+    enabled = value == "1"
+    with transaction.atomic():
+        config = (
+            AIConfiguration.objects.select_for_update()
+            .filter(application=app, purpose=purpose)
+            .first()
+        )
+        if config is None or not config.model:
+            messages.error(request, f"Choose a model for {label} before switching it on.")
+            return None
+        config.enabled = enabled
+        config.configured_by = request.user
+        config.save(update_fields=["enabled", "configured_by", "updated_at"])
+        audit(
+            request.user,
+            "ai.configured",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"purpose": purpose, "enabled": enabled},
+        )
+    messages.success(request, f"{label} switched {'on' if enabled else 'off'}.")
+    return None
+
+
+def apply_to_all(request, app, groups):
+    """Give every listed task but embeddings one model. None, or the bound form."""
+    from .model_catalog import model_label
+
+    form = AllModelsForm(request.POST, prefix="all")
+    if not form.is_valid():
+        return form
+    provider, model = form.cleaned_data["model_choice"].split(":", 1)
+    purposes = [
+        purpose for _, tasks in groups for purpose, _ in tasks if purpose != "embeddings"
+    ]
+    with transaction.atomic():
+        rates = model_price(app, provider, model)
+        for purpose in purposes:
+            config = AIConfiguration.objects.filter(application=app, purpose=purpose).first()
+            if config is None:
+                # Missing rows start the way a new application's do.
+                config = AIConfiguration(
+                    application=app, purpose=purpose, enabled=purpose not in SEEDED_DISABLED
+                )
+            config.provider, config.model = provider, model
+            config.input_rate, config.output_rate = rates
+            config.configured_by = request.user
+            config.save()
+        audit(
+            request.user,
+            "ai.configured",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"purposes": purposes, "provider": provider, "model": model},
+        )
+    messages.success(request, f"Every task now uses {model_label(model)}.")
+    return None
+
+
+def task_rows(app, groups, configs):
+    """The list, and [(provider, [task labels])] for switched-on tasks it stops.
+
+    A missing credential stops every task on that provider alike, so the page says
+    it once, naming what it stops, rather than on each row.
+    """
+    from django.db.models import Sum
+
+    from .agent_runtime.credentials import host_login_enabled
+    from .budget import month_start
+    from .model_catalog import SPENDS, model_label
+    from .models import AIUsage
+    from .secrets import source_of
+
+    spent = dict(
+        AIUsage.objects.filter(application=app, created_at__gte=month_start())
+        .values("purpose")
+        .annotate(total=Sum("amount"))
+        .values_list("purpose", "total")
+    )
+    ready = {
+        "openai": bool(source_of(app, "openai")),
+        "claude": bool(source_of(app, "claude")) or host_login_enabled(),
+    }
+    limits = output_limits()
+    result, blocked = [], {}
+    for group, tasks in groups:
+        rows = []
+        for purpose, label in tasks:
+            config = configs.get(purpose)
+            configured = bool(config and config.model)
+            spends, unattended = SPENDS[purpose]
+            if configured and config.enabled and not ready.get(config.provider):
+                provider = "OpenAI" if config.provider == "openai" else "Claude"
+                blocked.setdefault(provider, []).append(label)
+            rows.append(
+                {
+                    "purpose": purpose,
+                    "label": label,
+                    "configured": configured,
+                    "enabled": bool(configured and config.enabled),
+                    "model": model_label(config.model) if configured else "",
+                    "spends": spends,
+                    "unattended": unattended,
+                    "limit": f"{reply_cap(app.pk, purpose, config):,}" if purpose in limits else "",
+                    "spent": spent.get(purpose),
+                }
+            )
+        result.append((group, rows))
+    return result, sorted(blocked.items())
 
 
 @login_required
 @require_http_methods(["GET", "POST"])
 def ai_settings(request, pk):
-    from .agent_runtime.credentials import host_login_enabled
-    from .secrets import source_of
+    """Every AI task on one list: its model, this month's spend, and a switch.
 
-    app, grant = application_for(request.user, pk)
-    if grant.role != "owner":
-        raise PermissionDenied
+    Prices are kept per model, not per task: a model used by six tasks used to be
+    priced six times, and one wrong copy made every cost report for that task
+    wrong. Each POST names which part it is for in `purpose` - a task's switch,
+    `prices`, `all` or `budget` - and editing a task is its own page (`ai_task`),
+    opened as a popup.
+    """
+    from .agent_runtime.credentials import host_login_enabled
+    from .budget import spent as month_spent
     from .budget import status as budget_status
     from .models import AIBudget
+    from .secrets import source_of
 
-    selected_purpose = request.POST.get("purpose")
+    app = owned_application(request, pk)
+    groups, hidden = visible_tasks(app)
+    shown = [purpose for _, tasks in groups for purpose, _ in tasks]
+    configs = {
+        config.purpose: config for config in AIConfiguration.objects.filter(application=app)
+    }
+    found = models_in_use(configs[purpose] for purpose in shown if purpose in configs)
     existing = AIBudget.objects.filter(application=app).first()
     budget_form = BudgetForm(
         prefix="budget", initial={"monthly_limit": existing.monthly_limit if existing else None}
     )
-    if request.method == "POST" and selected_purpose == "budget":
-        budget_form = save_budget(request, app)
-        if budget_form is None:
+    prices = PriceFormSet(prefix="price", initial=price_initial(found))
+    all_form = AllModelsForm(
+        prefix="all", initial={"model_choice": f"claude:{DEFAULT_MODELS['claude']}"}
+    )
+    if request.method == "POST":
+        selected = request.POST.get("purpose")
+        if selected == "budget":
+            failed = save_budget(request, app)
+            budget_form = failed or budget_form
+        elif selected == "prices":
+            failed = save_prices(request, app, found)
+            prices = failed or prices
+        elif selected == "all":
+            failed = apply_to_all(request, app, groups)
+            all_form = failed or all_form
+        elif selected in dict(AI_PURPOSES):
+            response = switch_task(request, app, selected)
+            if response is not None:
+                return response
+            failed = None
+        else:
+            raise PermissionDenied("Unknown AI purpose.")
+        if failed is None:
             return redirect("ai-settings", pk=pk)
-    elif request.method == "POST" and selected_purpose not in dict(AI_PURPOSES):
-        raise PermissionDenied("Unknown AI purpose.")
-    sections = []
-    for purpose, label in AI_PURPOSES:
-        config = AIConfiguration.objects.filter(application=app, purpose=purpose).first()
-        submitted = request.method == "POST" and selected_purpose == purpose
-        form = AIForm(
-            request.POST if submitted else None,
-            instance=config,
-            prefix=purpose,
-            limit_default=code_factory_default() if purpose == "plan_drafting" else None,
-            purpose=purpose,
-            initial={
-                "enabled": False,
-                "input_rate": 0,
-                "output_rate": 0,
-                "provider": "openai",
-                **(
-                    {"model_choice": f"openai:{DEFAULT_EMBEDDING_MODEL}"}
-                    if purpose == "embeddings"
-                    else {}
-                ),
-            }
-            if config is None
-            else None,
-        )
-        if submitted and form.is_valid():
-            with transaction.atomic():
-                config = form.save(commit=False)
-                config.application = app
-                config.purpose = purpose
-                config.configured_by = request.user
-                config.save()
-                audit(
-                    request.user,
-                    "ai.configured",
-                    app.pk,
-                    app.product.portfolio.organization,
-                    details={
-                        "purpose": purpose,
-                        "provider": config.provider,
-                        "model": config.model,
-                        **(
-                            {"output_limit": config.output_limit}
-                            if purpose == "plan_drafting"
-                            else {}
-                        ),
-                    },
-                )
-            messages.success(request, f"{label} settings saved.")
-            return redirect("ai-settings", pk=pk)
-        sections.append(
-            {
-                "purpose": purpose,
-                "label": label,
-                "form": form,
-                "note": PURPOSE_NOTES.get(purpose, ""),
-                "advice": GRAPH_GENERATION_ADVICE if purpose == "graph_generation" else "",
-                # A one-line summary so the page can be read without opening
-                # five identical forms to find out what is set.
-                "summary": (
-                    f"{config.get_provider_display()} · {config.model}"
-                    if config and config.model
-                    else "Not configured"
-                ),
-                "active": bool(config and config.enabled and config.model),
-            }
-        )
+    rows, blocked = task_rows(app, groups, configs)
     return render(
         request,
         "ai_settings.html",
         {
             "application": app,
-            "sections": sections,
+            "groups": rows,
+            "blocked": blocked,
+            "hidden": hidden,
+            "prices": prices,
+            "price_rows": price_rows(found, prices),
+            "pricing_note": PRICING_NOTE,
+            "all_form": all_form,
             "budget_form": budget_form,
             "budget": budget_status(app.pk),
-            "price_rows": price_reference(),
-            "pricing_note": PRICING_NOTE,
-            "openai_secret": f"openai_{app.pk}",
-            "claude_secret": f"claude_{app.pk}",
+            "month_spent": month_spent(app.pk),
             "openai_mounted": bool(source_of(app, "openai")),
             "claude_mounted": bool(source_of(app, "claude")),
+            "claude_secret": f"claude_{app.pk}",
             # True only when this application would actually fall back to it, so
             # the page can stop claiming a fallback never happens when it does.
             "host_login": host_login_enabled() and not source_of(app, "claude"),
+        },
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def ai_task(request, pk, purpose):
+    """One task's model and reply cap: a page of its own, opened as a popup.
+
+    A redirect back to AI settings means it saved; anything else is this page
+    again with its errors, which the popup shows in place (`static/modal.js`).
+    """
+    from .model_catalog import SPENDS, model_label
+
+    app = owned_application(request, pk)
+    labels = dict(AI_PURPOSES)
+    if purpose not in labels:
+        raise Http404
+    config = AIConfiguration.objects.filter(application=app, purpose=purpose).first()
+    before = (config.provider, config.model) if config else None
+    form = AIForm(
+        request.POST if request.method == "POST" else None,
+        instance=config,
+        prefix=purpose,
+        purpose=purpose,
+        initial={"model_choice": f"openai:{DEFAULT_EMBEDDING_MODEL}"}
+        if config is None and purpose == "embeddings"
+        else None,
+    )
+    if request.method == "POST" and form.is_valid():
+        with transaction.atomic():
+            config = form.save(commit=False)
+            config.application = app
+            config.purpose = purpose
+            config.configured_by = request.user
+            if before is None:
+                # A task configured here for the first time starts the way a new
+                # application's would: on, unless it spends with nobody asking.
+                config.enabled = purpose not in SEEDED_DISABLED and purpose != "embeddings"
+            if (config.provider, config.model) != before:
+                config.input_rate, config.output_rate = model_price(
+                    app, config.provider, config.model
+                )
+            config.save()
+            audit(
+                request.user,
+                "ai.configured",
+                app.pk,
+                app.product.portfolio.organization,
+                details={
+                    "purpose": purpose,
+                    "provider": config.provider,
+                    "model": config.model,
+                    **(
+                        {"output_limit": config.output_limit}
+                        if purpose in output_limits()
+                        else {}
+                    ),
+                },
+            )
+        messages.success(request, f"{labels[purpose]} saved: {model_label(config.model)}.")
+        return redirect("ai-settings", pk=pk)
+    return render(
+        request,
+        "ai_task.html",
+        {
+            "application": app,
+            "purpose": purpose,
+            "label": labels[purpose],
+            "form": form,
+            "note": PURPOSE_NOTES.get(purpose, ""),
+            "spends": SPENDS[purpose][0],
+            "advice": GRAPH_GENERATION_ADVICE if purpose == "graph_generation" else "",
         },
     )

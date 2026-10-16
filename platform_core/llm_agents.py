@@ -17,7 +17,12 @@ from django.core.exceptions import ValidationError
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient, OpenAIError
 
 from .agent_runtime.prompts import INSTRUCTIONS
-from .agent_runtime.runtime import RESPONSES_MODELS, evidence_payload, recent_turns
+from .agent_runtime.runtime import (
+    ANSWER_TOKENS,
+    RESPONSES_MODELS,
+    evidence_payload,
+    recent_turns,
+)
 from .agent_runtime.usage import checked_answer, checked_request_id, openai_usage
 
 __all__ = ["INSTRUCTIONS", "completion"]
@@ -41,7 +46,7 @@ async def _run(
     token,
     history,
     instructions=INSTRUCTIONS,
-    max_tokens=1024,
+    max_tokens=ANSWER_TOKENS,
     timeout=TIMEOUT,
 ):
     responses_api = model.startswith(RESPONSES_MODELS)

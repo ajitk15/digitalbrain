@@ -63,7 +63,8 @@ INSTRUCTIONS = (
 TRIAGE_TIMEOUT = 120
 #: The reply cap. At most three short hypotheses, but the model's thinking counts
 #: against the same cap: 900 left a thinking model no room to write the JSON, the
-#: failure Code Factory's work order had. A cap is not what is billed.
+#: failure Code Factory's work order had. A cap is not what is billed. This is the
+#: default; an owner may change it in AI settings (`ai.reply_cap`).
 TRIAGE_OUTPUT_LIMIT = 8000
 
 
@@ -733,7 +734,7 @@ def _execute(run):
             "ServiceOps AI is off in AI settings, so this brief is evidence only.",
         )
     else:
-        from .ai import invoke_ai
+        from .ai import invoke_ai, reply_cap
         from .factory_views import MODEL_LABELS
 
         label = MODEL_LABELS.get(config.model, config.model)
@@ -760,7 +761,7 @@ def _execute(run):
                 citations,
                 receipt=receipt,
                 instructions=INSTRUCTIONS,
-                max_tokens=TRIAGE_OUTPUT_LIMIT,
+                max_tokens=reply_cap(app.pk, "serviceops_triage"),
                 timeout=TRIAGE_TIMEOUT,
             )
         except (ValidationError, ImproperlyConfigured, OSError, TimeoutError) as exc:

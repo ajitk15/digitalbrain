@@ -1,32 +1,57 @@
 {% extends 'base.html' %}{% load workspace static icons %}{% block title %}AI settings · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}{% settings_page %}
-<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>AI settings</h1><p class="muted">{{ sections|length }} tasks call a model. Each one picks its own provider, model and price, and applies to this application only.</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>AI settings</h1><p class="muted">Each task that calls a model, the model it uses and what it spent this month. Applies to this application only.</p></div></div>
+{% if host_login %}<p class="notice notice-warning" role="note">{% icon "warning" %}<span>Claude answers use this machine's own Claude Code login, not a credential belonging to {{ application.name }}. Spend is billed to that login while usage is still recorded here. This is refused outright in production. <strong>Nobody using Chat is told this</strong> &mdash; this page is owner-only, so mount <code class="mono">{{ claude_secret }}</code> before other people ask questions here.</span></p>{% endif %}
 
-
-<div class="ai-settings-grid">{% for section in sections %}<details class="card ai-purpose" {% if section.form.errors %}open{% endif %}>
-<summary class="card-heading"><strong>{{ section.label }}</strong><span class="pill {% if not section.active %}pending{% endif %}">{% if section.active %}{{ section.summary }}{% elif section.summary != 'Not configured' %}Off · {{ section.summary }}{% else %}Not configured{% endif %}</span></summary>
-<p class="muted">{{ section.note }}</p>
-{% if section.advice %}<p class="notice" role="note">{{ section.advice }}</p>{% endif %}
-<form method="post" class="ai-model-form">{% csrf_token %}<input type="hidden" name="purpose" value="{{ section.purpose }}">{{ section.form.as_p }}<button class="button">{% icon "save" %}Save</button></form></details>{% endfor %}</div>
-<details class="card section ai-budget" id="budget" {% if budget_form.errors %}open{% endif %}>
-<summary class="card-heading"><strong>Monthly budget</strong><span class="pill {% if not budget %}pending{% elif budget.reached %}status-failed{% endif %}">{% if budget %}${{ budget.spent|floatformat:2 }} of ${{ budget.limit|floatformat:2 }} this month{% else %}No cap{% endif %}</span></summary>
-{% if budget %}<progress class="share-bar" value="{{ budget.percent }}" max="100">{{ budget.percent }}%</progress>{% if budget.reached %}<p class="notice" role="note">The budget is used up: every paid AI call for this application is refused until it is raised or the month ends.</p>{% endif %}{% endif %}
-<p class="muted">Spend is the sum of this application's usage receipts at the rates entered above, so a task priced at 0 counts as free here. Each call is checked before it starts and never stopped part way, so a month can end one call over the cap.</p>
+<div class="ai-summary">
+<details class="card ai-tile" id="budget"{% if budget_form.errors %} open{% endif %}>
+<summary><span class="ai-tile-label">Spent this month</span><strong class="ai-tile-figure">{% if budget %}${{ budget.spent|floatformat:2 }} of ${{ budget.limit|floatformat:2 }} this month{% else %}${{ month_spent|floatformat:2 }}{% endif %}</strong>{% if budget %}<progress class="share-bar" value="{{ budget.percent }}" max="100">{{ budget.percent }}%</progress>{% else %}<small>No monthly cap</small>{% endif %}<span class="ai-tile-action">{% if budget %}Change budget{% else %}Set a budget{% endif %}</span></summary>
+{% if budget.reached %}<p class="notice notice-warning" role="note">The budget is used up: every paid AI call for this application is refused until it is raised or the month ends.</p>{% endif %}
 <form method="post" class="ai-budget-form">{% csrf_token %}<input type="hidden" name="purpose" value="budget">{{ budget_form.as_p }}<button class="button">{% icon "save" %}Save budget</button></form>
+<p class="muted"><small>Spend is the sum of this application's usage receipts at the prices below. Each call is checked before it starts and never stopped part way, so a month can end one call over the cap.</small></p>
 </details>
-<section class="card section credential-status">
-<div class="card-heading"><h2>Credentials</h2><span class="pill {% if openai_mounted or claude_mounted or host_login %}{% else %}pending{% endif %}">{% if openai_mounted or claude_mounted %}Mounted{% elif host_login %}Development login{% else %}Not configured{% endif %}</span></div>
-{% if host_login %}<p class="notice" role="note">Claude answers use this machine's own Claude Code login, not a credential belonging to {{ application.name }}. Spend is billed to that login while usage is still recorded here. This is refused outright in production. <strong>Nobody using Chat is told this</strong> &mdash; this page is owner-only, so mount <code class="mono">{{ claude_secret }}</code> before other people ask questions here.</p>{% endif %}
-<details class="cred-files"><summary>Credential files and setup</summary><div class="cred-rows">
-<div class="list-row"><div><strong>Claude</strong><small class="mono">{{ claude_secret }}</small></div><span class="pill {% if not claude_mounted and not host_login %}pending{% endif %}">{% if claude_mounted %}Mounted{% elif host_login %}Host login{% else %}Missing{% endif %}</span></div>
-<div class="list-row"><div><strong>OpenAI</strong><small class="mono">{{ openai_secret }}</small></div><span class="pill {% if not openai_mounted %}pending{% endif %}">{% if openai_mounted %}Mounted{% else %}Missing{% endif %}</span></div>
-</div>
-<p class="muted">Credentials are files, one per provider for this application, never in .env or the database. An owner can set them on the Credentials screen; an operator can mount them instead. Setup writes them: run <code>start-all.ps1 -ConfigureAI</code>, and every application created afterwards gets its own copy automatically.</p></details><p><a class="button secondary" href="{% url 'credentials' application.pk %}">{% icon "key" %}Manage credentials</a></p>
+
+<section class="card ai-tile">
+<span class="ai-tile-label">Credentials</span>
+<ul class="ai-credentials">
+<li>{% if claude_mounted %}{% icon "check" 13 %}Claude{% elif host_login %}{% icon "warning" 13 %}Claude <small>this machine's login</small>{% else %}{% icon "cross" 13 %}Claude <small>not set</small>{% endif %}</li>
+<li>{% if openai_mounted %}{% icon "check" 13 %}OpenAI{% else %}{% icon "cross" 13 %}OpenAI <small>not set</small>{% endif %}</li>
+</ul>
+<a class="ai-tile-action" href="{% url 'credentials' application.pk %}">Manage credentials</a>
 </section>
 
-<details class="card section"><summary>Model availability and reference prices</summary>
-<p>Claude accepts either credential and the file contents decide which is used. An <strong>API key</strong> (<code>sk-ant-api…</code>) bills your Anthropic Console account. A token from <code>claude setup-token</code> (<code>sk-ant-oat…</code>) bills a Claude subscription and needs no interactive sign-in on the server. Each application uses its own mounted credential, so one application can never spend another's budget. The single exception is the development-only host login noted above.</p>
-<div class="table-wrap price-table"><table><thead><tr><th>Model</th><th>Input / 1M</th><th>Output / 1M</th></tr></thead><tbody>{% for row in price_rows %}<tr><td>{{ row.label }}</td><td class="mono">${{ row.input }}</td><td class="mono">${{ row.output }}</td></tr>{% endfor %}</tbody></table></div>
-<p class="muted">{{ pricing_note }}</p>
-<p>Listed models are suggestions from provider documentation; availability depends on your account. Use Custom for any other supported model ID. Estimates charge cached Claude input at the entered input rate and may differ from invoices.</p>
-<p>Both SDKs receive only the bounded conversation and source context this application supplies. File, shell, web and MCP tools are disabled. Chat history is managed under Chat history.</p></details>
+<section class="card ai-tile">
+<form method="post" class="ai-all-form" data-confirm="Give every task this model? Each task's own choice is replaced; search embeddings keep theirs.">{% csrf_token %}<input type="hidden" name="purpose" value="all">
+<label class="ai-tile-label" for="{{ all_form.model_choice.id_for_label }}">One model for every task</label>
+{{ all_form.model_choice.errors }}{{ all_form.model_choice }}
+<button class="button secondary">Use for every task</button>
+</form>
+</section>
+</div>
+
+{% for provider, labels in blocked %}<p class="notice notice-warning" role="status">{% icon "warning" %}<span>The {{ provider }} credential is not set, so {% if labels|length > 3 %}{{ labels|length }} switched-on tasks{% else %}{{ labels|join:", " }}{% endif %} cannot run. <a href="{% url 'credentials' application.pk %}">Set it on Credentials</a>.</span></p>{% endfor %}
+<div class="ai-task ai-task-head" aria-hidden="true"><span>Task</span><span>Model</span><span>This month</span><span>On</span></div>
+{% for group, rows in groups %}<h2 class="panel-label ai-group">{{ group }}</h2>
+<section class="list-card ai-tasks" aria-label="{{ group }}">{% for row in rows %}<div class="ai-task{% if not row.enabled %} is-off{% endif %}" id="task-{{ row.purpose }}">
+<div class="ai-task-name"><strong>{{ row.label }}</strong>{% if row.unattended %} <span class="pill status-queued">Spends unasked</span>{% endif %}<small>{{ row.spends }}{% if row.limit %} · replies up to {{ row.limit }} tokens{% endif %}</small></div>
+<a class="ai-task-model" href="{% url 'ai-task' application.pk row.purpose %}" data-modal>{% if row.model %}{{ row.model }}{% else %}Choose a model{% endif %}<span class="sr-only"> for {{ row.label }}</span>{% icon "settings" 13 %}</a>
+<span class="ai-task-spent">{% if row.spent %}${{ row.spent|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
+<form method="post" class="ai-task-switch">{% csrf_token %}<input type="hidden" name="purpose" value="{{ row.purpose }}"><button class="switch" name="enabled" value="{{ row.enabled|yesno:'0,1' }}" role="switch" aria-checked="{{ row.enabled|yesno:'true,false' }}" aria-label="{{ row.label }}"><span>{{ row.enabled|yesno:"On,Off" }}</span></button></form>
+</div>{% endfor %}</section>{% endfor %}
+{% if hidden %}<p class="muted"><small>Not listed, because their feature is off here: {{ hidden|join:", " }}. <a href="{% url 'application-features' application.pk %}">Features</a> turns them on.</small></p>{% endif %}
+
+<section class="card section ai-prices" id="prices">
+<div class="card-heading"><h2>Prices</h2><span class="pill">USD per million tokens</span></div>
+<p class="muted">One price per model, used by every task above that runs it. {{ pricing_note }}</p>
+{% if price_rows %}<form method="post">{% csrf_token %}<input type="hidden" name="purpose" value="prices">{{ prices.management_form }}{{ prices.non_form_errors }}
+<div class="table-wrap"><table><thead><tr><th>Model</th><th>Input</th><th>Output</th><th>List price</th></tr></thead><tbody>
+{% for row in price_rows %}<tr>
+<td>{{ row.form.key }}<strong>{{ row.label }}</strong>{% if row.unpriced %} <span class="pill status-failed">Not priced</span>{% endif %}<small>{{ row.tasks }} task{{ row.tasks|pluralize }}{% if row.unpriced %} · its spend counts as $0, so the budget cannot see it{% elif row.mixed %} · its tasks had different prices; saving sets one{% endif %}</small></td>
+<td>{{ row.form.input_rate.errors }}<label class="sr-only" for="{{ row.form.input_rate.id_for_label }}">{{ row.label }} input price</label>{{ row.form.input_rate }}</td>
+<td>{% if row.embedding %}<input type="hidden" name="{{ row.form.output_rate.html_name }}" value="0"><span class="muted">Not billed</span>{% else %}{{ row.form.output_rate.errors }}<label class="sr-only" for="{{ row.form.output_rate.id_for_label }}">{{ row.label }} output price</label>{{ row.form.output_rate }}{% endif %}</td>
+<td class="mono">{% if row.listed %}${{ row.listed.0 }} / ${{ row.listed.1 }}{% else %}<span class="muted">Check the provider</span>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div>
+<div class="actions"><button class="button">{% icon "save" %}Save prices</button></div></form>
+{% else %}<p class="muted">No task has a model yet.</p>{% endif %}
+</section>
 <script src="{% static 'ai-settings.js' %}" defer></script>{% endsettings_page %}{% endblock %}

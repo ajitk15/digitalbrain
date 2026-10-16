@@ -654,6 +654,18 @@ sets it in AI settings; no row means no cap). The three choke points are `ai.inv
 too. It caps *starting* spend from recorded receipts at the entered rates: a call in flight
 is never cut off, and graph extraction that hits the cap keeps what it already paid for.
 
+**A price belongs to a model; a reply cap to only four tasks** (AI settings, `ai.py`). The
+page is one list - a row per task with its model, this month's spend and a switch that is a
+real POST - and a task is edited on its own page (`ai_task`), opened as a popup. Rates still
+live on each `AIConfiguration` row, but are set once per model in the Prices table, which
+writes every row using it: six tasks on one model used to be priced six times. A model new
+to an application takes the price it already has there, else its list price, else zero,
+which the table flags as Not priced because spend - and so the budget - then reads $0.
+Owner-set reply caps are `ai.output_limits` only: chat and graph answers (default
+`ANSWER_TOKENS`, 1,024, once hard-coded in four places), Code Factory and ServiceOps
+triage, read by `ai.reply_cap`. The rest are bounded by what they ask for and stay fixed
+in code. A task whose feature is off is not listed.
+
 **A restricted source is never read or cited by AI** (`sensitivity.py`). Every path that
 hands a source to a model or verifies a citation goes through
 `KnowledgeEntry.objects.answerable()` (active and not restricted) - graph builds via

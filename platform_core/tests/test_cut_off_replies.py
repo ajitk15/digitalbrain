@@ -83,14 +83,11 @@ class OwnerSetLimitTests(TestCase):
             "model_choice": "claude:claude-sonnet-5",
             "provider": "claude",
             "model": "",
-            "enabled": "on",
-            "input_rate": "3",
-            "output_rate": "15",
             "output_limit": limit,
         }
         return self.client.post(
-            self.url,
-            {"purpose": "plan_drafting", **{f"plan_drafting-{k}": v for k, v in values.items()}},
+            reverse("ai-task", args=[self.app.pk, "plan_drafting"]),
+            {f"plan_drafting-{k}": v for k, v in values.items()},
         )
 
     def test_without_a_setting_every_agent_gets_the_default(self):
@@ -126,11 +123,14 @@ class OwnerSetLimitTests(TestCase):
         self.assertIn("20,000-token limit", phase.error)
 
     def test_the_screen_offers_one_cap_and_saves_it(self):
-        page = self.client.get(self.url)
+        page = self.client.get(reverse("ai-task", args=[self.app.pk, "plan_drafting"]))
         self.assertContains(page, 'name="plan_drafting-output_limit"')
         self.assertContains(page, "Blank uses the default, 32,000.")
-        # Only Code Factory has agents to cap.
-        self.assertNotContains(page, 'name="chat-output_limit"')
+        # A title is a few words: its cap is fixed in code, not offered.
+        title = self.client.get(reverse("ai-task", args=[self.app.pk, "conversation_title"]))
+        self.assertNotContains(title, 'name="conversation_title-output_limit"')
+        # The list says what the cap is without opening the task.
+        self.assertContains(self.client.get(self.url), "replies up to 32,000 tokens")
         self.assertEqual(self.post(40000).status_code, 302)
         config = AIConfiguration.objects.get(application=self.app, purpose="plan_drafting")
         self.assertEqual(config.output_limit, 40000)
@@ -157,15 +157,15 @@ class OwnerSetLimitTests(TestCase):
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
         self.assertEqual(self.post(40000).status_code, 403)
 
-    def test_ai_settings_lists_the_everyday_features_first(self):
+    def test_ai_settings_groups_the_tasks_by_what_they_are_for(self):
         page = self.client.get(self.url).content.decode()
         labels = [
             "Chat conversation",
-            "Code Factory",
-            "ServiceOps",
-            "Graph generation",
             "Graph retrieval",
             "Conversation titles",
+            "Graph generation",
+            "Code Factory",
+            "ServiceOps",
         ]
         positions = [page.index(f"<strong>{label}</strong>") for label in labels]
         self.assertEqual(positions, sorted(positions))

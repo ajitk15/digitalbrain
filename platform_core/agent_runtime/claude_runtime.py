@@ -39,7 +39,7 @@ from django.db import close_old_connections
 
 from .credentials import HOST_LOGIN_PASSTHROUGH, claude_environment, host_login_enabled
 from .prompts import TOOL_INSTRUCTIONS
-from .runtime import evidence_payload, recent_turns
+from .runtime import ANSWER_TOKENS, evidence_payload, recent_turns
 from .tools import FETCH_SCHEMA, FETCH_SOURCE, SEARCH_KNOWLEDGE, SEARCH_SCHEMA, run_tool
 from .usage import TurnUsage, checked_answer, claude_usage
 
@@ -161,7 +161,18 @@ def stream_text(message):
     return piece if isinstance(piece, str) else ""
 
 
-async def run(model, question, citations, token, history, scope, recorder, emit, cancel=None):
+async def run(
+    model,
+    question,
+    citations,
+    token,
+    history,
+    scope,
+    recorder,
+    emit,
+    cancel=None,
+    max_tokens=ANSWER_TOKENS,
+):
     """Stream one answer, returning (turn usages, answer text)."""
     with tempfile.TemporaryDirectory(
         prefix="digital-brain-agent-", ignore_cleanup_errors=True
@@ -179,7 +190,7 @@ async def run(model, question, citations, token, history, scope, recorder, emit,
             skills=[],
             plugins=[],
             cwd=directory,
-            env=build_environment(directory, token, 1024),
+            env=build_environment(directory, token, max_tokens),
             max_turns=MAX_TURNS,
             max_buffer_size=MAX_BUFFER,
             include_partial_messages=True,

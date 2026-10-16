@@ -1199,34 +1199,99 @@
   .kb-empty h2 { font-size: var(--t-17); }
   /* AI settings ---------------------------------------------------------
 
-     Five near-identical forms read as a wall, so each card now leads with what
-     the task is and what is currently set, and the forms sit underneath. The
-     legacy layer aligns the cards by forcing min-height on their description;
-     a grid with stretched rows does it properly. */
-  .ai-settings-grid {
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+     One list: a row per task with its model, this month's spend and a switch.
+     Editing a task is a popup; prices are one table, per model. Three tiles
+     above say what an owner checks first - spend, credentials, one model. */
+  .ai-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--s-3);
+    margin-bottom: var(--s-5);
     align-items: start;
   }
-  .ai-settings-grid .muted { min-height: 0; font-size: var(--t-12); }
-  .ai-purpose { display: flex; flex-direction: column; }
-  .ai-purpose .card-heading { align-items: flex-start; gap: var(--s-2); }
-  .ai-purpose .card-heading h2 { font-size: var(--t-14); }
-  .ai-purpose .ai-model-form { margin-top: auto; }
-  .ai-purpose .pill { font-variant-numeric: tabular-nums; }
+  .ai-tile { padding: var(--s-4); display: flex; flex-direction: column; gap: var(--s-2); }
+  .ai-tile > summary { display: flex; flex-direction: column; gap: var(--s-2); cursor: pointer; list-style: none; }
+  .ai-tile > summary::-webkit-details-marker { display: none; }
+  .ai-tile-label { font-size: var(--t-12); color: var(--c-ink-muted); font-weight: 400; margin: 0; }
+  .ai-tile-figure { font-size: var(--t-17); font-variant-numeric: tabular-nums; }
+  .ai-tile-action { font-size: var(--t-12); color: var(--c-brand-strong); }
+  .ai-tile form { margin: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+  .ai-tile form p { margin: 0; }
+  .ai-tile .share-bar { width: 100%; }
+  .ai-credentials { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s-1); font-size: var(--t-13); }
+  .ai-credentials li { display: flex; align-items: center; gap: var(--s-2); }
+  .ai-credentials small { display: inline; margin: 0; }
 
-  .credential-status .cred-rows {
+  .ai-task {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, 210px) 84px 64px;
+    align-items: center;
+    gap: var(--s-3);
+    padding: var(--s-3) var(--s-4);
+    border-bottom: 1px solid var(--c-line-soft);
+  }
+  .ai-tasks .ai-task:last-child { border-bottom: 0; }
+  .ai-task-head { border: 0; padding-block: 0; font-size: var(--t-12); color: var(--c-ink-muted); }
+  .ai-task-head span:nth-child(3) { text-align: right; }
+  .ai-group { margin: var(--s-4) 0 var(--s-2); }
+  .ai-task-name { min-width: 0; }
+  .ai-task-name strong { font-size: var(--t-14); }
+  .ai-task-name .pill { margin: 0 0 0 var(--s-1); vertical-align: 1px; }
+  .ai-task-name small { margin-top: 2px; }
+  .ai-task-model {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s-2);
+    padding: 6px var(--s-2);
     border: 1px solid var(--c-line);
     border-radius: var(--r-md);
-    overflow: hidden;
-    margin-bottom: var(--s-3);
-  }
-  .credential-status .list-row { padding: var(--s-3); }
-  .credential-status small.mono {
-    font-family: ui-monospace, monospace;
-    font-size: var(--t-10);
-    color: var(--c-ink-faint);
+    font-size: var(--t-13);
+    color: var(--c-ink);
+    min-width: 0;
     overflow-wrap: anywhere;
   }
+  .ai-task-model:hover { border-color: var(--c-brand-border); text-decoration: none; }
+  .ai-task-model svg { flex: none; color: var(--c-ink-muted); }
+  .ai-task-spent { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--t-13); color: var(--c-ink-muted); }
+  .ai-task-switch { margin: 0; }
+  .ai-task.is-off .ai-task-name strong, .ai-task.is-off .ai-task-model { color: var(--c-ink-muted); }
+
+  /* The switch is a submit button: with no script it posts and the page returns. */
+  .switch {
+    display: inline-flex;
+    align-items: center;
+    width: 52px;
+    height: 26px;
+    padding: 0 6px;
+    border-radius: var(--r-pill);
+    border: 1px solid var(--c-line-strong);
+    background: var(--c-well);
+    color: var(--c-ink-muted);
+    font-size: var(--t-10);
+    font-weight: 600;
+    justify-content: flex-end;
+    position: relative;
+  }
+  .switch::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--c-surface);
+    border: 1px solid var(--c-line-strong);
+  }
+  .switch[aria-checked="true"] { background: var(--c-ok); border-color: var(--c-ok); color: var(--c-surface); justify-content: flex-start; }
+  .switch[aria-checked="true"]::before { left: auto; right: 3px; border-color: var(--c-ok); }
+
+  .ai-prices { max-width: 900px; }
+  .ai-prices input { max-width: 130px; min-width: 84px; }
+  .ai-prices td.mono { white-space: nowrap; }
+  .ai-prices td small { display: block; }
+  .ai-prices td.mono { font-variant-numeric: tabular-nums; }
 
   /* A whole feature row is the label, so the checkbox has a generous target. */
   .feature-row {
@@ -1241,8 +1306,6 @@
   .feature-row input { width: auto; flex-shrink: 0; }
   .feature-row small { color: var(--c-ink-muted); }
 
-  .price-table { margin: var(--s-3) 0; max-width: 420px; }
-  .price-table td.mono { font-variant-numeric: tabular-nums; text-align: right; }
   /* API tokens ---------------------------------------------------------- */
   .token-reveal { border-color: var(--c-ok-line); background: var(--c-ok-bg); }
   .token-reveal h2 { display: flex; align-items: center; gap: var(--s-2); color: var(--c-ok); }
@@ -2085,7 +2148,7 @@
   small, .muted, .helptext { color: var(--c-ink-3); }
   small, .helptext, .rail-note, .doc-meta small, .doc-delete, .doc-error,
   .panel-label, .panel-note, .tile small, .tile small span, .kb-pane > header small,
-  .ai-settings-grid label, .token-form label { font-size: var(--t-12); }
+  .ai-tile label, .token-form label { font-size: var(--t-12); }
   .shell main { padding: var(--s-5) var(--s-6); min-width: 0; width: 100%; }
   .page-heading { margin-bottom: var(--s-4); gap: var(--s-3); }
   .page-heading p { margin-bottom: 0; }
@@ -2575,15 +2638,6 @@
   .message-body { font-size: var(--t-15); line-height: var(--lh-prose); }
   .chat-composer textarea { font-size: var(--t-14); }
   .composer-actions small { font-size: var(--t-12); }
-  .ai-settings-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-3); max-width: 900px; }
-  .ai-purpose summary { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); }
-  .ai-purpose summary::before { content: '+'; color: var(--c-brand); }
-  .ai-purpose[open] summary::before { content: '−'; }
-  .ai-purpose summary strong { flex: 1; }
-  .ai-purpose summary .pill { white-space: normal; }
-  .ai-purpose form { max-width: 620px; }
-  .ai-purpose .card-heading { margin: 0; }
-  .credential-status { max-width: 900px; }
   .run-row { align-items: flex-start; }
   .run-phases { flex-wrap: wrap; gap: var(--s-2); }
   .phase { font-size: var(--t-12); }
@@ -2649,8 +2703,11 @@
     .conversation-mode form { flex-wrap: wrap; }
     .composer-actions { flex-wrap: wrap; }
     .composer-actions button { margin-left: auto; }
-    .ai-purpose summary { flex-wrap: wrap; }
-    .ai-purpose summary .pill { flex-basis: 100%; }
+    .ai-task { grid-template-columns: minmax(0, 1fr) 64px; }
+    .ai-task-model { grid-column: 1; }
+    .ai-task-spent { grid-column: 2; grid-row: 2; }
+    .ai-task-switch { grid-column: 2; grid-row: 1; }
+    .ai-task-head { display: none; }
     .modal-body { padding: var(--s-4); }
   }
 

@@ -81,26 +81,27 @@ class AIRoutingTests(TestCase):
             self.assertContains(response, label)
         url = reverse("ai-settings", args=[self.app.pk])
         for purpose in ["chat", "graph_generation", "graph_retrieval"]:
-            values = {
-                "model_choice": "claude:claude-sonnet-5",
-                "provider": "openai",
-                "model": "",
-                "enabled": "on",
-                "input_rate": "2",
-                "output_rate": "10",
-            }
+            values = {"model_choice": "claude:claude-sonnet-5", "provider": "openai", "model": ""}
             response = self.client.post(
-                url, {"purpose": purpose, **{f"{purpose}-{k}": v for k, v in values.items()}}
+                reverse("ai-task", args=[self.app.pk, purpose]),
+                {f"{purpose}-{k}": v for k, v in values.items()},
             )
             self.assertEqual(
-                response.status_code, 302, response.context and response.context["sections"]
+                response.status_code, 302, response.context and response.context["form"].errors
             )
         self.assertEqual(AIConfiguration.objects.filter(application=self.app).count(), 3)
         self.assertEqual(
             set(AIConfiguration.objects.values_list("provider", flat=True)), {"claude"}
         )
+        # A new model starts at its list price: one price per model, not per task.
+        self.assertEqual(
+            set(AIConfiguration.objects.values_list("input_rate", "output_rate")),
+            {(Decimal("2"), Decimal("10"))},
+        )
         self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
         self.assertEqual(self.client.post(url, {"purpose": "chat"}).status_code, 403)
+        task = reverse("ai-task", args=[self.app.pk, "chat"])
+        self.assertEqual(self.client.get(task).status_code, 403)
 
     def test_custom_provider_mismatch_is_rejected(self):
         form = AIForm(
@@ -295,11 +296,10 @@ class PricingReferenceTests(SimpleTestCase):
 
         self.assertFalse([v for v in LIST_PRICES if v.startswith("openai:")])
 
-    def test_the_reference_renders_in_order_with_both_rates(self):
-        from platform_core.model_catalog import price_reference
+    def test_a_model_is_named_and_priced_from_the_catalog(self):
+        from platform_core.model_catalog import list_price, model_label
 
-        rows = price_reference()
-        self.assertEqual(rows[0]["label"], "Claude Fable 5.1")
-        self.assertEqual(rows[-1]["label"], "Claude Haiku 4.5")
-        self.assertEqual(rows[-1]["input"], "1.00")
-        self.assertEqual(rows[-1]["output"], "5.00")
+        self.assertEqual(model_label("claude-haiku-4-5-20251001"), "Claude Haiku 4.5")
+        self.assertEqual(model_label("my-own-model"), "my-own-model")
+        self.assertEqual(list_price("claude", "claude-haiku-4-5-20251001"), ("1.00", "5.00"))
+        self.assertIsNone(list_price("openai", "gpt-5.6-sol"))

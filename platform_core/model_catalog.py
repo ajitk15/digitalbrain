@@ -104,9 +104,10 @@ PURPOSE_NOTES = {
 
 
 # Published list prices in USD per million tokens, for the models this catalog
-# offers. Shown in AI settings as a reference only: rates are entered per
-# application because a contracted price can differ from list, and what the
-# platform records must be what the operator is actually billed.
+# offers. A model new to an application starts at its list price, shown beside
+# it in AI settings; prices are still kept per application because a contracted
+# price can differ from list, and what the platform records must be what the
+# operator is actually billed.
 #
 # Anthropic first-party rates, verified 2026-09-13. Amazon Bedrock and Vertex AI
 # are partner-operated and priced separately. OpenAI models are deliberately
@@ -119,18 +120,73 @@ LIST_PRICES = {
 }
 
 PRICING_NOTE = (
-    "Published list prices per million tokens, for reference. Enter the price you are "
-    "actually billed: recorded costs are estimates calculated from these rates, so a "
-    "wrong rate makes every cost report wrong by the same factor."
+    "A model starts at its published list price. Enter the price you are actually "
+    "billed: recorded costs are estimates calculated from these prices, so a wrong one "
+    "makes every cost report for that model wrong by the same factor."
 )
 
 
-def price_reference():
-    """Rows for the AI settings pricing table, in catalog order."""
-    rows = []
-    for _, options in MODEL_CHOICES:
+#: When each task spends, in the words an owner decides on/off by. `True` marks a
+#: call nobody presses a button for - it runs by itself, or adds a second paid
+#: call to something else - which AI settings tags so it is not switched on idly.
+SPENDS = {
+    "chat": ("Each question asked in Chat", False),
+    "graph_retrieval": ("Each question asked in Graph answer mode", False),
+    "conversation_title": ("Once per new conversation", False),
+    "reranking": ("A second call on every question", True),
+    "embeddings": ("Every question, and each requested AI graph run", True),
+    "graph_generation": ("Only when someone requests an AI graph run", False),
+    "document_typing": ("Each new document the rules cannot type", True),
+    "document_review": ("Only when an owner asks on a document", False),
+    "plan_drafting": ("Each Code Factory run", False),
+    "code_review": ("Only when someone asks on a review", False),
+    "code_docs": ("Only when someone asks on the Documentation tab", False),
+    "serviceops_triage": ("Each incident triage", False),
+}
+
+#: How AI settings groups the tasks, and the feature each one needs. A task whose
+#: feature is off for the application is not listed: it cannot run there, and a
+#: row for it would only be one more thing to read past.
+TASK_GROUPS = [
+    (
+        "Answering",
+        [
+            ("chat", "chat"),
+            ("graph_retrieval", "chat"),
+            ("conversation_title", "chat"),
+            ("reranking", "knowledge"),
+            ("embeddings", "knowledge"),
+        ],
+    ),
+    (
+        "Knowledge",
+        [
+            ("graph_generation", "knowledge"),
+            ("document_typing", "knowledge"),
+            ("document_review", "knowledge"),
+        ],
+    ),
+    (
+        "Engineering",
+        [
+            ("plan_drafting", "code_factory"),
+            ("code_review", "code_review"),
+            ("code_docs", "code_docs"),
+        ],
+    ),
+    ("Operations", [("serviceops_triage", "service_ops")]),
+]
+
+
+def model_label(model):
+    """A catalog model's display name, or the model ID itself."""
+    for _, options in (*MODEL_CHOICES, *EMBEDDING_CHOICES):
         for value, label in options:
-            if value in LIST_PRICES:
-                inputs, outputs = LIST_PRICES[value]
-                rows.append({"label": label, "input": inputs, "output": outputs})
-    return rows
+            if value != "custom" and value.split(":", 1)[1] == model:
+                return label
+    return model
+
+
+def list_price(provider, model):
+    """(input, output) published USD per million tokens, or None when unknown."""
+    return LIST_PRICES.get(f"{provider}:{model}")

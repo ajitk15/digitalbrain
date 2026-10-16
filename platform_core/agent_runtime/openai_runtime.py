@@ -30,7 +30,7 @@ from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
 from .prompts import TOOL_INSTRUCTIONS
-from .runtime import RESPONSES_MODELS, evidence_payload, recent_turns
+from .runtime import ANSWER_TOKENS, RESPONSES_MODELS, evidence_payload, recent_turns
 from .tools import FETCH_SOURCE, SEARCH_KNOWLEDGE, run_tool
 from .usage import TurnUsage, checked_answer, checked_request_id, openai_usage
 
@@ -154,7 +154,18 @@ def collect_usage(result, model):
     return turns
 
 
-async def run(model, question, citations, token, history, scope, recorder, emit, cancel=None):
+async def run(
+    model,
+    question,
+    citations,
+    token,
+    history,
+    scope,
+    recorder,
+    emit,
+    cancel=None,
+    max_tokens=ANSWER_TOKENS,
+):
     """Stream one answer, returning (turn usages, answer text)."""
     from openai import AsyncOpenAI
 
@@ -172,7 +183,7 @@ async def run(model, question, citations, token, history, scope, recorder, emit,
         http_client=_http_client(),
     ) as client:
         agent = build_agent(
-            model, client, TOOL_INSTRUCTIONS, 1024, build_tools(scope, recorder, emit)
+            model, client, TOOL_INSTRUCTIONS, max_tokens, build_tools(scope, recorder, emit)
         )
         result = Runner.run_streamed(
             agent,

@@ -371,15 +371,19 @@ class SettingsTests(TestCase):
             "model_choice": "openai:text-embedding-3-small",
             "provider": "openai",
             "model": "",
-            "enabled": "on",
-            "input_rate": "0.02",
-            "output_rate": "0",
         }
         response = self.client.post(
-            url, {"purpose": "embeddings", **{f"embeddings-{k}": v for k, v in values.items()}}
+            reverse("ai-task", args=[self.app.pk, "embeddings"]),
+            {f"embeddings-{k}": v for k, v in values.items()},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertIsNotNone(embeddings.configuration(self.app.pk))
+        # Choosing its model does not switch it on: it spends on every question.
+        self.assertIsNone(embeddings.configuration(self.app.pk))
+        response = self.client.post(url, {"purpose": "embeddings", "enabled": "1"})
+        self.assertEqual(response.status_code, 302)
+        config = embeddings.configuration(self.app.pk)
+        self.assertIsNotNone(config)
+        self.assertEqual(config.output_rate, 0)
 
     def test_a_new_application_is_seeded_with_it_off(self):
         with patch("platform_core.ai.configured_providers", return_value=[]):

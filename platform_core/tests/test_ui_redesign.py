@@ -154,27 +154,21 @@ class RedesignWorkflowTests(TestCase):
         self.assertEqual(response.headers["Allow"], "GET")
         self.assertFalse(KnowledgeEntry.objects.exists())
 
-    def test_invalid_ai_save_exposes_only_its_form_without_saving(self):
+    def test_invalid_ai_save_shows_its_form_again_without_saving(self):
         response = self.client.post(
-            reverse("ai-settings", args=[self.app.pk]),
+            reverse("ai-task", args=[self.app.pk, "chat"]),
             {
-                "purpose": "chat",
                 "chat-model_choice": "custom",
                 "chat-provider": "openai",
-                "chat-model": "my-custom-model",
-                "chat-input_rate": "not-a-number",
-                "chat-output_rate": "1",
+                "chat-model": "claude-sonnet-5",
             },
         )
         self.assertEqual(response.status_code, 200)
         forms = FormDisclosures(response.content.decode()).forms
-        chat = next(form for form in forms if form["fields"].get("purpose") == "chat")
+        chat = next(form for form in forms if "chat-model" in form["fields"])
         self.assertTrue(chat["visible"])
-        self.assertEqual(chat["fields"]["chat-model"], "my-custom-model")
-        self.assertTrue(all(
-            not form["visible"] for form in forms
-            if form["fields"].get("purpose") not in (None, "chat")
-        ))
+        self.assertEqual(chat["fields"]["chat-model"], "claude-sonnet-5")
+        self.assertContains(response, "Claude models require the Claude provider.")
         self.assertFalse(AIConfiguration.objects.filter(application=self.app).exists())
 
     def test_failed_upload_is_exposed_without_javascript(self):

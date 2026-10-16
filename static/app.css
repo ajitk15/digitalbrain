@@ -153,7 +153,6 @@ textarea:focus{outline:2px solid #ededff;border-color:#6664da}
 .sidebar-toggle:hover{background:#eeefff;color:#363ebb}.sidebar-toggle:focus-visible{outline:2px solid #6664da;outline-offset:3px}
 .sidebar-toggle[hidden],.sidebar[hidden]{display:none}.sidebar-collapsed .shell{margin-left:0}.topbar .global-menu{flex:1}
 
-.ai-settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.ai-settings-grid .muted{font-size:12px;min-height:76px}.ai-settings-grid label{font-size:11px}@media(max-width:1100px){.ai-settings-grid{grid-template-columns:1fr}.ai-settings-grid .muted{min-height:0}}
 
 /* Interactive graph explorer. */
 .graph-toolbar{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:8px 0}

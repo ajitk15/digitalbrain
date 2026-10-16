@@ -95,6 +95,7 @@ urlpatterns = [
         name="source-delete",
     ),
     path("applications/<uuid:pk>/ai/", ai.ai_settings, name="ai-settings"),
+    path("applications/<uuid:pk>/ai/<slug:purpose>/", ai.ai_task, name="ai-task"),
     path("applications/<uuid:pk>/knowledge/", workbench.knowledge, name="knowledge"),
     path(
         "applications/<uuid:pk>/knowledge/<uuid:entry_id>/",

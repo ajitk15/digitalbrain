@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% load workspace static icons %}{% block title %}{{ label }} · AI settings · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+<p class="eyebrow">AI settings</p><h1>{{ label }}</h1>
+<p class="muted">{{ note }}</p>
+<p class="muted"><small>Spends: {{ spends }}.</small></p>
+{% if advice %}<p class="notice" role="note">{{ advice }}</p>{% endif %}
+<section class="card form-card"><form method="post" class="ai-model-form">{% csrf_token %}{{ form.as_p }}
+<p class="muted"><small>A model new to this application starts at its price under Prices on AI settings, or its list price.</small></p>
+<div class="actions"><button class="button">{% icon "save" %}Save</button> <a class="button secondary" href="{% url 'ai-settings' application.pk %}" data-modal-close>Cancel</a></div></form></section>
+<script src="{% static 'ai-settings.js' %}" defer></script>{% endblock %}

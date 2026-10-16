@@ -16,6 +16,11 @@ HISTORY_ANSWER_LIMIT = 4000
 #: to be added twice and would have looked like it worked after the first.
 RESPONSES_MODELS = ("gpt-6", "gpt-5.6")
 
+#: A chat or graph answer's reply cap when the owner has not set one in AI
+#: settings (`ai.reply_cap`). It was written as 1024 in four places - both
+#: streaming runtimes and both one-shot adapters - so it could not be changed.
+ANSWER_TOKENS = 1024
+
 
 @dataclass(frozen=True)
 class HistoryTurn:

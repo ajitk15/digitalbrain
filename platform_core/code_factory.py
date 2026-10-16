@@ -47,7 +47,6 @@ from django.utils import timezone
 
 from .models import (
     RUBRIC,
-    AIConfiguration,
     ChangePlan,
     FactoryRun,
     GraphRevision,
@@ -82,16 +81,12 @@ def output_limit(app_id):
 
     Read at the moment of each call rather than when the run starts, so a cap
     raised after a cut-off reply applies to the rerun. A stored value outside the
-    allowed range is ignored rather than trusted.
+    allowed range is ignored rather than trusted. `ai.reply_cap` does the reading,
+    the same way for every task whose cap an owner may change.
     """
-    value = (
-        AIConfiguration.objects.filter(application_id=app_id, purpose="plan_drafting")
-        .values_list("output_limit", flat=True)
-        .first()
-    )
-    if isinstance(value, int) and MIN_OUTPUT_LIMIT <= value <= MAX_OUTPUT_LIMIT:
-        return value
-    return OUTPUT_LIMIT
+    from .ai import reply_cap
+
+    return reply_cap(app_id, "plan_drafting")
 
 
 #: A run in one of these has somebody's attention on it: it is working, or it

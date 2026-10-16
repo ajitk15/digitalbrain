@@ -1402,3 +1402,50 @@ class BeforeAfterTests(BrowserTestCase):
         self.assertIn("snapshot v2", text)
         self.assertIn("app/util.py", text)
         self.assertNoScriptErrors()
+
+
+class AISettingsTests(BrowserTestCase):
+    """A task's model is changed in a popup, and its switch posts like a form."""
+
+    def setUp(self):
+        from decimal import Decimal
+
+        from platform_core.models import AIConfiguration
+
+        super().setUp()
+        self.config = AIConfiguration.objects.create(
+            application=self.app,
+            purpose="chat",
+            provider="claude",
+            model="claude-haiku-4-5-20251001",
+            input_rate=Decimal("1"),
+            output_rate=Decimal("5"),
+            configured_by=self.owner,
+        )
+
+    def test_a_tasks_model_is_changed_in_a_popup(self):
+        self.open("ai-settings", self.app.pk)
+        self.page.locator("#task-chat a[data-modal]").click()
+        dialog = self.page.locator("dialog[open]")
+        choice = dialog.locator("select[name='chat-model_choice']")
+        choice.wait_for()
+        # The custom fields show only for Custom, inside the popup too.
+        custom = dialog.locator("input[name='chat-model']")
+        self.assertFalse(custom.is_visible())
+        choice.select_option("custom")
+        custom.wait_for(state="visible")
+        choice.select_option("claude:claude-opus-5")
+        custom.wait_for(state="hidden")
+        dialog.get_by_role("button", name="Save").click()
+        self.page.locator("#task-chat a[data-modal]", has_text="Claude Opus 5").wait_for()
+        self.config.refresh_from_db()
+        self.assertEqual(self.config.model, "claude-opus-5")
+        self.assertNoScriptErrors()
+
+    def test_the_switch_turns_a_task_off(self):
+        self.open("ai-settings", self.app.pk)
+        self.page.locator("#task-chat button[role=switch][aria-checked=true]").click()
+        self.page.locator("#task-chat button[role=switch][aria-checked=false]").wait_for()
+        self.config.refresh_from_db()
+        self.assertFalse(self.config.enabled)
+        self.assertNoScriptErrors()

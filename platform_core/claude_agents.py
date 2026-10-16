@@ -26,7 +26,7 @@ from .agent_runtime.credentials import (
     host_login_enabled,
 )
 from .agent_runtime.prompts import INSTRUCTIONS
-from .agent_runtime.runtime import evidence_payload, recent_turns
+from .agent_runtime.runtime import ANSWER_TOKENS, evidence_payload, recent_turns
 from .agent_runtime.usage import checked_answer, claude_usage
 
 logger = logging.getLogger(__name__)
@@ -107,7 +107,7 @@ async def _run(
     token,
     history,
     instructions=INSTRUCTIONS,
-    max_tokens=1024,
+    max_tokens=ANSWER_TOKENS,
     timeout=TIMEOUT,
 ):
     # The CLI gets an empty workspace/settings home; it cannot inherit another app's session.

@@ -1799,8 +1799,8 @@ class AIConfiguration(models.Model):
     enabled = models.BooleanField(default=True)
     input_rate = models.DecimalField(max_digits=12, decimal_places=6)
     output_rate = models.DecimalField(max_digits=12, decimal_places=6)
-    #: Code Factory's output-token cap, when an owner has set one. Only the
-    #: plan_drafting row uses it; empty means `code_factory.OUTPUT_LIMIT`.
+    #: The reply cap, when an owner has set one. Only the purposes in
+    #: `ai.output_limits` read it; empty means that task's default.
     output_limit = models.PositiveIntegerField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
