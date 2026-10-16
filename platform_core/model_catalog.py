@@ -1,10 +1,13 @@
-"""Provider documentation model suggestions verified 2026-09-12; account access varies."""
+"""Provider documentation model suggestions verified 2026-10-16; account access varies."""
 
 MODEL_CHOICES = [
     (
         "OpenAI",
         [
+            ("openai:gpt-6.1-sol", "GPT-6.1 Sol"),
             ("openai:gpt-6-astra", "GPT-6 Astra"),
+            ("openai:gpt-6-sol", "GPT-6 Sol"),
+            ("openai:gpt-6-luna", "GPT-6 Luna"),
             ("openai:gpt-5.6-sol", "GPT-5.6 Sol"),
             ("openai:gpt-5.6-terra", "GPT-5.6 Terra"),
             ("openai:gpt-5.6-luna", "GPT-5.6 Luna"),
@@ -14,6 +17,9 @@ MODEL_CHOICES = [
         "Claude",
         [
             ("claude:claude-fable-5-1", "Claude Fable 5.1"),
+            ("claude:claude-opus-5-5", "Claude Opus 5.5"),
+            ("claude:claude-sonnet-5-5", "Claude Sonnet 5.5"),
+            ("claude:claude-haiku-5-5", "Claude Haiku 5.5"),
             ("claude:claude-opus-5", "Claude Opus 5"),
             ("claude:claude-sonnet-5", "Claude Sonnet 5"),
             ("claude:claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
@@ -109,11 +115,16 @@ PURPOSE_NOTES = {
 # price can differ from list, and what the platform records must be what the
 # operator is actually billed.
 #
-# Anthropic first-party rates, verified 2026-09-13. Amazon Bedrock and Vertex AI
-# are partner-operated and priced separately. OpenAI models are deliberately
-# absent rather than guessed - check the provider's own pricing page.
+# Anthropic first-party rates, verified 2026-10-16. Claude Haiku 5.5's rate is
+# for prompts up to 100K tokens; longer ones are billed at $0.50 / $2.50. Amazon
+# Bedrock and Vertex AI are partner-operated and priced separately. OpenAI models
+# are deliberately absent rather than guessed - check the provider's own pricing
+# page.
 LIST_PRICES = {
     "claude:claude-fable-5-1": ("10.00", "50.00"),
+    "claude:claude-opus-5-5": ("4.00", "20.00"),
+    "claude:claude-sonnet-5-5": ("2.00", "10.00"),
+    "claude:claude-haiku-5-5": ("0.10", "0.50"),
     "claude:claude-opus-5": ("5.00", "25.00"),
     "claude:claude-sonnet-5": ("2.00", "10.00"),
     "claude:claude-haiku-4-5-20251001": ("1.00", "5.00"),

@@ -84,11 +84,10 @@ class AISettingsListTests(TestCase):
         self.client.post(self.url, {"purpose": "chat", "enabled": "1"})
         config.refresh_from_db()
         self.assertTrue(config.enabled)
-        details = [
-            event.details
-            for event in AuditEvent.objects.filter(action="ai.configured").order_by("pk")
-        ]
-        self.assertEqual(
+        # The ids are random UUIDs and both events can share a timestamp, so the
+        # order is not checked here - the state after each post already was.
+        details = [event.details for event in AuditEvent.objects.filter(action="ai.configured")]
+        self.assertCountEqual(
             details,
             [
                 {"purpose": "chat", "enabled": False},
