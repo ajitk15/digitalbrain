@@ -19,7 +19,10 @@ things a demonstration re-creates on screen:
   sources' current fingerprint, which the background worker leaves alone until
   a source changes. Without it the worker saw sources with no graph and rebuilt
   a draft within a second, so the reset appeared not to have happened. A
-  demonstration starts at "Generate graph";
+  demonstration starts at "Generate graph". The cached extraction answers go
+  too (`DocumentAIResult`, task `extract`): every rebuild carries them forward
+  with no model call, so keeping them would put the AI relationships back on
+  the first source change, unasked;
 * **the code graph** - registered repositories and their snapshots, files and
   edges, so "Add repository" is a step again;
 * **runs** - Code Factory runs with their phases, log, prepared changes, and the
@@ -59,6 +62,7 @@ from django.utils import timezone
 
 from .connector_kinds import kind_for
 from .documents import document_path
+from .graph_ai import EXTRACTION_TASK
 from .graphs import fingerprint
 from .models import (
     Application,
@@ -74,6 +78,7 @@ from .models import (
     CodeSnapshot,
     Connector,
     Document,
+    DocumentAIResult,
     FactoryRun,
     GraphRevision,
     IncidentProfile,
@@ -212,6 +217,13 @@ def reset(user, organization, typed_name):
         count, _ = model.objects.filter(**{lookup: ids}).delete()
         if count:
             removed[model.__name__] = count
+    # What the model said while extracting the graph. Typing and review answers
+    # are about sources a reset keeps, so they stay with them.
+    count, _ = DocumentAIResult.objects.filter(
+        application_id__in=ids, task=EXTRACTION_TASK
+    ).delete()
+    if count:
+        removed["DocumentAIResult extraction"] = count
     entries = imported(ids)
     IncidentProfile.objects.filter(entry__in=entries).delete()
     count, _ = entries.delete()

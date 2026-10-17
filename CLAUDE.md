@@ -715,7 +715,9 @@ so an answer naming another source's id is refused. **Every rebuild carries cach
 forward with no model call** (`enrich_graph(app_id, None, ...)`): a background rebuild
 after a source change keeps the AI relationships of everything unchanged and names their
 model on the version, instead of dropping to structure. `graph_ai.reusable` is only the
-fallback for one-window sources extracted before the cache existed.
+fallback for one-window sources extracted before the cache existed. A demonstration reset
+deletes the cached answers (typing and review answers stay with the sources it keeps), so
+the first rebuild after it is structure alone.
 `data["ai_sources"]` records which sources have a complete extraction. **Automatic refresh is the one standing request**
 (`graphs.arm_auto_refresh`): owner-only and off by default, it turns a source change into
 an incremental AI run charged to whoever switched it on, re-checking their grant first -

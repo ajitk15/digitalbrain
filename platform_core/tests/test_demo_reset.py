@@ -29,6 +29,7 @@ from platform_core.models import (
     CodeSnapshot,
     Connector,
     Document,
+    DocumentAIResult,
     FactoryRun,
     GraphRevision,
     KnowledgeEntry,
@@ -150,6 +151,20 @@ class DemoResetTests(TestCase):
                 self.assertEqual(model.objects.count(), 0)
         graph = KnowledgeGraph.objects.get(application=self.app)
         self.assertEqual((graph.status, graph.data), ("idle", {}))
+
+    def test_cached_extraction_goes_so_a_rebuild_cannot_bring_ai_back(self):
+        """Every rebuild carries cached answers forward; kept, they would restore
+        the AI relationships on the first source change, which nobody asked for."""
+        for task in ("extract", "typing"):
+            DocumentAIResult.objects.create(
+                application=self.app, task=task, digest=task, rubric="r", result={}
+            )
+        removed = demo_reset.reset(self.admin, self.org, "ACME")
+        self.assertEqual(removed["DocumentAIResult extraction"], 1)
+        # A document's type is about a source the reset keeps.
+        self.assertEqual(
+            list(DocumentAIResult.objects.values_list("task", flat=True)), ["typing"]
+        )
 
     def test_the_worker_does_not_rebuild_the_graph_it_cleared(self):
         """It used to: sources with no graph row is exactly what the worker builds,
