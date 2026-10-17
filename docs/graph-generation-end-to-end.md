@@ -60,9 +60,10 @@ flowchart TD
     P -. a person decides .-> R[Restricted from AI]
     E --> S[Sources check:<br/>how sources connect]
     E --> G[Structural graph<br/>free, automatic]
-    G --> H{Someone asked<br/>for an AI run?}
+    G --> C2[Saved AI answers<br/>for unchanged text,<br/>checked again, free]
+    C2 --> H{Someone asked<br/>for an AI run?}
     H -- no --> V[Draft version]
-    H -- yes --> I[AI extraction,<br/>every quote verified] --> J[Embeddings,<br/>if switched on] --> V
+    H -- yes --> I[AI extraction of text<br/>with no saved answer,<br/>every quote verified] --> J[Embeddings,<br/>if switched on] --> V
     V --> K[Benchmark scored<br/>free, automatic]
     V --> L[Health review]
     K --> M{Publish?}
@@ -75,9 +76,10 @@ In one paragraph: sources are taken in and stored privately, scanned, converted
 to text in an isolated process, and stored as immutable records with a digest.
 Each record is checked for personal data, readability and what kind of document
 it is - all as suggestions, none of which block anything. A background worker
-keeps a **structural** graph current at no cost. An **AI-enriched** graph is
-built only when someone asks for one, and only from sources that changed since
-the last AI run. Every run is saved as a **draft** version, scored against a
+keeps the graph current at no cost: the **structural** graph, plus the AI
+relationships already extracted from text that has not changed. A model is
+called only when someone asks for an AI run, and only for text it has not read
+before. Every run is saved as a **draft** version, scored against a
 benchmark, and reviewed; nothing answers a question until a person **publishes**
 a version. When it answers, every citation is checked again against the live
 source text.
@@ -664,8 +666,10 @@ that is **active** and **not restricted**. In order:
 
 - inactive records (superseded, retired, pruned) are left out;
 - restricted records are left out;
-- at most **100 sources** are processed per graph; beyond that the version warns
-  "Only the first 100 of N sources were processed".
+- at most **100 sources** are processed per graph, **oldest first**; beyond that
+  the version warns "Only the first 100 of N sources were processed". The same
+  order decides which sources go to the model first. (An edited source is a new
+  record, so it moves to the back.)
 
 The set is summarised as a **fingerprint**: a hash of every usable source's id and
 digest, the graph generator's version, the graph limits, and the saved AI graph
@@ -693,7 +697,8 @@ Two kinds of run reach the rebuild:
 | | Structural run | AI-enriched run |
 | --- | --- | --- |
 | Started by | the worker, whenever sources change; or **Generate** with "structural" | **Generate** with a model chosen; or automatic refresh |
-| Calls a model | **no** | yes, only for new or changed sources |
+| AI relationships | carried forward from saved answers for text that has not changed | the same, plus new extraction |
+| Calls a model | **no** | yes, only for text with no saved answer |
 | Costs | nothing | provider charges, inside the budget |
 
 A request for an AI run is carried on the graph record (model, provider, who
@@ -786,35 +791,53 @@ against the source before it is kept.
   recorded on the version it produces.
 - The call is charged to the person who asked.
 
-### 16.2 Incremental: only what changed is paid for
+### 16.2 Incremental: every answer is paid for once
 
-Before calling anything, the run looks at the **latest AI version** built under
-the same ontology:
+Each model answer is **saved the moment it arrives**, before the next call starts,
+keyed by a digest of exactly what the model read (the source's title and the
+window of text, below) and by the ontology version:
 
-- a source whose **id and digest both match** keeps its relationships **at no
-  cost** - the same text gives the same quotes, and every quote is checked again
-  when cited anyway;
-- a source that had nothing to find counts as done too, and is not asked again;
-- only **new or changed** sources go to the model, at most **25 per run**.
-  Successive runs work through a larger library and reuse everything unchanged;
-- a source whose answer was cut short (by the per-run relationship cap) is **not**
-  marked done, so it is asked again next time.
+- text whose answer is already saved is **never sent again**. That includes a
+  record replaced by a new one with the same text, and the unchanged part of an
+  edited long document;
+- an answer is kept even if the version is never saved - because a source changed
+  while the run was going, or a later call failed - so nothing paid for is lost;
+- an answer that found nothing counts too, and is not asked again;
+- only text with **no saved answer** goes to the model, at most **25 calls per
+  run**. Successive runs work through a larger library;
+- every answer is kept **whole**. The per-run relationship cap only stops new
+  calls from starting; it never cuts an answer short;
+- a new ontology version asks again.
 
-The version records how many sources were extracted, reused and still pending.
+**Every build reuses saved answers, including the free background build.** No
+model is called; the saved answers are judged again (below) and their
+relationships go into the version, which says so ("No model was called for this
+version") and names the model they came from. A background build after a source
+change therefore keeps the AI relationships of everything that did not change.
 
-### 16.3 One source at a time
+The version records how many sources were extracted, reused and still pending,
+and how many model calls the run made.
 
-Each source is sent **on its own** - its title, id, digest, and up to its first
-**24,000 characters**. One call per source keeps every call inside the output
-budget and degrades gracefully: a source the model fails on costs that source's
-relationships, not the whole run.
+### 16.3 One window at a time
+
+Each call reads **one window** of one source: its title, id, digest, and up to
+**24,000 characters**. A longer source is read in several windows, cut at the end
+of a line and, where possible, just before a heading, so an edit late in a long
+document leaves the earlier windows (and their saved answers) unchanged. At most
+**8 windows** are read from one source; any text after them is counted on the
+version ("characters ... were not read by the model"), never silently dropped.
+
+One call per window keeps every call inside the output budget. If a call fails,
+or the budget runs out, the run stops there and keeps everything already
+answered; only a run that could keep nothing at all fails.
 
 | Budget | Value |
 | --- | --- |
-| Sources sent per run | 25 |
-| Characters per source | 24,000 |
-| Relationships asked for per source | 12 |
-| Relationships kept per run | 60 |
+| Model calls per run | 25 |
+| Characters per window | 24,000 |
+| Windows per source | 8 |
+| Relationships asked for per call | 12 |
+| New relationships after which a run starts no more calls | 300 |
 | Quote length | 300 characters |
 | Output tokens per call | 8,192 |
 | Time limit per call | 10 minutes |
@@ -875,13 +898,14 @@ rejected.
 
 ### 16.6 How each proposed relationship is judged
 
-Every proposal goes through the same checks, in this order. The first one it
-fails is the reason it is refused, and the version counts refusals by reason:
+Every proposal - new, or reused from a saved answer - goes through the same
+checks, in this order, every time a version is built. The first one it fails is
+the reason it is refused, and the version counts refusals by reason:
 
 1. **Malformed** - a field missing or empty.
-2. **Unknown source** - the source id is not one that was sent.
+2. **Unknown source** - the source id is not the source the model was reading.
 3. **Quote too long** - over 300 characters.
-4. **Quote not in source** - not found word for word in the text that was sent.
+4. **Quote not in source** - not found word for word in the source's text.
 5. **Name too long** - subject, relation or object over 120 characters.
 6. **Subject not in quote** - unless the subject is the source itself, named as
    its own record names it (its title, the key its title starts with, or an
@@ -926,11 +950,12 @@ own source, digest, line and quote**, so a citation is still verified edge by ed
 the merged node only records the names it was known by. The number of merges is
 reported on the version.
 
-### 16.9 When the budget runs out mid-run
+### 16.9 When the budget runs out, or a call fails, mid-run
 
-What was already extracted has been paid for, so it is **kept**. The version says
-extraction stopped early and why. If the budget was already exhausted before
-anything was extracted, the run fails with the budget message.
+What was already extracted has been paid for, so it is **kept** - and saved, so
+the next run does not pay for it again. The version says extraction stopped
+early and why. If nothing at all could be kept - the budget was already
+exhausted, or the first call failed - the run fails with that message.
 
 ### 16.10 What the version reports
 
@@ -970,11 +995,13 @@ revision) as a **draft**:
 - the full graph data (nodes, edges, the list of sources with their digests,
   which sources have a complete AI extraction, the ontology version);
 - the quality record (counts, coverage, warnings, refusals);
-- the model and provider, if AI was used.
+- the model and provider the AI relationships came from - including a version
+  that carried them forward without calling a model.
 
 Before saving, the fingerprint is checked again. If the sources changed while the
-run was going, the result is **discarded** and the next tick builds from the new
-set - a version is never saved against sources it did not read.
+run was going, **no version is saved** and the next tick builds from the new set -
+a version is never saved against sources it did not read. The answers the run
+paid for are already saved, so that next build includes them at no cost.
 
 ---
 
@@ -1123,11 +1150,12 @@ restricting a source removes it from answers at once.
 
 | Change | What happens |
 | --- | --- |
-| A source is added, changed, retired or restricted | the fingerprint moves; the worker builds a new **structural** draft, free |
+| A source is added, changed, retired or restricted | the fingerprint moves; the worker builds a new draft, free: the structural graph plus the AI relationships of every unchanged text |
 | A connector sync moves a ticket to Done | the record's text (which includes status) changes; same as above |
 | A source is restricted | additionally, its relationships vanish from **every** published version at once |
-| You want the AI layer updated | press **Generate** with a model: only changed sources are paid for |
+| You want the AI layer updated | press **Generate** with a model: only text with no saved answer is paid for |
 | You want that to happen by itself | an owner switches on **automatic refresh** |
+| A platform administrator resets the organization for a demonstration | every graph version **and** every saved extraction answer is removed, so the next build is structure alone until someone presses **Generate** |
 
 **Automatic refresh** is the one standing request for paid work:
 
@@ -1154,8 +1182,9 @@ restricting a source removes it from answers at once.
   free call.
 - The budget caps **starting** spend: a call in flight is never cut off, and an
   extraction that hits the cap keeps what it already paid for.
-- Incremental extraction, digest-keyed caching of AI typing and review, and
-  content-addressed embeddings mean **the same text is never paid for twice**.
+- Extraction answers saved per window as they arrive, digest-keyed caching of AI
+  typing and review, and content-addressed embeddings mean **the same text is
+  never paid for twice** - including after a run whose version was not saved.
 - A paid request is **cleared once used**, so no background rebuild can repeat it.
 - A failed paid run is **not retried automatically**.
 
@@ -1201,7 +1230,7 @@ does not imply access to any application.
 | Source check | 6 checks, 100 points; Ready at 80 with no failed check |
 | Document type | needs 5 points and a 2-point lead, else Other |
 | Graph | 100 sources, 2,000 rows and lines per source, 6,000 nodes |
-| AI extraction per run | 25 sources, 24,000 characters each, 12 relationships asked per source, 60 kept, 300-character quotes, 8,192 output tokens, 10 minutes a call |
+| AI extraction per run | 25 model calls; 24,000-character windows, 8 per source; 12 relationships asked per call, no new calls after 300; 300-character quotes, 8,192 output tokens, 10 minutes a call |
 | Benchmark | 100 questions; top-3 and MRR |
 | Answer | 8 citations; graph walk 2 hops, 6 finds, hub at 25 links; Code Factory +4 references |
 
@@ -1242,8 +1271,10 @@ description derived from the code cannot prove the code is right.
 | "Evidence has changed, cannot publish" | a source changed after this version was built | wait for (or generate) a newer version and publish that |
 | "No graph version has been published yet" | nothing published | generate, review and publish a version |
 | Many refused AI relationships | the quote or names did not match the text | read the refusal reasons on the version; a high "outside the ontology" count means the sources describe things the ontology has no type for |
-| "N source(s) are not extracted yet" | more than 25 sources changed | generate again; unchanged sources are reused for free |
-| "Extraction stopped early" | the monthly budget was reached | raise the budget, or wait for next month; what was extracted is kept |
+| "N source(s) are not extracted yet" | more than 25 windows of new or changed text, or a version built without a model | generate again; everything already answered is reused for free |
+| "Extraction stopped early" | the monthly budget was reached, or a model call failed | raise the budget or check the model settings, then generate again; what was extracted is kept |
+| "... characters ... were not read by the model" | a source is longer than 8 windows of 24,000 characters | split the document; its end still has structural evidence |
+| A draft has AI relationships nobody asked for | the background build carried forward saved answers for unchanged text; no model was called | nothing to do - it cost nothing, and is still a draft until published |
 | Nothing rebuilds after an import | documents are still converting | the graph waits for the whole batch; check for failed documents |
 
 ---

@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Knowledge Graph Generation",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "build", "label": "Every build (free)" },
+    { "id": "paid", "label": "Requested AI run (paid)", "variant": "exception" },
+    { "id": "after", "label": "Measure, answer, reset" }
+  ],
+  "groups": [
+    { "id": "cached_layer", "label": "New: cached AI layer", "lane": "build", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "paid_calls", "label": "Model calls", "lane": "paid", "fromCol": 2, "toCol": 3, "variant": "dashed" }
+  ],
+  "mainPath": ["sources", "structural", "windows", "judge", "save", "publish", "answer"],
+  "nodes": [
+    { "id": "sources", "lane": "build", "col": 0, "type": "external", "label": "Sources + trigger", "sublabel": "oldest first, max 100", "tag": "worker / Generate", "width": 150 },
+    { "id": "structural", "lane": "build", "col": 1, "type": "backend", "label": "Structural graph", "sublabel": "lines, rows, cells", "tag": "max 6,000 nodes", "width": 150 },
+    { "id": "windows", "lane": "build", "col": 2, "type": "database", "label": "Windows + cache", "sublabel": "24k chars, max 8", "tag": "new", "width": 150 },
+    { "id": "judge", "lane": "build", "col": 3, "type": "security", "label": "Judge + merge", "sublabel": "exact quote, own source", "tag": "new check", "width": 150 },
+    { "id": "save", "lane": "build", "col": 4, "type": "backend", "label": "Save draft", "sublabel": "fingerprint re-check", "width": 150 },
+    { "id": "publish", "lane": "build", "col": 5, "type": "security", "label": "Publish", "sublabel": "refused on drift", "width": 150 },
+    { "id": "model", "lane": "paid", "col": 2, "type": "cloud", "label": "Model call", "sublabel": "uncached windows only", "tag": "max 25 a run", "width": 150 },
+    { "id": "cache", "lane": "paid", "col": 3, "type": "database", "label": "Cache answer", "sublabel": "before the next call", "tag": "new", "width": 150 },
+    { "id": "reset", "lane": "after", "col": 3, "type": "external", "label": "Demo reset", "sublabel": "versions + cache", "tag": "new", "width": 150 },
+    { "id": "bench", "lane": "after", "col": 4, "type": "backend", "label": "Benchmark", "sublabel": "every version, free", "width": 150 },
+    { "id": "answer", "lane": "after", "col": 5, "type": "frontend", "label": "Answer", "sublabel": "rank, walk, re-verify", "width": 150 }
+  ],
+  "edges": [
+    { "id": "read", "from": "sources", "to": "structural", "variant": "default" },
+    { "id": "split", "from": "structural", "to": "windows", "variant": "default" },
+    { "id": "carry", "from": "windows", "to": "judge", "label": "cached", "variant": "emphasis" },
+    { "id": "miss", "from": "windows", "to": "model", "label": "uncached", "variant": "dashed", "role": "branch" },
+    { "id": "store", "from": "model", "to": "cache", "variant": "dashed" },
+    { "id": "fresh", "from": "cache", "to": "judge", "label": "new", "variant": "dashed" },
+    { "id": "version", "from": "judge", "to": "save", "variant": "default" },
+    { "id": "score", "from": "save", "to": "bench", "label": "scored", "variant": "dashed", "role": "branch" },
+    { "id": "release", "from": "save", "to": "publish", "label": "person", "variant": "emphasis" },
+    { "id": "serve", "from": "publish", "to": "answer", "variant": "emphasis" },
+    { "id": "clear", "from": "reset", "to": "cache", "label": "clears", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "New since the fixes",
+      "items": [
+        "Every answer cached per window as it arrives",
+        "Background builds keep AI edges, no model call",
+        "Long sources read to the end, in windows"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Unchanged",
+      "items": [
+        "Only a published version answers",
+        "Every citation re-checked against the live source",
+        "Published graph thins until republished"
+      ]
+    }
+  ]
+}
