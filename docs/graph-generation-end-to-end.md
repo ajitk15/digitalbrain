@@ -345,55 +345,55 @@ report. A failed conversion always keeps its file.
 
 ## 8. Stage 6 - Personal data: PII and PHI
 
-Every record's title and text (the first 200,000 characters) are scanned for
-patterns that usually mean a person. The scan **suggests; a person decides.**
+- **PII - Personally Identifiable Information**: data that identifies a person.
+- **PHI - Protected Health Information**: health data that identifies a patient,
+  as defined by HIPAA (the US Health Insurance Portability and Accountability Act).
 
-### 8.1 What is looked for
+Every record is scanned when it is added. The scan **suggests; a person decides.**
 
-| Kind | Category | How it is recognised |
+### 8.1 How it is identified
+
+By **fixed pattern rules**, not AI: no model is called and the same text always
+gives the same result. The title and the first 200,000 characters of text are
+read. Health identifiers are matched first and claim their digits, so an NHS
+number is not counted again as a telephone number. Each kind is counted, and the
+record is tagged **PHI** if any health identifier is found, **PII** if anything
+else is, and nothing otherwise.
+
+| Kind | Tag | Recognised by |
 | --- | --- | --- |
-| Email address | PII | an address shape |
-| Telephone number | PII | grouped digits with an optional country code, not part of a longer run |
-| US social security number | PII | 123-45-6789 shape |
-| Payment card number | PII | 13-19 digits that **pass the Luhn check** |
-| Date of birth | PII | a date **labelled** "date of birth", "DOB" or "born" |
-| Medical record number | **PHI** | "MRN" or "medical record number" **next to** an identifier |
-| Health plan member number | **PHI** | "Member ID", "Subscriber no.", "Policy #", "Medicaid", "Medicare", "Beneficiary", "Insurance" **next to** a number |
-| NHS number | **PHI** | "NHS" (optionally "number") next to a 3-3-4 digit number |
-| Patient name | **PHI** | "Patient name:" or "Patient:" followed by a capitalised name |
+| Email address | PII | `name@domain.tld` shape |
+| Telephone number | PII | digit groups with an optional country code |
+| US social security number | PII | `123-45-6789` shape |
+| Payment card number | PII | 13-19 digits that pass the Luhn checksum |
+| Date of birth | PII | a date labelled "date of birth", "DOB" or "born" |
+| Medical record number | PHI | "MRN" or "medical record number" next to an identifier |
+| Health plan member number | PHI | "Member", "Subscriber", "Policy", "Medicaid", "Medicare", "Beneficiary" or "Insurance" + "ID/number/#" next to a number |
+| NHS number | PHI | "NHS" next to a 3-3-4 digit number |
+| Patient name | PHI | "Patient:" or "Patient name:" followed by a capitalised name |
 
-### 8.2 PHI versus PII
+A health identifier needs **its label beside the value**: "MRN: RGH-0142857" is
+PHI, but "returns 409 on a duplicate MRN" is not flagged, because it talks about
+MRNs without holding one. Labelled samples in the benchmarks keep these rules
+measured.
 
-- A record is tagged **PHI** (protected health information) when **any** health
-  identifier is found: HIPAA treats those as identifying a patient wherever they
-  appear.
-- Otherwise, any other finding tags it **PII** (personally identifiable
-  information).
-- Nothing found: no tag.
+It does **not** find unlabelled names, addresses, diagnoses written in prose, or
+text inside images, so no tag is not proof a source is clean.
 
-### 8.3 Why labels matter
+### 8.2 Does flagged data reach the graph?
 
-Each health identifier needs **its label beside the value**. So:
+**Yes, unless a person restricts the source.** Nothing is masked or removed. A
+flagged source that is not restricted is built into the graph, sent to the model
+for AI enrichment and embeddings, and can be cited in answers, like any other.
 
-- "MRN: RGH-0142857, admitted to ward 4." - **PHI** (a medical record number);
-- "POST /patients returns 409 on a duplicate MRN" - **not flagged**: it talks
-  *about* MRNs and holds none;
-- "Every patient name is masked in the scoring log" - **not flagged**.
-
-A health identifier also **claims its digits**: an NHS number written as
-`943 476 5919` is counted once, as an NHS number, not again as a telephone
-number. A fixed set of positive and negative samples is kept in the benchmarks
-and measured by the scorecard, so a change to these rules is measured, not
-assumed.
-
-### 8.4 Where it shows
+### 8.3 Where it shows
 
 - **Sources list**: a **PHI** or **PII** tag under the title, with what was found
   in words ("1 medical record number, 2 email addresses"). Hovering explains it is
   a pattern match, not a judgement.
 - **Source page**: the same finding, beside the control to restrict it.
 
-### 8.5 Restricting a source
+### 8.4 Restricting a source
 
 A person who may change knowledge can mark a source **Restricted from AI**; only
 an **owner** can lift it. A restricted source:
@@ -1238,7 +1238,7 @@ description derived from the code cannot prove the code is right.
 | **Digest** | the SHA-256 of a record's text; any change to the text changes it |
 | **Usable source** | active and not restricted - the only kind a graph or a model sees |
 | **Restricted from AI** | a source no model reads and no answer cites |
-| **PII / PHI** | personal data / protected health information, as suggested by the scan |
+| **PII / PHI** | Personally Identifiable Information / Protected Health Information, as suggested by the personal-data scan |
 | **Source check** | the six-check readability score of a document |
 | **Content check** | the score of a document against what its type should contain |
 | **Fingerprint** | a hash of the usable sources and graph settings; when it moves, a rebuild is due |
