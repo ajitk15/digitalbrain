@@ -453,9 +453,9 @@ requires an explicit grant, and `test_security` pins the 404. The create form's
 ## Graph lifecycle
 
 Generate → draft → publish. The background worker keeps the **structural** graph current for
-free; **AI enrichment runs only for a requested run**, carried on
+free; **AI enrichment calls a model only for a requested run**, carried on
 `KnowledgeGraph.requested_model/_provider/_by` and cleared once consumed, so a rebuild can
-never repeat a paid call. Every run saves a `GraphRevision` as a draft.
+never repeat a paid call. A rebuild does reuse cached answers, which costs nothing. Every run saves a `GraphRevision` as a draft.
 
 `graph_snapshot(app_id, version=None)` resolves to the **latest published** revision, never
 the working graph. Chat and Code Factory both go through it. No published revision is an
@@ -700,11 +700,23 @@ citations out of published versions. It is minimization, not de-identification: 
 the scan's rules find, and graph revisions, chat history and cached AI results already
 written keep what they hold. The page says both.
 
-**AI graph runs are incremental** (`graph_ai.reusable`). A source whose id and digest match
-the latest AI version under the same ontology keeps its relationships at no cost; only new
-or changed sources go to the model, up to `MAX_EXTRACTION_SOURCES` a run.
-`data["ai_sources"]` records which sources have a complete extraction (one cut short by
-`MAX_RELATIONSHIPS` is asked again). **Automatic refresh is the one standing request**
+**AI graph runs are incremental, and every answer is cached as it arrives**
+(`graph_ai.enrich_graph`). Each call's answer is written to `DocumentAIResult` (task
+`extract`) keyed by the digest of exactly what the model read - title and window - under
+the ontology version, before the next call starts. So nothing paid for is lost when the
+version is not saved (a source changed mid-run, a later call failed, the budget ran out),
+a superseded record with unchanged text is answered for free, and only windows with no
+cached answer go to the model, up to `MAX_EXTRACTION_SOURCES` calls a run. A source
+longer than `MAX_SOURCE_CHARACTERS` is read in `windows`, cut at line ends and before a
+heading, at most `MAX_WINDOWS`; text past them is counted on the version, never silently
+dropped. An answer is kept whole even past `MAX_RELATIONSHIPS` (it stops new calls, not
+answers). Proposals are judged on every build against the source the model was reading,
+so an answer naming another source's id is refused. **Every rebuild carries cached answers
+forward with no model call** (`enrich_graph(app_id, None, ...)`): a background rebuild
+after a source change keeps the AI relationships of everything unchanged and names their
+model on the version, instead of dropping to structure. `graph_ai.reusable` is only the
+fallback for one-window sources extracted before the cache existed.
+`data["ai_sources"]` records which sources have a complete extraction. **Automatic refresh is the one standing request**
 (`graphs.arm_auto_refresh`): owner-only and off by default, it turns a source change into
 an incremental AI run charged to whoever switched it on, re-checking their grant first -
 losing it stops the refresh and says why - like a connector schedule. It produces drafts;

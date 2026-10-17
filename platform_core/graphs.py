@@ -36,11 +36,21 @@ def sources_for(app_id):
     # Answerable, not just active: a restricted source is never built into a
     # graph, and every citation is verified against this, so restricting one
     # also takes it out of published versions at once.
-    return KnowledgeEntry.objects.filter(application_id=app_id).answerable().order_by("id")
+    #
+    # Oldest first. Which sources fit under MAX_SOURCES, and which go to the
+    # model first, follows this order - by id alone that was by UUID, so random,
+    # and a source edited (a new entry, so a new UUID) could drop out of the
+    # graph or jump the extraction queue.
+    return (
+        KnowledgeEntry.objects.filter(application_id=app_id)
+        .answerable()
+        .order_by("created_at", "id")
+    )
 
 
 def fingerprint(app_id):
-    records = list(sources_for(app_id).values_list("id", "digest"))
+    # Sorted by id, not in build order, so a change of order is not a change.
+    records = sorted(sources_for(app_id).values_list("id", "digest"))
     config = AIConfiguration.objects.filter(
         application_id=app_id, purpose="graph_generation", enabled=True
     ).first()
@@ -342,6 +352,15 @@ def rebuild(app_id):
                     "This version has no new search embeddings; questions rank by words "
                     "and by any vectors already stored."
                 )
+    elif entries:
+        from .graph_ai import enrich_graph
+
+        # No model is called: the AI relationships already extracted from text
+        # that has not changed are carried into this version. A background
+        # rebuild used to drop every one of them, leaving a structural draft
+        # as the latest version and the AI one unpublishable once any of its
+        # sources moved - so getting them back meant paying again.
+        data, quality = enrich_graph(app_id, None, entries, data, quality)
     set_stage(app_id, "Saving version")
     with transaction.atomic():
         locked = KnowledgeGraph.objects.select_for_update().get(pk=graph.pk)
@@ -367,8 +386,9 @@ def rebuild(app_id):
             fingerprint=before,
             data=data,
             quality=quality,
-            provider=config.provider if config else "",
-            model=config.model if config else "",
+            # A carried-forward version names the model its relationships came from.
+            provider=config.provider if config else quality.get("provider", ""),
+            model=config.model if config else quality.get("model", ""),
         )
         # Every saved version is scored against the benchmark questions. After
         # commit, so a failed benchmark can never undo the save, and free: it

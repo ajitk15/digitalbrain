@@ -19,23 +19,37 @@ from .ontology import prompt as ontology_prompt
 # whose mistakes are most expensive to review. The budgets below assume a strong
 # model (Claude Sonnet or GPT-5.6 class); a small fast model will fill far less of
 # them and produce thinner graphs.
+#: Model calls one run makes at most. A source longer than one window takes a
+#: call per window, so this counts windows, not sources.
 MAX_EXTRACTION_SOURCES = 25
+#: Longest text one call reads. A longer source is read in `windows` of it.
 MAX_SOURCE_CHARACTERS = 24000
-MAX_RELATIONSHIPS = 60
+#: Windows read from one source at most; text past them is never sent, and the
+#: version says how much.
+MAX_WINDOWS = 8
+#: New proposals after which a run stops starting calls. Every answer is kept
+#: whole - it is paid for and cached - so a run can end up to one answer over.
+#: It used to be 60, a leftover of one call over the whole corpus: at twelve a
+#: source that stopped every run after five sources, and the source that
+#: crossed it was cut short, then paid for again by the next run.
+RELATIONSHIPS_PER_SOURCE = 12
+MAX_RELATIONSHIPS = MAX_EXTRACTION_SOURCES * RELATIONSHIPS_PER_SOURCE
+#: `DocumentAIResult.task` for one window's extraction.
+EXTRACTION_TASK = "extract"
 #: Longest supporting quote per relationship, in the prompt AND in verification.
 #:
-#: This is a budget, not a preference. MAX_RELATIONSHIPS quotes of this length
-#: have to fit inside EXTRACTION_TOKENS, or the model generates until it is cut
-#: off - which is exactly what a 1000-character cap did: 60 x 1000 characters is
-#: roughly twice the output budget, so every run ran to the timeout and returned
-#: nothing. A quote only has to contain the subject, the object and the phrase
-#: joining them, which verification already enforces, so it does not need to be
-#: long. test_graph_ai pins the arithmetic.
+#: This is a budget, not a preference. One answer's quotes have to fit inside
+#: EXTRACTION_TOKENS, or the model generates until it is cut off - which is
+#: exactly what a 1000-character cap did when one call read the whole corpus:
+#: 60 x 1000 characters is roughly twice the output budget, so every run ran to
+#: the timeout and returned nothing. A quote only has to contain the subject,
+#: the object and the phrase joining them, which verification already enforces,
+#: so it does not need to be long.
 MAX_QUOTE_CHARACTERS = 300
-#: Per-source ask. RELATIONSHIPS_PER_SOURCE quotes of MAX_QUOTE_CHARACTERS plus
-#: their fields must fit inside EXTRACTION_TOKENS with room to spare, or the
-#: model overruns the cap and the call is wasted. test_graph_ai pins it.
-RELATIONSHIPS_PER_SOURCE = 12
+#: RELATIONSHIPS_PER_SOURCE (the per-call ask, above) quotes of
+#: MAX_QUOTE_CHARACTERS plus their fields must fit inside EXTRACTION_TOKENS with
+#: room to spare, or the model overruns the cap and the call is wasted.
+#: test_graph_extraction pins it.
 EXTRACTION_TOKENS = 8192
 #: Both providers accept this as their run and transport budget for extraction.
 EXTRACTION_TIMEOUT = 600
@@ -194,6 +208,10 @@ def judge(item, sources):
 def reusable(app_id, entries):
     """What the latest AI version already extracted from sources that have not changed.
 
+    The fallback for sources extracted before answers were cached per window
+    (`DocumentAIResult`, task `extract`): `enrich_graph` asks it only about
+    those, and only about ones short enough to have been read whole.
+
     Returns (edges, entity nodes, {source id: digest}). Only from a version
     extracted under the same ontology, and only for a source whose id and
     digest both match: the same text, so the same quotes, and every quote is
@@ -248,60 +266,200 @@ def reusable(app_id, entries):
     return edges, nodes, done
 
 
+def windows(content):
+    """A source's text in the pieces extraction reads, and how much is left unread.
+
+    Each piece is at most MAX_SOURCE_CHARACTERS, cut at the end of a line and,
+    where one falls in its second half, before a heading - so an edit late in a
+    long document leaves the windows ahead of it, and what they cost, alone. At
+    most MAX_WINDOWS. Only the first 24,000 characters used to be read at all,
+    and the source was still recorded as completely extracted.
+    """
+    pieces, start = [], 0
+    while start < len(content) and len(pieces) < MAX_WINDOWS:
+        end = start + MAX_SOURCE_CHARACTERS
+        if end >= len(content):
+            pieces.append(content[start:])
+            start = len(content)
+            break
+        floor = start + MAX_SOURCE_CHARACTERS // 2
+        cut = content.rfind("\n#", floor, end)
+        if cut < 0:
+            cut = content.rfind("\n", floor, end)
+        cut = end if cut < 0 else cut + 1
+        pieces.append(content[start:cut])
+        start = cut
+    return pieces, len(content) - start
+
+
+def window_key(title, text):
+    """The digest of exactly what one call reads: the title and the window."""
+    return hashlib.sha256(json.dumps([title, text]).encode()).hexdigest()
+
+
+def rubric():
+    """What a cached answer was asked under: a new ontology asks again."""
+    return f"ontology-{ONTOLOGY_VERSION}"
+
+
+def cached_answers(app_id, keys):
+    """{window key: (result, created_at)} for answers already paid for."""
+    from .models import DocumentAIResult
+
+    return {
+        digest: (result, created)
+        for digest, result, created in DocumentAIResult.objects.filter(
+            application_id=app_id, task=EXTRACTION_TASK, rubric=rubric(), digest__in=keys
+        ).values_list("digest", "result", "created_at")
+    }
+
+
+def restated(result, source_id):
+    """A cached answer's proposals, about the source that holds that text now.
+
+    Content-addressed, so a superseded record whose text is unchanged - or the
+    unchanged half of an edited document - is answered by what was already
+    paid for, under the new record's id.
+    """
+    original = result.get("source_id")
+    return [
+        {**item, "source_id": source_id}
+        if isinstance(item, dict) and item.get("source_id") == original
+        else item
+        for item in result.get("relationships", [])
+    ]
+
+
 def enrich_graph(app_id, config, entries, data, quality):
     """Typed, quote-checked AI relationships on top of the structural graph.
 
-    Incremental: a source whose text has not changed since the latest AI
-    version keeps what was extracted from it, at no cost, and only new or
-    changed sources are sent to the model - up to `MAX_EXTRACTION_SOURCES` a
-    run, so successive runs also work through a library larger than that.
+    Every answer is cached per window as soon as it arrives (`DocumentAIResult`,
+    task `extract`, keyed by the digest of what the model read), so it is paid
+    for once: a run whose version is not saved, because a source changed under
+    it or a later call failed, loses nothing. Only windows with no cached
+    answer go to the model - up to `MAX_EXTRACTION_SOURCES` calls a run, so
+    successive runs work through a library larger than that.
+
+    `config` None makes no call at all and only carries cached answers forward:
+    every rebuild does that, so a background rebuild after a source change keeps
+    the AI relationships of everything that did not change instead of dropping
+    to structure.
     """
     from .graphs import MAX_NODES
 
-    if not config.configured_by_id:
+    if config is not None and not config.configured_by_id:
         raise ValidationError("Save graph generation settings as an application owner first.")
-    reused_edges, reused_nodes, done = reusable(app_id, entries)
-    pending = [entry for entry in entries if str(entry.pk) not in done]
-    citations = [
-        {
-            "id": str(e.pk),
-            "title": e.title,
-            "excerpt": e.content[:MAX_SOURCE_CHARACTERS],
-            "digest": e.digest,
-        }
-        for e in pending[:MAX_EXTRACTION_SOURCES]
-    ]
-    if not citations and not done:
-        return data, quality
-    from .budget import BudgetExceeded
+    planned = []
+    for entry in entries:
+        pieces, unread = windows(entry.content)
+        planned.append((entry, [(window_key(entry.title, text), text) for text in pieces], unread))
+    cached = cached_answers(app_id, {key for _, items, _ in planned for key, _ in items})
+    # Sources extracted before the cache existed, read whole in one window.
+    legacy_edges, legacy_nodes, legacy = reusable(
+        app_id,
+        [
+            entry
+            for entry, items, _ in planned
+            if len(items) == 1 and items[0][0] not in cached
+        ],
+    )
+    complete_before = {
+        str(entry.pk)
+        for entry, items, _ in planned
+        if str(entry.pk) in legacy or all(key in cached for key, _ in items)
+    }
+    proposals, used = [], []
+    for entry, items, _ in planned:
+        if str(entry.pk) in legacy:
+            continue
+        for key, _ in items:
+            if key in cached:
+                result, created = cached[key]
+                used.append((created, result))
+                proposals.extend(
+                    (item, True, str(entry.pk)) for item in restated(result, str(entry.pk))
+                )
 
-    relationships, stopped, completed = [], None, {}
-    for citation in citations:
-        if len(relationships) >= MAX_RELATIONSHIPS:
+    from .budget import BudgetExceeded
+    from .models import DocumentAIResult
+
+    calls = fresh = 0
+    asked, stopped = set(), None
+    unanswered = [
+        (entry, key, text)
+        for entry, items, _ in planned
+        if str(entry.pk) not in legacy
+        for key, text in items
+        if key not in cached
+    ]
+    for entry, key, text in unanswered if config is not None else []:
+        if key in cached:
+            # The same text in another source, answered earlier in this run.
+            proposals.extend(
+                (item, True, str(entry.pk)) for item in restated(cached[key][0], str(entry.pk))
+            )
+            continue
+        if calls >= MAX_EXTRACTION_SOURCES or fresh >= MAX_RELATIONSHIPS:
             break
+        citation = {
+            "id": str(entry.pk),
+            "title": entry.title,
+            "excerpt": text,
+            "digest": entry.digest,
+        }
         try:
             found = extract_relationships(app_id, config, citation)
-        except BudgetExceeded as failure:
-            # What was extracted is paid for: keep it and say why the rest is not.
-            if not relationships and not done:
+        except (BudgetExceeded, ValidationError) as failure:
+            # What was already extracted is paid for and cached: keep it, and
+            # say why the rest is not there. Nothing at all to keep is a failure.
+            if not proposals and not legacy and not calls:
                 raise
             stopped = " ".join(failure.messages)
             break
-        room = MAX_RELATIONSHIPS - len(relationships)
-        relationships.extend(found[:room])
-        if len(found) <= room:
-            # Only a source whose answer was kept whole is reused next time.
-            completed[citation["id"]] = citation["digest"]
-    sources = {c["id"]: c for c in citations}
+        calls += 1
+        fresh += len(found)
+        asked.add(str(entry.pk))
+        result = {
+            "relationships": found,
+            "source_id": str(entry.pk),
+            "provider": config.provider,
+            "model": config.model,
+        }
+        DocumentAIResult.objects.update_or_create(
+            application_id=app_id,
+            task=EXTRACTION_TASK,
+            digest=key,
+            rubric=rubric(),
+            defaults={"result": result, "requested_by_id": config.configured_by_id},
+        )
+        cached[key] = (result, None)
+        proposals.extend((item, False, str(entry.pk)) for item in found)
+    if not calls and not proposals and not legacy and not used:
+        return data, quality
+
+    # Judged against the whole text: every window is part of it, and a quote
+    # is only ever accepted where it stands in the source exactly.
+    sources = {
+        str(e.pk): {"id": str(e.pk), "title": e.title, "excerpt": e.content, "digest": e.digest}
+        for e in entries
+    }
     source_entries = {str(e.pk): e for e in entries}
     nodes = {n["id"]: n for n in data["nodes"]}
-    nodes.update(reused_nodes)
-    data["edges"].extend(reused_edges)
+    nodes.update(legacy_nodes)
+    data["edges"].extend(legacy_edges)
+    documents = {
+        n.get("knowledge_id"): n["id"] for n in data["nodes"] if n["kind"] == "document"
+    }
+    mentioned = {
+        (e["source"], e["target"]) for e in data["edges"] if e.get("relation") == "mentions entity"
+    }
     seen = set()
-    accepted = rejected = untyped = 0
+    accepted = rejected = untyped = reused_accepted = 0
     reasons = {}
-    for item in relationships:
-        kinds, reason = judge(item, sources)
+    for item, reused, owner in proposals:
+        # Only the source the model was reading: an answer naming another
+        # source's id is about text it was never shown.
+        kinds, reason = judge(item, {owner: sources[owner]})
         if reason:
             rejected += 1
             untyped += reason == "outside the ontology"
@@ -351,22 +509,14 @@ def enrich_graph(app_id, config, entries, data, quality):
             }
         )
         # Link entities to their document so the graph overview can discover them.
-        document = next(
-            (
-                n
-                for n in data["nodes"]
-                if n["kind"] == "document" and n.get("knowledge_id") == item["source_id"]
-            ),
-            None,
-        )
+        document = documents.get(item["source_id"])
         if document:
             for node_id in ids:
-                if not any(
-                    e["source"] == document["id"] and e["target"] == node_id for e in data["edges"]
-                ):
+                if (document, node_id) not in mentioned:
+                    mentioned.add((document, node_id))
                     data["edges"].append(
                         {
-                            "source": document["id"],
+                            "source": document,
                             "target": node_id,
                             "relation": "mentions entity",
                             "knowledge_id": item["source_id"],
@@ -376,12 +526,28 @@ def enrich_graph(app_id, config, entries, data, quality):
                         }
                     )
         accepted += 1
+        reused_accepted += reused
     data["nodes"] = list(nodes.values())
     merged = merge_entities(app_id, data)
     data["ontology"] = ONTOLOGY_VERSION
-    # Which sources this version has a complete extraction for, so the next AI
-    # run can reuse them rather than pay for them again.
-    data["ai_sources"] = {**done, **completed}
+    complete = {
+        str(entry.pk): entry.digest
+        for entry, items, _ in planned
+        if str(entry.pk) in legacy or all(key in cached for key, _ in items)
+    }
+    # Which sources this version has a complete extraction for.
+    data["ai_sources"] = complete
+    unread = sum(left for _, _, left in planned)
+    if config is not None:
+        provider, model = config.provider, config.model
+    elif used:
+        latest = max(used, key=lambda pair: pair[0])[1]
+        provider, model = latest.get("provider", ""), latest.get("model", "")
+    else:
+        previous = (
+            GraphRevision.objects.filter(application_id=app_id).exclude(model="").order_by("-number")
+        ).first()
+        provider, model = (previous.provider, previous.model) if previous else ("", "")
     quality.update(
         {
             "nodes": len(data["nodes"]),
@@ -393,30 +559,44 @@ def enrich_graph(app_id, config, entries, data, quality):
             "rejection_reasons": reasons,
             "merged_entities": merged,
             "ontology": ONTOLOGY_VERSION,
-            "semantic_sources": len(citations),
-            "reused_sources": len(done),
-            "reused_relationships": sum(1 for edge in reused_edges if edge.get("inferred")),
-            "pending_sources": max(len(pending) - len(completed), 0),
-            "method": f"Markdown structure + {config.provider} / {config.model}",
+            "semantic_sources": len(asked),
+            "extraction_calls": calls,
+            "reused_sources": len(complete_before),
+            "reused_relationships": reused_accepted
+            + sum(1 for edge in legacy_edges if edge.get("inferred")),
+            "pending_sources": len(entries) - len(complete),
+            "unread_characters": unread,
+            "carried_forward": config is None,
+            "method": f"Markdown structure + {provider} / {model}"
+            + ("" if config is not None else " (carried forward, no model called)"),
             "semantic_accuracy": "Not measured; exact quote and entity presence validated.",
-            "provider": config.provider,
-            "model": config.model,
+            "provider": provider,
+            "model": model,
         }
     )
     quality["result"] = "AI review recommended"
     quality["warnings"].append(
-        f"AI enrichment covers at most {MAX_EXTRACTION_SOURCES} sources / "
-        f"{MAX_SOURCE_CHARACTERS:,} characters per source and "
-        f"{MAX_RELATIONSHIPS} relationships with quotes up to "
-        f"{MAX_QUOTE_CHARACTERS} characters. "
+        f"An AI run makes at most {MAX_EXTRACTION_SOURCES} model calls, each reading up to "
+        f"{MAX_SOURCE_CHARACTERS:,} characters ({MAX_WINDOWS} at most from one source), "
+        f"with quotes up to {MAX_QUOTE_CHARACTERS} characters. "
         "Quotes are verified; relationship meaning still needs human review."
     )
+    if config is None:
+        quality["warnings"].append(
+            "No model was called for this version: its AI relationships are the ones already "
+            "extracted from text that has not changed."
+        )
     if stopped:
         quality["warnings"].append(f"Extraction stopped early. {stopped}")
     if quality["pending_sources"]:
         quality["warnings"].append(
             f"{quality['pending_sources']} source(s) are not extracted yet; the next AI run "
             "continues with them and reuses everything unchanged."
+        )
+    if unread:
+        quality["warnings"].append(
+            f"{unread:,} characters past the first {MAX_WINDOWS} windows of a source were not "
+            "read by the model."
         )
     if rejected:
         quality["warnings"].append(

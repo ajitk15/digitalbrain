@@ -336,11 +336,12 @@ class GraphRunTests(TestCase):
             with self.assertRaises(RuntimeError):
                 rebuild(self.app.pk)
         self.assertEqual(self.graph().status, "failed")
-        # A source changes, so the worker rebuilds - structurally, with no AI call.
+        # A source changes, so the worker rebuilds - carrying forward what is
+        # cached, with no AI call.
         GraphTests.source(self, "# Another\nA second requirement.")
-        with patch("platform_core.graph_ai.enrich_graph") as enrich:
+        with patch("platform_core.ai.invoke_ai") as invoke:
             rebuild(self.app.pk)
-        enrich.assert_not_called()
+        invoke.assert_not_called()
         self.assertEqual(self.graph().requested_model, "")
 
     def test_an_explicit_retry_does_repeat_the_requested_model(self):

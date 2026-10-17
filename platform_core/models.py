@@ -2134,6 +2134,10 @@ class DocumentAIResult(models.Model):
         # under. See `code_review.py` and `code_docs.py`.
         ("change", "Code review"),
         ("codedocs", "Code documentation"),
+        # Knowledge graph extraction, one row per window a model read: the
+        # digest is of the title and window text (`graph_ai.window_key`), the
+        # rubric the ontology version. See `graph_ai.enrich_graph`.
+        ("extract", "Graph extraction"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
