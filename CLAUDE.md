@@ -679,6 +679,27 @@ found (MRN, health plan member number, NHS number, `Patient name:`; `PHI_KINDS`)
 flagged, and `benchmarks/phi-samples.json` holds both kinds of case. Anyone who may change knowledge can restrict; only an owner lifts it; a
 re-import of the same record stays restricted.
 
+**Masking happens once, before a source is stored** (`masking.py`, `PersonalDataPolicy`,
+the Personal data card in AI settings, owner-only, off by default). `workbench.add_knowledge`
+replaces the ticked kinds before the digest is computed, so the stored text *is* the masked
+text and every reader - digest, quote checks, graphs, extraction, embeddings, chat, Code
+Factory, API, MCP - needs no masking of its own. **Do not move it to the model boundary**:
+that is one masking call per path, and the structural graph would still carry raw values
+into chat. Health identifiers are ticked by default, the rest opt-in. A value becomes
+`[MRN-QZKTWBAF]`: label kept, letters an HMAC of the normalised value under
+`masking_key_<application id>` - a secret file like any other (operator mount first, else
+written to the managed directory when switched on, never the shared connector folder), so
+the same MRN joins across documents and cannot be guessed back. Letters only, so the scan
+never reads a placeholder as a value and masking is idempotent. A missing key with masking
+on refuses the record; it never stores raw text. Anything that compares incoming text with a
+stored digest compares the *stored* form (`masking.stored_content`): connector sync,
+"Convert again", code docs. "Mask existing sources" rewrites every entry **in place,
+retired ones included** - a deliberate exception to "prior revisions stay immutable",
+because superseding would keep the values in the retired row; the changed digest takes old
+citations out of published versions. It is minimization, not de-identification: only what
+the scan's rules find, and graph revisions, chat history and cached AI results already
+written keep what they hold. The page says both.
+
 **AI graph runs are incremental** (`graph_ai.reusable`). A source whose id and digest match
 the latest AI version under the same ontology keeps its relationships at no cost; only new
 or changed sources go to the model, up to `MAX_EXTRACTION_SOURCES` a run.

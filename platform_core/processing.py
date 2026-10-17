@@ -311,13 +311,14 @@ def supersede(user, app_id, document, content):
     a person set carries over too.
     """
     from .document_ai import cached_type
+    from .masking import stored_content
     from .sensitivity import RESTRICTED
     from .source_quality import run as check_source
 
     previous = KnowledgeEntry.objects.select_for_update().filter(document=document).first()
-    if previous and previous.active and previous.content == content:
+    if previous and previous.active and previous.content == stored_content(app_id, content):
         previous.quality = check_source(
-            content, document.conversion_report, document.name, previous.document_type,
+            previous.content, document.conversion_report, document.name, previous.document_type,
             cached_type(app_id, previous.digest),
         )
         previous.save(update_fields=["quality"])
@@ -335,7 +336,7 @@ def supersede(user, app_id, document, content):
     if previous and previous.document_type:
         entry.document_type = previous.document_type
         entry.quality = check_source(
-            content, document.conversion_report, document.name, entry.document_type,
+            entry.content, document.conversion_report, document.name, entry.document_type,
             cached_type(app_id, entry.digest),
         )
         entry.save(update_fields=["document_type", "quality"])

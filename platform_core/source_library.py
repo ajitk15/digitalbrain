@@ -49,9 +49,14 @@ def file_type(name):
 def personal(entry):
     """The PHI / PII tag for a row: which, and what was found, in words."""
     found = entry.personal_data if entry else None
-    if not found:
+    masked = entry.masked if entry else None
+    if not found and not masked:
         return None
-    return {"category": sensitivity.category(found), "summary": sensitivity.summary(found)}
+    return {
+        "category": sensitivity.category(found),
+        "summary": sensitivity.summary(found),
+        "masked": sensitivity.summary(masked or {}),
+    }
 
 
 def repository_of(url):

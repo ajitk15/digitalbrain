@@ -380,6 +380,9 @@ class KnowledgeEntry(models.Model):
     #: What `sensitivity.scan` found when the source was added: {kind: count}.
     #: A suggestion for a person, never a label by itself.
     personal_data = models.JSONField(default=dict, blank=True)
+    #: What `masking` replaced before the text was stored: {kind: count}. The
+    #: values themselves are never kept; `personal_data` is what is still there.
+    masked = models.JSONField(default=dict, blank=True)
     #: What `source_quality.run` found when the source was added: the rules'
     #: version and each check. Empty until checked; stale rules are re-run on read.
     quality = models.JSONField(default=dict, blank=True)
@@ -2016,6 +2019,23 @@ class AIBudget(models.Model):
                 condition=models.Q(monthly_limit__gte=0), name="nonnegative_ai_budget"
             )
         ]
+
+
+class PersonalDataPolicy(models.Model):
+    """Which personal data an application masks before a source is stored.
+
+    No row, or `enabled` off, means nothing is masked: the scan only suggests,
+    as it always has. See `masking.py` for what masking does and does not do.
+    """
+
+    application = models.OneToOneField(Application, on_delete=models.CASCADE)
+    enabled = models.BooleanField(default=False)
+    #: `sensitivity.PATTERNS` kinds, plus "payment card number".
+    kinds = models.JSONField(default=list, blank=True)
+    set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class StreamLease(models.Model):

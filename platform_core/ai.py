@@ -182,6 +182,105 @@ def save_budget(request, app):
     return None
 
 
+def personal_choices():
+    from .masking import KINDS
+    from .sensitivity import PHI_KINDS
+
+    return [
+        (kind, f"{kind[0].upper()}{kind[1:]} ({'PHI' if kind in PHI_KINDS else 'PII'})")
+        for kind in KINDS
+    ]
+
+
+class PersonalDataForm(forms.Form):
+    enabled = forms.BooleanField(
+        required=False, label="Mask personal data before a source is stored"
+    )
+    kinds = forms.MultipleChoiceField(
+        required=False, label="Kinds to mask", widget=forms.CheckboxSelectMultiple
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["kinds"].choices = personal_choices()
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("enabled") and not cleaned.get("kinds"):
+            raise ValidationError("Tick at least one kind to mask, or switch masking off.")
+        return cleaned
+
+
+def personal_data_form(app):
+    from .masking import DEFAULT_KINDS
+    from .models import PersonalDataPolicy
+
+    policy = PersonalDataPolicy.objects.filter(application=app).first()
+    return PersonalDataForm(
+        prefix="personal",
+        initial={
+            "enabled": bool(policy and policy.enabled),
+            "kinds": policy.kinds if policy and policy.kinds else DEFAULT_KINDS,
+        },
+    )
+
+
+def save_personal_data(request, app):
+    """The personal data part of AI settings: which kinds are masked when stored."""
+    from .masking import save_policy
+
+    form = PersonalDataForm(request.POST, prefix="personal")
+    if not form.is_valid():
+        return form
+    enabled = form.cleaned_data["enabled"]
+    try:
+        save_policy(request.user, app, enabled, form.cleaned_data["kinds"])
+    except ValidationError as error:
+        form.add_error(None, error)
+        return form
+    messages.success(
+        request,
+        "Personal data is masked in sources added from now on. Mask existing sources "
+        "to apply it to what is already stored."
+        if enabled
+        else "Masking is off: sources added from now on are stored as they are.",
+    )
+    return None
+
+
+def remask_sources(request, app):
+    from .masking import remask
+    from .sensitivity import summary
+
+    try:
+        changed, totals = remask(request.user, app)
+    except ValidationError as error:
+        messages.error(request, " ".join(error.messages))
+        return
+    if changed:
+        messages.success(
+            request,
+            f"Masked {summary(totals)} in {changed} source{'s' if changed != 1 else ''}. "
+            "The graph rebuilds from the masked text as a draft; publish it to answer from it.",
+        )
+    else:
+        messages.success(request, "Nothing left to mask: no stored source holds those kinds.")
+
+
+def personal_data_status(app):
+    from .masking import key_name, key_source, kinds_for
+    from .sensitivity import PHI_KINDS
+
+    kinds = kinds_for(app.pk)
+    return {
+        "enabled": bool(kinds),
+        "phi": [kind for kind in kinds if kind in PHI_KINDS],
+        "pii": [kind for kind in kinds if kind not in PHI_KINDS],
+        "key_source": key_source(app.pk),
+        "key_name": key_name(app.pk),
+    }
+
+
 def provider_credential(config, app):
     """The mounted credential for this application and provider.
 
@@ -904,6 +1003,7 @@ def ai_settings(request, pk):
     from .budget import status as budget_status
     from .models import AIBudget
     from .secrets import source_of
+    from .services import feature_enabled
 
     app = owned_application(request, pk)
     groups, hidden = visible_tasks(app)
@@ -920,11 +1020,21 @@ def ai_settings(request, pk):
     all_form = AllModelsForm(
         prefix="all", initial={"model_choice": f"claude:{DEFAULT_MODELS['claude']}"}
     )
+    holds_sources = feature_enabled("knowledge", app)
+    personal_form = personal_data_form(app) if holds_sources else None
     if request.method == "POST":
         selected = request.POST.get("purpose")
+        if selected in {"personal_data", "remask"} and not holds_sources:
+            raise PermissionDenied
         if selected == "budget":
             failed = save_budget(request, app)
             budget_form = failed or budget_form
+        elif selected == "personal_data":
+            failed = save_personal_data(request, app)
+            personal_form = failed or personal_form
+        elif selected == "remask":
+            remask_sources(request, app)
+            failed = None
         elif selected == "prices":
             failed = save_prices(request, app, found)
             prices = failed or prices
@@ -954,6 +1064,8 @@ def ai_settings(request, pk):
             "pricing_note": PRICING_NOTE,
             "all_form": all_form,
             "budget_form": budget_form,
+            "personal_form": personal_form,
+            "personal": personal_data_status(app) if holds_sources else None,
             "budget": budget_status(app.pk),
             "month_spent": month_spent(app.pk),
             "openai_mounted": bool(source_of(app, "openai")),

@@ -657,6 +657,7 @@ def add_to_knowledge(user, doc):
     Same discipline as an updated import: the earlier entry for this repository
     is made inactive, never deleted, and the same text is not added twice.
     """
+    from .masking import stored_content
     from .workbench import add_knowledge
 
     app, grant = access(user, doc.application_id, "code_docs", write=True)
@@ -669,7 +670,7 @@ def add_to_knowledge(user, doc):
         current = KnowledgeEntry.objects.filter(
             application=app, source=source, active=True
         ).first()
-        if current and current.digest == digest_of(content):
+        if current and current.digest == digest_of(stored_content(app.pk, content)):
             entry = current
         else:
             KnowledgeEntry.objects.filter(application=app, source=source, active=True).update(

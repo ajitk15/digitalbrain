@@ -61,10 +61,14 @@ class QuestionForm(forms.Form):
 @transaction.atomic
 def add_knowledge(user, app_id, title, content, source="", document=None):
     from .document_ai import cached_type
+    from .masking import prepare
     from .sensitivity import RESTRICTED, STANDARD, scan
     from .source_quality import run as check_source
 
     app, _ = access(user, app_id, "knowledge", write=True)
+    # Before anything is computed from it: the stored text is the masked text, so
+    # the digest, quotes and every reader downstream only ever see placeholders.
+    title, content, masked = prepare(app.pk, title, content)
     digest = hashlib.sha256(content.encode()).hexdigest()
     # A restriction follows the record: the next import of the same ticket must
     # not quietly make it usable again.
@@ -82,6 +86,7 @@ def add_knowledge(user, app_id, title, content, source="", document=None):
         document=document,
         digest=digest,
         personal_data=scan(f"{title}\n{content}"),
+        masked=masked,
         # Documents only: a typed note or an imported ticket is not a document,
         # and a ticket has its own score (`ticket_quality`). A type a model
         # already named for this exact text is kept; nothing is asked here.
@@ -442,6 +447,7 @@ def knowledge_detail(request, pk, entry_id):
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),
             "personal_data": personal_summary(entry.personal_data),
             "personal_category": personal_category(entry.personal_data),
+            "masked": personal_summary(entry.masked),
             "grant": grant,
         },
     )

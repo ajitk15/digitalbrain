@@ -382,9 +382,28 @@ text inside images, so no tag is not proof a source is clean.
 
 ### 8.2 Does flagged data reach the graph?
 
-**Yes, unless a person restricts the source.** Nothing is masked or removed. A
-flagged source that is not restricted is built into the graph, sent to the model
-for AI enrichment and embeddings, and can be cited in answers, like any other.
+**Yes, unless the source is restricted or the values are masked.** By default
+nothing is masked: a flagged source that is not restricted is built into the
+graph, sent to the model for AI enrichment and embeddings, and can be cited in
+answers, like any other.
+
+**Masking** is an owner's choice in **AI settings → Personal data**, off by
+default. With it on, the kinds ticked there - health identifiers (PHI) by
+default, the others opt-in - are replaced **before the source is stored**:
+
+- `MRN: RGH-0142857` is stored as `MRN: [MRN-QZKTWBAF]`. The label stays, so the
+  model still knows what the value was.
+- The same value always becomes the same placeholder, so the graph still joins
+  documents about the same patient. The letters come from a per-application
+  secret key, so nobody can work the value back out.
+- Because the stored text is the masked text, nothing downstream ever sees the
+  value: not the graph, the model, embeddings, search or answers.
+- **Mask existing sources** applies it to what is already stored; the graph then
+  rebuilds as a draft to be published. Sources show a green **Masked** tag.
+
+Masking reduces personal data; it does not de-identify it. Only what the scan's
+rules find is masked, and earlier graph versions, chat history and cached AI
+results keep what they already hold.
 
 ### 8.3 Where it shows
 

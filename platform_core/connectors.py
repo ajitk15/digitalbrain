@@ -29,6 +29,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, MAX_RECORDS, kind_for
+from .masking import stored_content
 from .models import Connector, KnowledgeEntry
 from .permissions import SUPPORTED, enforce
 from .services import audit, feature_enabled
@@ -146,7 +147,9 @@ def sync(user, connector_id, app_id):
         count = 0
         for record in records:
             content = (record.title + "\n\n" + record.body)[:MAX_BODY_CHARACTERS]
-            digest = hashlib.sha256(content.encode()).hexdigest()
+            # Compared as it would be stored: with masking on, the stored digest is
+            # of the masked text, and the raw one would re-import every record.
+            digest = hashlib.sha256(stored_content(app.pk, content).encode()).hexdigest()
             existing = KnowledgeEntry.objects.filter(
                 application=app, source=record.url, active=True
             )

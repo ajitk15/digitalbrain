@@ -1290,6 +1290,13 @@
   .ai-prices { max-width: 900px; }
   .ai-prices input { max-width: 130px; min-width: 84px; }
   .ai-prices td.mono { white-space: nowrap; }
+  .personal-data { max-width: 900px; }
+  /* Two columns: the four PHI kinds fill the first two rows, so PHI and PII never share one. */
+  .personal-kinds { border: 0; padding: 0; margin: 0 0 var(--s-2); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-2) var(--s-4); }
+  @media (max-width: 560px) { .personal-kinds { grid-template-columns: 1fr; } }
+  .personal-kinds legend { grid-column: 1 / -1; padding: 0; margin-bottom: var(--s-2); }
+  .personal-kinds .errorlist { grid-column: 1 / -1; }
+  .personal-kinds label { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
   .ai-prices td small { display: block; }
   .ai-prices td.mono { font-variant-numeric: tabular-nums; }
 
@@ -4055,6 +4062,7 @@
   .data-tag.tag-pii { color: var(--c-warn); background: var(--c-warn-bg); border-color: var(--c-warn); }
   .data-tag.tag-pii strong { background: var(--c-warn); }
   .data-tag.tag-restricted { padding-left: 7px; }
+  .data-tag.tag-masked { color: var(--c-ok); background: var(--c-ok-bg); border-color: var(--c-ok); padding-left: 7px; }
   .data-tag.tag-restricted svg { vertical-align: -2px; margin-right: 3px; }
   .data-tag.tag-restricted { color: var(--c-ink-3); background: var(--c-subtle); border-color: var(--c-line-strong); }
 

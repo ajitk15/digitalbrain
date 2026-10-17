@@ -44,26 +44,27 @@ PATTERNS = {
     "social security number": re.compile(r"(?<![\w-])\d{3}-\d{2}-\d{4}(?![\w-])"),
     "date of birth": re.compile(
         r"\b(?:date of birth|d\.?o\.?b\.?|born(?: on)?)\s*[:\-]?\s*"
-        r"(?:\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2},? \d{4})",
+        r"(?P<v>\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}|\d{1,2} \w+ \d{4}|\w+ \d{1,2},? \d{4})",
         re.IGNORECASE,
     ),
     # Health identifiers. Each needs its label next to the value, so text
-    # about MRNs ("a duplicate MRN is refused") is not text holding one.
+    # about MRNs ("a duplicate MRN is refused") is not text holding one. Group
+    # `v` is the value itself: masking replaces it and keeps the label.
     "medical record number": re.compile(
-        r"\b(?:mrn|medical[ _]record[ _](?:number|no\.?|#))\W{0,4}[A-Z]{0,4}-?\d{5,10}\b",
+        r"\b(?:mrn|medical[ _]record[ _](?:number|no\.?|#))\W{0,4}(?P<v>[A-Z]{0,4}-?\d{5,10})\b",
         re.IGNORECASE,
     ),
     "health plan member number": re.compile(
         r"\b(?:member|subscriber|policy|medicaid|medicare|beneficiary|insurance)[ _]?"
-        r"(?:id|number|no\.?|#)\W{0,4}[A-Z]{0,4}[ -]?\d[\dA-Z-]{5,}\b",
+        r"(?:id|number|no\.?|#)\W{0,4}(?P<v>[A-Z]{0,4}[ -]?\d[\dA-Z-]{5,})\b",
         re.IGNORECASE,
     ),
     "NHS number": re.compile(
-        r"\bNHS(?:[ _](?:number|no\.?|#))?\W{0,4}\d{3}[ -]?\d{3}[ -]?\d{4}\b"
+        r"\bNHS(?:[ _](?:number|no\.?|#))?\W{0,4}(?P<v>\d{3}[ -]?\d{3}[ -]?\d{4})\b"
     ),
     "patient name": re.compile(
         r"\b(?i:patient)(?:'s)?(?:[ _](?i:full[ _])?(?i:name))?[ \t]*:[ \t]*"
-        r"[A-Z][a-z'-]+(?:[ \t]+[A-Z][a-z'-]+)+"
+        r"(?P<v>[A-Z][a-z'-]+(?:[ \t]+[A-Z][a-z'-]+)+)"
     ),
 }
 #: The kinds that are health identifiers. Any of them makes a finding PHI.
