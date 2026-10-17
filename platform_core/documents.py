@@ -301,6 +301,27 @@ def return_route(request):
 
 
 @login_required
+@require_http_methods(["GET"])
+def tickets(request, pk):
+    """Knowledge → Tickets: imported work items, listed as tickets.
+
+    The same access as the documents list - no grant is a 404 - and the
+    knowledge feature, because these are knowledge entries read another way.
+    Filters are a GET form, so the page works with JavaScript off.
+    """
+    from .ticket_library import library
+
+    app, grant = application_for(request.user, pk)
+    if not feature_enabled("knowledge", app):
+        raise PermissionDenied("This feature is disabled.")
+    return render(
+        request,
+        "tickets.html",
+        {"application": app, "grant": grant, **library(app, grant, request)},
+    )
+
+
+@login_required
 @require_http_methods(["GET", "POST"])
 def documents(request, pk):
     app, grant = application_for(request.user, pk)

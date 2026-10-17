@@ -4038,6 +4038,22 @@
   th small.th-note { display: block; margin-top: 2px; font-size: var(--t-10); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--c-ink-3); }
   .check-legend { margin: var(--s-2) 0 0; font-size: var(--t-11); color: var(--c-ink-3); }
 
+  /* Knowledge → Tickets: a chip per connector, then the filters as one row
+     of a plain GET form, then a table whose first column is the key. */
+  .knowledge-tabs .tab-count, .ticket-chip .tab-count { margin-left: 4px; padding: 0 6px; border-radius: 999px; background: var(--c-subtle); color: var(--c-ink-3); font-size: var(--t-11); font-variant-numeric: tabular-nums; }
+  .ticket-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); margin: var(--s-3) 0 0; }
+  .ticket-chip { display: inline-flex; align-items: center; padding: 4px 10px; border: 1px solid var(--c-line-strong); border-radius: 999px; font-size: var(--t-12); color: var(--c-ink); }
+  .ticket-chip:hover { text-decoration: none; background: var(--c-subtle); }
+  .ticket-chip[aria-current] { border-color: var(--c-brand-border); background: var(--c-brand-tint); color: var(--c-brand-strong); font-weight: 600; }
+  .ticket-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s-2) var(--s-3); margin: var(--s-3) 0; }
+  .ticket-filters label { display: block; margin-bottom: 2px; font-size: var(--t-12); color: var(--c-ink-2); }
+  .ticket-filters .ticket-search { flex: 1; min-width: 200px; }
+  .ticket-filters .ticket-search input { width: 100%; }
+  .tickets-table td.ticket-key { white-space: nowrap; min-width: 0; }
+  .ticket-external { color: var(--c-ink-3); }
+  .ticket-actions { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-12); white-space: nowrap; }
+  .ticket-actions svg { vertical-align: -1px; margin-right: 4px; }
+
   .data-tags { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
   /* The category is a solid badge that never breaks; what was found wraps
      after it. "P / HI" split over two lines was the first thing seen. */

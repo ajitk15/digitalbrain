@@ -114,6 +114,7 @@ def application_menu(context):
                 "graph",
                 "application",
                 "documents",
+                "tickets",
                 "document-detail",
                 "document-delete",
             },
@@ -500,3 +501,11 @@ def quality_rule():
     from platform_core.source_quality import VERDICT_RULE
 
     return VERDICT_RULE
+
+
+@register.simple_tag
+def ticket_tab(application):
+    """The Tickets tab's count, or None when the application imports no tickets."""
+    from platform_core.ticket_library import tab_count
+
+    return tab_count(application)

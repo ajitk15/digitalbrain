@@ -95,8 +95,10 @@ class FeatureCacheTests(TestCase):
             self.client.get(url)
         # Twenty-eight before the feature cache; the panel listing where
         # documents came from costs one more, and the test below is what keeps
-        # that one from becoming one per source.
-        self.assertLess(len(captured), 21, "documents used to take 28 queries")
+        # that one from becoming one per source. Leaving tickets to their own
+        # tab costs one more: the connectors that import them, read once a
+        # request (`ticket_library.ticket_connectors`) however often it asks.
+        self.assertLess(len(captured), 22, "documents used to take 28 queries")
 
     def test_a_finished_application_pays_nothing_for_the_setup_strip(self):
         """The milestone is what makes the strip free once it is earned."""

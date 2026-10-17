@@ -18,6 +18,7 @@ Two rules every adapter obeys, both from CLAUDE.md:
 
 import base64
 import json
+import re
 from dataclasses import dataclass
 from ipaddress import ip_address
 from urllib.parse import quote, urlencode
@@ -118,6 +119,30 @@ def header(pairs):
     """
     lines = [f"{label}: {value}" for label, value in pairs if value]
     return "\n".join(lines)
+
+
+#: One header line as `header` writes it: a short label, then its value.
+HEADER_LINE = re.compile(r"^([A-Z][A-Za-z ]{0,39}): (.*)$")
+#: Longer than this, a header value is cut where it is shown.
+HEADER_VALUE = 500
+
+
+def read_header(content):
+    """The state lines `header` wrote, as {label: value}; {} when there are none.
+
+    A record is stored as its title, a blank line, the header and its text, so
+    the header is the first of the first two paragraphs made entirely of
+    `Label: value` lines. Reading stops there: a line in the body that happens
+    to look like a field is not one. For display only - ServiceOps and the
+    ticket score keep their own readers, which incident matching depends on.
+    """
+    paragraphs = (content or "").replace("\r\n", "\n").split("\n\n")
+    for paragraph in paragraphs[:2]:
+        lines = [line for line in paragraph.split("\n") if line.strip()]
+        matches = [HEADER_LINE.match(line.strip()) for line in lines]
+        if lines and all(matches):
+            return {match.group(1): match.group(2).strip()[:HEADER_VALUE] for match in matches}
+    return {}
 
 
 def incident_header(pairs):

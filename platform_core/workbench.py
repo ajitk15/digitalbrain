@@ -412,10 +412,13 @@ def knowledge_detail(request, pk, entry_id):
     from .sensitivity import summary as personal_summary
     from .source_library import entry_origin, graph_usage, ticket_quality
     from .source_quality import for_entries
+    from .ticket_library import ticket_entries
     from .ticket_quality import parse as parse_ticket
 
     origin = entry_origin(app, entry) if not entry.document_id else None
     quality = ticket_quality(entry, origin) if origin else None
+    # Where "Back to" leads: a ticket came from the Tickets tab.
+    is_ticket = bool(origin) and ticket_entries(app).filter(pk=entry.pk).exists()
     source_check = for_entries([entry])[entry.pk] if entry.document_id else None
     # A scored ticket is shown as a ticket: its Jira fields as chips and its
     # description as text, rather than the raw stored record.
@@ -442,6 +445,7 @@ def knowledge_detail(request, pk, entry_id):
                 if fields.get(key)
             ],
             "ticket_key": fields.get("key", ""),
+            "is_ticket": is_ticket,
             "ticket_description": description,
             "source_link": entry.source if entry.source.startswith(("https://", "http://")) else "",
             "versions": graph_usage(app, [entry]).get(str(entry.pk), []),

@@ -152,6 +152,7 @@ class PagesTests(BrowserTestCase):
         for name in (
             "graph",
             "documents",
+            "tickets",
             "chat",
             "serviceops",
             "serviceops-runs",
@@ -224,6 +225,7 @@ class ReadabilityTests(BrowserTestCase):
             "dashboard",
             "graph",
             "documents",
+            "tickets",
             "chat",
             "serviceops",
             "onboarding",
@@ -385,6 +387,7 @@ CONTRAST = r"""() => {
 AUDITED = (
     "graph",
     "documents",
+    "tickets",
     "source-add",
     "source-check",
     "chat",
@@ -1256,6 +1259,45 @@ class SourceCheckTests(BrowserTestCase):
         # A source's name leads to its own page and its check.
         dialog.get_by_role("link", name="release-plan.docx").click()
         self.page.locator("#source-check").wait_for()
+        self.assertNoScriptErrors()
+
+
+class TicketsTests(BrowserTestCase):
+    """Knowledge → Tickets with tickets on it: filters are a form, and it reads."""
+
+    def setUp(self):
+        super().setUp()
+        import hashlib
+
+        from platform_core.models import Connector, KnowledgeEntry
+
+        from .test_ticket_quality import READY
+
+        Connector.objects.create(
+            application=self.app, kind="jira", name="Platform board",
+            config={"base_url": "https://team.atlassian.net", "auth": "cloud"},
+        )
+        for key, status in (("KAN-4", "To Do"), ("KAN-5", "Done")):
+            content = READY.replace("KAN-4", key).replace("Status: To Do", f"Status: {status}")
+            KnowledgeEntry.objects.create(
+                application=self.app, author=self.owner, title=f"{key} - Consent export",
+                content=content, source=f"https://team.atlassian.net/browse/{key}",
+                digest=hashlib.sha256(content.encode()).hexdigest(),
+            )
+
+    def test_a_status_filter_narrows_the_list_and_the_page_reads(self):
+        self.open("tickets", self.app.pk)
+        self.assertEqual(self.page.locator(".tickets-table tbody tr").count(), 2)
+        self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
+        self.assertEqual(self.page.evaluate(CONTRAST), [])
+        self.assertEqual(self.page.evaluate(ACCESSIBILITY), [])
+        self.page.get_by_label("Status").select_option("Done")
+        self.page.get_by_role("button", name="Show").click()
+        self.page.get_by_role("link", name="Clear filters").wait_for()
+        self.assertIn("status=Done", self.page.url)
+        rows = self.page.locator(".tickets-table tbody tr")
+        self.assertEqual(rows.count(), 1)
+        self.assertIn("KAN-5", rows.first.inner_text())
         self.assertNoScriptErrors()
 
 

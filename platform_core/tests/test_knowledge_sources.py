@@ -561,7 +561,7 @@ class KnowledgeHeadingTests(TestCase):
             with self.subTest(view=name):
                 self.assertContains(response, 'aria-current="page"')
 
-    TITLES = {"sources": "Sources", "graph": "Graph", "quality": "Quality",
+    TITLES = {"sources": "Documents", "graph": "Graph", "quality": "Quality",
               "versions": "Versions"}
 
     def test_every_view_is_named_on_the_page(self):
@@ -603,7 +603,7 @@ class KnowledgeHeadingTests(TestCase):
             sha256="c" * 64, status="ready", origin="upload",
         )
         body = self.client.get(reverse("documents", args=[self.app.pk])).content.decode()
-        self.assertEqual(body.count(">Sources</h2>"), 1)
+        self.assertEqual(body.count(">Documents</h2>"), 1)
 
     def test_the_tabs_carry_no_count(self):
         """The Sources tab used to wear a badge with the number of sources. The

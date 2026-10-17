@@ -103,6 +103,10 @@ def plans(request, pk):
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
             "tickets": ticket_choices(app, viewer=request.user),
+            # Tickets → "Plan a change" opens here with its ticket chosen. Only
+            # a choice already in the list can be selected, so the parameter
+            # cannot offer a ticket the list would not.
+            "selected_ticket": request.GET.get("ticket", ""),
             "connectors": connectors,
             # The queue an analysis runs against defaults to the connector that
             # imported most recently - the one whose tickets are on screen -

@@ -7,7 +7,7 @@
 <p class="muted">Pick an imported Jira or ServiceNow ticket. The pipeline triages it, compares it against <strong>published graph version {{ published_graph }}</strong> and the non-functional rubric, then proposes each fix with the evidence behind it. Nothing is changed until you review it.</p>
 <form method="post" class="token-form">{% csrf_token %}<input type="hidden" name="action" value="analyse">
 {% if connectors %}<label for="run-connector">Queue</label><select id="run-connector" name="connector">{% if connectors|length > 1 %}<option value="">Any connector</option>{% endif %}{% for connector in connectors %}<option value="{{ connector.pk }}"{% if connector.pk == default_connector.pk %} selected{% endif %}>{{ connector.name }} · {{ connector.get_kind_display }}</option>{% endfor %}</select>{% endif %}
-<label for="run-ticket">Ticket</label><select id="run-ticket" name="ticket" required>{% for ticket in tickets %}<option value="{{ ticket.pk }}">{{ ticket.title }}</option>{% endfor %}</select>
+<label for="run-ticket">Ticket</label><select id="run-ticket" name="ticket" required>{% for ticket in tickets %}<option value="{{ ticket.pk }}"{% if selected_ticket == ticket.pk|stringformat:"s" %} selected{% endif %}>{{ ticket.title }}</option>{% endfor %}</select>
 <button class="button" type="submit">{% icon "code" %}Analyse</button>
 </form></details>
 {% endif %}

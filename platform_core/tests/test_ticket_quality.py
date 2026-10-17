@@ -97,6 +97,10 @@ class SourcesTests(TestCase):
         )
 
     def sources(self):
+        """Tickets have their own tab; a record no connector claims stays on Documents."""
+        return self.client.get(reverse("tickets", args=[self.app.pk]))
+
+    def documents(self):
         return self.client.get(reverse("documents", args=[self.app.pk]))
 
     def test_a_jira_ticket_says_it_came_from_jira_and_shows_its_score(self):
@@ -106,9 +110,8 @@ class SourcesTests(TestCase):
         self.assertContains(response, "Imported from Jira")
         self.assertNotContains(response, "Imported from Jira ·")
         self.assertNotContains(response, "Imported record")
-        self.assertContains(response, "<th>Quality<small", html=False)
-        self.assertContains(response, '<span class="check-name">Ticket</span>'
-                                      '<span class="check-verdict">ready</span>'
+        self.assertContains(response, "<th>Readiness</th>", html=False)
+        self.assertContains(response, '<span class="check-verdict">ready</span>'
                                       '<span class="check-score">100/100</span>', html=False)
         self.assertContains(
             response,
@@ -134,13 +137,13 @@ class SourcesTests(TestCase):
         response = self.sources()
         self.assertContains(response, "Imported from GitHub")
         # No scored ticket on the page, so no column of dashes either.
-        self.assertNotContains(response, "<th>Quality<", html=False)
+        self.assertNotContains(response, "<th>Readiness<", html=False)
 
     def test_a_record_no_connector_claims_stays_an_imported_record(self):
         """A removed connector, or another application's, names nothing."""
         self.connector(app=self.other)
         self.entry("https://team.atlassian.net/browse/KAN-4")
-        response = self.sources()
+        response = self.documents()
         self.assertContains(response, "Imported record")
         self.assertNotContains(response, "Imported from Jira")
         self.assertNotContains(response, "check-line")
@@ -168,7 +171,8 @@ class SourcesTests(TestCase):
         self.assertNotContains(response, "Key: KAN-4")
         self.assertContains(
             response,
-            '<a href="https://team.atlassian.net/browse/KAN-4" rel="noreferrer noopener">'
+            '<a href="https://team.atlassian.net/browse/KAN-4" target="_blank" '
+            'rel="noreferrer noopener">'
             "KAN-4</a>",
         )
 

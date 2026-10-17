@@ -314,6 +314,7 @@ urlpatterns = [
     path("applications/<uuid:pk>/", views.application_home, name="application"),
     path("applications/<uuid:pk>/documents/", documents.documents, name="documents"),
     path("applications/<uuid:pk>/documents/add/", documents.source_add, name="source-add"),
+    path("applications/<uuid:pk>/tickets/", documents.tickets, name="tickets"),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/",
         documents.document_detail,

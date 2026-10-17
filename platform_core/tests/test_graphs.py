@@ -231,7 +231,7 @@ class GraphTests(TestCase):
         response = self.client.get(reverse("graph", args=[self.app.pk]))
         self.assertNotContains(response, ">Graph &amp; quality</a>")
         self.assertContains(response, 'aria-label="Knowledge views"')
-        for title in ["Graph", "Sources", "Quality", "Versions"]:
+        for title in ["Graph", "Documents", "Quality", "Versions"]:
             self.assertContains(response, f">{title}</a>")
 
 

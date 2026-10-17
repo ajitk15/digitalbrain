@@ -156,11 +156,27 @@ def graph_usage(app, entries):
 
 
 def library_context(app, request):
+    from .ticket_library import ticket_filter
+
     enabled = feature_enabled("knowledge", app)
     documents = Document.objects.filter(application=app).exclude(status="deleted")
     entries = KnowledgeEntry.objects.filter(application=app, active=True)
     standalone = entries.filter(document__isnull=True)
+    # Tickets are listed on their own tab (`ticket_library`); a record whose
+    # connector is gone is claimed by none and stays here as "Imported record".
+    tickets = ticket_filter(app)
+    if tickets is not None:
+        standalone = standalone.exclude(tickets)
     search = request.GET.get("q", "").strip()[:200]
+    # A search here still says when tickets match, so nothing that used to be
+    # found on this page disappears without a word.
+    ticket_matches = (
+        entries.filter(document__isnull=True).filter(tickets).filter(
+            Q(title__icontains=search) | Q(content__icontains=search)
+        ).count()
+        if search and enabled and tickets is not None
+        else 0
+    )
     count = documents.count() + (standalone.count() if enabled else 0)
     if search:
         condition = Q(name__icontains=search) | Q(source_url__icontains=search)
@@ -216,15 +232,6 @@ def library_context(app, request):
         for entry in page_entries
         if not entry.document_id
     }
-    # Content is deferred for the page, so the tickets being scored have theirs
-    # read in one query rather than one per row.
-    scored = [
-        pk for pk, origin in origins_of.items()
-        if origin["kind"] and origin["kind"].key in SCORED_KINDS
-    ]
-    contents = dict(
-        KnowledgeEntry.objects.filter(pk__in=scored).values_list("pk", "content")
-    ) if scored else {}
     # Documents get the source check, read from what was stored when they were
     # converted rather than from their deferred text.
     checks = for_entries([entry for entry in page_entries if entry.document_id])
@@ -257,11 +264,6 @@ def library_context(app, request):
             "origin": doc.get_origin_display() if doc else (
                 origin["label"] if origin else "Knowledge record"
             ),
-            "quality": (
-                ticket_quality(entry, origin, contents[entry.pk])
-                if origin and entry.pk in contents
-                else None
-            ),
             "check": checks.get(entry.pk) if entry else None,
             "file_type": file_type(doc.name) if doc else None,
             "personal": personal(entry),
@@ -277,9 +279,10 @@ def library_context(app, request):
         entry = by_document.get(pk) if doc else by_id.get(pk)
         rows.append(build_row(doc, entry, created_at))
     page.object_list = rows
-    # Only a page that holds a scored ticket or a checked document gets the
-    # column, so a page of unscored records is not given a column of dashes.
-    quality_column = any(row["quality"] or row["check"] for row in rows)
+    # Only a page that holds a checked document gets the column, so a page of
+    # imported records is not given a column of dashes. Tickets are scored on
+    # their own tab.
+    quality_column = any(row["check"] for row in rows)
 
     origins = list(
         KnowledgeSource.objects.filter(application=app)
@@ -337,6 +340,7 @@ def library_context(app, request):
             ]
     return {
         "page": page, "query": search, "source_count": count,
+        "ticket_matches": ticket_matches,
         # The grouped view answers "what came from where"; the table answers
         # "find me this file". Only one of them is the right shape at a time.
         "grouped": not search,
