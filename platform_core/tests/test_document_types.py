@@ -140,8 +140,8 @@ class BusinessRequirementsTests(SimpleTestCase):
     def test_missing_sections_are_named(self):
         found = self.check(THIN_BRD, "type-required")
         self.assertEqual((found.earned, found.state), (15, "partial"))
-        self.assertIn("no scope", found.finding)
-        self.assertIn("thin: purpose or context (line 3", found.finding)
+        self.assertIn("no “Scope” section", found.finding)
+        self.assertIn("thin: “Purpose or context” (line 3", found.finding)
         self.assertIn("“Scope” section", found.improve)
 
     def test_vague_requirements_are_quoted_with_their_line(self):
@@ -277,8 +277,9 @@ class StoredTests(SimpleTestCase):
         shown = source_quality.assess(BRD, title="upload.docx")
         self.assertEqual(shown["type"]["key"], "business_requirements")
         self.assertEqual(shown["type"]["source"], "rules")
-        self.assertEqual(shown["content"]["title"],
-                         "Content check · Business requirements document")
+        self.assertEqual(shown["content"]["title"], "Content check")
+        self.assertIn("Checked as business requirements document",
+                      shown["content"]["question"])
         # The source check is unchanged by the type: the same six checks.
         self.assertEqual([c.key for c in shown["checks"]],
                          ["readable", "tables", "structure", "identity", "finished", "limits"])
@@ -287,7 +288,7 @@ class StoredTests(SimpleTestCase):
         shown = source_quality.assess(BRD, document_type="test_plan")
         self.assertEqual((shown["type"]["key"], shown["type"]["source"]), ("test_plan", "person"))
         self.assertEqual(shown["type"]["detected"]["key"], "business_requirements")
-        self.assertEqual(shown["content"]["title"], "Content check · Test plan or strategy")
+        self.assertIn("Checked as test plan or strategy", shown["content"]["question"])
 
     def test_other_has_no_content_score(self):
         shown = source_quality.assess(MENU)
@@ -320,7 +321,8 @@ class DocumentTypeScreenTests(TestCase):
         self.assertContains(response, 'id="document-type"')
         self.assertContains(response, "Business requirements document")
         self.assertContains(response, 'id="content-check"')
-        self.assertContains(response, "Content check · Business requirements document")
+        self.assertContains(response, "Content check")
+        self.assertContains(response, "Checked as business requirements document")
         self.assertContains(response, 'name="document_type"')
 
     def test_the_sources_table_shows_the_type(self):

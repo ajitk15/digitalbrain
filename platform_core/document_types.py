@@ -426,11 +426,11 @@ def plural(count, word, many=None):
     return f"{count} {word if count == 1 else many or word + 's'}"
 
 
-def listed(items):
+def listed(items, last=" and "):
     items = list(items)
     if len(items) <= 1:
         return "".join(items)
-    return ", ".join(items[:-1]) + " and " + items[-1]
+    return ", ".join(items[:-1]) + last + items[-1]
 
 
 def state_for(earned, points):
@@ -451,20 +451,25 @@ def sections_check(parsed, kind, required, points):
     absent = [s for s in wanted if s.key not in found]
     credit = len(present) + 0.5 * len(thin)
     earned = round(points * credit / len(wanted))
+    # Section names are quoted as they are written: "no applicable obligations and
+    # not applicable" read as a sentence rather than as two missing sections.
     parts = []
     if present:
-        parts.append("Has " + listed(f"{s.label.lower()} (line {found[s.key].line})"
+        parts.append("Has " + listed(f"“{s.label}” (line {found[s.key].line})"
                                      for s in present))
     if thin:
         parts.append(("thin: " if present else "Thin: ")
-                     + listed(f"{s.label.lower()} (line {found[s.key].line}, "
+                     + listed(f"“{s.label}” (line {found[s.key].line}, "
                               f"{plural(found[s.key].words, 'word')})" for s in thin))
     if absent:
-        parts.append(("no " if parts else "No ") + listed(s.label.lower() for s in absent))
+        parts.append(("no " if parts else "No ")
+                     + listed((f"“{s.label}”" for s in absent), last=" or ")
+                     + (" section" if len(absent) == 1 else " sections"))
     finding = "; ".join(parts) + "."
     improve = ""
     if absent or thin:
-        improve = ("Add " + listed(f"a “{s.label}” section" for s in absent) if absent else "")
+        improve = ("Add " + listed(f"{'an' if s.label[0] in 'AEIOU' else 'a'} “{s.label}” section"
+                                   for s in absent) if absent else "")
         if thin:
             improve += ("; and fill " if absent else "Fill ") + listed(
                 f"“{s.label}”" for s in thin

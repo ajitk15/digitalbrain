@@ -128,6 +128,11 @@ class SourceCheckPageTests(TestCase):
         self.assertContains(response, "Not referenced by any other source")
         self.assertContains(response, "BR-03")
         self.assertContains(response, "Mentioned, not found")
+        # Each source's two checks, in the words and lines the Sources list uses.
+        self.assertContains(response, '<span class="check-name">Format</span>', count=3)
+        self.assertContains(response, '<span class="check-name">Content</span>', count=3)
+        self.assertContains(response, '<span class="check-verdict">poor</span>')
+        self.assertContains(response, 'class="check-legend">Ready: 80/100 or more')
         self.assertContains(response, "F-01")
         self.assertContains(
             response,

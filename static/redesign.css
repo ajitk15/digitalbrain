@@ -3853,10 +3853,6 @@
    its own column in the Sources table; on the ticket page it is one collapsed
    line above the ticket, so the ticket itself stays near the top. */
 @layer redesign {
-  .quality-score { display: inline-flex; flex-direction: column; line-height: 1.2; }
-  .quality-score:hover { text-decoration: none; }
-  .quality-score strong { font-size: var(--t-15); font-weight: 700; font-variant-numeric: tabular-nums; }
-  .quality-score small { margin: 0; font-size: var(--t-11); color: var(--c-ink-3); }
   .quality-good strong { color: var(--c-ok); }
   .quality-fair strong { color: var(--c-warn); }
   .quality-poor strong { color: var(--c-bad); }
@@ -3871,6 +3867,7 @@
   }
   .ticket-quality[open] > summary::before { transform: rotate(45deg); }
   .ticket-quality-title { font-size: var(--t-13); font-weight: 700; color: var(--c-ink); }
+  .ticket-quality-title small.ticket-quality-question { display: block; margin: 0; font-size: var(--t-12); font-weight: 400; color: var(--c-ink-3); }
   .ticket-quality-hint { margin: 0; color: var(--c-ink-3); font-weight: 500; font-size: var(--t-12); }
   .ticket-quality-body { margin-top: var(--s-3); padding-top: var(--s-3); border-top: 1px solid var(--c-line-soft); }
   .ticket-quality-body > p.muted { font-size: var(--t-11); margin-bottom: var(--s-3); }
@@ -4013,28 +4010,33 @@
   .file-type.file-xlsx, .file-type.file-xls, .file-type.file-csv { color: var(--c-ok); border-color: var(--c-ok-line); background: var(--c-ok-bg); }
   .file-type.file-pptx, .file-type.file-ppt { color: var(--c-warn); border-color: var(--c-warn-line); background: var(--c-warn-bg); }
 
-  .quality-cell { min-width: 22ch; }
+  .quality-cell { min-width: 24ch; }
   /* A path such as 06-operate/operations-runbook.txt broke at every hyphen
      once two columns joined the table; the name keeps room for itself. */
   .sources-table td:first-child, .origin-table td:first-child { min-width: 26ch; }
-  .grade-chip {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 5px;
-    padding: 2px 8px;
-    border: 1px solid transparent;
-    border-radius: var(--r-sm);
-    font-size: var(--t-11);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-  .grade-chip:hover { text-decoration: none; filter: brightness(.97); }
-  .grade-chip strong { font-variant-numeric: tabular-nums; }
-  /* Lighter by weight, not opacity: faded text on a tinted chip fails contrast. */
-  .grade-chip-name { font-weight: 400; }
-  .grade-chip + .grade-chip, .grade-chip-why + .grade-chip { margin-top: var(--s-1); }
-  .sources-table small.grade-chip-why { display: block; margin: 2px 0 0; font-size: var(--t-10); color: var(--c-ink-3); line-height: 1.35; max-width: 36ch; }
-  .grade-chip-why strong { font-weight: 600; color: var(--c-ink); }
+  .source-map-table td:first-child { min-width: 20ch; }
+  /* One line per check: mark, what was checked, the verdict in words, the
+     score out of 100 at the end - then, when it is not ready, the one thing to
+     fix. "Readable 81 Needs work" said none of those plainly. */
+  .check-line { display: flex; align-items: center; gap: 6px; font-size: var(--t-12); color: var(--c-ink); white-space: nowrap; line-height: 1.5; }
+  a.check-line:hover { text-decoration: none; }
+  a.check-line:hover .check-name, a.check-line:hover .check-verdict { text-decoration: underline; }
+  .check-line + .check-line, .check-fix + .check-line { margin-top: var(--s-1); }
+  .check-mark { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; }
+  .check-name, .check-verdict { font-weight: 600; }
+  .check-score { margin-left: auto; padding-left: 10px; font-size: var(--t-11); color: var(--c-ink-3); font-variant-numeric: tabular-nums; }
+  .check-line.is-good .check-mark { background: var(--c-ok-bg); color: var(--c-ok); }
+  .check-line.is-good .check-verdict { color: var(--c-ok); }
+  .check-line.is-fair .check-mark { background: var(--c-warn-bg); color: var(--c-warn); }
+  .check-line.is-fair .check-verdict { color: var(--c-warn); }
+  .check-line.is-poor .check-mark { background: var(--c-bad-bg); color: var(--c-bad); }
+  .check-line.is-poor .check-verdict { color: var(--c-bad); }
+  .check-line.is-none { color: var(--c-ink-3); }
+  .check-line.is-none .check-mark { background: var(--c-subtle); color: var(--c-ink-3); }
+  .check-line.is-none .check-name, .check-line.is-none .check-verdict { font-weight: 400; }
+  small.check-fix { display: block; margin: 1px 0 0 22px; max-width: 38ch; font-size: var(--t-11); line-height: 1.4; color: var(--c-ink-2); white-space: normal; }
+  th small.th-note { display: block; margin-top: 2px; font-size: var(--t-10); font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--c-ink-3); }
+  .check-legend { margin: var(--s-2) 0 0; font-size: var(--t-11); color: var(--c-ink-3); }
 
   .data-tags { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
   /* The category is a solid badge that never breaks; what was found wraps

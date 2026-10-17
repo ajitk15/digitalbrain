@@ -491,3 +491,12 @@ def source_label(url):
     if not parts:
         return host
     return f"{host}/{parts[-1]}" if len(parts[-1]) <= 40 else host
+
+
+@register.simple_tag
+def quality_rule():
+    """How a score becomes Ready, Needs work or Poor, in the words the checks use,
+    so a list of verdicts never stands without the rule that produced them."""
+    from platform_core.source_quality import VERDICT_RULE
+
+    return VERDICT_RULE

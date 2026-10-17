@@ -1246,6 +1246,9 @@ class SourceCheckTests(BrowserTestCase):
         self.assertEqual(dialog.locator(".bench-bar").count(), 3)
         self.assertEqual(dialog.locator(".source-map-table tbody tr").count(), 3)
         dialog.get_by_text("Not referenced by any other source").wait_for()
+        # Format and Content, each a verdict in words and a score out of 100.
+        self.assertEqual(dialog.locator(".source-map-table .check-line").count(), 6)
+        self.assertIn("/100", dialog.locator(".source-map-table .check-score").first.inner_text())
         self.assertSamePage()
         self.assertEqual(self.page.evaluate(SMALL_TEXT, MIN_TEXT_PX), [])
         self.assertEqual(self.page.evaluate(CONTRAST), [])

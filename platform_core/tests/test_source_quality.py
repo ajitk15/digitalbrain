@@ -160,9 +160,10 @@ class AssessTests(SimpleTestCase):
         shown = source_quality.scored(checks)
         self.assertEqual(shown["verdict"], "Needs work")
         self.assertEqual(shown["decisive"].label, "Structure")
-        self.assertIn("although it scored 85", shown["why"])
-        self.assertIn("failed outright - Structure: 19 lines and no heading.", shown["why"])
-        self.assertIn("Ready needs 80", shown["rule"])
+        self.assertEqual(shown["fix"], "Add headings")
+        self.assertTrue(shown["why"].startswith("Fix first: Add headings. It scored 85/100"))
+        self.assertIn("and “Structure” failed.", shown["why"])
+        self.assertIn("Ready: 80/100 or more", shown["rule"])
 
     def test_a_low_score_names_where_most_points_were_lost(self):
         checks = [source_quality.Check("a", "Readable text", 50, 40, "partial", "Thin.", "", ""),
@@ -171,14 +172,17 @@ class AssessTests(SimpleTestCase):
         shown = source_quality.scored(checks)
         self.assertEqual(shown["verdict"], "Needs work")
         self.assertEqual(shown["decisive"].label, "Structure")
-        self.assertIn("60 out of 100, and Ready needs 80", shown["why"])
-        self.assertIn("Structure (-30): Few headings.", shown["why"])
+        self.assertIn("Ready needs 80/100; it scored 60", shown["why"])
+        self.assertIn("lost the most on “Structure” (-30).", shown["why"])
+        # No advice to give, so the fix is what was found.
+        self.assertEqual(shown["fix"], "Few headings")
 
     def test_ready_says_so_and_names_no_check(self):
         checks = [source_quality.Check("a", "A", 100, 100, "good", "", "", "")]
         shown = source_quality.scored(checks)
         self.assertIsNone(shown["decisive"])
-        self.assertEqual(shown["why"], "Ready: 100 out of 100, and no check failed outright.")
+        self.assertEqual(shown["why"], "Ready: 100/100 and no check failed.")
+        self.assertEqual(shown["fix"], "")
 
     def test_the_check_reads_the_rows_the_graph_reads(self):
         """One walk for both, so a table finding cannot disagree with the graph."""
@@ -281,25 +285,29 @@ class SourceCheckScreenTests(TestCase):
         self.assertContains(response, f'href="{detail}#source-check"')
         # Every checked source says its verdict, by name, in the Quality
         # column; the one that is not Ready says which check decided it.
-        self.assertContains(response, "<th>Quality</th>", html=False)
-        self.assertContains(response, 'Readable</span><strong>', count=2)
-        self.assertContains(response, "</strong>Ready</a>")
-        self.assertContains(response, "</strong>Poor</a>")
-        self.assertContains(response, 'class="grade-chip-why">')
-        self.assertContains(response, "<strong>Tables the graph can read</strong>")
+        self.assertContains(response, '<th>Quality<small class="th-note">Format: can the graph')
+        self.assertContains(response, '<span class="check-name">Format</span>', count=2)
+        self.assertContains(response, '<span class="check-verdict">ready</span>')
+        self.assertContains(response, '<span class="check-verdict">poor</span>')
+        self.assertContains(response, '<small class="check-fix">Fix: In Word, mark each table')
+        # The score has its scale, and the rule that turns it into a verdict is said.
+        self.assertContains(response, '/100</span>')
+        self.assertContains(response, 'class="check-legend">Ready: 80/100 or more')
 
     def test_the_document_page_explains_the_check(self):
         document, _ = self.document(FLAWED)
         response = self.client.get(reverse("document-detail", args=[self.app.pk, document.pk]))
         self.assertContains(response, '<details class="card ticket-quality" id="source-check">')
-        self.assertContains(response, "Source check")
-        self.assertContains(response, "biggest gain: tables the graph can read +25")
+        self.assertContains(response, "Format check")
+        self.assertContains(response, "Can the graph read the text, tables and headings?")
+        self.assertContains(response, "Poor · ")
+        self.assertContains(response, "things to fix")
         self.assertContains(response, "nothing stops a graph being built")
 
     def test_the_document_page_says_why_on_the_cards_own_line(self):
         document, _ = self.document(FLAWED)
         response = self.client.get(reverse("document-detail", args=[self.app.pk, document.pk]))
-        self.assertContains(response, '<small class="ticket-quality-why">Poor:')
+        self.assertContains(response, '<small class="ticket-quality-why">Fix first: In Word,')
         self.assertContains(response, "How the verdict is decided.")
         self.assertContains(response, "Here it was decided by <strong>Tables the graph can read")
 

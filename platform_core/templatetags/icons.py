@@ -67,6 +67,7 @@ ICONS = {
     # the standalone stroked versions that sit beside a label.
     "check": '<path d="m5 12.5 4.5 4.5L19 7"/>',
     "cross": '<path d="M6 6 18 18"/><path d="M18 6 6 18"/>',
+    "minus": '<path d="M6 12h12"/>',
     "success": '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
     "error": '<circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5v.5"/>',
     "warning": '<path d="M10.3 3.9 2.5 17.2A2 2 0 0 0 4.2 20h15.6a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 16.5v.5"/>',

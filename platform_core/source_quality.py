@@ -31,7 +31,7 @@ from .graphs import MAX_RECORDS_PER_SOURCE, walk
 from .models import KnowledgeEntry
 from .ticket_quality import PLACEHOLDER, Check, quote
 
-QUALITY_VERSION = 4
+QUALITY_VERSION = 5
 
 #: Text this short was most likely not read: a scanned page, an image, a
 #: template with nothing filled in.
@@ -154,7 +154,7 @@ def readable_check(content, report):
                "PDF of one" + (", or turn on OCR so scanned pages are read." if blank else "."))
     if low:
         improve = ("Scan the pages again at 300 dpi or better, or upload the original "
-                   "document: text read with low confidence may be cited wrongly.")
+                   "document, because text read with low confidence may be cited wrongly.")
     if partial:
         return Check("readable", label, 20, 10, "partial", finding, improve, rule)
     return Check("readable", label, 20, 0, "missing", finding, improve, rule)
@@ -216,8 +216,10 @@ def tables_check(content):
         improve.append("In Word, mark each table's first row as a header row (Table Design → "
                        "Header Row) and upload again")
     if header_only:
-        improve.append("for a PDF, upload the Word or Excel original: tables broken across "
-                       "pages cannot be put back together reliably")
+        improve.append(f"{plural(len(header_only), 'table')} lost "
+                       f"{'its' if len(header_only) == 1 else 'their'} rows, usually split "
+                       "across pages: for a PDF, upload the Word or Excel original, because "
+                       "tables broken across pages cannot be put back together reliably")
     if generic:
         improve.append("give every spreadsheet column a name in its first row")
     if repeated or share > EMPTY_CELLS:
@@ -327,8 +329,14 @@ TONES = {"Ready": "good", "Needs work": "fair", "Poor": "poor"}
 
 #: The verdict rule, said once in words, so a page never shows a verdict
 #: without the rule that produced it.
-VERDICT_RULE = ("Ready needs 80 or more out of 100 and no check failed outright. "
-                "55 to 79 is Needs work, and under 55 is Poor.")
+VERDICT_RULE = ("Ready: 80/100 or more and no check failed outright. Needs work: 55 to "
+                "79, or a check failed. Poor: under 55.")
+
+#: Where an improvement stops saying what to do and starts saying why: the fix
+#: shown on one line of a table ends there.
+REASON = re.compile(r", so |, because |; | - |: an? ")
+#: Longer than this, the one-line fix is cut at a word.
+BRIEF = 120
 
 
 def decisive(score, checks):
@@ -348,20 +356,37 @@ def decisive(score, checks):
     return max(gaps, key=lambda check: check.missing_points) if gaps else None
 
 
+def fix(check):
+    """The first thing to do about a check, short enough for one line of a table:
+    its advice up to where the reason starts, without asides in brackets. A check
+    with no advice gives what it found instead. The full advice and finding stay
+    on the check, and the source page shows both.
+    """
+    if check is None:
+        return ""
+    text = re.sub(r" \([^()]*\)", "", check.improve or check.finding)
+    text = REASON.split(text, maxsplit=1)[0].strip().rstrip(".")
+    if len(text) > BRIEF:
+        text = text[:BRIEF].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return sentence(text)
+
+
 def why(score, checks):
-    """One sentence on why the verdict is what it is, in plain words."""
+    """One sentence on why the verdict is what it is, in plain words: what to fix
+    first, then how the score and the verdict relate."""
     said = verdict(score, checks)
     if said == "Ready":
-        return f"Ready: {score} out of 100, and no check failed outright."
+        return f"Ready: {score}/100 and no check failed."
     check = decisive(score, checks)
     if check is None:
-        return f"{said}: {score} out of 100. {VERDICT_RULE}"
+        return f"{said}: {score}/100. {VERDICT_RULE}"
+    first = f"Fix first: {fix(check)}."
     if score >= 80:
-        return (f"{said} although it scored {score}, because one check failed outright - "
-                f"{check.label}: {check.finding}")
-    floor = "Ready needs 80" if said == "Needs work" else "under 55 is Poor"
-    return (f"{said}: {score} out of 100, and {floor}. The most points were lost on "
-            f"{check.label} (-{check.missing_points}): {check.finding}")
+        return (f"{first} It scored {score}/100, but Ready also needs no check failed "
+                f"outright, and “{check.label}” failed.")
+    floor = "Ready needs 80/100" if said == "Needs work" else "Under 55 is Poor"
+    return (f"{first} {floor}; it scored {score}, and lost the most on “{check.label}” "
+            f"(-{check.missing_points}).")
 
 
 def ai_named(detected, ai_type, content):
@@ -457,6 +482,7 @@ def scored(checks):
         "why": why(score, checks),
         "rule": VERDICT_RULE,
         "decisive": decisive(score, checks),
+        "fix": fix(decisive(score, checks)),
         "checks": checks,
         "strengths": [check for check in checks if check.state == "good"],
         "gaps": sorted(
@@ -477,7 +503,10 @@ def result(stored):
     shown["type"] = kind
     shown["content"] = scored(type_checks) if type_checks else None
     if shown["content"]:
-        shown["content"]["title"] = f"Content check · {kind['label']}"
+        shown["content"]["title"] = "Content check"
+        shown["content"]["question"] = (
+            f"Checked as {kind['label'].lower()}: does it have the parts this type needs?"
+        )
     if kind:
         runner = document_types.BY_KEY.get(kind.get("runner_up") or "")
         shown["type"] = {**kind, "runner_up_label": runner.label if runner else ""}
