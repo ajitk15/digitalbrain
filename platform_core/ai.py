@@ -869,7 +869,6 @@ def task_rows(app, groups, configs):
         for purpose, label in tasks:
             config = configs.get(purpose)
             configured = bool(config and config.model)
-            spends, unattended = SPENDS[purpose]
             if configured and config.enabled and not ready.get(config.provider):
                 provider = "OpenAI" if config.provider == "openai" else "Claude"
                 blocked.setdefault(provider, []).append(label)
@@ -880,8 +879,7 @@ def task_rows(app, groups, configs):
                     "configured": configured,
                     "enabled": bool(configured and config.enabled),
                     "model": model_label(config.model) if configured else "",
-                    "spends": spends,
-                    "unattended": unattended,
+                    "spends": SPENDS[purpose],
                     "limit": f"{reply_cap(app.pk, purpose, config):,}" if purpose in limits else "",
                     "spent": spent.get(purpose),
                 }
@@ -1035,7 +1033,7 @@ def ai_task(request, pk, purpose):
             "label": labels[purpose],
             "form": form,
             "note": PURPOSE_NOTES.get(purpose, ""),
-            "spends": SPENDS[purpose][0],
+            "spends": SPENDS[purpose],
             "advice": GRAPH_GENERATION_ADVICE if purpose == "graph_generation" else "",
         },
     )

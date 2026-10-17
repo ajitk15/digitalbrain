@@ -32,7 +32,7 @@
 <div class="ai-task ai-task-head" aria-hidden="true"><span>Task</span><span>Model</span><span>This month</span><span>On</span></div>
 {% for group, rows in groups %}<h2 class="panel-label ai-group">{{ group }}</h2>
 <section class="list-card ai-tasks" aria-label="{{ group }}">{% for row in rows %}<div class="ai-task{% if not row.enabled %} is-off{% endif %}" id="task-{{ row.purpose }}">
-<div class="ai-task-name"><strong>{{ row.label }}</strong>{% if row.unattended %} <span class="pill status-queued">Spends unasked</span>{% endif %}<small>{{ row.spends }}{% if row.limit %} · replies up to {{ row.limit }} tokens{% endif %}</small></div>
+<div class="ai-task-name"><strong>{{ row.label }}</strong><small>{{ row.spends }}{% if row.limit %} · replies up to {{ row.limit }} tokens{% endif %}</small></div>
 <a class="ai-task-model" href="{% url 'ai-task' application.pk row.purpose %}" data-modal>{% if row.model %}{{ row.model }}{% else %}Choose a model{% endif %}<span class="sr-only"> for {{ row.label }}</span>{% icon "settings" 13 %}</a>
 <span class="ai-task-spent">{% if row.spent %}${{ row.spent|floatformat:2 }}{% else %}&mdash;{% endif %}</span>
 <form method="post" class="ai-task-switch">{% csrf_token %}<input type="hidden" name="purpose" value="{{ row.purpose }}"><button class="switch" name="enabled" value="{{ row.enabled|yesno:'0,1' }}" role="switch" aria-checked="{{ row.enabled|yesno:'true,false' }}" aria-label="{{ row.label }}"><span>{{ row.enabled|yesno:"On,Off" }}</span></button></form>

@@ -137,22 +137,20 @@ PRICING_NOTE = (
 )
 
 
-#: When each task spends, in the words an owner decides on/off by. `True` marks a
-#: call nobody presses a button for - it runs by itself, or adds a second paid
-#: call to something else - which AI settings tags so it is not switched on idly.
+#: When each task spends, in the words an owner decides on/off by.
 SPENDS = {
-    "chat": ("Each question asked in Chat", False),
-    "graph_retrieval": ("Each question asked in Graph answer mode", False),
-    "conversation_title": ("Once per new conversation", False),
-    "reranking": ("A second call on every question", True),
-    "embeddings": ("Every question, and each requested AI graph run", True),
-    "graph_generation": ("Only when someone requests an AI graph run", False),
-    "document_typing": ("Each new document the rules cannot type", True),
-    "document_review": ("Only when an owner asks on a document", False),
-    "plan_drafting": ("Each Code Factory run", False),
-    "code_review": ("Only when someone asks on a review", False),
-    "code_docs": ("Only when someone asks on the Documentation tab", False),
-    "serviceops_triage": ("Each incident triage", False),
+    "chat": "Each question asked in Chat",
+    "graph_retrieval": "Each question asked in Graph answer mode",
+    "conversation_title": "Once per new conversation",
+    "reranking": "A second call on every question",
+    "embeddings": "Every question, and each requested AI graph run",
+    "graph_generation": "Only when someone requests an AI graph run",
+    "document_typing": "Each new document the rules cannot type",
+    "document_review": "Only when an owner asks on a document",
+    "plan_drafting": "Each Code Factory run",
+    "code_review": "Only when someone asks on a review",
+    "code_docs": "Only when someone asks on the Documentation tab",
+    "serviceops_triage": "Each incident triage",
 }
 
 #: How AI settings groups the tasks, and the feature each one needs. A task whose
