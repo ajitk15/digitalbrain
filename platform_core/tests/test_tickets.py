@@ -148,6 +148,15 @@ class TicketsTests(TestCase):
             response, f'href="{JIRA}/browse/KAN-4" target="_blank" rel="noreferrer noopener"'
         )
         self.assertContains(response, "Jira readiness: <strong>1</strong> ready")
+        # Where it came from is a badge in the system's own colour, and the
+        # action reads as a button rather than a link among the text.
+        # Short on the badge, like the connector chips; the full words on hover.
+        self.assertContains(
+            response, '<span class="ticket-source ticket-source-jira" title="Imported from Jira">',
+            html=False,
+        )
+        self.assertContains(response, "</svg>Jira</span>", html=False)
+        self.assertContains(response, '<a class="ticket-action" href=', html=False)
         self.assertContains(
             response,
             reverse("knowledge-detail", args=[self.app.pk, entry.pk]) + "#ticket-quality-detail",
@@ -192,6 +201,16 @@ class TicketsTests(TestCase):
 
         nothing = self.tickets("?status=Nonsense")
         self.assertContains(nothing, "No ticket matches")
+
+    def test_the_badge_does_not_name_the_system_twice(self):
+        self.connector("servicenow", "ServiceNow incidents")
+        self.entry(snow("incident", "a1"), "Type: Incident\nNumber: INC0010001\nState: New\n\n"
+                   "The export is down.", title="INC0010001 - Export down")
+        response = self.tickets()
+        self.assertContains(response, "</svg>ServiceNow · Incidents</span>", html=False)
+        self.assertContains(response, ">ServiceNow · Incidents <span", html=False)
+        self.assertNotContains(response, ">ServiceNow · ServiceNow", html=False)
+        self.assertContains(response, 'title="Imported from ServiceNow · ServiceNow incidents"')
 
     def test_the_header_is_read_from_the_record_and_not_its_body(self):
         content = "Key: KAN-9\nStatus: Open\n\nNotes follow.\nStatus: Closed"

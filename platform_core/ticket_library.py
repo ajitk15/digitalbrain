@@ -99,6 +99,19 @@ def tab_count(app):
     return app.__dict__["_ticket_count"]
 
 
+def short_label(kind, connector):
+    """"ServiceNow · Incidents": the system, then what the connector adds to it.
+
+    A connector named after its system ("ServiceNow incidents") would otherwise
+    say the system twice on a badge with little room for once.
+    """
+    name = (connector.name if connector else "").strip()
+    if name.casefold().startswith(kind.label.casefold()):
+        name = name[len(kind.label):].strip(" -·:")
+        name = name[:1].upper() + name[1:]
+    return f"{kind.label} · {name}" if name else kind.label
+
+
 def when(value):
     """A header date as a datetime, or None: Jira writes 2026-10-03T22:28:21.435+0530,
     ServiceNow 2026-10-01 12:00:00, GitHub 2026-10-01T12:00:00Z."""
@@ -118,8 +131,10 @@ def describe(entry, fields, connectors):
         "updated": when(fields.get("Updated") or fields.get("Opened")) or entry.created_at,
         "kind": kind,
         "connectors": matched,
-        # The same words the record page uses for where it came from.
+        # The same words the record page uses for where it came from, and
+        # the badge's shorter form of them.
         "origin": imported_label(kind, matched[0] if len(matched) == 1 else None),
+        "source": short_label(kind, matched[0] if len(matched) == 1 else None) if kind else "",
         # The same test the record page applies before linking out.
         "link": entry.source if entry.source.startswith(("https://", "http://")) else "",
     }
@@ -140,8 +155,7 @@ def library(app, grant, request):
         scored = row["kind"] is not None and row["kind"].key in SCORED_KINDS
         row["quality"] = assess(entry.title, entry.content) if scored else None
     chips = [
-        {"connector": connector, "label": imported_label(KINDS[connector.kind], connector)
-         .removeprefix("Imported from "),
+        {"connector": connector, "label": short_label(KINDS[connector.kind], connector),
          "count": sum(connector in row["connectors"] for row in rows)}
         for connector, _ in connectors
     ]

@@ -4049,10 +4049,18 @@
   .ticket-filters label { display: block; margin-bottom: 2px; font-size: var(--t-12); color: var(--c-ink-2); }
   .ticket-filters .ticket-search { flex: 1; min-width: 200px; }
   .ticket-filters .ticket-search input { width: 100%; }
-  .tickets-table td.ticket-key { white-space: nowrap; min-width: 0; }
+  /* The key is a few characters: the column fits it, and the title takes the
+     room the Documents table gives its first column (26%, at least 26ch). */
+  .tickets-table td.ticket-key { width: 1%; min-width: 0; white-space: nowrap; }
   .ticket-external { color: var(--c-ink-3); }
-  .ticket-actions { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-12); white-space: nowrap; }
-  .ticket-actions svg { vertical-align: -1px; margin-right: 4px; }
+  /* Where a ticket came from, in the system's own colour and mark. */
+  .ticket-source { display: flex; width: fit-content; align-items: center; gap: 5px; margin-top: var(--s-1); padding: 2px 8px; border: 1px solid; border-radius: 999px; font-size: var(--t-11); font-weight: 600; line-height: 1.4; white-space: nowrap; }
+  .ticket-source-jira { background: #e9f2ff; border-color: #b3d1ff; color: #0b4fb3; }
+  .ticket-source-servicenow { background: #e6f4ee; border-color: #a9d8c2; color: #18573f; }
+  .ticket-source-github { background: var(--c-subtle); border-color: var(--c-line-strong); color: var(--c-ink); }
+  .ticket-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); }
+  .ticket-action { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--c-brand-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-brand-strong); font-size: var(--t-12); font-weight: 600; white-space: nowrap; }
+  .ticket-action:hover { text-decoration: none; background: var(--c-brand-tint); }
 
   .data-tags { display: flex; flex-wrap: wrap; gap: var(--s-1); margin-top: var(--s-1); }
   /* The category is a solid badge that never breaks; what was found wraps
