@@ -7,6 +7,9 @@ from django.test.runner import DiscoverRunner, ParallelTestSuite, _init_worker
 def hermetic(settings_holder):
     # A test that wants the shared folder sets it with override_settings.
     settings_holder.CONNECTOR_SECRET_DIRECTORY = ""
+    # Tests mount made-up Claude credentials and patch the CLI adapter; one
+    # that means the Messages API turns it on with override_settings.
+    settings_holder.CLAUDE_MESSAGES_API = False
 
 
 def init_worker(*args, **kwargs):

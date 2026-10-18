@@ -30,6 +30,9 @@ TESSERACT_PATH = CONFIG.get("tesseract_path", "")
 # Development only: let the bundled CLI use the operator's own Claude Code login
 # instead of a mounted per-application credential. Never true in production.
 CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not PRODUCTION
+#: One-shot Claude calls with an API key go to the Messages API rather than the
+#: CLI (`platform_core/claude_messages.py`); false sends every call to the CLI.
+CLAUDE_MESSAGES_API = bool(CONFIG.get("claude_messages_api", True))
 #: Let one person both write and approve a change plan. A single-operator
 #: instance cannot otherwise run the pipeline end to end, because whoever starts
 #: a run authors its plan and may not review their own work. Honoured in every

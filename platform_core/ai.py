@@ -512,7 +512,15 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         options.setdefault("max_tokens", reply_cap(app.pk, purpose, config))
     adapter = completion
     if config.provider == "claude":
-        from .claude_agents import completion as adapter
+        from . import claude_agents, claude_messages
+
+        # An API key is one Messages request; an OAuth token, or the
+        # development host login, still needs the CLI.
+        adapter = (
+            claude_messages.completion
+            if claude_messages.uses_messages_api(token)
+            else claude_agents.completion
+        )
     elif config.provider != "openai":
         raise ValidationError("Unsupported AI provider.")
     with gateway.admitted(

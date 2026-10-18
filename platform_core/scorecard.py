@@ -34,6 +34,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from django.test.utils import override_settings
+
 ROOT = Path(__file__).resolve().parent.parent
 DOCS = ROOT / "demo-artifacts" / "docs"
 #: Documents with one planted problem each, for the Source check; some need OCR.
@@ -943,6 +945,8 @@ def cost_control(ws):
     with (
         patch("platform_core.claude_agents.completion") as provider,
         patch("platform_core.secrets.application_secret", return_value="unused"),
+        # "unused" reads as an API key; the provider patched is the CLI's.
+        override_settings(CLAUDE_MESSAGES_API=False),
     ):
         try:
             from .ai import invoke_ai
@@ -1003,6 +1007,8 @@ def gateway_held(ws, owner):
     with (
         patch("platform_core.claude_agents.completion") as provider,
         patch("platform_core.secrets.application_secret", return_value="unused"),
+        # "unused" reads as an API key; the provider patched is the CLI's.
+        override_settings(CLAUDE_MESSAGES_API=False),
         patch.object(gateway, "logger"),
     ):
         hold("1.5")

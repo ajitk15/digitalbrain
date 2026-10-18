@@ -757,8 +757,20 @@ process left expires after `admission_minutes`; the maintenance lane sweeps it, 
 application authorized before the call** (`record_ai_usage(authorized=...)`): it looked
 the grant up again, so a grant revoked while the model answered lost the receipt of a
 call the provider had billed. The answer is still lost. The scorecard's "past a
-reservation or a full gateway" must stay 0. Still to come: a Messages API adapter for
-one-shot Claude calls with an API key, which needs the `anthropic` SDK.
+reservation or a full gateway" must stay 0.
+
+**A one-shot Claude call with an API key is one Messages request** (`claude_messages.py`,
+the `anthropic` SDK), not a CLI subprocess. An OAuth token from `claude setup-token` is
+accepted only by the CLI, and no credential is the development host login, so both still
+go to `claude_agents`; `ai.invoke_ai` chooses by `uses_messages_api`, and
+`claude_messages_api = false` sends every call to the CLI. Same prompt, instructions,
+reply cap, timeout and checks; the receipt is keyed on the provider's message id. The
+SDK reads credentials, a base URL, a profile and extra headers from the environment, so
+the client is given the key and base URL explicitly, takes no proxy from the environment
+and drops `ANTHROPIC_CUSTOM_HEADERS`; `test_claude_messages` plants all four and checks
+the request. No retries. Tests run with it off (`digitalbrain/test_runner.py`) because
+they mount made-up keys and patch the CLI adapter; a test of this path turns it on.
+Agentic runs - chat on Claude, Code Factory's agents - still need the CLI's tools.
 
 **A price belongs to a model; a reply cap to only four tasks** (AI settings, `ai.py`). The
 page is one list - a row per task with its model, this month's spend and a switch that is a
@@ -1138,7 +1150,8 @@ No test makes a real provider call. OpenAI is exercised through the real Agents 
 mocked HTTP transport; Claude's `query` is replaced outright, so the bundled CLI
 subprocess and the environment scrub are never executed in CI. The OpenAI streaming
 runtime has not been run against a live account at all — only its non-streaming sibling
-has, through the mocked transport.
+has, through the mocked transport. The Claude Messages adapter is the real `anthropic` SDK
+over a mocked transport and has not been run against a live API key.
 
 ## Naming
 
