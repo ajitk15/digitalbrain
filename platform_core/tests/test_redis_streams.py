@@ -44,6 +44,11 @@ def real_client():
     return redis.Redis(host=host, port=int(port), decode_responses=True)
 
 
+def frames_of(chunks):
+    """Each frame in what a reader sent: several words read at once leave as one chunk."""
+    return [frame + "\n\n" for chunk in chunks for frame in chunk.split("\n\n") if frame]
+
+
 class RedisCase:
     """Every test here, against whichever client `make_client` returns."""
 
@@ -94,7 +99,7 @@ class RedisCase:
         frames, started, _ = self.attach()
         self.assertEqual(len(started), 1)
         self.produce(started[0], "Thirty ", "days.")
-        read = list(frames)
+        read = frames_of(frames)
         self.assertEqual([frame.split("\n")[1] for frame in read], ["event: delta"] * 2 + [
             "event: done"
         ])
@@ -112,7 +117,7 @@ class RedisCase:
         self.produce(session, "three")
         again, started_again, _ = self.attach(last=last_seen)
         self.assertEqual(started_again, [], "a reconnect must not ask the model again")
-        texts = [frame for frame in again if "event: delta" in frame]
+        texts = [frame for frame in frames_of(again) if "event: delta" in frame]
         self.assertEqual(len(texts), 2)
         self.assertIn('"t":"two "', texts[0])
         self.assertIn('"t":"three"', texts[1])
@@ -121,7 +126,7 @@ class RedisCase:
         _, started, _ = self.attach()
         self.produce(started[0], "a", "b")
         frames, _, _ = self.attach(last="999999999999999999999-0; DROP")
-        self.assertEqual(len([frame for frame in frames if "event: delta" in frame]), 2)
+        self.assertEqual(len([frame for frame in frames_of(frames) if "event: delta" in frame]), 2)
 
     def test_a_second_reader_follows_rather_than_starting_another(self):
         _, started, _ = self.attach()

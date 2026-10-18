@@ -25,13 +25,13 @@ from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
-from digitalbrain.asgi import MAX_BODY, Router, is_stream
-from digitalbrain.configuration import load_config
+from digitalbrain.asgi import MAX_BODY, Router, Streams, is_stream
+from digitalbrain.configuration import load_config, web_server
 from platform_core import broker
 from platform_core.agent_runtime import streaming
 
 from . import test_chat_stream
-from .test_redis_streams import REAL, RedisCase
+from .test_redis_streams import REAL, RedisCase, frames_of
 
 STREAM = f"/applications/{uuid.uuid4()}/chat/messages/{uuid.uuid4()}/stream/"
 
@@ -160,7 +160,7 @@ class AsyncRedisCase(RedisCase):
         last_seen = first.split("\n")[0].removeprefix("id: ")
         frames, again = self.attach_async(last=last_seen)
         self.assertEqual(again, [], "a reconnect must not ask the model again")
-        texts = [frame for frame in run(read_all(frames)) if "event: delta" in frame]
+        texts = [frame for frame in frames_of(run(read_all(frames))) if "event: delta" in frame]
         self.assertEqual(len(texts), 2)
         self.assertIn('"t":"two "', texts[0])
 
@@ -326,11 +326,65 @@ class WebServerSettingTests(SimpleTestCase):
             with patch.dict("os.environ", {"DIGITAL_BRAIN_CONFIG": str(path)}):
                 return load_config()
 
-    def test_waitress_unless_uvicorn_is_named(self):
-        self.assertEqual(self.load("").get("web_server", "waitress"), "waitress")
-        self.assertEqual(self.load('web_server = "uvicorn"\n')["web_server"], "uvicorn")
+    def test_uvicorn_where_redis_is_set_and_waitress_otherwise(self):
+        self.assertEqual(web_server(self.load("")), "waitress")
+        self.assertEqual(web_server(self.load('[redis]\nhost = "redis"\n')), "uvicorn")
+
+    def test_a_named_server_wins_either_way(self):
+        self.assertEqual(web_server(self.load('web_server = "uvicorn"\n')), "uvicorn")
+        self.assertEqual(
+            web_server(self.load('web_server = "waitress"\n[redis]\nhost = "redis"\n')),
+            "waitress",
+        )
         with self.assertRaises(ImproperlyConfigured):
             self.load('web_server = "gunicorn"\n')
+
+
+class StreamLaneTests(SimpleTestCase):
+    """Stream requests' synchronous work shares a fixed set of threads.
+
+    Django's own handler gave each request a thread for as long as its
+    response lasted, so 400 open streams held 400 idle threads.
+    """
+
+    def test_however_many_streams_are_open_they_use_the_lanes_alone(self):
+        from asgiref.sync import sync_to_async
+
+        seen = []
+
+        async def open_many():
+            release = asyncio.Event()
+
+            class Handler:
+                async def handle(self, scope, receive, send):
+                    await sync_to_async(lambda: seen.append(threading.current_thread()))()
+                    await release.wait()
+
+            streams = Streams(Handler(), threads=2)
+            requests = [asyncio.ensure_future(streams({"type": "http"}, None, None))
+                        for _ in range(6)]
+            while len(seen) < 6:
+                await asyncio.sleep(0.01)
+            release.set()
+            await asyncio.gather(*requests)
+
+        asyncio.run(asyncio.wait_for(open_many(), 10))
+        self.assertTrue(all(thread.name.startswith("stream-view") for thread in seen), seen)
+        self.assertEqual(len({thread.ident for thread in seen}), 2)
+
+    def test_the_lanes_are_asgirefs_thread_sensitive_contexts(self):
+        """`Streams` relies on these two; an asgiref that renames them must fail here."""
+        from asgiref.sync import SyncToAsync
+
+        self.assertTrue(hasattr(SyncToAsync, "thread_sensitive_context"))
+        self.assertTrue(hasattr(SyncToAsync, "context_to_thread_executor"))
+
+
+class AsyncPoolTests(SimpleTestCase):
+    def test_every_reader_the_cap_allows_has_a_connection(self):
+        client = broker.connect({"host": "redis"}, asynchronous=True)
+        self.assertEqual(client.connection_pool.max_connections, broker.ASYNC_CONNECTIONS)
+        self.assertGreater(broker.ASYNC_CONNECTIONS, streaming.MAX_ASYNC_READERS)
 
 
 class AsgiStreamViewTests(TestCase):

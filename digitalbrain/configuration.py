@@ -128,7 +128,7 @@ def load_config():
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("claude_messages_api", True)) is not bool:
         raise ImproperlyConfigured("claude_messages_api must be a boolean.")
-    if config.get("web_server", "waitress") not in {"waitress", "uvicorn"}:
+    if web_server(config) not in {"waitress", "uvicorn"}:
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:
         raise ImproperlyConfigured("allow_self_approval must be a boolean.")
@@ -455,6 +455,16 @@ def check_originals(config):
     ca = originals.get("ca_certificate", "")
     if not isinstance(ca, str) or (ca and not Path(ca).is_absolute()):
         raise ImproperlyConfigured("originals.ca_certificate must be an absolute path.")
+
+
+def web_server(config):
+    """What `scripts/serve.py` runs: the one named, else uvicorn where Redis is set.
+
+    Uvicorn's readers hold no thread only when they follow an answer through
+    Redis; without it a process follows `MAX_ACTIVE_STREAMS` answers either way,
+    so waitress, which has served longer, stays the default there.
+    """
+    return config.get("web_server") or ("uvicorn" if config.get("redis") else "waitress")
 
 
 @sensitive_variables()

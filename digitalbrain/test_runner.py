@@ -10,6 +10,9 @@ def hermetic(settings_holder):
     # Tests mount made-up Claude credentials and patch the CLI adapter; one
     # that means the Messages API turns it on with override_settings.
     settings_holder.CLAUDE_MESSAGES_API = False
+    # A developer's `[originals]` bucket must not receive test uploads; a test
+    # of the bucket store names one with override_settings.
+    settings_holder.ORIGINALS = {}
 
 
 def init_worker(*args, **kwargs):

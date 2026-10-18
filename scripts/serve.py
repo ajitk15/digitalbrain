@@ -58,23 +58,13 @@ args = parser.parse_args()
 #: private network. Reachable directly with "*" set, any client can declare its
 #: own scheme and its own address - which forges the IP that lockout counts
 #: failures against, and tells Django a plain request arrived over TLS.
-proxy = {}
-if args.trusted_proxy:
-    proxy = {
-        "trusted_proxy": args.trusted_proxy,
-        "trusted_proxy_count": 1,
-        "trusted_proxy_headers": {"x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"},
-        # Anything the proxy did not set is removed rather than passed through,
-        # so a header a client invented cannot survive one honest hop.
-        "clear_untrusted_proxy_headers": True,
-    }
-from platform_core.agent_runtime.streaming import MAX_ACTIVE_STREAMS  # noqa: E402
+#: `digitalbrain/servers.py` applies it to either server.
+from digitalbrain.servers import (  # noqa: E402
+    uvicorn_application,
+    uvicorn_options,
+    waitress_options,
+)
 from platform_core.document_worker import run_document_worker  # noqa: E402
-
-#: A streaming answer holds its request thread until it finishes, so the pool has
-#: to outnumber the streams that can exist - otherwise a full complement of
-#: answers leaves nothing to serve the Stop button that would end them.
-REQUEST_THREADS = MAX_ACTIVE_STREAMS * 2
 
 #: By default the lanes run in this process, as they always have. With
 #: --no-worker they do not, and `manage.py run_worker` runs them elsewhere. Chat
@@ -88,30 +78,11 @@ from django.conf import settings  # noqa: E402
 if settings.WEB_SERVER == "uvicorn":
     import uvicorn
 
-    from digitalbrain.asgi import MAX_BODY, build
-    from platform_core.agent_runtime.streaming import MAX_ASYNC_READERS
-
-    assert MAX_BODY == 23068672, "keep in step with waitress's max_request_body_size"
     uvicorn.run(
-        # Streams no longer use the pool, so it serves pages alone.
-        build(trusted_proxy=args.trusted_proxy, workers=REQUEST_THREADS),
+        uvicorn_application(trusted_proxy=args.trusted_proxy),
         host=args.host,
         port=args.port,
-        # The router believes X-Forwarded-* from the trusted proxy only and
-        # removes it from everyone else, as waitress did; uvicorn's own
-        # handling would leave an untrusted header in place.
-        proxy_headers=False,
-        server_header=False,
-        ws="none",
-        lifespan="off",
-        access_log=False,
-        log_config=None,
-        # Waitress's connection_limit, plus a slot per reader that may follow
-        # an answer, and its max_request_header_size.
-        limit_concurrency=100 + MAX_ASYNC_READERS,
-        h11_max_incomplete_event_size=32768,
-        timeout_keep_alive=5,
-        timeout_graceful_shutdown=10,
+        **uvicorn_options(),
     )
     sys.exit(0)
 
@@ -119,13 +90,5 @@ serve(
     application,
     host=args.host,
     port=args.port,
-    threads=REQUEST_THREADS,
-    connection_limit=100,
-    channel_timeout=60,
-    cleanup_interval=10,
-    max_request_header_size=32768,
-    max_request_body_size=23068672,
-    expose_tracebacks=False,
-    ident="DigitalBrain",
-    **proxy,
+    **waitress_options(args.trusted_proxy),
 )

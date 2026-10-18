@@ -32,6 +32,11 @@ PREFIX = "digitalbrain:"
 #: Longer than the longest block a reader asks for (`streaming.HEARTBEAT_SECONDS`).
 SOCKET_SECONDS = 30
 CONNECT_SECONDS = 5
+#: An event loop's client keeps a connection for every reader blocked on an
+#: answer, so its pool is sized to the readers `streaming` lets wait at once
+#: (`MAX_ASYNC_READERS`), with room for the calls around them. redis-py's own
+#: default is 100, which left every reader past the hundredth with an error.
+ASYNC_CONNECTIONS = 120
 
 _client = None
 _lock = threading.Lock()
@@ -73,6 +78,8 @@ def connect(config, asynchronous=False):
         "health_check_interval": 30,
         "decode_responses": True,
     }
+    if asynchronous:
+        options["max_connections"] = ASYNC_CONNECTIONS
     if config.get("tls"):
         options.update(ssl=True, ssl_cert_reqs="required", ssl_check_hostname=True)
         if config.get("ca_certificate"):

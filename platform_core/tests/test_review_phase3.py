@@ -87,22 +87,11 @@ class ApiInputTests(TestCase):
 
 class StreamCapacityTests(SimpleTestCase):
     def test_request_threads_outnumber_the_streams_that_can_hold_them(self):
-        """A stream occupies a request thread, so a full set must leave threads free."""
-        import ast
-        from pathlib import Path
+        """A stream occupies a waitress thread, so a full set must leave threads free."""
+        from digitalbrain import servers
 
-        source = Path("scripts/serve.py").read_text(encoding="utf-8")
-        self.assertIn("threads=REQUEST_THREADS", source)
-        tree = ast.parse(source)
-        multiplier = None
-        for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Assign)
-                and getattr(node.targets[0], "id", "") == "REQUEST_THREADS"
-            ):
-                multiplier = ast.literal_eval(node.value.right)
-        self.assertIsNotNone(multiplier, "REQUEST_THREADS is no longer derived")
-        self.assertGreater(MAX_ACTIVE_STREAMS * multiplier, MAX_ACTIVE_STREAMS)
+        self.assertGreater(servers.REQUEST_THREADS, MAX_ACTIVE_STREAMS)
+        self.assertEqual(servers.waitress_options()["threads"], servers.REQUEST_THREADS)
 
 
 @override_settings(**SETTINGS)

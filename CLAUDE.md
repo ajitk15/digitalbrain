@@ -1,7 +1,8 @@
 # Digital Brain — working notes
 
 Django 5.2 / Python 3.12, server-rendered, no JavaScript build step. WSGI under
-waitress. SQLite locally, PostgreSQL in production.
+waitress, or under uvicorn with the answer streams on its event loop wherever Redis is
+configured. SQLite locally, PostgreSQL in production.
 
 ## Verify before calling anything done
 
@@ -982,22 +983,49 @@ The stream registry in `agent_runtime/streaming.py` is **process-local** unless 
 shares it: through a database lease (`shared_streams`) or Redis, which also lets an answer
 resume after a dropped connection - see "With Redis" above.
 
-**Under uvicorn a reader holds no thread** (`web_server = "uvicorn"`, default
-`"waitress"`; `digitalbrain/asgi.py`). Under waitress each open stream held a request
-thread for its whole life, so a process followed `MAX_ACTIVE_STREAMS` answers at most.
-`asgi.Router` sends only `chat-stream` and `api-chat-stream` to Django's ASGI handler
-and every other request to the same WSGI application in a bounded `a2wsgi` pool, so
-views, middleware and the CSP are unchanged. The view still runs in a thread; what it
-returns is `streaming.attach(..., asynchronous=True)` (`served_by_event_loop`), an
-`AsyncReader` that polls a local session's queue every `POLL_SECONDS` or awaits Redis
-through `broker.async_client()` (one per event loop), with its own slots
-(`MAX_ASYNC_READERS`). The frames are the blocking readers' own (`decoded`), and still no
-ORM work. The answers - a worker thread and a paid call each - are bounded as before.
-uvicorn does none of waitress's edge work, so the router does it: X-Forwarded-* is
-believed only from `--trusted-proxy` (its last hop) and removed from anyone else, and a
-body over `MAX_BODY` (413) or of no stated length (411) is refused before Django reads
-it. `test_asgi` holds the frames equal, the edge rules, and - over a real socket - pages
-still served while more streams are open than the pool has threads.
+**Under uvicorn a reader holds no thread** (`digitalbrain/asgi.py`). **Uvicorn is the
+default wherever `[redis]` is set**, waitress otherwise, and `web_server` names either
+(`configuration.web_server`): without Redis a process follows `MAX_ACTIVE_STREAMS`
+answers under either server, so there is nothing to gain. Under waitress each open
+stream held a request thread for its whole life, so a process followed
+`MAX_ACTIVE_STREAMS` readers at most. `asgi.Router` sends only `chat-stream` and
+`api-chat-stream` to Django's ASGI handler and every other request to the same WSGI
+application in a bounded `a2wsgi` pool, so views, middleware and the CSP are unchanged.
+What the view returns is `streaming.attach(..., asynchronous=True)`
+(`served_by_event_loop`), an `AsyncReader` that polls a local session's queue every
+`POLL_SECONDS` or awaits Redis through `broker.async_client()` (one per event loop,
+its pool sized `ASYNC_CONNECTIONS` - redis-py's default of 100 failed every reader past
+it), with its own slots (`MAX_ASYNC_READERS`). The frames are the blocking readers' own
+(`decoded`), and still no ORM work. The answers - a worker thread and a paid call each -
+are bounded as before. uvicorn does none of waitress's edge work, so the router does it:
+X-Forwarded-* is believed only from `--trusted-proxy` (its last hop) and removed from
+anyone else, and a body over `MAX_BODY` (413) or of no stated length (411) is refused
+before Django reads it. `digitalbrain/servers.py` holds both servers' options, for
+`serve.py` and the load test alike.
+
+**Stream views share `STREAM_THREADS` lanes** (`asgi.Streams`). Django's ASGI handler
+gives each request a thread for as long as its response lasts (asgiref's
+`ThreadSensitiveContext`), so 400 open streams held 400 idle threads; one shared
+thread instead admitted twenty readers a second. Each request now gets one of a fixed
+set of thread-sensitive contexts, each with its executor made once, by setting
+asgiref's `thread_sensitive_context` and filling `context_to_thread_executor` - what
+`ThreadSensitiveContext` itself does - and `test_asgi` fails if asgiref renames them.
+**A reader gathers words** (`streaming.GATHER_SECONDS`, both followers): after each read
+it waits a tenth of a second, so the words written meanwhile come back in one Redis
+read and leave in one write. A read and a write per word per reader was the measured
+limit.
+
+**Stream capacity is measured, not asserted** (`manage.py load_streams`,
+`load_streams.py`). It runs the real application under each server with deployment's
+options, in a throwaway database, against a throwaway Redis (`--redis host:port`, never
+a deployment's; "fake" for fakeredis), with only the model replaced by a worker writing
+twenty words a second. Readers arrive spread over each stage, the first of each answer
+starting it, in a client process of their own (`load_clients`, which imports nothing
+from Django) so their parsing is not counted against the server. On the development
+machine: waitress accepted 12 readers and refused the rest; uvicorn held 50 with pages
+at 547 ms p95 (waitress's 12: 594 ms) and 100 with every reader receiving and pages at
+1.3 s p95; at 200 admission took ten seconds, so `MAX_ASYNC_READERS` is 100 and a
+reader past it is refused (503) for another replica to serve. Change it only with a run.
 
 ## Web and worker can run apart
 

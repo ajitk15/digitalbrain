@@ -9,6 +9,7 @@ from .configuration import (
     load_config,
     read_secret,
     self_approval_allowed,
+    web_server,
 )
 
 BASE_DIR = ROOT
@@ -35,7 +36,8 @@ CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not
 CLAUDE_MESSAGES_API = bool(CONFIG.get("claude_messages_api", True))
 #: What `scripts/serve.py` runs: waitress for everything, or uvicorn with the
 #: stream endpoints on its event loop and the rest as WSGI (`digitalbrain/asgi.py`).
-WEB_SERVER = CONFIG.get("web_server", "waitress")
+#: Uvicorn wherever Redis is configured, unless `web_server` says otherwise.
+WEB_SERVER = web_server(CONFIG)
 #: Let one person both write and approve a change plan. A single-operator
 #: instance cannot otherwise run the pipeline end to end, because whoever starts
 #: a run authors its plan and may not review their own work. Honoured in every

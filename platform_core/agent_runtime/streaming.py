@@ -57,14 +57,25 @@ MAX_QUEUED_EVENTS = 1000
 #: Concurrent streams allowed. Each one occupies a waitress request thread for
 #: its whole life, so this must stay comfortably below the thread count or a
 #: handful of long answers starve navigation, Stop and the readiness probe.
-#: scripts/serve.py derives its thread count from this so the two cannot drift.
+#: digitalbrain/servers.py derives its thread count from this so the two cannot drift.
 MAX_ACTIVE_STREAMS = 12
 SESSION_TTL_SECONDS = 600
 
 #: Readers an event loop may hold at once (see "UNDER ASGI" above), and how
-#: often one looks at a process-local session's queue.
-MAX_ASYNC_READERS = 500
+#: often one looks at a process-local session's queue. Measured, not guessed:
+#: `manage.py load_streams` at twenty words a second held 100 readers with every
+#: one receiving and pages at 1.3 s p95 (50: 0.5 s, as waitress serves 12); at
+#: 200 admission took ten seconds and pages slowed for everyone. Past this a
+#: reader is refused (503) and can be served by another replica.
+MAX_ASYNC_READERS = 100
 POLL_SECONDS = 0.05
+#: A reader following an answer through Redis waits this long after each read,
+#: so the words written meanwhile come back in one read and leave in one write.
+#: Reading every word as it came cost a Redis round trip and a write per word
+#: per reader - twenty a second each - which `manage.py load_streams` measured
+#: as the limit on readers a process can follow. A typing animation does not
+#: show a tenth of a second.
+GATHER_SECONDS = 0.1
 
 #: Pushed by the worker to mark the end of the event stream.
 END_OF_STREAM = object()
@@ -710,9 +721,12 @@ def follow(client, message_id, cursor):
             yield ": keep-alive\n\n"
             continue
         frames, cursor, ended = decoded(found[0][1])
-        yield from frames
+        if frames:
+            yield "".join(frames)
         if ended:
             return
+        # Let the next words gather: one read and one write for several.
+        time.sleep(GATHER_SECONDS)
 
 
 async def follow_async(message_id, cursor):
@@ -739,7 +753,8 @@ async def follow_async(message_id, cursor):
             yield ": keep-alive\n\n"
             continue
         frames, cursor, ended = decoded(found[0][1])
-        for frame in frames:
-            yield frame
+        if frames:
+            yield "".join(frames)
         if ended:
             return
+        await asyncio.sleep(GATHER_SECONDS)

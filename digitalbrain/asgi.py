@@ -14,6 +14,14 @@ them: it trusts X-Forwarded-* only from the one proxy named and removes them
 from anyone else (`--trusted-proxy`, as waitress's `clear_untrusted_proxy_headers`),
 and it refuses a body over `MAX_BODY` or of no stated length
 (`max_request_body_size`).
+
+Django's ASGI handler gives every request a thread of its own for as long as
+its response lasts (asgiref's `ThreadSensitiveContext`), which for a stream is
+its whole life, so 400 readers held 400 idle threads. `Streams` gives the
+synchronous part of a stream request - middleware and the view, in one call -
+one of `STREAM_THREADS` lanes instead, and only the reading awaits. One shared
+thread was tried and measured too slow: at about 50 ms a request it admitted
+twenty readers a second. `manage.py load_streams` measures all of it.
 """
 
 import os
@@ -24,6 +32,9 @@ from django.core.asgi import get_asgi_application  # noqa: E402
 
 #: Waitress's `max_request_body_size`: a little over Django's own upload limit.
 MAX_BODY = 23068672
+#: Threads the stream routes' synchronous work shares - the middleware and the
+#: view that start or attach a reader - however many readers are open.
+STREAM_THREADS = 8
 #: The routes whose responses wait on an answer.
 STREAM_ROUTES = frozenset({"chat-stream", "api-chat-stream"})
 #: Every forwarding header; only the first three are believed, and only from
@@ -108,13 +119,57 @@ class Router:
         await app(scope, receive, send)
 
 
+class Lane:
+    """One of `Streams`' threads, as asgiref knows it: a thread-sensitive context."""
+
+
+class Streams:
+    """Django's ASGI handler for the stream routes, on a fixed set of threads.
+
+    `ASGIHandler.__call__` is `handle` inside a `ThreadSensitiveContext`, and
+    asgiref gives each such context a thread of its own until it ends - for a
+    stream, until the answer does. Here each request is handed one of a fixed
+    set of contexts in turn, each with its executor made once and kept, so the
+    synchronous work of every stream runs on `threads` threads however many
+    are open. A context's work runs one request at a time, as one request's
+    would, so a lane's database connection is never used by two at once.
+
+    This sets asgiref's `thread_sensitive_context` and fills its
+    `context_to_thread_executor` - what `ThreadSensitiveContext` itself does -
+    so `test_asgi` holds both to what is expected of them.
+    """
+
+    def __init__(self, handler=None, threads=None):
+        from concurrent.futures import ThreadPoolExecutor
+        from itertools import cycle
+
+        from asgiref.sync import SyncToAsync
+
+        self.handler = handler or get_asgi_application()
+        self.lanes = [Lane() for _ in range(threads or STREAM_THREADS)]
+        for number, lane in enumerate(self.lanes):
+            SyncToAsync.context_to_thread_executor[lane] = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix=f"stream-view-{number}"
+            )
+        self.turns = cycle(self.lanes)
+
+    async def __call__(self, scope, receive, send):
+        from asgiref.sync import SyncToAsync
+
+        token = SyncToAsync.thread_sensitive_context.set(next(self.turns))
+        try:
+            await self.handler.handle(scope, receive, send)
+        finally:
+            SyncToAsync.thread_sensitive_context.reset(token)
+
+
 def build(trusted_proxy="", workers=24):
     from a2wsgi import WSGIMiddleware
 
     from digitalbrain.wsgi import application as wsgi_application
 
     return Router(
-        get_asgi_application(),
+        Streams(),
         WSGIMiddleware(wsgi_application, workers=workers),
         trusted_proxy=trusted_proxy,
     )
