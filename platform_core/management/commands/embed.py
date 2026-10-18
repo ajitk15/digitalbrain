@@ -13,7 +13,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.http import Http404
 
 from platform_core import embeddings
-from platform_core.graphs import MAX_SOURCES, sources_for
+from platform_core.graphs import sources_for
 from platform_core.models import Application, GraphRevision, User
 
 
@@ -42,7 +42,7 @@ class Command(BaseCommand):
         )
         if revision is None:
             raise CommandError("That application has no such graph version.")
-        entries = list(sources_for(app.pk)[:MAX_SOURCES])
+        entries = list(sources_for(app.pk))
         try:
             report = embeddings.index(user, app, revision.data, entries)
         except (Http404, PermissionDenied):

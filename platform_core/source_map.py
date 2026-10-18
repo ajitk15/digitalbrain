@@ -31,7 +31,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from . import ranking
-from .graphs import MAX_SOURCES, fingerprint, sources_for, walk
+from .graphs import fingerprint, sources_for, walk
 from .source_quality import for_entries
 
 #: A reference as documents write them: BR-05, C-09, NFR-06, ADR-0002,
@@ -48,6 +48,10 @@ LIST_LINES = 3
 OFF_TOPIC = 0.08
 #: Vocabulary this alike, or the same digest, is the same document twice.
 DUPLICATE = 0.9
+#: Sources the map reads together, oldest first. Its own bound, not the
+#: graph's: the graph is built a source at a time and takes every one, but
+#: the map compares each source with every other, so it grows as the square.
+MAX_MAPPED = 100
 #: Results kept, most recently used last.
 CACHE_SIZE = 16
 _cache = OrderedDict()
@@ -242,7 +246,8 @@ def for_application(app_id):
         if key in _cache:
             _cache.move_to_end(key)
             return _cache[key]
-    result = analyse(sources_for(app_id)[:MAX_SOURCES].only("id", "title", "content", "digest"))
+    result = analyse(sources_for(app_id)[:MAX_MAPPED].only("id", "title", "content", "digest"))
+    result["total"] = sources_for(app_id).count()
     with _lock:
         _cache[key] = result
         while len(_cache) > CACHE_SIZE:

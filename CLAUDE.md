@@ -1258,8 +1258,24 @@ back exactly, its sources, nodes and edges leave its JSON and `data["slimmed"]` 
 never the newest `KEEP_WHOLE` or the latest published. `GraphRevision.from_db` puts them
 back on load, so every reader of `data` sees the whole version; a read that skips the
 model (`values_list("data")`, `data__sources`) must inflate it too, as `graph_ai.prepared`
-and `source_library.graph_usage` do. Still to come: building per source and removing `MAX_SOURCES`,
-which the rows now make possible - the in-memory graph was the ceiling.
+and `source_library.graph_usage` do.
+
+**A graph is built a source at a time and takes every source** (`graphs.fragment`). It
+used to take the oldest `MAX_SOURCES` (100) and cap the whole graph at 6,000 nodes, so a
+large library answered from its oldest hundred documents and whether a row was included
+depended on what came before it. Each source's structure is now built from that source
+alone - `MAX_NODES_PER_SOURCE` and `MAX_RECORDS_PER_SOURCE` bound one source, never the
+graph - and kept per process (`FRAGMENT_CACHE`) by application, entry, title and digest,
+so a rebuild after one change reads one source: 1.9 ms for CarePath warm, 45 ms cold.
+`build_graph` merges the fragments in source order, nodes in first-seen order with the
+first source's copy of a shared value, so its output is **exactly** the single pass it
+replaced (held equal on CarePath; `test_graph_per_source`), and it copies what it merges,
+so a caller changing the graph never changes the cache. AI entities are capped per source
+the same way (`source full`). The fingerprint's limits changed, so every graph rebuilt
+once, as a draft. The source check is the one reader still bounded (`source_map.MAX_MAPPED`,
+100): it compares every source with every other, and says when it read only the oldest.
+What still grows with the library is a build holding every answerable source's text at
+once, which AI carry-forward and quote checks read.
 
 ## Verified against a live CLI
 

@@ -666,10 +666,12 @@ that is **active** and **not restricted**. In order:
 
 - inactive records (superseded, retired, pruned) are left out;
 - restricted records are left out;
-- at most **100 sources** are processed per graph, **oldest first**; beyond that
-  the version warns "Only the first 100 of N sources were processed". The same
-  order decides which sources go to the model first. (An edited source is a new
-  record, so it moves to the back.)
+- **every** usable source is processed, **oldest first**, each built on its own:
+  at most 2,000 table rows and lines and 6,000 nodes **per source**, and a source
+  over either says so. Until October 2026 a graph took only the oldest 100 sources
+  and 6,000 nodes in all. The same order decides which sources go to the model
+  first, and which source's copy labels a value two of them share. (An edited
+  source is a new record, so it moves to the back.)
 
 The set is summarised as a **fingerprint**: a hash of every usable source's id and
 digest, the graph generator's version, the graph limits, and the saved AI graph
@@ -1229,7 +1231,8 @@ does not imply access to any application.
 | Personal data scan | first 200,000 characters |
 | Source check | 6 checks, 100 points; Ready at 80 with no failed check |
 | Document type | needs 5 points and a 2-point lead, else Other |
-| Graph | 100 sources, 2,000 rows and lines per source, 6,000 nodes |
+| Graph | every usable source; 2,000 rows and lines and 6,000 nodes per source |
+| Check sources (read together) | the oldest 100 sources |
 | AI extraction per run | 25 model calls; 24,000-character windows, 8 per source; 12 relationships asked per call, no new calls after 300; 300-character quotes, 8,192 output tokens, 10 minutes a call |
 | Benchmark | 100 questions; top-3 and MRR |
 | Answer | 8 citations; graph walk 2 hops, 6 finds, hub at 25 links; Code Factory +4 references |

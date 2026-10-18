@@ -4,8 +4,10 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from django.contrib import messages
@@ -28,9 +30,14 @@ from .workbench import access
 
 logger = logging.getLogger(__name__)
 
-MAX_NODES = 6000
+#: What one source may add to a graph: nodes, and table rows plus lines of
+#: text. Per source, so a graph grows with its library and what a source
+#: contributes never depends on what else is in it - these were the whole
+#: graph's limits once, with at most `MAX_SOURCES` (100) sources, oldest first.
+MAX_NODES_PER_SOURCE = 6000
 MAX_RECORDS_PER_SOURCE = 2000
-MAX_SOURCES = 100
+#: Sources whose structure each process keeps, by digest (`fragment`).
+FRAGMENT_CACHE = 4096
 
 
 def sources_for(app_id):
@@ -38,10 +45,10 @@ def sources_for(app_id):
     # graph, and every citation is verified against this, so restricting one
     # also takes it out of published versions at once.
     #
-    # Oldest first. Which sources fit under MAX_SOURCES, and which go to the
-    # model first, follows this order - by id alone that was by UUID, so random,
-    # and a source edited (a new entry, so a new UUID) could drop out of the
-    # graph or jump the extraction queue.
+    # Oldest first. Which sources go to the model first, and which of two
+    # sources naming the same value labels its node, follow this order - by id
+    # alone that was by UUID, so random, and a source edited (a new entry, so
+    # a new UUID) could jump the extraction queue.
     return (
         KnowledgeEntry.objects.filter(application_id=app_id)
         .answerable()
@@ -61,7 +68,7 @@ def fingerprint(app_id):
             {
                 "generator": "structural-v2",
                 "ai": ai_settings,
-                "limits": [MAX_NODES, MAX_RECORDS_PER_SOURCE, MAX_SOURCES],
+                "limits": ["per-source", MAX_NODES_PER_SOURCE, MAX_RECORDS_PER_SOURCE],
                 "sources": [(str(pk), digest) for pk, digest in records],
             },
             separators=(",", ":"),
@@ -134,23 +141,60 @@ def walk(content):
             yield Line("section", index, line, None, None)
 
 
-def build_graph(entries, source_count):
-    namespace = str(entries[0].application_id) if entries else ""
-    if any(str(entry.application_id) != namespace for entry in entries):
-        raise ValueError("Graph sources must belong to one application.")
-    nodes, edges, source_refs = {}, [], []
-    total_rows = included_rows = missing_values = duplicate_rows = capped_sources = 0
-    total_sections = included_sections = 0
+@dataclass
+class Fragment:
+    """What one source adds to a graph: its own nodes and edges, and what it counted."""
+
+    nodes: dict = field(default_factory=dict)
+    edges: list = field(default_factory=list)
+    rows: int = 0
+    included_rows: int = 0
+    sections: int = 0
+    included_sections: int = 0
+    empty_cells: int = 0
+    duplicate_rows: int = 0
+    capped: bool = False
+
+
+_fragments = OrderedDict()
+_fragments_lock = threading.Lock()
+
+
+def fragment(namespace, entry):
+    """`entry`'s structure, built from it alone, and kept by what it was built from.
+
+    A node's id is a digest of the application and what the node is, so a
+    value two sources share is one node either way; `build_graph` keeps the
+    first source's copy. The cache key is everything the fragment reads - the
+    application, the entry, its title and its digest - so a source that did
+    not change is not read again by the next rebuild.
+    """
+    key = (namespace, str(entry.pk), entry.title, entry.digest)
+    with _fragments_lock:
+        if key in _fragments:
+            _fragments.move_to_end(key)
+            return _fragments[key]
+    made = structure(namespace, entry)
+    with _fragments_lock:
+        _fragments[key] = made
+        while len(_fragments) > FRAGMENT_CACHE:
+            _fragments.popitem(last=False)
+    return made
+
+
+def structure(namespace, entry):
+    found = Fragment()
+    nodes, edges = found.nodes, found.edges
 
     def node(kind, identity, label, **extra):
         key = hashlib.sha256(f"{namespace}:{kind}:{identity}".encode()).hexdigest()[:24]
         if key not in nodes:
-            if len(nodes) >= MAX_NODES:
+            if len(nodes) >= MAX_NODES_PER_SOURCE:
                 return None
             nodes[key] = {"id": key, "kind": kind, "label": label[:120], **extra}
         return key
 
-    def edge(start, end, relation, entry, line, evidence):
+    def edge(start, end, relation, line, evidence):
         if start and end:
             edges.append(
                 {
@@ -164,70 +208,99 @@ def build_graph(entries, source_count):
                 }
             )
 
+    document = node("document", str(entry.pk), entry.title, knowledge_id=str(entry.pk))
+    row_seen = set()
+    local_included = 0
+    for item in walk(entry.content):
+        index, line = item.index, item.text
+        if item.kind == "row":
+            headers, values = item.headers, item.values
+            found.rows += 1
+            signature = tuple(values)
+            if signature in row_seen:
+                found.duplicate_rows += 1
+            row_seen.add(signature)
+            found.empty_cells += sum(not value for value in values)
+            if (
+                local_included >= MAX_RECORDS_PER_SOURCE
+                or len(nodes) + 1 + len(values) > MAX_NODES_PER_SOURCE
+            ):
+                found.capped = True
+                continue
+            label = next((value for value in values if value), f"Row {index + 1}")
+            record = node(
+                "record",
+                f"{entry.pk}:{index}",
+                label,
+                knowledge_id=str(entry.pk),
+                line=index + 1,
+            )
+            edge(document, record, "contains record", index + 1, line)
+            for column, value in enumerate(values):
+                if not value:
+                    continue
+                name = headers[column] if column < len(headers) else f"column {column + 1}"
+                name = name or f"column {column + 1}"
+                value_node = node(
+                    "value",
+                    json.dumps([name.casefold(), value]),
+                    f"{name}: {value}",
+                    field=name,
+                    value=value[:1000],
+                )
+                edge(record, value_node, name, index + 1, line)
+            found.included_rows += 1
+            local_included += 1
+        elif item.kind == "section":
+            found.sections += 1
+            if local_included >= MAX_RECORDS_PER_SOURCE or len(nodes) >= MAX_NODES_PER_SOURCE:
+                found.capped = True
+                continue
+            text = line.lstrip("# ").strip()
+            section = node(
+                "section",
+                f"{entry.pk}:{index}",
+                text,
+                knowledge_id=str(entry.pk),
+                line=index + 1,
+            )
+            edge(document, section, "contains section", index + 1, line)
+            found.included_sections += 1
+            local_included += 1
+    return found
+
+
+def build_graph(entries, source_count=None):
+    """The structural graph of `entries`, one source at a time.
+
+    Each source's fragment is its own (`fragment`), merged in source order:
+    nodes keep the order they first appear in and the first source's copy of a
+    shared node, edges keep their order - so the result is exactly what one
+    pass over every source made, and a rebuild after one change reads one.
+    """
+    namespace = str(entries[0].application_id) if entries else ""
+    if any(str(entry.application_id) != namespace for entry in entries):
+        raise ValueError("Graph sources must belong to one application.")
+    nodes, edges, source_refs = {}, [], []
+    total_rows = included_rows = missing_values = duplicate_rows = capped_sources = 0
+    total_sections = included_sections = 0
     for entry in entries:
         source_refs.append({"id": str(entry.pk), "title": entry.title, "digest": entry.digest})
-        document = node("document", str(entry.pk), entry.title, knowledge_id=str(entry.pk))
-        row_seen = set()
-        local_included = 0
-        omitted = False
-        for item in walk(entry.content):
-            index, line = item.index, item.text
-            if item.kind == "row":
-                headers, values = item.headers, item.values
-                total_rows += 1
-                signature = tuple(values)
-                if signature in row_seen:
-                    duplicate_rows += 1
-                row_seen.add(signature)
-                missing_values += sum(not value for value in values)
-                if (
-                    local_included >= MAX_RECORDS_PER_SOURCE
-                    or len(nodes) + 1 + len(values) > MAX_NODES
-                ):
-                    omitted = True
-                    continue
-                label = next((value for value in values if value), f"Row {index + 1}")
-                record = node(
-                    "record",
-                    f"{entry.pk}:{index}",
-                    label,
-                    knowledge_id=str(entry.pk),
-                    line=index + 1,
-                )
-                edge(document, record, "contains record", entry, index + 1, line)
-                for column, value in enumerate(values):
-                    if not value:
-                        continue
-                    field = headers[column] if column < len(headers) else f"column {column + 1}"
-                    field = field or f"column {column + 1}"
-                    value_node = node(
-                        "value",
-                        json.dumps([field.casefold(), value]),
-                        f"{field}: {value}",
-                        field=field,
-                        value=value[:1000],
-                    )
-                    edge(record, value_node, field, entry, index + 1, line)
-                included_rows += 1
-                local_included += 1
-            elif item.kind == "section":
-                total_sections += 1
-                if local_included >= MAX_RECORDS_PER_SOURCE or len(nodes) >= MAX_NODES:
-                    omitted = True
-                    continue
-                text = line.lstrip("# ").strip()
-                section = node(
-                    "section",
-                    f"{entry.pk}:{index}",
-                    text,
-                    knowledge_id=str(entry.pk),
-                    line=index + 1,
-                )
-                edge(document, section, "contains section", entry, index + 1, line)
-                included_sections += 1
-                local_included += 1
-        if omitted:
-            capped_sources += 1
+        found = fragment(namespace, entry)
+        # Copies: what is built from the graph may change a node or an edge,
+        # and the cached fragment must stay what the source said.
+        for key, made in found.nodes.items():
+            if key not in nodes:
+                nodes[key] = dict(made)
+        edges += [dict(made) for made in found.edges]
+        total_rows += found.rows
+        included_rows += found.included_rows
+        total_sections += found.sections
+        included_sections += found.included_sections
+        missing_values += found.empty_cells
+        duplicate_rows += found.duplicate_rows
+        capped_sources += found.capped
+    source_count = len(source_refs) if source_count is None else source_count
 
     connected = {endpoint for e in edges for endpoint in [e["source"], e["target"]]}
     isolated = sum(key not in connected for key in nodes)
@@ -235,10 +308,8 @@ def build_graph(entries, source_count):
         100 * (included_rows + included_sections) / max(1, total_rows + total_sections), 1
     )
     warnings = []
-    if source_count > len(source_refs):
-        warnings.append(f"Only the first {MAX_SOURCES} of {source_count} sources were processed.")
     if capped_sources:
-        warnings.append(f"{capped_sources} source(s) reached the row or graph-size limit.")
+        warnings.append(f"{capped_sources} source(s) reached the row or node limit for one source.")
     if missing_values:
         warnings.append(f"{missing_values} empty table cells were found.")
     if duplicate_rows:
@@ -299,8 +370,8 @@ def rebuild(app_id):
     )
     if not claimed:
         return False
-    entries = list(sources_for(app_id)[:MAX_SOURCES])
-    data, quality = build_graph(entries, sources_for(app_id).count())
+    entries = list(sources_for(app_id))
+    data, quality = build_graph(entries)
     # AI enrichment runs only for a run someone asked for, with the model they
     # chose. A background rebuild keeps the structural graph current and never
     # incurs provider charges on its own.

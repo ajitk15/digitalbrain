@@ -345,7 +345,7 @@ def enrich_graph(app_id, config, entries, data, quality):
     the AI relationships of everything that did not change instead of dropping
     to structure.
     """
-    from .graphs import MAX_NODES
+    from .graphs import MAX_NODES_PER_SOURCE
 
     if config is not None and not config.configured_by_id:
         raise ValidationError("Save graph generation settings as an application owner first.")
@@ -456,6 +456,9 @@ def enrich_graph(app_id, config, entries, data, quality):
     seen = set()
     accepted = rejected = untyped = reused_accepted = 0
     reasons = {}
+    # Entities each source has added. Per source, like its structure: the
+    # graph grows with the library, and one source cannot crowd out another.
+    entities = {}
     for item, reused, owner in proposals:
         # Only the source the model was reading: an answer naming another
         # source's id is about text it was never shown.
@@ -479,10 +482,12 @@ def enrich_graph(app_id, config, entries, data, quality):
             ).hexdigest()[:24]
             for k, kind in (("subject", subject_type), ("object", object_type))
         ]
-        if len(nodes) + sum(node_id not in nodes for node_id in set(ids)) > MAX_NODES:
+        added = sum(node_id not in nodes for node_id in set(ids))
+        if entities.get(item["source_id"], 0) + added > MAX_NODES_PER_SOURCE:
             rejected += 1
-            reasons["graph full"] = reasons.get("graph full", 0) + 1
+            reasons["source full"] = reasons.get("source full", 0) + 1
             continue
+        entities[item["source_id"]] = entities.get(item["source_id"], 0) + added
         entry = source_entries[item["source_id"]]
         line = entry.content[: entry.content.index(quote)].count("\n") + 1
         for node_id, field, kind in zip(
