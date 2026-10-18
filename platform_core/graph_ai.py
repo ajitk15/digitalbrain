@@ -741,20 +741,30 @@ def graph_citations(app_id, question, version=None, user=None, references=0):
     `references` adds up to that many cross-references after the eight
     (`referenced`); Code Factory asks for them, chat does not.
     """
+    from django.conf import settings
+
+    from . import rerank
     from .embeddings import question_vector
+    from .graph_store import RowsGraph
 
     revision = snapshot_revision(app_id, version)
-    graph = prepared(revision)
-    from . import rerank
-
     vector, model = question_vector(user, app_id, question)
+    rows = None
+    # From the version's rows when the deployment says so and they exist; a
+    # question with an embedding still ranks in memory, where the vectors are.
+    if settings.GRAPH_CANDIDATES == "rows" and revision.stored and vector is None:
+        rows, ready, data = RowsGraph(revision), None, None
+    else:
+        ready = prepared(revision)
+        data = ready.data
     wide = user is not None and rerank.configuration(app_id) is not None
     found = citations_from(
         app_id,
-        graph.data,
+        data,
         revision.number,
         question,
-        graph,
+        ready,
+        graph=rows,
         vector=vector,
         model=model,
         limit=rerank.CANDIDATES if wide else 8,
@@ -870,6 +880,57 @@ def referenced(question, ready, order, cited=frozenset()):
     return found
 
 
+class InMemory:
+    """What `citations_from` asks of a graph, answered from its prepared JSON.
+
+    `graph_store.RowsGraph` answers the same questions from a recorded version's
+    rows, in the same order; the scorecard holds the two to identical citations.
+    """
+
+    def __init__(self, app_id, data, ready, vector=None, model=None):
+        self.app_id, self.data, self.ready = app_id, data, ready
+        self.vector, self.model = vector, model
+        self.order = []
+
+    def ranked(self, question):
+        from .embeddings import fuse, nearest, relation_matrix
+        from .ranking import query_terms
+
+        # Relationships holding more of the question's words first, then BM25: a
+        # word most relationships share (a field name, "patient" on a patient
+        # system) counts for little, a rare one for a lot. It used to be a plain
+        # count of matching words, which let two common words outrank the one
+        # that named the subject. Measured on the benchmark, not assumed.
+        index = self.ready.index
+        order = [position for _, position in index.rank_covering(query_terms(question))]
+        if self.vector is not None:
+            # Hybrid starting points: the relationships nearest the question in
+            # meaning, fused with the word ranking. They are candidates like any
+            # other - verified below or not cited at all.
+            positions, matrix = relation_matrix(self.app_id, self.model, self.ready)
+            order = fuse(order, [positions[row] for row in nearest(matrix, self.vector)])
+        self.order = order
+        return [self.ready.candidates[position] for position in order]
+
+    def walk(self, ranked):
+        return walk(self.data, ranked)
+
+    def touching(self, seeds):
+        nodes, found = self.ready.nodes, []
+        for edge in self.data.get("edges", []):
+            if seeds.intersection((edge["source"], edge["target"])):
+                start, end = nodes.get(edge["source"]), nodes.get(edge["target"])
+                if start and end:
+                    found.append((edge, f"{start['label']} {edge['relation']} {end['label']}"))
+        return found
+
+    def source_ids(self):
+        return [s["id"] for s in self.data.get("sources", [])]
+
+    def referenced(self, question, cited):
+        return referenced(question, self.ready, self.order, cited)
+
+
 def citations_from(
     app_id,
     data,
@@ -882,6 +943,7 @@ def citations_from(
     viewer=None,
     references=0,
     choose=None,
+    graph=None,
 ):
     """Verified citations for a question, from one graph's data.
 
@@ -892,32 +954,20 @@ def citations_from(
     question's embedding under `model`, when there is one. `references` is how
     many cross-references (`referenced`) to add after the direct matches, and
     `choose`, when given, picks the direct matches from the `limit` found.
+    `graph`, when given, answers in place of `data` (`graph_store.RowsGraph`).
     """
-    from .embeddings import fuse, nearest, relation_matrix
     from .graphs import sources_for
     from .permissions import permitted
-    from .ranking import query_terms, spread
+    from .ranking import spread
 
-    ready = ready or prepare(data)
-    graph = SimpleNamespace(data=data, version=number)
-    nodes, candidates, index = ready.nodes, ready.candidates, ready.index
-    # Relationships holding more of the question's words first, then BM25: a
-    # word most relationships share (a field name, "patient" on a patient
-    # system) counts for little, a rare one for a lot. It used to be a plain
-    # count of matching words, which let two common words outrank the one that
-    # named the subject. Measured on the benchmark, not assumed.
-    order = [position for _, position in index.rank_covering(query_terms(question))]
-    if vector is not None:
-        # Hybrid starting points: the relationships nearest the question in
-        # meaning, fused with the word ranking. They are candidates like any
-        # other - verified below or not cited at all.
-        positions, matrix = relation_matrix(app_id, model, ready)
-        order = fuse(order, [positions[row] for row in nearest(matrix, vector)])
-    ranked = [candidates[position] for position in order]
+    if graph is None:
+        graph = InMemory(app_id, data, ready or prepare(data), vector, model)
+    version = number
+    ranked = graph.ranked(question)
     # Multi-hop: from the best typed matches, along typed relationships, so a
     # question about a ticket can reach the requirement it breaks and the code
     # that implements it without either sharing a word with the question.
-    paths = walk(graph.data, ranked)
+    paths = graph.walk(ranked)
     # Every direct match first, then the walk's nearest finds. The walk used to
     # take places ahead of weaker direct matches; measured on the CarePath
     # benchmark with an AI-enriched version, that pushed three expected sources
@@ -927,14 +977,8 @@ def citations_from(
     ordered = [(edge, text, 0, None) for edge, text in ranked] + paths[:MAX_WALKED]
     # One-hop graph expansion from the highest-ranked relationship endpoints.
     seeds = {edge[k] for edge, _ in ranked[:3] for k in ("source", "target")}
-    for edge in graph.data.get("edges", []):
-        if seeds.intersection((edge["source"], edge["target"])):
-            start, end = nodes.get(edge["source"]), nodes.get(edge["target"])
-            if start and end:
-                ordered.append(
-                    (edge, f"{start['label']} {edge['relation']} {end['label']}", 1, None)
-                )
-    source_ids = [s["id"] for s in graph.data.get("sources", [])]
+    ordered.extend((edge, text, 1, None) for edge, text in graph.touching(seeds))
+    source_ids = graph.source_ids()
     # Who is asking decides what may be cited, where a source system says so;
     # no viewer sees only sources no system restricts (`permissions.py`).
     active = {
@@ -964,8 +1008,8 @@ def citations_from(
                 "id": str(entry.pk),
                 "title": entry.title,
                 "digest": entry.digest,
-                "excerpt": f"Graph v{graph.version}: {text}{found}\nSource evidence: {quote}",
-                "graph_version": str(graph.version),
+                "excerpt": f"Graph v{version}: {text}{found}\nSource evidence: {quote}",
+                "graph_version": str(version),
                 # The words as they stand in the source, for a caller that checks
                 # its excerpt against it: the excerpt above never appears there.
                 "quote": quote,
@@ -987,5 +1031,5 @@ def citations_from(
     seen.clear()
     seen.update(signatures.get(id(citation)) for citation in direct)
     cited = {citation["id"] for citation in direct}
-    found = verified(referenced(question, ready, order, cited))
+    found = verified(graph.referenced(question, cited))
     return direct + spread(found, key=lambda citation: citation["id"], limit=references)

@@ -63,6 +63,9 @@ SHARED_STREAMS = bool(CONFIG.get("shared_streams", False))
 #: Chunk answers are no worse than its Keyword answers and every source has
 #: been written as passages (`manage.py chunk_sources --check`).
 RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "sources")
+#: Where graph answers find their candidates: the published version's JSON,
+#: prepared in memory, or its rows (`graph_store.RowsGraph`).
+GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "memory")
 # How many files one import may take from a directory - a GitHub /tree/ link or
 # a SharePoint folder. A knowledge base is not a mirror of a repository, so the
 # walk stays bounded; the bound is configurable because what counts as a

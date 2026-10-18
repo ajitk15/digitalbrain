@@ -933,7 +933,9 @@ def chat(request, pk):
         answering = (
             GraphRevision.objects.filter(
                 application=app, number=conversation.graph_version, published_at__isnull=False
-            ).first()
+            )
+            .defer("data")
+            .first()
             or published
         )
     answering_graph = answering.number if answering else None

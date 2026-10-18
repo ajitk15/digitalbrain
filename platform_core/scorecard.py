@@ -169,10 +169,33 @@ METRICS = {
         "exact",
         0,
     ),
+    # Graph storage (`graph_store`): versions as rows held across versions.
+    "graph_rows_exact": (
+        "Graph storage",
+        "Graph versions read back exactly from rows",
+        "%",
+        "exact",
+        0,
+    ),
+    "graph_rows_one_change": (
+        "Graph storage",
+        "Rows a version writes after one source changes",
+        "%",
+        "lower",
+        2.0,
+    ),
+    "graph_rows_same": (
+        "Graph storage",
+        "Graph answers from rows identical to memory",
+        "%",
+        "exact",
+        0,
+    ),
     # Speed - machine dependent, so a generous tolerance.
     "graph_p50_ms": ("Speed", "Graph answer, median", "ms", "lower", 15.0),
     "keyword_p50_ms": ("Speed", "Keyword answer, median", "ms", "lower", 15.0),
     "chunk_p50_ms": ("Speed", "Passage answer, median", "ms", "lower", 15.0),
+    "graph_rows_p50_ms": ("Speed", "Graph answer from rows, median", "ms", "lower", 15.0),
 }
 
 HIPAA = [
@@ -312,22 +335,29 @@ def _workspace():
 
 
 def publish(app):
+    from django.db import transaction
     from django.utils import timezone
 
+    from . import graph_store
     from .graphs import build_graph, sources_for
     from .models import GraphRevision
 
     entries = list(sources_for(app.pk))
     data, quality = build_graph(entries, len(entries))
     number = GraphRevision.objects.filter(application=app).count() + 1
-    return GraphRevision.objects.create(
-        application=app,
-        number=number,
-        fingerprint=f"scorecard-{number}",
-        data=data,
-        quality=quality,
-        published_at=timezone.now(),
-    )
+    # Recorded as `graphs.rebuild` records a version, so answers from rows can
+    # be held to the answers from the JSON (`graph_rows`).
+    with transaction.atomic():
+        revision = GraphRevision.objects.create(
+            application=app,
+            number=number,
+            fingerprint=f"scorecard-{number}",
+            data=data,
+            quality=quality,
+            published_at=timezone.now(),
+        )
+        graph_store.record(revision)
+    return revision
 
 
 # ── the aspects ───────────────────────────────────────────────────────────────
@@ -461,7 +491,7 @@ def agentic(ws, revision):
             viewer=ws.people["owner"],
             references=MAX_REFERENCED,
         )
-        text ="\n".join(f"{c['title']}\n{c['excerpt']}" for c in cited)
+        text = "\n".join(f"{c['title']}\n{c['excerpt']}" for c in cited)
         hits = [i for i in identifiers if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", text)]
         found += len(hits)
         expected += len(identifiers)
@@ -471,6 +501,57 @@ def agentic(ws, revision):
         "seeded_evidence_recall": round(100 * found / expected, 1),
         "seeded_tickets_self_cited": self_cited,
     }, details
+
+
+def graph_rows(ws, revision, questions):
+    """Answers from the version's rows against answers from its JSON, and their speed.
+
+    Every benchmark question as chat asks it, and every seeded ticket as Code
+    Factory asks it, with cross-references: the rows must give the same
+    citations in the same order, or switching `graph_candidates` would change
+    what people are told.
+    """
+    from .graph_ai import MAX_REFERENCED, citations_from, prepare
+    from .graph_store import RowsGraph
+
+    ready = prepare(revision.data)
+    owner = ws.people["owner"]
+    asked = [(q["question"], 0) for q in questions] + [
+        (ticket_question(ws.tickets[care]), MAX_REFERENCED)
+        for care in json.loads((BENCH / "seeded-evidence.json").read_text(encoding="utf-8"))[
+            "tickets"
+        ]
+    ]
+    same, timings, differ = 0, [], []
+    for question, references in asked:
+        memory = citations_from(
+            ws.app.pk,
+            revision.data,
+            revision.number,
+            question,
+            ready,
+            viewer=owner,
+            references=references,
+        )
+        start = time.perf_counter()
+        rows = citations_from(
+            ws.app.pk,
+            None,
+            revision.number,
+            question,
+            viewer=owner,
+            references=references,
+            graph=RowsGraph(revision),
+        )
+        timings.append((time.perf_counter() - start) * 1000)
+        if rows == memory:
+            same += 1
+        else:
+            differ.append(question[:80])
+    return {
+        "graph_rows_same": round(100 * same / len(asked), 1),
+        "graph_rows_p50_ms": round(statistics.median(timings), 1),
+    }, {"asked": len(asked), "different": differ}
 
 
 def ontology_quality():
@@ -561,8 +642,9 @@ def document_typing():
         right += got == expected
         untitled += got_bare == expected
         if got != expected or got_bare != expected:
-            wrong.append({"document": name, "expected": expected, "got": got,
-                          "got_untitled": got_bare})
+            wrong.append(
+                {"document": name, "expected": expected, "got": got, "got_untitled": got_bare}
+            )
     return {
         "document_type_accuracy": round(100 * right / typed, 1) if typed else 0.0,
         "document_type_untitled_accuracy": round(100 * untitled / typed, 1) if typed else 0.0,
@@ -765,10 +847,20 @@ def hipaa(ws, revision, integrity_result, data_result):
 
 def cost_control(ws):
     """AI extraction calls on reruns, and the budget, with the model replaced."""
+    from django.db import transaction
+
+    from . import graph_store
     from .budget import BudgetExceeded
     from .graph_ai import enrich_graph
     from .graphs import build_graph, sources_for
-    from .models import AIBudget, AIConfiguration, AIUsage, GraphRevision, KnowledgeEntry
+    from .models import (
+        AIBudget,
+        AIConfiguration,
+        AIUsage,
+        GraphElement,
+        GraphRevision,
+        KnowledgeEntry,
+    )
 
     owner = ws.people["owner"]
     config = AIConfiguration.objects.create(
@@ -780,7 +872,7 @@ def cost_control(ws):
         output_rate=Decimal("10"),
         configured_by=owner,
     )
-    calls = []
+    calls, versions = [], []
 
     def extract(user, app_id, purpose, question, citations, **options):
         calls.append(citations[0]["id"])
@@ -792,15 +884,20 @@ def cost_control(ws):
         before = len(calls)
         with patch("platform_core.ai.invoke_ai", side_effect=extract):
             data, quality = enrich_graph(ws.app.pk, config, entries, data, quality)
-        GraphRevision.objects.create(
-            application=ws.app,
-            number=GraphRevision.objects.filter(application=ws.app).count() + 1,
-            fingerprint="scorecard-ai",
-            data=data,
-            quality=quality,
-            provider="claude",
-            model="claude-sonnet-5",
-        )
+        # Recorded as `graphs.rebuild` records a version, so the graph storage
+        # figures measure the versions a run of rebuilds actually leaves.
+        with transaction.atomic():
+            revision = GraphRevision.objects.create(
+                application=ws.app,
+                number=GraphRevision.objects.filter(application=ws.app).count() + 1,
+                fingerprint="scorecard-ai",
+                data=data,
+                quality=quality,
+                provider="claude",
+                model="claude-sonnet-5",
+            )
+            graph_store.record(revision)
+        versions.append(revision)
         return len(calls) - before
 
     first = run()
@@ -814,6 +911,12 @@ def cost_control(ws):
         content=changed, digest=hashlib.sha256(changed.encode()).hexdigest()
     )
     one_change = run()
+    changed_version = versions[-1]
+    written = GraphElement.objects.filter(
+        application=ws.app, first_number=changed_version.number
+    ).count()
+    elements = sum(len(changed_version.data.get(name, [])) for name in graph_store.ELEMENTS)
+    exact = sum(graph_store.verify(version) for version in versions)
 
     AIBudget.objects.create(application=ws.app, monthly_limit=Decimal("1"))
     AIUsage.objects.create(
@@ -849,7 +952,9 @@ def cost_control(ws):
         "ai_calls_unchanged_rerun": unchanged,
         "ai_calls_one_change": one_change,
         "paid_calls_over_budget": over,
-    }, {"first_run_calls": first}
+        "graph_rows_exact": round(100 * exact / len(versions), 1),
+        "graph_rows_one_change": round(100 * written / max(1, elements), 1),
+    }, {"first_run_calls": first, "graph_versions": len(versions), "rows_written": written}
 
 
 def speed(ws, revision, questions):
@@ -925,6 +1030,8 @@ def measure():
         found, details["integrity"] = integrity(ws, revision, cited_all)
         values.update(found)
         found, details["seeded_tickets"] = agentic(ws, revision)
+        values.update(found)
+        found, details["graph_rows"] = graph_rows(ws, revision, questions)
         values.update(found)
         found, details["ontology"] = ontology_quality()
         values.update(found)

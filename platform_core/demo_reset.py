@@ -80,6 +80,7 @@ from .models import (
     Document,
     DocumentAIResult,
     FactoryRun,
+    GraphElement,
     GraphRevision,
     IncidentProfile,
     KnowledgeEntry,
@@ -133,6 +134,7 @@ ORDER = (
     # The knowledge graph. Benchmark runs score its versions and go with them;
     # the questions are configuration and stay for the next build.
     (BenchmarkRun, "application_id__in"),
+    (GraphElement, "application_id__in"),
     (GraphRevision, "application_id__in"),
     (KnowledgeGraph, "application_id__in"),
 )

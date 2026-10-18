@@ -198,6 +198,30 @@
    "tolerance": 0,
    "value": 0
   },
+  "graph_rows_exact": {
+   "aspect": "Graph storage",
+   "label": "Graph versions read back exactly from rows",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "graph_rows_one_change": {
+   "aspect": "Graph storage",
+   "label": "Rows a version writes after one source changes",
+   "unit": "%",
+   "better": "lower",
+   "tolerance": 2.0,
+   "value": 1.4
+  },
+  "graph_rows_same": {
+   "aspect": "Graph storage",
+   "label": "Graph answers from rows identical to memory",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
   "graph_p50_ms": {
    "aspect": "Speed",
    "label": "Graph answer, median",

@@ -391,6 +391,10 @@ def rebuild(app_id):
             provider=config.provider if config else quality.get("provider", ""),
             model=config.model if config else quality.get("model", ""),
         )
+        # Its elements as rows too, in this transaction, so the two commit together.
+        from .graph_store import record
+
+        record(revision)
         # Every saved version is scored against the benchmark questions. After
         # commit, so a failed benchmark can never undo the save, and free: it
         # calls no model.
@@ -433,9 +437,16 @@ def requested_configuration(graph):
 
 
 def published_revision(app_id):
-    """The newest published snapshot, or None."""
+    """The newest published snapshot, or None.
+
+    Without its graph: most callers ask only whether there is one, or which
+    sources it read (`graph_store.recorded_sources`), and loading the whole
+    graph for that was a read of every node on every chat page. Reading
+    `.data` still works and costs the one query it always did.
+    """
     return (
         GraphRevision.objects.filter(application_id=app_id, published_at__isnull=False)
+        .defer("data")
         .order_by("-published_at", "-number")
         .first()
     )
@@ -657,7 +668,9 @@ def set_auto_refresh(request, app, pk):
 
 def revision_added(revision, app_id):
     """Sources added since this revision was saved: `revision_drift`'s blind spot."""
-    recorded = {source["id"] for source in revision.data.get("sources", [])}
+    from .graph_store import recorded_sources
+
+    recorded = {source["id"] for source in recorded_sources(revision)}
     return sum(
         1 for pk in sources_for(app_id).values_list("id", flat=True) if str(pk) not in recorded
     )
@@ -675,8 +688,10 @@ def revision_drift(revision, app_id):
     is the whole point. Not telling anyone was never decided on purpose, which
     is why this is also read for the revision that is currently answering.
     """
+    from .graph_store import recorded_sources
+
     current = {str(pk): digest for pk, digest in sources_for(app_id).values_list("id", "digest")}
-    recorded = revision.data.get("sources", [])
+    recorded = recorded_sources(revision)
     # A record with no digest cannot be shown to still read, so it counts as
     # drifted rather than raising - older revisions may predate the field.
     changed = sum(1 for source in recorded if current.get(source["id"]) != source.get("digest"))

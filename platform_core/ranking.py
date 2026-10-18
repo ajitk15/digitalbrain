@@ -128,11 +128,17 @@ class BM25:
         self.size = len(self.counts)
         self.average = (sum(self.lengths) / self.size) if self.size else 0
         self.frequency = Counter(term for counts in self.counts for term in counts)
+        #: How many texts idf counts against. The texts given, unless they are
+        #: only the candidates of a larger set: `graph_store.RowsGraph` ranks the
+        #: edges holding a question's terms and sets this, and `average`, to the
+        #: whole version's - every text holding a query term is a candidate, so
+        #: `frequency` is already right for each term a query can ask about.
+        self.population = self.size
 
     def idf(self, term):
         """Rarer is higher; never negative, so a common word still counts a little."""
         seen = self.frequency.get(term, 0)
-        return math.log(1 + (self.size - seen + 0.5) / (seen + 0.5))
+        return math.log(1 + (self.population - seen + 0.5) / (seen + 0.5))
 
     def score(self, index, query):
         counts, length = self.counts[index], self.lengths[index]

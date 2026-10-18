@@ -907,6 +907,48 @@ scorecard's Passage answers are no worse than its Keyword answers and
 time. Counting deletions: a source's delete cascades to its passages, so count by model
 (`QuerySet.delete()[1]`), never the total.
 
+## Graph versions are rows too
+
+`GraphElement` (`graph_store.py`) holds each source, node and edge of a version **once
+for every version it is in**: `first_number`, and `last_number` empty while it is still
+current. Version N is the rows with `first_number <= N` and `last_number` empty or
+`>= N`, **in `key` order, and reads back exactly as its JSON** - same lists, same order.
+Order is kept because ranking breaks ties by position and the one-hop expansion walks
+edges in list order. A key is a sparse integer; a row stays open only while it keeps its
+place among the rows that stay (`increasing`), new rows take keys in the gaps
+(`placed`), and a list with no gap left is written afresh - one full write, never a wrong
+order. `graphs.rebuild` calls `record` in the transaction that saves the version, so a
+rebuild after one source changes closes that source's rows and adds its new ones - 1.4%
+of a CarePath version, where the JSON was written whole again.
+
+Edges also carry what ranking reads, derived exactly as `graph_ai.prepare` derives it:
+their text, `ranking.terms` of it, the references they name, and whether `walk` may follow
+them - all part of the digest, so a node relabelled under an unchanged edge makes a new
+row rather than stale terms. PostgreSQL holds the terms and references as generated
+arrays with GIN indexes (migration 0089); SQLite matches words in the padded text.
+
+**`graph_candidates = "rows"` answers graph questions from them** (`RowsGraph`), and
+`"memory"` (the default) from the prepared JSON. `citations_from` asks one interface of
+either (`graph_ai.InMemory`): the edges holding a question's terms, ranked by the same
+`rank_covering` with the whole version's size and average length (`BM25.population`,
+`graph_store.statistics`) - every edge holding a query term is a candidate, so each term's
+frequency is already right; the walk and the expansion read the rows touching the nodes
+they reach; cross-references read the rows naming the question's references. Verification
+is the one path both share. **The scorecard holds them to identical citations** on every
+benchmark question and seeded ticket (Graph storage), and measures the cost: 40 ms
+against 14 ms on CarePath, where memory is a warm cache - rows do not grow with the
+graph, memory does. A question with an embedding still ranks in memory, where vectors
+are. Switch only with that metric at 100%.
+
+The JSON is still written; rows are also read for which sources a version read
+(`recorded_sources`, for drift on every chat page and the publish check), which is why
+`published_revision` defers `data`. Versions are recorded in number order under a lock
+on the application row; one older than the newest recorded is left to its JSON. The
+maintenance lane records older versions a few at a time (`record_step`), and
+`manage.py graph_store [--check]` does it all or fails on anything unrecorded or not
+reading back exactly. Still to come: building per source and removing `MAX_SOURCES`,
+which the rows now make possible - the in-memory graph was the ceiling.
+
 ## Verified against a live CLI
 
 `agent_runtime/claude_runtime.py:TOOL_PREFIX` — **confirmed**. A live run reported

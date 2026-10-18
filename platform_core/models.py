@@ -1972,6 +1972,8 @@ class GraphRevision(models.Model):
         on_delete=models.SET_NULL,
         related_name="published_graphs",
     )
+    #: Whether its sources, nodes and edges are also `GraphElement` rows (`graph_store`).
+    stored = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1988,6 +1990,60 @@ class GraphRevision(models.Model):
     @property
     def updated_at(self):
         return self.created_at
+
+
+class GraphElement(models.Model):
+    """One source, node or edge of a knowledge graph, for the versions it is in.
+
+    See `graph_store`. Held once while it stays the same and keeps its place:
+    version N is every row with `first_number <= N` and `last_number` empty or
+    `>= N`, in `key` order, and reads back exactly as that version's JSON. A
+    copy, never evidence: citations verify against the sources, as they always
+    did. Edges also carry what ranking reads, so a question can be answered
+    from the rows that hold its terms (`graph_store.RowsGraph`).
+    """
+
+    ELEMENTS = [("sources", "Source"), ("nodes", "Node"), ("edges", "Edge")]
+
+    id = models.BigAutoField(primary_key=True)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    element = models.CharField(max_length=8, choices=ELEMENTS)
+    #: Its place in the version's list: sparse, so rows can be added between.
+    key = models.PositiveBigIntegerField()
+    digest = models.CharField(max_length=64)
+    #: The source it came from, when it names one.
+    knowledge_id = models.CharField(max_length=64, blank=True)
+    body = models.JSONField()
+    first_number = models.PositiveIntegerField()
+    last_number = models.PositiveIntegerField(null=True, blank=True)
+    # Edges only, as `graph_ai.prepare` derives them.
+    start_node = models.CharField(max_length=64, blank=True)
+    end_node = models.CharField(max_length=64, blank=True)
+    text = models.TextField(blank=True)
+    #: `ranking.terms(text)`, space-separated with a space at each end.
+    terms = models.TextField(blank=True)
+    length = models.PositiveIntegerField(default=0)
+    #: The references it names that are not its own source's, padded likewise.
+    names = models.TextField(blank=True)
+    #: An AI relationship between two entities: what `graph_ai.walk` follows.
+    typed = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "element", "key", "first_number"],
+                name="unique_graph_element",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["application", "element", "last_number", "first_number"],
+                name="graph_element_version",
+            ),
+            models.Index(fields=["application", "knowledge_id"], name="graph_element_source"),
+            models.Index(fields=["application", "start_node"], name="graph_element_start"),
+            models.Index(fields=["application", "end_node"], name="graph_element_end"),
+        ]
 
 
 class BenchmarkQuestion(models.Model):

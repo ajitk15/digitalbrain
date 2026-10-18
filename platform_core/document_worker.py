@@ -215,6 +215,7 @@ def automation_steps():
 
 def maintenance_steps():
     from .chunks import backfill_step
+    from .graph_store import record_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
     from .queue_status import log_if_due
@@ -228,8 +229,16 @@ def maintenance_steps():
     # Reclaiming abandoned jobs is here too: it must run even when the lane
     # whose worker died is the one that would have run it. Writing passages
     # for sources stored before they existed is a batch at a time, last, so a
-    # large library catching up never delays the rest.
-    return (purge_chat_if_due, process_next_source, maintain, log_if_due, backfill_step)
+    # large library catching up never delays the rest; recording graph versions
+    # saved before their elements were rows is the same kind of catching up.
+    return (
+        purge_chat_if_due,
+        process_next_source,
+        maintain,
+        log_if_due,
+        backfill_step,
+        record_step,
+    )
 
 
 #: Independent queues, each on its own thread.
