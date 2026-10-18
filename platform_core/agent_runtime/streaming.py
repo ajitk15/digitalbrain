@@ -20,12 +20,23 @@ generator, which keeps the no-ORM rule below.
 
 Division of labour, which the rest of the chat code depends on:
 
-* The SSE generator (a waitress request thread) performs **no ORM work**. It
-  relays frames and emits heartbeats.
+* The SSE generator (a waitress request thread, or under ASGI a coroutine)
+  performs **no ORM work**. It relays frames and emits heartbeats.
+
+UNDER ASGI (`web_server = "uvicorn"`, `digitalbrain/asgi.py`) the stream
+endpoints are served by an event loop and every other request by the same
+WSGI application in a bounded thread pool. `attach(..., asynchronous=True)`
+does the same setup - capacity, the session, starting the worker - and hands
+back a reader that awaits instead of blocking: it polls a local session's
+queue every `POLL_SECONDS`, or awaits Redis. A reader then holds no thread,
+so `MAX_ASYNC_READERS` can follow answers at once where waitress allowed
+`MAX_ACTIVE_STREAMS`; the answers themselves - a worker thread and a paid call
+each - are bounded as before.
 * The worker thread owns every database write for its message. A single writer is
   what keeps a racing stop from corrupting the row.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -49,6 +60,11 @@ MAX_QUEUED_EVENTS = 1000
 #: scripts/serve.py derives its thread count from this so the two cannot drift.
 MAX_ACTIVE_STREAMS = 12
 SESSION_TTL_SECONDS = 600
+
+#: Readers an event loop may hold at once (see "UNDER ASGI" above), and how
+#: often one looks at a process-local session's queue.
+MAX_ASYNC_READERS = 500
+POLL_SECONDS = 0.05
 
 #: Pushed by the worker to mark the end of the event stream.
 END_OF_STREAM = object()
@@ -299,8 +315,47 @@ def stream_frames(session):
             yield encode(event, data, sequence)
     finally:
         # A client that walked away must not leave the worker producing forever.
-        session.cancel.set()
-        close_session(session.message_id)
+        end_local(session)
+
+
+def end_local(session):
+    session.cancel.set()
+    close_session(session.message_id)
+
+
+async def stream_frames_async(session):
+    """`stream_frames` for an event loop: the same frames, awaited not blocked on.
+
+    The queue is the worker thread's, so it is polled rather than waited on - a
+    wait would need a thread, which is what this exists to avoid. A cancelled
+    reader (the client went away) ends here like a vanished one does there.
+    """
+    sequence = 0
+    quiet_since = time.monotonic()
+    try:
+        while True:
+            now = time.monotonic()
+            if now - session.started_at > MAX_STREAM_SECONDS:
+                sequence += 1
+                yield encode("error", {"message": "This answer took too long."}, sequence)
+                session.cancel.set()
+                return
+            try:
+                item = session.events.get_nowait()
+            except queue.Empty:
+                if now - quiet_since >= HEARTBEAT_SECONDS:
+                    quiet_since = now
+                    yield ": keep-alive\n\n"
+                await asyncio.sleep(POLL_SECONDS)
+                continue
+            quiet_since = now
+            if item is END_OF_STREAM:
+                return
+            event, data = item
+            sequence += 1
+            yield encode(event, data, sequence)
+    finally:
+        end_local(session)
 
 
 # ── Redis mode ───────────────────────────────────────────────────────────────
@@ -329,6 +384,8 @@ MAX_STREAM_EVENTS = 20000
 INTERRUPTED = "The server stopped while this answer was being written. Press Regenerate."
 #: A reader holds a waitress thread for its whole life, like a local stream.
 _readers = threading.BoundedSemaphore(MAX_ACTIVE_STREAMS)
+#: Under ASGI it holds a coroutine, and these are its slots.
+_async_readers = threading.BoundedSemaphore(MAX_ASYNC_READERS)
 LAST_EVENT = re.compile(r"\d{1,20}-\d{1,20}")
 
 
@@ -508,7 +565,7 @@ def ended(client, message_id):
     return bool(last) and last[0][1].get("e") == "_end"
 
 
-def attach(message_id, last_event_id, start, interrupted):
+def attach(message_id, last_event_id, start, interrupted, asynchronous=False):
     """The frames for one answer, started here if nothing has started it.
 
     `start(session)` launches the worker for a new answer; `interrupted(text)`
@@ -516,16 +573,19 @@ def attach(message_id, last_event_id, start, interrupted):
     exists, so both may touch the database. Either is None for an answer that
     is already finished, which is then only replayed. Without Redis this is
     exactly the old path: one reader, which starts the answer and stops it by
-    leaving.
+    leaving. `asynchronous` returns an async iterator for an ASGI response.
     """
     if not resumable():
         session = open_session(message_id)
         start(session)
+        if asynchronous:
+            return AsyncReader(stream_frames_async(session), lambda: end_local(session))
         return stream_frames(session)
     from .. import broker
 
     client = broker.client()
-    if not _readers.acquire(blocking=False):
+    slots = _async_readers if asynchronous else _readers
+    if not slots.acquire(blocking=False):
         raise StreamCapacityError("Too many answers are streaming right now.")
     try:
         if not client.exists(owner_key(message_id)):
@@ -537,10 +597,12 @@ def attach(message_id, last_event_id, start, interrupted):
                 if session is not None:
                     start(session)
     except BaseException:
-        _readers.release()
+        slots.release()
         raise
     cursor = last_event_id if last_event_id and LAST_EVENT.fullmatch(last_event_id) else "0-0"
-    return Reader(follow(client, str(message_id), cursor), _readers.release)
+    if asynchronous:
+        return AsyncReader(follow_async(str(message_id), cursor), slots.release)
+    return Reader(follow(client, str(message_id), cursor), slots.release)
 
 
 class Reader:
@@ -571,6 +633,55 @@ class Reader:
             release()
 
 
+class AsyncReader:
+    """`Reader` for an event loop.
+
+    Django closes a streaming response's content with `close()`, which it
+    looks for on the iterator it was given, and an ASGI disconnect cancels
+    the reader where it awaits. Either way the slot is given back once.
+    """
+
+    def __init__(self, frames, release):
+        self.frames, self._release = frames, release
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            return await self.frames.__anext__()
+        except BaseException:
+            await self.aclose()
+            raise
+
+    async def aclose(self):
+        await self.frames.aclose()
+        self.close()
+
+    def close(self):
+        release, self._release = self._release, None
+        if release is not None:
+            release()
+
+
+def decoded(entries):
+    """Frames for a batch of an answer's events: (frames, last id, ended).
+
+    One reading of an entry for both readers, so a blocking and an awaiting
+    reader cannot send different frames for the same answer.
+    """
+    frames, cursor = [], None
+    for entry, fields in entries:
+        cursor = entry
+        event = fields.get("e", "")
+        if event == "_end":
+            return frames, cursor, True
+        if event.startswith("_"):
+            continue
+        frames.append(encode(event, json.loads(fields.get("d", "{}")), entry))
+    return frames, cursor, False
+
+
 def follow(client, message_id, cursor):
     """Replay an answer's events after `cursor`, then follow it until it ends.
 
@@ -598,11 +709,37 @@ def follow(client, message_id, cursor):
                 return
             yield ": keep-alive\n\n"
             continue
-        for entry, fields in found[0][1]:
-            cursor = entry
-            event = fields.get("e", "")
-            if event == "_end":
+        frames, cursor, ended = decoded(found[0][1])
+        yield from frames
+        if ended:
+            return
+
+
+async def follow_async(message_id, cursor):
+    """`follow`, awaiting Redis through this event loop's own client."""
+    from .. import broker
+
+    client = broker.async_client()
+    started = time.monotonic()
+    while True:
+        if time.monotonic() - started > MAX_STREAM_SECONDS + LEASE_STALE_SECONDS:
+            return
+        try:
+            found = await client.xread(
+                {events_key(message_id): cursor}, count=200, block=HEARTBEAT_SECONDS * 1000
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("stream_follow_failed", extra={"event": "stream_follow_failed"})
+            return
+        if not found:
+            if not await client.exists(owner_key(message_id)):
                 return
-            if event.startswith("_"):
-                continue
-            yield encode(event, json.loads(fields.get("d", "{}")), entry)
+            yield ": keep-alive\n\n"
+            continue
+        frames, cursor, ended = decoded(found[0][1])
+        for frame in frames:
+            yield frame
+        if ended:
+            return

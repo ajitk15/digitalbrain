@@ -1,4 +1,10 @@
-"""Bounded WSGI server. Keep the listener private behind a TLS proxy in production."""
+"""Bounded web server. Keep the listener private behind a TLS proxy in production.
+
+Waitress by default. With `web_server = "uvicorn"` in the configuration it is
+uvicorn, serving the stream endpoints on its event loop and everything else
+through the same WSGI application in a thread pool (`digitalbrain/asgi.py`), so
+a streamed answer no longer holds a request thread.
+"""
 
 import argparse
 import sys
@@ -76,6 +82,39 @@ REQUEST_THREADS = MAX_ACTIVE_STREAMS * 2
 #: so they stay here either way and Stop needs nothing shared to reach them.
 if not args.no_worker:
     Thread(target=run_document_worker, name="document-conversion", daemon=True).start()
+
+from django.conf import settings  # noqa: E402
+
+if settings.WEB_SERVER == "uvicorn":
+    import uvicorn
+
+    from digitalbrain.asgi import MAX_BODY, build
+    from platform_core.agent_runtime.streaming import MAX_ASYNC_READERS
+
+    assert MAX_BODY == 23068672, "keep in step with waitress's max_request_body_size"
+    uvicorn.run(
+        # Streams no longer use the pool, so it serves pages alone.
+        build(trusted_proxy=args.trusted_proxy, workers=REQUEST_THREADS),
+        host=args.host,
+        port=args.port,
+        # The router believes X-Forwarded-* from the trusted proxy only and
+        # removes it from everyone else, as waitress did; uvicorn's own
+        # handling would leave an untrusted header in place.
+        proxy_headers=False,
+        server_header=False,
+        ws="none",
+        lifespan="off",
+        access_log=False,
+        log_config=None,
+        # Waitress's connection_limit, plus a slot per reader that may follow
+        # an answer, and its max_request_header_size.
+        limit_concurrency=100 + MAX_ASYNC_READERS,
+        h11_max_incomplete_event_size=32768,
+        timeout_keep_alive=5,
+        timeout_graceful_shutdown=10,
+    )
+    sys.exit(0)
+
 serve(
     application,
     host=args.host,

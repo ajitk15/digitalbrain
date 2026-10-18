@@ -54,6 +54,7 @@ def load_config():
         "tesseract_path",
         "claude_use_host_login",
         "claude_messages_api",
+        "web_server",
         "allow_self_approval",
         "allow_demo_reset",
         "fetch_allow_hosts",
@@ -124,6 +125,8 @@ def load_config():
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("claude_messages_api", True)) is not bool:
         raise ImproperlyConfigured("claude_messages_api must be a boolean.")
+    if config.get("web_server", "waitress") not in {"waitress", "uvicorn"}:
+        raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:
         raise ImproperlyConfigured("allow_self_approval must be a boolean.")
     if type(config.get("code_factory_local_write", False)) is not bool:

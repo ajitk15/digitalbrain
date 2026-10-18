@@ -33,6 +33,9 @@ CLAUDE_USE_HOST_LOGIN = bool(CONFIG.get("claude_use_host_login", False)) and not
 #: One-shot Claude calls with an API key go to the Messages API rather than the
 #: CLI (`platform_core/claude_messages.py`); false sends every call to the CLI.
 CLAUDE_MESSAGES_API = bool(CONFIG.get("claude_messages_api", True))
+#: What `scripts/serve.py` runs: waitress for everything, or uvicorn with the
+#: stream endpoints on its event loop and the rest as WSGI (`digitalbrain/asgi.py`).
+WEB_SERVER = CONFIG.get("web_server", "waitress")
 #: Let one person both write and approve a change plan. A single-operator
 #: instance cannot otherwise run the pipeline end to end, because whoever starts
 #: a run authors its plan and may not review their own work. Honoured in every

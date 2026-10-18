@@ -618,7 +618,21 @@ def stream_answer(request, user, app, message, question, history, name="chat-ans
         request.headers.get("Last-Event-ID"),
         start if live else None,
         interrupted if live else None,
+        asynchronous=served_by_event_loop(request),
     )
+
+
+def served_by_event_loop(request):
+    """Whether this request arrived through ASGI, whose response must not block.
+
+    Under `web_server = "uvicorn"` the stream endpoints are routed to Django's
+    ASGI handler (`digitalbrain/asgi.py`): this view still runs in a thread,
+    but the frames it returns are read by the event loop, so they must be an
+    async iterator that awaits rather than one that holds a thread.
+    """
+    from django.core.handlers.asgi import ASGIRequest
+
+    return isinstance(request, ASGIRequest)
 
 
 def event_stream(frames):

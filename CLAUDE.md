@@ -943,6 +943,23 @@ The stream registry in `agent_runtime/streaming.py` is **process-local** unless 
 shares it: through a database lease (`shared_streams`) or Redis, which also lets an answer
 resume after a dropped connection - see "With Redis" above.
 
+**Under uvicorn a reader holds no thread** (`web_server = "uvicorn"`, default
+`"waitress"`; `digitalbrain/asgi.py`). Under waitress each open stream held a request
+thread for its whole life, so a process followed `MAX_ACTIVE_STREAMS` answers at most.
+`asgi.Router` sends only `chat-stream` and `api-chat-stream` to Django's ASGI handler
+and every other request to the same WSGI application in a bounded `a2wsgi` pool, so
+views, middleware and the CSP are unchanged. The view still runs in a thread; what it
+returns is `streaming.attach(..., asynchronous=True)` (`served_by_event_loop`), an
+`AsyncReader` that polls a local session's queue every `POLL_SECONDS` or awaits Redis
+through `broker.async_client()` (one per event loop), with its own slots
+(`MAX_ASYNC_READERS`). The frames are the blocking readers' own (`decoded`), and still no
+ORM work. The answers - a worker thread and a paid call each - are bounded as before.
+uvicorn does none of waitress's edge work, so the router does it: X-Forwarded-* is
+believed only from `--trusted-proxy` (its last hop) and removed from anyone else, and a
+body over `MAX_BODY` (413) or of no stated length (411) is refused before Django reads
+it. `test_asgi` holds the frames equal, the edge rules, and - over a real socket - pages
+still served while more streams are open than the pool has threads.
+
 ## Web and worker can run apart
 
 `scripts/serve.py` runs every worker lane inside the web process unless it is started with

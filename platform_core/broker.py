@@ -22,6 +22,7 @@ in the environment. Production refuses a connection without verified TLS
 """
 
 import threading
+import weakref
 from pathlib import Path
 
 from django.conf import settings
@@ -34,6 +35,9 @@ CONNECT_SECONDS = 5
 
 _client = None
 _lock = threading.Lock()
+#: Under ASGI: one asyncio client per event loop, since its connections belong
+#: to the loop that opened them.
+_async_clients = weakref.WeakKeyDictionary()
 
 
 def enabled():
@@ -54,8 +58,9 @@ def password():
     return read_secret(directory, "redis_password")
 
 
-def connect(config):
+def connect(config, asynchronous=False):
     import redis
+    import redis.asyncio
 
     options = {
         "host": config["host"],
@@ -72,7 +77,7 @@ def connect(config):
         options.update(ssl=True, ssl_cert_reqs="required", ssl_check_hostname=True)
         if config.get("ca_certificate"):
             options["ssl_ca_certs"] = config["ca_certificate"]
-    return redis.Redis(**options)
+    return (redis.asyncio.Redis if asynchronous else redis.Redis)(**options)
 
 
 def client():
@@ -82,6 +87,31 @@ def client():
         if _client is None:
             _client = connect(settings.REDIS)
         return _client
+
+
+def async_client():
+    """This event loop's client, made on first use."""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    with _lock:
+        found = _async_clients.get(loop)
+        if found is None:
+            made = async_client_factory or (lambda: connect(settings.REDIS, asynchronous=True))
+            found = _async_clients[loop] = made()
+        return found
+
+
+def use_async(factory):
+    """For tests: `factory()` makes each loop's client - None to connect again."""
+    global async_client_factory
+    with _lock:
+        _async_clients.clear()
+        async_client_factory = factory
+
+
+#: Set by `use_async` in tests; None connects to the configured Redis.
+async_client_factory = None
 
 
 def use(replacement):
