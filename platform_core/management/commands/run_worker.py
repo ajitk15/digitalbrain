@@ -7,7 +7,10 @@ does not share a process with sign-in.
 
 Each lane is held by `document_worker.LaneKeeper`, so starting this beside a web
 process that still runs its own lanes, or twice, runs nothing twice: the second
-holder of a lane stands by and takes over when the first one goes.
+holder of a lane stands by and takes over when the first one goes. The shared
+lanes (`document_worker.SHARED_LANES`) take no lock - every step claims its own
+row - so they may run in every process, and `--concurrency intake=4` gives one
+more threads.
 """
 
 import logging
@@ -17,7 +20,7 @@ import time
 
 from django.core.management.base import BaseCommand, CommandError
 
-from platform_core.document_worker import LANES, lanes_named, start_lanes
+from platform_core.document_worker import LANES, concurrency_from, lanes_named, start_lanes
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +36,22 @@ class Command(BaseCommand):
             f"Lanes: {', '.join(name for name, _, _ in LANES)}.",
         )
         parser.add_argument(
+            "--concurrency",
+            default="",
+            help="Threads per shared lane, as intake=4,graph=2. One each when omitted.",
+        )
+        parser.add_argument(
             "--grace",
             type=int,
             default=50,
             help="Seconds a step in progress may take to finish after a stop signal.",
         )
 
-    def handle(self, *args, lanes="", grace=50, **options):
+    def handle(self, *args, lanes="", grace=50, concurrency="", **options):
         names = [name.strip() for name in lanes.split(",") if name.strip()]
         try:
             selected = lanes_named(names or [name for name, _, _ in LANES])
+            threads_per_lane = concurrency_from(concurrency)
         except ValueError as failure:
             raise CommandError(str(failure)) from None
         if grace < 0:
@@ -54,7 +63,7 @@ class Command(BaseCommand):
 
         for signum in (signal.SIGTERM, signal.SIGINT):
             signal.signal(signum, request_stop)
-        threads = start_lanes(selected, stop)
+        threads = start_lanes(selected, stop, threads_per_lane)
         chosen = ", ".join(name for name, _, _ in selected)
         self.stdout.write(f"worker: running {chosen}")
         logger.info(

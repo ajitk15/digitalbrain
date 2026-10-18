@@ -35,7 +35,11 @@ class SafeJsonFormatter(logging.Formatter):
             # Queue figures (queue_status): numbers and a flag, never a record.
             "waiting",
             "oldest_seconds",
+            "dead",
             "heartbeat_seconds",
+            # A background job's registry name, and how many tries it has had.
+            "kind",
+            "attempts",
             "stale",
             "exception_type",
             # A failed Claude CLI result's structured fields: SDK labels and

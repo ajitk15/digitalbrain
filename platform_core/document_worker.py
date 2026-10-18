@@ -16,6 +16,22 @@ from .processing import convert_document, settle_failure
 logger = logging.getLogger(__name__)
 
 
+def fairly(waiting, working, active_since):
+    """The oldest waiting document from an application with nothing in `working`.
+
+    Oldest first across everyone let one application's ten-thousand-file import
+    hold every other application's single upload behind it. Preferring an
+    application that has nothing in progress gives each one a turn; when every
+    waiting application is already busy, the oldest is taken anyway, so a lone
+    large import still uses every worker it has.
+    """
+    busy = Document.objects.filter(
+        status=working, conversion_started_at__gte=active_since
+    ).values("application_id")
+    ordered = waiting.order_by("created_at")
+    return ordered.exclude(application_id__in=busy).first() or ordered.first()
+
+
 def process_next_link():
     """Download one queued link. Fetching is separate from conversion so a slow
     host delays only itself, and the rail can show downloading apart from
@@ -23,13 +39,12 @@ def process_next_link():
     from .link_sources import download
 
     expired = timezone.now() - timedelta(minutes=5)
-    doc = (
+    doc = fairly(
         Document.objects.filter(
             Q(status="pending") | Q(status="fetching", conversion_started_at__lt=expired)
-        )
-        .select_related("application")
-        .order_by("created_at")
-        .first()
+        ).select_related("application"),
+        "fetching",
+        expired,
     )
     if doc is None:
         return False
@@ -49,13 +64,12 @@ def process_next_link():
 
 def process_next_document():
     expired = timezone.now() - timedelta(minutes=5)
-    doc = (
+    doc = fairly(
         Document.objects.filter(
             Q(status="queued") | Q(status="converting", conversion_started_at__lt=expired)
-        )
-        .select_related("conversion_actor", "uploaded_by")
-        .order_by("created_at")
-        .first()
+        ).select_related("conversion_actor", "uploaded_by"),
+        "converting",
+        expired,
     )
     if doc is None:
         return False
@@ -120,9 +134,11 @@ def intake_steps():
 
 
 def graph_steps():
-    from .graphs import process_next_graph
+    """Refresh what a change asked for; now and then, ask about everything."""
+    from .graphs import reconcile_if_due
+    from .jobs import step_for
 
-    return (process_next_graph,)
+    return (step_for("graph"), reconcile_if_due)
 
 
 def factory_steps():
@@ -178,9 +194,11 @@ def serviceops_steps():
 
 
 def connector_steps():
-    from .connectors import process_next_connector
+    """Ask for every import that is due, then run one."""
+    from .connectors import schedule_due
+    from .jobs import step_for
 
-    return (process_next_connector,)
+    return (schedule_due, step_for("connectors"))
 
 
 def serviceops_test_steps():
@@ -196,6 +214,7 @@ def automation_steps():
 
 
 def maintenance_steps():
+    from .jobs import maintain
     from .knowledge_sources import process_next_source
     from .queue_status import log_if_due
 
@@ -205,7 +224,9 @@ def maintenance_steps():
     # conversion - and because putting it in the intake lane would have it
     # competing with the downloads it might one day cause. The queue figures
     # are logged here for the same reason: they are read, never acted on.
-    return (purge_chat_if_due, process_next_source, log_if_due)
+    # Reclaiming abandoned jobs is here too: it must run even when the lane
+    # whose worker died is the one that would have run it.
+    return (purge_chat_if_due, process_next_source, maintain, log_if_due)
 
 
 #: Independent queues, each on its own thread.
@@ -239,6 +260,14 @@ LANES = (
     ("connectors", connector_steps, 10.0),
     ("maintenance", maintenance_steps, 30.0),
 )
+
+
+#: Lanes whose every step claims its own row - a document by a conditional
+#: update, a job by a row lock - so any number of threads and processes may run
+#: them at once. Every other lane is still one process at a time, held by
+#: `LaneKeeper`'s advisory lock, because some of their steps pick a row and act
+#: on it. `run_worker --concurrency intake=4` runs more than one thread.
+SHARED_LANES = frozenset({"intake", "graph", "connectors"})
 
 
 #: How long a lane this process does not hold waits before asking again, and
@@ -277,6 +306,8 @@ class LaneKeeper:
 
     def __init__(self, name):
         self.name = name
+        #: A shared lane takes no lock and still beats, so a quiet lane is seen.
+        self.exclusive = name not in SHARED_LANES
         self.key = lane_key(name)
         self.connection = None
         self.holding = False
@@ -310,7 +341,7 @@ class LaneKeeper:
         return self.holding
 
     def acquire(self):
-        if connection.vendor != "postgresql":
+        if connection.vendor != "postgresql" or not self.exclusive:
             self.holding = True
             self.since = timezone.now()
             return
@@ -456,16 +487,51 @@ def lanes_named(names):
     return [known[name] for name in dict.fromkeys(names)]
 
 
-def start_lanes(lanes, stop):
-    """Run each lane on a thread of its own until `stop` is set. Returns the threads."""
+def start_lanes(lanes, stop, concurrency=None):
+    """Run each lane on threads of its own until `stop` is set. Returns the threads.
+
+    `concurrency` maps a shared lane to how many threads run it; one otherwise.
+    """
+    concurrency = concurrency or {}
     threads = []
     for name, steps_for, idle_seconds in lanes:
-        thread = Thread(
-            target=run_lane,
-            args=(name, steps_for, idle_seconds, stop, LaneKeeper(name)),
-            name=f"worker-{name}",
-            daemon=True,
-        )
-        thread.start()
-        threads.append(thread)
+        count = concurrency.get(name, 1)
+        for index in range(count):
+            thread = Thread(
+                target=run_lane,
+                args=(name, steps_for, idle_seconds, stop, LaneKeeper(name)),
+                name=f"worker-{name}" if count == 1 else f"worker-{name}-{index + 1}",
+                daemon=True,
+            )
+            thread.start()
+            threads.append(thread)
     return threads
+
+
+#: The most threads one process runs for a lane. A thread holds a database
+#: connection for as long as it works, so this is also a connection budget.
+MAX_CONCURRENCY = 16
+
+
+def concurrency_from(text):
+    """Parse `lane=N,lane=N`. Only shared lanes may run more than one thread."""
+    known = {lane[0] for lane in LANES}
+    result = {}
+    for part in filter(None, (piece.strip() for piece in (text or "").split(","))):
+        name, _, value = part.partition("=")
+        name = name.strip()
+        if name not in known:
+            raise ValueError(f"Unknown lane: {name}. Lanes are {', '.join(known)}.")
+        try:
+            count = int(value)
+        except ValueError:
+            raise ValueError(f"{name}: give a number of threads, as {name}=2.") from None
+        if not 1 <= count <= MAX_CONCURRENCY:
+            raise ValueError(f"{name}: between 1 and {MAX_CONCURRENCY} threads.")
+        if count > 1 and name not in SHARED_LANES:
+            raise ValueError(
+                f"{name} runs one at a time; only {', '.join(sorted(SHARED_LANES))} "
+                "may run more than one thread."
+            )
+        result[name] = count
+    return result

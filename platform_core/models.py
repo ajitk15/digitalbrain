@@ -349,7 +349,53 @@ class Document(models.Model):
         indexes = [models.Index(fields=["application", "created_at"])]
 
 
+#: The fields a graph is built from. Writing any of them asks the graph lane to
+#: look at the application again (`triggers.py`); writing quality, a document
+#: type or a restriction note does not.
+GRAPH_FIELDS = frozenset(
+    {"active", "sensitivity", "digest", "content", "application", "application_id"}
+)
+
+
 class KnowledgeEntryQuerySet(models.QuerySet):
+    """`update` and `delete` say which applications they touched.
+
+    Neither sends a signal, and both are how most sources change - supersede,
+    restrict, retire, mask in place - so the graph lane would otherwise never
+    hear about them.
+    """
+
+    def update(self, **kwargs):
+        if GRAPH_FIELDS.isdisjoint(kwargs):
+            return super().update(**kwargs)
+        touched = self.touched_applications()
+        count = super().update(**kwargs)
+        if count:
+            moved = kwargs.get("application_id", kwargs.get("application"))
+            if moved is not None:
+                touched.add(getattr(moved, "pk", moved))
+            from .triggers import sources_changed
+
+            sources_changed(touched)
+        return count
+
+    update.alters_data = True
+
+    def delete(self):
+        touched = self.touched_applications()
+        result = super().delete()
+        if result[0]:
+            from .triggers import sources_changed
+
+            sources_changed(touched)
+        return result
+
+    delete.alters_data = True
+    delete.queryset_only = True
+
+    def touched_applications(self):
+        return set(self.order_by().values_list("application_id", flat=True).distinct())
+
     def answerable(self):
         """Active sources AI may read and cite: not archived, not restricted.
 
@@ -2065,6 +2111,62 @@ class LaneHeartbeat(models.Model):
     owner = models.CharField(max_length=80)
     started_at = models.DateTimeField()
     beat_at = models.DateTimeField()
+
+
+class Job(models.Model):
+    """One piece of background work somebody's change asked for (`jobs.py`).
+
+    The graph and connector lanes used to find their work by scanning: every
+    application's fingerprint every two seconds, every connector every ten. A
+    change now writes a row here in the same transaction as the change itself,
+    so the row exists exactly when the change does - that is the outbox, and
+    there is no second table for it.
+
+    `key` names what the work is about. At most one row per key is waiting, so
+    a burst of changes is one job; a running job does not count, so a change
+    made while it runs is picked up after it. Nothing here records who asked:
+    the handler decides whose run it is from the thing itself - the connector's
+    creator, the person who switched on automatic refresh - and re-checks them.
+    """
+
+    STATUSES = [
+        ("queued", "Queued"),
+        ("running", "Running"),
+        ("done", "Done"),
+        ("dead", "Dead"),
+    ]
+
+    kind = models.CharField(max_length=40)
+    lane = models.CharField(max_length=32)
+    key = models.CharField(max_length=200)
+    #: Not a foreign key, deliberately: deleting an application deletes its
+    #: sources, each deletion asks for a refresh, and a job referencing the row
+    #: being deleted would fail the whole delete at commit. A job whose
+    #: application has gone finds nothing to do and ages out.
+    application_id = models.UUIDField(null=True, blank=True)
+    subject = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=10, choices=STATUSES, default="queued")
+    run_after = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    max_attempts = models.PositiveSmallIntegerField(default=1)
+    lease_owner = models.CharField(max_length=80, blank=True)
+    lease_expires_at = models.DateTimeField(null=True, blank=True)
+    last_error_type = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["key"], condition=models.Q(status="queued"), name="job_one_queued_per_key"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["lane", "status", "run_after"]),
+            models.Index(fields=["status", "lease_expires_at"]),
+            models.Index(fields=["status", "finished_at"]),
+        ]
 
 
 class ExternalIdentity(models.Model):

@@ -455,8 +455,16 @@ SYNC_INTERVALS = [
 ]
 
 
-def due_connector():
-    """The next enabled connector whose interval has elapsed, or None.
+def is_due(connector, now):
+    if not connector.enabled or connector.sync_interval_minutes <= 0:
+        return False
+    if connector.last_attempt_at is None:
+        return True
+    return connector.last_attempt_at <= now - timedelta(minutes=connector.sync_interval_minutes)
+
+
+def due_connectors():
+    """Every enabled connector whose interval has elapsed, longest waiting first.
 
     Ordered by how long it has been waiting, so a single slow instance cannot
     starve every other connector behind it.
@@ -465,16 +473,53 @@ def due_connector():
     candidates = Connector.objects.filter(enabled=True, sync_interval_minutes__gt=0).order_by(
         models.F("last_attempt_at").asc(nulls_first=True)
     )
-    for connector in candidates:
-        if connector.last_attempt_at is None:
-            return connector
-        if connector.last_attempt_at <= now - timedelta(minutes=connector.sync_interval_minutes):
-            return connector
-    return None
+    return [connector for connector in candidates if is_due(connector, now)]
+
+
+def due_connector():
+    """The next enabled connector whose interval has elapsed, or None."""
+    due = due_connectors()
+    return due[0] if due else None
+
+
+def schedule_due():
+    """Ask for an import of every connector that is due. One waiting job each.
+
+    A lane step that returns False: asking is not work, and a connector stays
+    due until its import writes `last_attempt_at`, so asking again on the next
+    tick folds into the job already waiting.
+    """
+    from .jobs import enqueue
+
+    for connector in due_connectors():
+        enqueue("connector_sync", connector.pk, application_id=connector.application_id)
+    return False
+
+
+def scheduled_job(job):
+    """The `connector_sync` job. Due is asked again: the job may have waited
+    behind a button press, or behind another job for the same connector."""
+    connector = Connector.objects.select_related("created_by").filter(pk=job.subject).first()
+    if connector is None or not is_due(connector, timezone.now()):
+        return
+    run_scheduled(connector)
 
 
 def process_next_connector():
-    """Run one scheduled import. Returns True when there was work to do.
+    """Run the longest-waiting scheduled import. Returns True when there was one.
+
+    The connectors lane runs `connector_sync` jobs instead; this is the same
+    import without the queue, for tests and a one-off catch-up.
+    """
+    connector = due_connector()
+    if connector is None:
+        return False
+    run_scheduled(connector)
+    return True
+
+
+def run_scheduled(connector):
+    """Run one scheduled import.
 
     **An unattended run is still somebody's run.** It is performed as the person
     who created the connector, and `sync` re-checks their owner grant exactly as
@@ -483,9 +528,6 @@ def process_next_connector():
     been removed or demoted stops and says so on the row rather than falling back
     to some privileged identity, because there isn't one.
     """
-    connector = due_connector()
-    if connector is None:
-        return False
     started = time.monotonic()
     if connector.created_by is None or not connector.created_by.is_active:
         finish(
@@ -496,7 +538,7 @@ def process_next_connector():
             "Scheduled import needs the person who created this connector. "
             "Import it by hand, or recreate it.",
         )
-        return True
+        return
     try:
         count = sync(connector.created_by, connector.pk, connector.application_id)
     except PermissionDenied:
@@ -522,4 +564,3 @@ def process_next_connector():
                 "imported": count,
             },
         )
-    return True

@@ -46,6 +46,9 @@ services:
       # non-secret values the web container renders its configuration from.
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
       DIGITAL_BRAIN_INSTANCE: "coolify-1-worker"
+      # Threads for the lanes that claim row by row. Each holds a database
+      # connection while it works, so count them against max_connections.
+      DIGITAL_BRAIN_CONCURRENCY: "intake=2"
     volumes:
       - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro

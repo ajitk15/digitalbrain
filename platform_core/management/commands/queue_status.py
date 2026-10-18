@@ -48,11 +48,13 @@ class Command(BaseCommand):
             for row in rows:
                 self.stdout.write(json.dumps(row, separators=(",", ":")))
         else:
-            self.stdout.write(f"{'lane':<18}{'waiting':>8}{'oldest':>9}{'beat':>8}  owner")
+            self.stdout.write(
+                f"{'lane':<18}{'waiting':>8}{'oldest':>9}{'dead':>6}{'beat':>8}  owner"
+            )
             for row in rows:
                 self.stdout.write(
                     f"{row['lane']:<18}{row['waiting']:>8}{age(row['oldest_seconds']):>9}"
-                    f"{age(row['heartbeat_seconds']):>8}  "
+                    f"{row['dead']:>6}{age(row['heartbeat_seconds']):>8}  "
                     f"{row['owner'] or '-'}{'  STALE' if row['stale'] else ''}"
                 )
         if options["check"]:

@@ -24,7 +24,7 @@ class LaneCompositionTests(SimpleTestCase):
         graph = {step.__name__ for step in lanes["graph"]}
         self.assertIn("process_next_link", intake)
         self.assertIn("process_next_document", intake)
-        self.assertIn("process_next_graph", graph)
+        self.assertIn("run_graph_job", graph)
         self.assertFalse(intake & graph)
 
     def test_every_step_belongs_to_exactly_one_lane(self):

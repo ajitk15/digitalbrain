@@ -35,14 +35,16 @@ def waiting_work():
         CodeReview,
         Document,
         FactoryRun,
-        KnowledgeGraph,
+        Job,
         ServiceOpsTestRun,
         TriageRun,
     )
 
     return {
         "intake": [(Document.objects.filter(status__in=["pending", "queued"]), "created_at")],
-        "graph": [(KnowledgeGraph.objects.filter(status="queued"), "updated_at")],
+        # A Generate press and a source change both write a job, so the job
+        # table is the whole of what this lane will take.
+        "graph": [(Job.objects.filter(lane="graph", status="queued"), "created_at")],
         "code-graph": [
             (CodeRepository.objects.filter(status="queued"), "updated_at"),
             (CodeReview.objects.filter(status="queued"), "updated_at"),
@@ -79,12 +81,22 @@ def due_connectors(now):
 
 
 def lane_status(now=None):
-    """One row per lane: waiting, oldest_seconds, owner, heartbeat_seconds, stale."""
+    """One row per lane: waiting, oldest_seconds, dead, owner, heartbeat_seconds, stale.
+
+    `dead` is jobs that used every attempt and are still kept (`jobs.KEEP_DEAD`):
+    work somebody asked for that will not happen unless they ask again.
+    """
     from .document_worker import LANES
-    from .models import LaneHeartbeat
+    from .models import Job, LaneHeartbeat
 
     now = now or timezone.now()
     beats = {beat.lane: beat for beat in LaneHeartbeat.objects.all()}
+    dead = dict(
+        Job.objects.filter(status="dead")
+        .values("lane")
+        .annotate(count=Count("pk"))
+        .values_list("lane", "count")
+    )
     work = waiting_work()
     rows = []
     for name, _, _ in LANES:
@@ -95,6 +107,8 @@ def lane_status(now=None):
             if found["oldest"] and (oldest is None or found["oldest"] < oldest):
                 oldest = found["oldest"]
         if name == "connectors":
+            # Counted from the connectors, not the jobs: the jobs are written
+            # by the lane itself, so a lane that has stopped would read as idle.
             waiting, oldest = due_connectors(now)
         beat = beats.get(name)
         rows.append(
@@ -102,6 +116,7 @@ def lane_status(now=None):
                 "lane": name,
                 "waiting": waiting,
                 "oldest_seconds": int((now - oldest).total_seconds()) if oldest else None,
+                "dead": dead.get(name, 0),
                 "owner": beat.owner if beat else "",
                 "heartbeat_seconds": int((now - beat.beat_at).total_seconds()) if beat else None,
                 "stale": beat is None or now - beat.beat_at > STALE_AFTER,
@@ -132,6 +147,7 @@ def log_if_due():
                 "lane": row["lane"],
                 "waiting": row["waiting"],
                 "oldest_seconds": row["oldest_seconds"],
+                "dead": row["dead"],
                 "heartbeat_seconds": row["heartbeat_seconds"],
                 "stale": row["stale"],
             },

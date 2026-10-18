@@ -231,10 +231,12 @@ echo "entrypoint: checking deployment settings"
 python manage.py check --deploy --fail-level WARNING
 
 if [ "$ROLE" = "worker" ]; then
-    # Comma-separated lane names, or every lane. Each lane is held by one
+    # Comma-separated lane names, or every lane. Most lanes are held by one
     # process at a time, so a second worker replica stands by rather than
-    # running anything twice.
-    exec python manage.py run_worker --lanes "${DIGITAL_BRAIN_LANES:-}"
+    # running anything twice; intake, graph and connectors claim row by row
+    # and run in every replica. DIGITAL_BRAIN_CONCURRENCY ("intake=4") gives
+    # those more threads.
+    exec python manage.py run_worker --lanes "${DIGITAL_BRAIN_LANES:-}"         --concurrency "${DIGITAL_BRAIN_CONCURRENCY:-}"
 fi
 
 WORKER_FLAG=""

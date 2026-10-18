@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 from collections import namedtuple
 from datetime import timedelta
 
@@ -456,51 +457,117 @@ def publish_revision(user, app_id, number):
     return revision
 
 
-def process_next_graph():
-    # Also revisit existing graphs after the final source has been removed.
-    app_ids = set(
+def refresh_graph(app_id):
+    """Bring one application's graph up to date with its sources.
+
+    Returns "rebuilt", "waiting" (documents are still converting) or "current"
+    (nothing to do, or nothing this application should have done for it).
+    """
+    from .models import Application
+
+    app = (
+        Application.objects.select_related("product__portfolio__organization")
+        .filter(pk=app_id)
+        .first()
+    )
+    if (
+        app is None
+        or not app.active
+        or not app.product.portfolio.organization.active
+        or not feature_enabled("knowledge", app)
+    ):
+        return "current"
+    # Nothing is rebuilt while intake is still running. Waiting for the
+    # whole batch rather than for each file is what keeps one import to one
+    # version instead of one version per document.
+    if Document.objects.filter(application_id=app_id, status__in=Document.IN_FLIGHT).exists():
+        return "waiting"
+    graph = KnowledgeGraph.objects.filter(application_id=app_id).first()
+    current_fingerprint = fingerprint(app_id)
+    # Failed or interrupted paid calls are not automatically repeated on every worker
+    # tick. "idle" is a graph a demonstration reset cleared: it waits to be asked
+    # for, and a source change is what brings the worker back to it.
+    if (
+        graph
+        and graph.fingerprint == current_fingerprint
+        and graph.status in {"failed", "building", "idle"}
+    ):
+        return "current"
+    if graph is not None and graph.fingerprint == current_fingerprint and graph.status == "ready":
+        return "current"
+    if (
+        graph
+        and graph.auto_refresh_by_id
+        and graph.fingerprint != current_fingerprint
+        and graph.status in {"ready", "failed"}
+    ):
+        arm_auto_refresh(app, graph)
+    try:
+        rebuild(app_id)
+    except Exception:
+        KnowledgeGraph.objects.filter(application_id=app_id).update(status="failed")
+        raise
+    return "rebuilt"
+
+
+#: How long a refresh waits for converting documents before looking again.
+WAIT_FOR_INTAKE_SECONDS = 10
+
+
+def refresh_job(job):
+    """The `graph_refresh` job: one application, asked for by a change to it."""
+    from .jobs import Later
+
+    if refresh_graph(job.subject) == "waiting":
+        raise Later(WAIT_FOR_INTAKE_SECONDS)
+
+
+def request_refresh(app_id, delay=None):
+    """Ask the graph lane to look at this application. Folds into a waiting request."""
+    from .jobs import enqueue
+
+    enqueue("graph_refresh", app_id, application_id=app_id, delay=delay)
+
+
+def candidate_applications():
+    """Every application that has, or has had, something to build a graph from."""
+    return set(
         KnowledgeEntry.objects.filter(active=True).values_list("application_id", flat=True)
     ) | set(KnowledgeGraph.objects.values_list("application_id", flat=True))
-    for app_id in sorted(app_ids, key=str):
-        from .models import Application
 
-        app = Application.objects.select_related("product__portfolio__organization").get(pk=app_id)
-        if (
-            not app.active
-            or not app.product.portfolio.organization.active
-            or not feature_enabled("knowledge", app)
-        ):
-            continue
-        # Nothing is rebuilt while intake is still running. Waiting for the
-        # whole batch rather than for each file is what keeps one import to one
-        # version instead of one version per document.
-        if Document.objects.filter(application_id=app_id, status__in=Document.IN_FLIGHT).exists():
-            continue
-        graph = KnowledgeGraph.objects.filter(application_id=app_id).first()
-        current_fingerprint = fingerprint(app_id)
-        # Failed or interrupted paid calls are not automatically repeated on every worker
-        # tick. "idle" is a graph a demonstration reset cleared: it waits to be asked
-        # for, and a source change is what brings the worker back to it.
-        if (
-            graph
-            and graph.fingerprint == current_fingerprint
-            and graph.status in {"failed", "building", "idle"}
-        ):
-            continue
-        if graph is None or graph.fingerprint != current_fingerprint or graph.status != "ready":
-            if (
-                graph
-                and graph.auto_refresh_by_id
-                and graph.fingerprint != current_fingerprint
-                and graph.status in {"ready", "failed"}
-            ):
-                arm_auto_refresh(app, graph)
-            try:
-                rebuild(app_id)
-            except Exception:
-                KnowledgeGraph.objects.filter(application_id=app_id).update(status="failed")
-                raise
+
+def process_next_graph():
+    """Scan every application and rebuild the first stale graph found.
+
+    The graph lane no longer runs this: it takes `graph_refresh` jobs, written
+    when something changes, with `reconcile_if_due` as the safety net. It is
+    kept as the one call that brings everything current, which is what tests
+    and a one-off catch-up want.
+    """
+    # Also revisit existing graphs after the final source has been removed.
+    for app_id in sorted(candidate_applications(), key=str):
+        if refresh_graph(app_id) == "rebuilt":
             return True
+    return False
+
+
+#: How often the graph lane asks about every application anyway. A change
+#: writes its own job; this catches what changed without one - a feature
+#: switched on for everyone by a command, an organization reactivated, a job
+#: lost with a database restore - and the work that waited while the worker
+#: was stopped, since the first pass runs as the lane starts.
+RECONCILE_INTERVAL = 600
+_last_reconciled = 0.0
+
+
+def reconcile_if_due():
+    global _last_reconciled
+    now = time.monotonic()
+    if _last_reconciled and now - _last_reconciled < RECONCILE_INTERVAL:
+        return False
+    _last_reconciled = now
+    for app_id in candidate_applications():
+        request_refresh(app_id, delay=timedelta(0))
     return False
 
 
@@ -680,6 +747,7 @@ def claim_generation(user, app, provider="", model=""):
     if not claimed:
         # Something else claimed the row between the check and here.
         return False, "A graph generation was just started by someone else."
+    request_refresh(app.pk, delay=timedelta(0))
     audit(
         user,
         "graph.generation_requested",
@@ -814,6 +882,8 @@ def graph_view(request, pk):
         if target.filter(status="building").exists():
             target = target.filter(updated_at__lt=timezone.now() - timedelta(minutes=STALL_MINUTES))
         queued = target.update(status="queued", fingerprint="", stage="Queued")
+        if queued:
+            request_refresh(app.pk, delay=timedelta(0))
         messages.success(
             request,
             "Eligible failed or interrupted graph generation queued. Provider charges may apply."

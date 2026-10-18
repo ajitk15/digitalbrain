@@ -35,6 +35,7 @@ from platform_core.document_worker import (
 from platform_core.models import (
     Application,
     Document,
+    Job,
     KnowledgeGraph,
     LaneHeartbeat,
     Organization,
@@ -142,8 +143,8 @@ class FakeConnection:
 class PostgresLaneLockTests(SimpleTestCase):
     """The PostgreSQL path, against a stand-in connection: CI runs on SQLite."""
 
-    def keeper(self, connection):
-        keeper = LaneKeeper("intake")
+    def keeper(self, connection, lane="factory"):
+        keeper = LaneKeeper(lane)
         vendor = patch.object(document_worker.connection, "vendor", "postgresql")
         create = patch.object(
             document_worker.connections, "create_connection", return_value=connection
@@ -190,6 +191,13 @@ class PostgresLaneLockTests(SimpleTestCase):
         self.assertTrue(held.closed)
         self.assertFalse(keeper.holding)
 
+    def test_a_shared_lane_takes_no_lock_and_still_beats(self, beat):
+        unused = FakeConnection(granted=False)
+        keeper = self.keeper(unused, lane="intake")
+        self.assertTrue(keeper.ready(), "a shared lane runs in every process")
+        self.assertEqual(unused.statements, [])
+        beat.assert_called_once()
+
 
 class SqliteLaneTests(TestCase):
     def test_sqlite_has_no_advisory_locks_so_the_keeper_holds_and_beats(self):
@@ -208,7 +216,7 @@ class RunWorkerCommandTests(SimpleTestCase):
     def test_it_runs_the_lanes_asked_for_and_stops_on_request(self):
         started = {}
 
-        def fake_start(lanes, stop):
+        def fake_start(lanes, stop, concurrency):
             started["names"] = [name for name, _, _ in lanes]
             stop.set()
             return []
@@ -226,7 +234,7 @@ class RunWorkerCommandTests(SimpleTestCase):
     def test_without_lanes_it_runs_every_lane(self):
         started = {}
 
-        def fake_start(lanes, stop):
+        def fake_start(lanes, stop, concurrency):
             started["names"] = [name for name, _, _ in lanes]
             stop.set()
             return []
@@ -411,6 +419,9 @@ class QueueStatusTests(TestCase):
         self.document("pending")
         self.document("ready")
         KnowledgeGraph.objects.create(application=self.app, status="queued")
+        Job.objects.create(
+            kind="graph_refresh", lane="graph", key="k", run_after=timezone.now()
+        )
         rows = self.rows()
         self.assertEqual(rows["intake"]["waiting"], 2)
         self.assertIsNotNone(rows["intake"]["oldest_seconds"])
@@ -444,7 +455,7 @@ class QueueStatusTests(TestCase):
         self.assertEqual(len(rows), len(LANES))
         self.assertEqual(
             set(rows[0]),
-            {"lane", "waiting", "oldest_seconds", "owner", "heartbeat_seconds", "stale"},
+            {"lane", "waiting", "oldest_seconds", "dead", "owner", "heartbeat_seconds", "stale"},
         )
         self.assertNotIn("a.md", output.getvalue())
 

@@ -28,3 +28,8 @@ def tune_sqlite(connection, **kwargs):
 
 class PlatformCoreConfig(AppConfig):
     name = "platform_core"
+
+    def ready(self):
+        from . import triggers
+
+        triggers.connect()

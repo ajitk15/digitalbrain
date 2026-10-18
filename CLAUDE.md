@@ -804,11 +804,15 @@ before Stop could be trusted.
 `docker-compose.scale.yaml` for the split). Chat answers are not a lane - each runs on a
 thread its stream request starts - so they stay in the web process either way.
 
-**Each lane is held by one process at a time** (`document_worker.LaneKeeper`): a PostgreSQL
+**Most lanes are held by one process at a time** (`document_worker.LaneKeeper`): a PostgreSQL
 session advisory lock on a connection of its own, so `close_old_connections` between steps
 never drops it. A second holder stands by and takes over when the first one's connection
-goes. That is what makes the split safe while some steps (scheduled connector import,
-triage) still pick a row without claiming it. **SQLite has no advisory locks**: there every
+goes. That is what makes the split safe while some steps (triage, Code Factory) still pick
+a row without claiming it. **`SHARED_LANES` - intake, graph, connectors - take no lock**:
+every step in them claims its own row, so they run in every process, and
+`run_worker --concurrency intake=4` gives one more threads. Moving a lane into that set
+means every one of its steps claims first; `concurrency_from` refuses more than one thread
+for any other lane. **SQLite has no advisory locks**: there every
 keeper holds, so never run `run_worker` beside a `serve.py` that runs its own lanes on the
 same local database. A session lock does not survive a transaction-mode pooler, so a worker
 reaches PostgreSQL directly.
@@ -824,6 +828,47 @@ of a `clamscan` per file, which reloaded the whole signature database for every 
 Fail-closed rules are the same: anything the daemon does not answer `stream: OK` or
 `… FOUND` to is unscanned, and signatures more than a week old (from the `VERSION` date)
 are refused, as `--fail-if-cvd-older-than=7` refuses them for clamscan.
+
+## Background work is asked for, not scanned for
+
+`jobs.py` / `models.Job`. The graph lane used to compute every application's fingerprint
+every two seconds and the connector lane read every connector every ten - a cost that grew
+with applications, not with work. **A change now writes a `Job` in its own transaction**:
+that is the outbox, so a rolled-back change takes its job with it and no event table is
+drained. `triggers.py` asks for `graph_refresh` on anything in `graphs.fingerprint` - a
+source saved or deleted, `KnowledgeEntryQuerySet.update`/`delete` on a `GRAPH_FIELDS` field
+(querysets send no signal, so the queryset reports itself), graph generation settings, the
+Knowledge switch - and `claim_generation` and Retry ask explicitly. `Job.application_id` is
+deliberately not a foreign key: deleting an application deletes its sources, each asks for
+a refresh, and a job referencing the row being deleted would fail the delete at commit.
+
+**One waiting row per key** (a partial unique index): a burst folds into one job, earliest
+due time wins, and `graph_refresh` waits five seconds so it can. `enqueue` folds with an
+UPDATE, never a read, so a request racing a claim gets its own row rather than folding into
+work already reading. A running job does not count, and `claim` never starts a key that is
+running, so a change made mid-rebuild is rebuilt after it. Claims are `SELECT ... FOR
+UPDATE SKIP LOCKED` on PostgreSQL and a conditional update on SQLite; an application holds
+at most `TENANT_CAP` running jobs per lane. A lease (`LEASE`, renewed by a thread that
+first waits a whole interval) is how a dead worker's job comes back: `jobs.maintain` in the
+maintenance lane puts it back, or marks it dead past `max_attempts`. **Both kinds are one
+attempt**: a failed rebuild was a failed paid call and the scan never repeated those, and
+a half-finished import is not repeated by the queue - the schedule asks again. `Later` is
+"not yet" (documents still converting) and uses no attempt.
+
+Handlers decide who the work runs as from the thing itself - `run_scheduled` as the
+connector's creator, `arm_auto_refresh` as whoever switched it on - re-checked as before.
+The scan functions stay as one-shot catch-ups (`process_next_graph`,
+`process_next_connector`); the lanes run `jobs.step_for(lane)`. **The reconcile pass**
+(`graphs.reconcile_if_due`, every `RECONCILE_INTERVAL`, first as the lane starts) enqueues
+every candidate application, for what changed without a trigger: a bulk feature `update`, an
+organization reactivated, a restore. Connector scheduling (`connectors.schedule_due`) still
+reads due connectors, but only to enqueue; the job re-checks due-ness, since a button press
+may have run it meanwhile. `queue_status` counts graph work from jobs, connectors from
+due-ness (jobs are written by the lane itself, so a stopped lane would read idle), and each
+lane's `dead` jobs.
+
+Intake takes turns (`document_worker.fairly`): the oldest document from an application with
+nothing converting, else the oldest, so one large import cannot hold everyone's single upload.
 
 ## Verified against a live CLI
 
