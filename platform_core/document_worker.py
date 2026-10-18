@@ -222,6 +222,7 @@ def maintenance_steps():
     from .graph_store import record_step, slim_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
+    from .partitions import warn_if_due
     from .queue_status import log_if_due
     from .retention import purge_if_due
 
@@ -238,7 +239,8 @@ def maintenance_steps():
     # saved before their elements were rows is the same kind of catching up.
     # Giving back AI gateway slots a dead process left beside the jobs it left.
     # Retiring audit events and receipts past a window a deployment set, an
-    # hour apart and a batch at a time, because it is never urgent.
+    # hour apart and a batch at a time, because it is never urgent. Saying
+    # when the audit table runs short of months, which only the owner can make.
     return (
         purge_chat_if_due,
         process_next_source,
@@ -249,6 +251,7 @@ def maintenance_steps():
         record_step,
         slim_step,
         purge_if_due,
+        warn_if_due,
     )
 
 

@@ -17,6 +17,10 @@ Rows go oldest first, `BATCH` at a time, each batch its own short delete, from
 the maintenance lane at most once every `INTERVAL` - so a first run against a
 decade of rows is many small steps rather than one statement holding a lock
 on a table every request writes to. What went is logged as counts, never rows.
+
+On PostgreSQL the audit table is partitioned by month (`partitions.py`), and a
+month wholly past `audit_days` is dropped whole by the migrate job instead;
+this still takes the rows of the month the window ends in, and every receipt.
 """
 
 import logging

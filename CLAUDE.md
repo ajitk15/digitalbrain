@@ -412,6 +412,23 @@ statement and at most once an `INTERVAL`, so a first run against years of rows i
 short deletes rather than one lock on a table every request writes to, and logs counts,
 never rows. Do not lower a floor to make a test or a disk happy.
 
+**On PostgreSQL the audit table is partitioned by month** (`partitions.py`, migrations
+0092-0093). The swap copied no row: 0092 built `(id, created_at)` concurrently and
+validated a check that every row is older than a cut-over; 0093 renamed the table
+`_history`, put a partitioned table with the same columns and Django's names under the
+old name - so the release before kept writing to it - and attached the history for
+everything before the cut-over, in milliseconds. A `_default` partition takes a row no
+month was made for, so a write never fails. Making or dropping a partition is DDL, which
+the runtime role cannot run, so `partitions.ensure` runs as the owner: in
+`apply_migrations` on every deploy, and `manage.py partitions` for a schedule. It makes
+`MONTHS_AHEAD` months, moves rows out of the default, and drops a partition only when
+`audit_days` is set and every row in it is past the window - what the purge would delete
+anyway. The maintenance lane warns (`partitions_short`) and `partitions --check` fails
+when fewer than `MIN_AHEAD` months are made or the default holds rows. **`AIUsage` is
+deliberately not partitioned**: PostgreSQL enforces a unique key across partitions only
+if it includes the partition key, and the receipt key is what records a provider request
+once - partitioned, the same request could be recorded again in a new month.
+
 **The browser never renders model Markdown.** Streamed text is inserted with
 `textContent`; finished messages are replaced by a server-rendered fragment from the
 `chat_text` filter. That filter escapes first and deliberately produces no links. Keeping

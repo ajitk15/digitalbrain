@@ -13,6 +13,10 @@ corrects that role and grants it every table, still under the lock
 (`database_roles.ensure`): the role everything else connects as exists, with
 access to every table this release has, before anything connects as it.
 
+Then, still as the owner, the audit table's monthly partitions are made ahead
+and those wholly past a retention window dropped (`partitions.ensure`) - DDL
+the runtime role cannot run, so this is the one place it happens on its own.
+
 SQLite is one machine's file, with no second process to race: it just migrates.
 """
 
@@ -81,6 +85,7 @@ class Command(BaseCommand):
             with connection.cursor() as cursor:
                 cursor.execute("SET statement_timeout = 0")
             migrate(self.stdout.write, verbosity)
+            self.partitions()
             if settings.DATABASE_RUNTIME_USER:
                 self.runtime_role(settings.DATABASE_RUNTIME_USER)
         finally:
@@ -90,6 +95,13 @@ class Command(BaseCommand):
             except Exception:
                 pass
             holder.close()
+
+    def partitions(self):
+        from platform_core import partitions
+        from platform_core.management.commands.partitions import describe
+
+        for line in describe(partitions.ensure(retention=settings.RETENTION)):
+            self.stdout.write(line)
 
     def runtime_role(self, role):
         from digitalbrain.configuration import read_secret
