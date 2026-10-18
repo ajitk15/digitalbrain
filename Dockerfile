@@ -25,6 +25,10 @@ FROM python:${PYTHON_VERSION} AS deps
 COPY --from=ghcr.io/astral-sh/uv:0.5 /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/app/.venv
+# Seconds uv waits on one download (its own default is 30). Some wheels here are
+# large - claude-agent-sdk carries the CLI - and a slow link timed the build out;
+# `--build-arg UV_HTTP_TIMEOUT=...` changes it. The lock still decides what is fetched.
+ARG UV_HTTP_TIMEOUT=300
 COPY pyproject.toml uv.lock ./
 # --frozen: the lock decides, and a lock that no longer matches pyproject fails
 # the build rather than quietly resolving something else.
