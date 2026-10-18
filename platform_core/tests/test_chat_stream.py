@@ -232,7 +232,7 @@ class ChatStreamViewTests(TestCase):
         from platform_core.models import ChatSubmission
 
         with patch(
-            "platform_core.workbench.answer_question",
+            "platform_core.chat_views.answer_question",
             side_effect=ValidationError("provider down"),
         ):
             self.client.post(
@@ -257,7 +257,7 @@ class ChatStreamViewTests(TestCase):
 
         with (
             patch(
-                "platform_core.workbench.start_answer",
+                "platform_core.chat_views.start_answer",
                 side_effect=OperationalError("database is locked"),
             ),
             self.assertRaises(OperationalError),
@@ -272,7 +272,7 @@ class ChatStreamViewTests(TestCase):
         from platform_core.models import ChatSubmission
 
         with (
-            patch("platform_core.workbench.answer_question", side_effect=RuntimeError("boom")),
+            patch("platform_core.chat_views.answer_question", side_effect=RuntimeError("boom")),
             self.assertRaises(RuntimeError),
         ):
             self.send_with_key(stream=False)
@@ -284,7 +284,7 @@ class ChatStreamViewTests(TestCase):
         from platform_core.models import ChatSubmission
 
         with (
-            patch("platform_core.workbench.settle_submission", side_effect=RuntimeError("boom")),
+            patch("platform_core.chat_views.settle_submission", side_effect=RuntimeError("boom")),
             self.assertRaises(RuntimeError),
         ):
             self.send_with_key()
@@ -315,8 +315,8 @@ class ChatStreamViewTests(TestCase):
 
         from django.utils import timezone
 
+        from platform_core.chat_views import CLAIM_ABANDONED_AFTER
         from platform_core.models import ChatSubmission
-        from platform_core.workbench import CLAIM_ABANDONED_AFTER
 
         ChatSubmission.objects.create(application=self.app, user=self.owner, key=self.KEY)
         ChatSubmission.objects.update(
@@ -456,7 +456,7 @@ class ChatStreamViewTests(TestCase):
             session.emit("done", {"status": "complete"})
             session.finish()
 
-        with patch("platform_core.workbench.answer_worker", fake_worker):
+        with patch("platform_core.chat_views.answer_worker", fake_worker):
             response = self.client.get(payload["stream"])
             self.assertEqual(response["Content-Type"], "text/event-stream")
             self.assertNotIn("Content-Length", response)
@@ -507,7 +507,7 @@ class ChatStreamViewTests(TestCase):
         )
 
     def test_the_worker_writes_the_answer_and_closes_the_stream(self):
-        from platform_core.workbench import answer_worker
+        from platform_core.chat_views import answer_worker
 
         payload = self.start().json()
         session = streaming.open_session(payload["message"])
@@ -540,7 +540,7 @@ class ChatStreamViewTests(TestCase):
         unfinished, with Regenerate, rather than a bubble that never fills."""
         from django.db import OperationalError
 
-        from platform_core.workbench import answer_worker
+        from platform_core.chat_views import answer_worker
 
         payload = self.start().json()
         session = streaming.open_session(payload["message"])
@@ -549,7 +549,7 @@ class ChatStreamViewTests(TestCase):
                 self.configured(),
                 patch("platform_core.ai.stream_chat_answer", return_value=("Thirty days.", [])),
                 patch(
-                    "platform_core.workbench.finish_answer",
+                    "platform_core.chat_views.finish_answer",
                     side_effect=OperationalError("database is locked"),
                 ),
                 self.assertRaises(OperationalError),
@@ -571,7 +571,7 @@ class ChatStreamViewTests(TestCase):
         self.assertContains(page, "data-resume=")
 
     def test_an_unconfigured_application_fails_closed_with_a_setup_message(self):
-        from platform_core.workbench import answer_worker
+        from platform_core.chat_views import answer_worker
 
         payload = self.start().json()
         # Configuration withdrawn between the send and the answer.
@@ -590,7 +590,7 @@ class ChatStreamViewTests(TestCase):
     def test_a_provider_failure_marks_the_answer_failed_without_losing_the_question(self):
         from django.core.exceptions import ValidationError
 
-        from platform_core.workbench import answer_worker
+        from platform_core.chat_views import answer_worker
 
         payload = self.start().json()
         session = streaming.open_session(payload["message"])
@@ -613,7 +613,7 @@ class ChatStreamViewTests(TestCase):
         self.assertEqual(ChatMessage.objects.get(role="user").body, "Refund deadline?")
 
     def test_citation_frames_never_expose_the_source_digest(self):
-        from platform_core.workbench import public_citations
+        from platform_core.chat_views import public_citations
 
         public = public_citations(
             [{"id": "1", "title": "Policy", "excerpt": "text", "digest": "secret"}]

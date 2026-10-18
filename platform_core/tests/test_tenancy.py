@@ -244,7 +244,7 @@ class BackgroundBindingTests(Fixture):
         self.assertEqual(len(SEEN), 1)
 
     def test_a_code_factory_run_is_worked_bound_to_its_application(self):
-        from platform_core.code_factory import process_next_run
+        from platform_core.code_factory_analysis import process_next_run
         from platform_core.models import FactoryRun
 
         run = FactoryRun.objects.create(
@@ -253,7 +253,7 @@ class BackgroundBindingTests(Fixture):
         )
         with (
             patch.object(tenancy, "bind") as bind,
-            patch("platform_core.code_factory.execute", return_value=True) as execute,
+            patch("platform_core.code_factory_analysis.execute", return_value=True) as execute,
         ):
             self.assertTrue(process_next_run())
         execute.assert_called_once()

@@ -292,7 +292,7 @@ class RedisChatViewTests(TestCase):
         def worker(user_id, app_id, message_id, question, history, session, *rest):
             sessions.append(session)
 
-        with patch("platform_core.workbench.answer_worker", side_effect=worker):
+        with patch("platform_core.chat_views.answer_worker", side_effect=worker):
             first = self.client.get(posted["stream"])
             self.assertEqual(first.status_code, 200)
             deadline = time.monotonic() + 5
@@ -334,7 +334,7 @@ class RedisChatViewTests(TestCase):
         ChatMessage.objects.filter(pk=posted["message"]).update(
             status="complete", body="Thirty days."
         )
-        with patch("platform_core.workbench.answer_worker") as worker:
+        with patch("platform_core.chat_views.answer_worker") as worker:
             late = self.client.get(posted["stream"])
             self.assertEqual(late.status_code, 200)
             self.assertIn('"t":"Thirty days."', b"".join(late.streaming_content).decode())

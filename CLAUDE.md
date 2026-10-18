@@ -1157,3 +1157,16 @@ only behind `gate`), `code_factory_local` (delivery into a folder, its tests) an
 that patches an agent the build module calls - `run_work_order`, `run_implementation` -
 patches it on `code_factory_build`, where `prepare` looks it up; one that patches what an
 agent calls patches it on `code_factory_agents`.
+
+Before approval it is three: `code_factory` (the gates, phases, repository pinning,
+`evidence_for`, `start_run`, `retry_analysis`), `code_factory_evidence` (code and ticket
+passages, labelled by system; reads only) and `code_factory_analysis` (triage, analysis,
+design, `ask`, `execute`, `build_plan`, `process_next_run`), which imports from both and
+neither imports it. Patch `ask` and `collect_items` on `code_factory_analysis`.
+
+`workbench` keeps writing knowledge, retrieval, conversation storage and
+`answer_question`; `knowledge_views` holds the Knowledge screens and `chat_views` the chat
+screens, submissions and the streamed answer (`answer_worker`, `run_answer`). Both import
+from `workbench` and it imports neither. A test that posts to the chat view and patches
+`answer_question` patches it on `chat_views`, where the view looks it up; one that
+patches what `answer_question` calls (`lexical_citations`) patches it on `workbench`.

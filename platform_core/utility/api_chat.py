@@ -9,7 +9,7 @@ form, and an owner can untick it there or under Features.
 
 Everything else is the browser's, unchanged. The token names a user, `access`
 runs the same checks a session request runs, and answering goes through
-`workbench.answer_question` (JSON) or `workbench.start_answer` plus the same
+`workbench.answer_question` (JSON) or `chat_views.start_answer` plus the same
 streaming worker the browser uses (SSE). There is no second answering path, no
 second permission model, and no way to reach another user's conversation: the
 conversation is looked up by the token's own user.
@@ -137,7 +137,8 @@ def rendered(message):
 @require_http_methods(["POST"])
 def chat(request, reference):
     """Ask one question. Returns the answer, or a handle to stream it."""
-    from ..workbench import answer_question, start_answer
+    from ..chat_views import start_answer
+    from ..workbench import answer_question
 
     try:
         user, _, app = authorize_chat(request, reference)
@@ -205,7 +206,8 @@ def chat_stream(request, reference, message_id):
     generator would arrive after the 200 headers and truncate the body rather
     than returning 403. Same reason the browser's stream view does it here.
     """
-    from ..workbench import conversation_context, event_stream, stream_answer
+    from ..chat_views import event_stream, stream_answer
+    from ..workbench import conversation_context
 
     try:
         user, _, app = authorize_chat(request, reference)

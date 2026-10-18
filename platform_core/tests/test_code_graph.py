@@ -7,12 +7,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from platform_core.code_factory import (
-    code_context_for,
-    confirm_repository,
-    run_design,
-    run_triage,
-)
+from platform_core.code_factory import confirm_repository
+from platform_core.code_factory_analysis import run_design, run_triage
+from platform_core.code_factory_evidence import code_context_for
 from platform_core.code_graph_analysis import facts, relationships
 from platform_core.code_graph_ingest import index_repository, register
 from platform_core.models import (
@@ -192,7 +189,7 @@ class CodeGraphTests(TestCase):
         )
 
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_triage_pins_matching_snapshot_for_code_factory(self, ask):
         repository = CodeRepository.objects.create(
             application=self.app, added_by=self.owner, external_id="acme/widgets",
@@ -253,7 +250,7 @@ class CodeGraphTests(TestCase):
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
         self.assertEqual(code_context_for(run, "Update charge"), "")
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_triage_does_not_pin_a_snapshot_when_the_feature_is_off(self, ask):
         repository = CodeRepository.objects.create(
             application=self.app, added_by=self.owner, external_id="acme/widgets",
@@ -290,7 +287,7 @@ class CodeGraphTests(TestCase):
         )
         return repository, snapshot
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_a_ticket_naming_nothing_uses_the_only_registered_repository(self, ask):
         """Most tickets name no repository, and the run used to see no code at all."""
         _, snapshot = self._registered("acme/widgets")
@@ -303,7 +300,7 @@ class CodeGraphTests(TestCase):
         # The registry is a guess like ticket text is; it passes the same gate.
         self.assertFalse(run.repository_confirmed)
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_several_registered_repositories_leave_the_choice_to_the_gate(self, ask):
         self._registered("acme/widgets")
         self._registered("acme/billing", number=2)
@@ -314,7 +311,7 @@ class CodeGraphTests(TestCase):
         self.assertIsNone(run.code_snapshot_id)
         self.assertEqual(run.proposed_repository, "")
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_the_fallback_does_not_apply_when_the_feature_is_off(self, ask):
         self._registered("acme/widgets")
         ApplicationFeature.objects.update_or_create(
@@ -327,7 +324,7 @@ class CodeGraphTests(TestCase):
         self.assertIsNone(run.code_snapshot_id)
         self.assertEqual(run.proposed_repository, "")
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_the_design_phase_is_told_which_files_exist(self, ask):
         """Design names the paths implementation reads, so it must see them."""
         run = self._pinned_run()
@@ -341,7 +338,7 @@ class CodeGraphTests(TestCase):
         self.assertIn("Pinned code structure:", question)
         self.assertIn("billing/service.py", question)
 
-    @patch("platform_core.code_factory.ask")
+    @patch("platform_core.code_factory_analysis.ask")
     def test_an_unpinned_run_designs_without_a_code_block(self, ask):
         run = FactoryRun.objects.create(application=self.app, requested_by=self.owner)
         ask.return_value = '{"items": []}'

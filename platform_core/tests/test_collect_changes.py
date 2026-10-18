@@ -8,8 +8,8 @@ about which of four checks each entry had failed.
 
 from django.test import SimpleTestCase
 
-from platform_core.code_factory import UnusableAnswer
 from platform_core.code_factory_agents import collect_changes
+from platform_core.code_factory_analysis import UnusableAnswer
 
 SHOWN = [
     {"path": "src/api.py", "text": "old", "sha": "a"},

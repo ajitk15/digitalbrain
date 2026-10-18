@@ -232,7 +232,7 @@ def plan_item(request, pk, plan_id, item_id):
     is a decision about the whole plan and stays on the review form, where it is
     made once.
     """
-    from .code_factory import ticket_label, ticket_passages
+    from .code_factory_evidence import ticket_label, ticket_passages
     from .models import FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
@@ -432,7 +432,7 @@ def analysis_view(run, phases_by_name, items):
     cards cannot say more than the receipt does.
     """
     from .code_factory import AGENTS, BUILD_A, BUILD_B, language_gap
-    from .code_factory import ticket_label as code_factory_ticket_label
+    from .code_factory_evidence import ticket_label as code_factory_ticket_label
     from .code_graph_analysis import describe_languages
     from .models import ITEM_CATEGORIES
     from .templatetags.workspace import evidence_origins
@@ -732,7 +732,7 @@ def run_detail(request, pk, run_id):
     """
     from django.conf import settings
 
-    from . import code_factory, code_factory_build
+    from . import code_factory, code_factory_build, code_factory_evidence
     from .code_factory import confirm_repository
     from .code_factory_agents import local_repository
     from .code_factory_build import (
@@ -893,7 +893,7 @@ def run_detail(request, pk, run_id):
             "stall_after": int(code_factory_build.STALL_AFTER.total_seconds() // 60),
             "reviewable": reviewable,
             "changes": changes,
-            "ticket_label": code_factory.ticket_label(run),
+            "ticket_label": code_factory_evidence.ticket_label(run),
             # Which shown paths the pinned snapshot holds: a gap's target found
             # there, or a change whose original was read from it, is tagged as
             # coming from the code graph.
@@ -1210,8 +1210,9 @@ def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=Fal
 @login_required
 @require_http_methods(["GET", "POST"])
 def plan_detail(request, pk, plan_id):
-    from .code_factory import confirm_repository, ticket_label
+    from .code_factory import confirm_repository
     from .code_factory_build import prepare, publish, write_credential
+    from .code_factory_evidence import ticket_label
 
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)

@@ -16,11 +16,11 @@ from platform_core.code_factory import (
     MAX_OUTPUT_LIMIT,
     MIN_OUTPUT_LIMIT,
     OUTPUT_LIMIT,
-    ask,
     finish_phase,
     output_limit,
     start_phase,
 )
+from platform_core.code_factory_analysis import ask
 from platform_core.models import AIConfiguration, AuditEvent
 
 from . import test_code_factory_delivery as delivery

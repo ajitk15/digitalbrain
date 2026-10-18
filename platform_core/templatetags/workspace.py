@@ -449,7 +449,7 @@ def evidence_origins(citations):
     """
     from collections import Counter
 
-    from platform_core.code_factory import ORIGINS
+    from platform_core.code_factory_evidence import ORIGINS
 
     counts, systems = Counter(), {}
     for citation in citations or []:

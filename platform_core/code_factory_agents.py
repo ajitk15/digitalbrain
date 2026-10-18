@@ -20,13 +20,11 @@ from .code_factory import (
     REVIEW_INSTRUCTIONS,
     TEST_INSTRUCTIONS,
     WORK_ORDER_INSTRUCTIONS,
-    UnusableAnswer,
-    ask,
     finish_phase,
     note,
-    parse_json,
     start_phase,
 )
+from .code_factory_analysis import UnusableAnswer, ask, parse_json
 from .models import FactoryRun
 
 #: Text a model leaves behind when it abbreviates instead of writing the file.

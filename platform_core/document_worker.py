@@ -151,7 +151,7 @@ def factory_steps():
     run cannot be in both states at once, so nothing is gained by letting them
     contend.
     """
-    from .code_factory import process_next_run
+    from .code_factory_analysis import process_next_run
     from .code_factory_build import (
         process_next_checks,
         process_next_preparation,

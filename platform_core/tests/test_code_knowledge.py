@@ -5,7 +5,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from platform_core.code_factory import code_citations, relevant_code_files
+from platform_core.code_factory_evidence import code_citations, relevant_code_files
 from platform_core.code_knowledge import links
 from platform_core.factory_views import code_source_holds
 from platform_core.graphs import build_graph

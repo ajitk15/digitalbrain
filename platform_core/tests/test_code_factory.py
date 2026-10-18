@@ -21,14 +21,8 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from platform_core.code_factory import (
-    BUILD_A,
-    MAX_ITEMS,
-    execute,
-    process_next_run,
-    repository_from,
-    start_run,
-)
+from platform_core.code_factory import BUILD_A, repository_from, start_run
+from platform_core.code_factory_analysis import MAX_ITEMS, execute, process_next_run
 from platform_core.models import (
     AIConfiguration,
     ApplicationGrant,
@@ -312,7 +306,7 @@ class PipelineTests(TestCase):
         """The record must not say running while the run is already failed."""
         answers = self.answers()
         with patch(
-            "platform_core.code_factory.collect_items", side_effect=RuntimeError("boom")
+            "platform_core.code_factory_analysis.collect_items", side_effect=RuntimeError("boom")
         ):
             run = start_run(self.owner, self.app.pk, self.ticket)
             with patch("platform_core.ai.invoke_ai", side_effect=answers):
@@ -374,13 +368,13 @@ class ParseJsonTests(SimpleTestCase):
         A model that began its JSON, paused, and wrote it again arrived as a
         half block glued to a whole one, and pairing fences took the half.
         """
-        from platform_core.code_factory import parse_json
+        from platform_core.code_factory_analysis import parse_json
 
         joined = "```json\n" + self.WHOLE[:40] + "```json\n" + self.WHOLE + "\n```"
         self.assertEqual(len(parse_json(joined, "Change review")["files"]), 6)
 
     def test_a_half_answer_alone_is_refused_and_says_where(self):
-        from platform_core.code_factory import UnusableAnswer, parse_json
+        from platform_core.code_factory_analysis import UnusableAnswer, parse_json
 
         with self.assertRaises(UnusableAnswer) as refusal:
             parse_json("```json\n" + self.WHOLE[:40] + "\n```", "Change review")
@@ -1136,12 +1130,12 @@ class RunPageTests(TestCase):
 class PhaseBudgetTests(SimpleTestCase):
     def test_the_analysis_ask_fits_its_output_budget(self):
         """A live run returned 4,773 tokens against a 4,096 cap and truncated."""
-        from platform_core.code_factory import (
+        from platform_core.code_factory import OUTPUT_LIMIT
+        from platform_core.code_factory_analysis import (
             MAX_EVIDENCE_PER_ITEM,
             MAX_EXPLANATION_CHARACTERS,
             MAX_ITEMS,
             MAX_QUOTE_CHARACTERS,
-            OUTPUT_LIMIT,
         )
 
         per_item = (
@@ -1154,13 +1148,13 @@ class PhaseBudgetTests(SimpleTestCase):
 
     def test_evidence_is_cited_by_the_number_it_was_shown_with(self):
         """A live run cited "source_id": "3"; UUIDs do not survive a long answer."""
-        from platform_core.code_factory import ANALYSIS_INSTRUCTIONS
+        from platform_core.code_factory_analysis import ANALYSIS_INSTRUCTIONS
 
         self.assertIn("number shown beside the evidence", ANALYSIS_INSTRUCTIONS)
 
     def test_the_prompt_states_the_limits_the_budget_depends_on(self):
         """A storage cap is not an instruction; the model has to be told."""
-        from platform_core.code_factory import (
+        from platform_core.code_factory_analysis import (
             ANALYSIS_INSTRUCTIONS,
             MAX_EVIDENCE_PER_ITEM,
             MAX_EXPLANATION_CHARACTERS,

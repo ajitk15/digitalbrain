@@ -13,7 +13,8 @@ from unittest.mock import patch
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.code_factory import code_citations, source_system, start_run
+from platform_core.code_factory import start_run
+from platform_core.code_factory_evidence import code_citations, source_system
 from platform_core.factory_views import code_source_holds
 from platform_core.models import (
     CodeFile,
@@ -107,7 +108,7 @@ class LabelledEvidenceTests(TestCase):
 
         run = start_run(self.owner, self.app.pk, self.ticket)
         with patch("platform_core.ai.invoke_ai", side_effect=capture):
-            from platform_core.code_factory import execute
+            from platform_core.code_factory_analysis import execute
 
             execute(run)
         analysis = seen[1]
@@ -115,7 +116,7 @@ class LabelledEvidenceTests(TestCase):
         self.assertTrue(analysis[1]["title"].startswith("[Jira OPS-12]"))
 
     def test_a_hand_written_ticket_is_never_evidence(self):
-        from platform_core.code_factory import ticket_citation
+        from platform_core.code_factory_evidence import ticket_citation
 
         run = start_run(self.owner, self.app.pk, self.ticket)
         run.ticket_body = "Typed in on the screen."
