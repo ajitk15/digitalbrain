@@ -1,6 +1,7 @@
 import hashlib
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -15,6 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
+from . import sorting
 from .ai import seed_application_ai
 from .forms import (
     ApplicationForm,
@@ -668,6 +670,35 @@ def application_access(request, pk):
     )
 
 
+#: The audit log's sortable columns: newest first unless a heading says otherwise.
+AUDIT_COLUMNS = {
+    "time": sorting.Column("Time", "desc", field="created_at"),
+    "actor": sorting.Column("Actor", field="actor__username"),
+    "action": sorting.Column("Action", field="action"),
+    "resource": sorting.Column("Resource", field="resource_id"),
+}
+#: AI usage receipts: time, who answered, for what, and what it cost.
+USAGE_COLUMNS = {
+    "time": sorting.Column("Time (UTC)", "desc", field="created_at"),
+    "model": sorting.Column("Provider / model", field="model"),
+    "task": sorting.Column("Task", field="purpose"),
+    "input": sorting.Column("Input", "desc", field="input_tokens"),
+    "output": sorting.Column("Output", "desc", field="output_tokens"),
+    "cost": sorting.Column("Cost", "desc", field="amount"),
+}
+
+
+def sorted_page(request, queryset, columns, default, per_page):
+    """One page of a queryset in the order its headings ask for, and what draws them."""
+    sort, direction = sorting.choose(request, columns, default)
+    queryset = sorting.order_queryset(queryset, columns[sort], direction)
+    return {
+        "page": Paginator(queryset, per_page).get_page(request.GET.get("page")),
+        "columns": sorting.headers(request, columns, sort, direction),
+        "extra_query": urlencode(sorting.carried(sort, direction, columns, default)),
+    }
+
+
 @login_required
 @require_GET
 def audit_log(request):
@@ -682,7 +713,7 @@ def audit_log(request):
     return render(
         request,
         "audit.html",
-        {"page": Paginator(events.select_related("actor"), 30).get_page(request.GET.get("page"))},
+        sorted_page(request, events.select_related("actor"), AUDIT_COLUMNS, "time", 30),
     )
 
 
@@ -709,7 +740,7 @@ def usage(request, pk):
             "application": app,
             "totals": totals,
             "budget": budget_status(app.pk),
-            "page": Paginator(records, 30).get_page(request.GET.get("page")),
+            **sorted_page(request, records, USAGE_COLUMNS, "time", 30),
         },
     )
 

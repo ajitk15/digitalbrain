@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
+from . import sorting
 from .models import (
     AutomationRun,
     Connector,
@@ -699,6 +700,20 @@ def incident_url(app, incident_id, run_id=None):
     return f"{url}&run={run_id}" if run_id else url
 
 
+#: The incident list's sortable columns. Priority by urgency on the scale
+#: Tickets uses, an incident by its number, last triage by the latest run.
+INCIDENT_COLUMNS = {
+    "incident": sorting.Column(
+        "Incident", value=lambda item: sorting.key_order(item["number"]) if item["number"]
+        else None),
+    "priority": sorting.Column("Priority", "desc", value=lambda item: (
+        -rank if (rank := sorting.priority_rank(item["priority"])) is not None else None)),
+    "state": sorting.Column("State", value=lambda item: item["state"].casefold() or None),
+    "triage": sorting.Column("Last triage", "desc", value=lambda item: (
+        item["last_run"].number if item["last_run"] else None)),
+}
+
+
 def latest_runs(app):
     """Each incident's most recent run, for the list's Last triage column."""
     latest = {}
@@ -781,6 +796,10 @@ def serviceops(request, pk):
             incidents = [item for item in incidents if item["needs_assessment"]]
         if priority in priorities:
             incidents = [item for item in incidents if item["priority_tone"] == priority]
+        # Newest first until a heading is clicked, as the list always opened.
+        sort, direction = sorting.choose(request, INCIDENT_COLUMNS)
+        if sort:
+            incidents = sorting.ordered(incidents, INCIDENT_COLUMNS[sort], direction)
         return render(
             request,
             "serviceops.html",
@@ -793,6 +812,7 @@ def serviceops(request, pk):
                 "priority": priority if priority in priorities else "",
                 "priorities": priorities,
                 "counts": counts,
+                "columns": sorting.headers(request, INCIDENT_COLUMNS, sort, direction),
                 # Only asked when there is nothing to list: it decides the one
                 # thing the empty screen offers an owner - connect a source, or
                 # run the import from the one they have.

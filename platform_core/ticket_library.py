@@ -15,7 +15,6 @@ they stay on Documents; so does a record whose connector was removed, which no
 connector claims.
 """
 
-import re
 from collections import Counter
 from datetime import UTC
 from urllib.parse import urlencode
@@ -25,10 +24,12 @@ from django.db.models import Q
 from django.urls import reverse
 from django.utils.dateparse import parse_datetime
 
+from . import sorting
 from .connector_kinds import KINDS, read_header
 from .models import Connector, KnowledgeEntry
 from .serviceops import incident_url
 from .services import feature_enabled
+from .sorting import Column, key_order, priority_rank
 from .source_library import SCORED_KINDS, graph_usage, imported_label, personal
 from .ticket_quality import assess
 
@@ -39,11 +40,6 @@ TICKET_KINDS = {"jira", "github"}
 #: a catalogue task - is.
 NOT_TICKET_TABLES = {"kb_knowledge", "sys_hub_flow"}
 PAGE_SIZE = 50
-#: Priority words in order of urgency, Jira's and ServiceNow's together.
-#: ServiceNow also numbers them ("2 - High"), and the number wins.
-PRIORITY_RANK = {"blocker": 0, "highest": 1, "critical": 1, "high": 2, "medium": 3,
-                 "moderate": 3, "low": 4, "lowest": 5, "planning": 5, "trivial": 5}
-NUMBERED = re.compile(r"^(.*?)(\d+)$")
 
 
 def ticket_connector(connector):
@@ -130,69 +126,21 @@ def when(value):
     return parsed
 
 
-def key_order(key):
-    """KAN-9 before KAN-10: the project, then its number as a number."""
-    match = NUMBERED.match(key)
-    return (match.group(1).casefold(), int(match.group(2))) if match else (key.casefold(), -1)
-
-
-def priority_rank(priority):
-    """Lower is more urgent; None for a priority this cannot place."""
-    words = priority.casefold().replace("-", " ").split()
-    if words and words[0].isdigit():
-        return int(words[0])
-    return next((PRIORITY_RANK[word] for word in words if word in PRIORITY_RANK), None)
-
-
-#: Sortable columns: label, how a row orders, and the first click's direction.
-#: Priority sorts by urgency, readiness by score, the rest by their text.
+#: The sortable columns (`sorting`). Priority sorts by urgency, readiness by
+#: score, a key by its number, the rest by their text.
 COLUMNS = {
-    "key": ("Key", lambda row: key_order(row["key"]) if row["key"] else None, "asc"),
-    "title": ("Title", lambda row: row["entry"].title.casefold(), "asc"),
-    "type": ("Type", lambda row: row["type"].casefold() or None, "asc"),
-    "status": ("Status", lambda row: row["status"].casefold() or None, "asc"),
-    # Most urgent first is "descending" priority, so rank is negated.
-    "priority": ("Priority", lambda row: (-rank if (rank := priority_rank(row["priority"]))
-                                          is not None else None), "desc"),
-    "readiness": ("Readiness", lambda row: row["quality"]["score"] if row["quality"] else None,
-                  "asc"),
-    "updated": ("Updated", lambda row: row["updated"], "desc"),
+    "key": Column("Key", value=lambda row: key_order(row["key"]) if row["key"] else None),
+    "title": Column("Title", value=lambda row: row["entry"].title.casefold()),
+    "type": Column("Type", value=lambda row: row["type"].casefold() or None),
+    "status": Column("Status", value=lambda row: row["status"].casefold() or None),
+    # Most urgent first is "descending" priority, so the rank is negated.
+    "priority": Column("Priority", "desc", value=lambda row: (
+        -rank if (rank := priority_rank(row["priority"])) is not None else None)),
+    "readiness": Column("Readiness",
+                        value=lambda row: row["quality"]["score"] if row["quality"] else None),
+    "updated": Column("Updated", "desc", value=lambda row: row["updated"]),
 }
 DEFAULT_SORT = "updated"
-
-
-def ordered(rows, column, direction):
-    """Rows by one column; a ticket with nothing to sort on goes last either way."""
-    value = COLUMNS[column][1]
-    known = [row for row in rows if value(row) is not None]
-    unknown = [row for row in rows if value(row) is None]
-    return sorted(known, key=value, reverse=direction == "desc") + unknown
-
-
-def headers(chosen, sort, direction, readiness):
-    """The header row: each sortable column's link, and which way it sorts now.
-
-    A link keeps the filters and starts at page one; clicking the column that
-    sorts the table turns it round.
-    """
-    found = []
-    for column, (label, _, first) in COLUMNS.items():
-        if column == "readiness" and not readiness:
-            continue
-        current = column == sort
-        then = ("asc" if direction == "desc" else "desc") if current else first
-        query = {key: chosen[key] for key in ("connector", "status", "type", "q") if chosen[key]}
-        query.update(sort=column, dir=then)
-        found.append({
-            "column": column,
-            "label": label,
-            "href": "?" + urlencode(query),
-            "direction": direction if current else "",
-            "aria_sort": ({"asc": "ascending", "desc": "descending"}[direction]
-                          if current else ""),
-            "next": "ascending" if then == "asc" else "descending",
-        })
-    return found
 
 
 def describe(entry, fields, connectors):
@@ -258,13 +206,8 @@ def library(app, grant, request):
                 or needle in row["entry"].content.casefold()
                 or needle in row["key"].casefold()]
 
-    sort = request.GET.get("sort", "")
-    if sort not in COLUMNS:
-        sort = DEFAULT_SORT
-    direction = request.GET.get("dir", "")
-    if direction not in {"asc", "desc"}:
-        direction = COLUMNS[sort][2]
-    rows = ordered(rows, sort, direction)
+    sort, direction = sorting.choose(request, COLUMNS, DEFAULT_SORT)
+    rows = sorting.ordered(rows, COLUMNS[sort], direction)
 
     verdicts = Counter(row["quality"]["verdict"] for row in rows if row["quality"])
     page = Paginator(rows, PAGE_SIZE).get_page(request.GET.get("page"))
@@ -297,8 +240,7 @@ def library(app, grant, request):
         # The filters other than the search, and the order, carried across pages.
         "extra_query": urlencode(
             {key: chosen[key] for key in ("connector", "status", "type") if chosen[key]}
-            | ({"sort": sort, "dir": direction}
-               if (sort, direction) != (DEFAULT_SORT, COLUMNS[DEFAULT_SORT][2]) else {})
+            | sorting.carried(sort, direction, COLUMNS, DEFAULT_SORT)
         ),
         "sort": sort,
         "direction": direction,
@@ -308,8 +250,7 @@ def library(app, grant, request):
         # Jira tickets only are scored (`SCORED_KINDS`), so a board of GitHub
         # issues gets no column of dashes.
         "readiness_column": any(row["quality"] for row in shown),
-        "columns": {column["column"]: column for column in headers(
-            chosen, sort, direction, any(row["quality"] for row in shown))},
+        "columns": sorting.headers(request, COLUMNS, sort, direction),
         # Over every ticket the filters leave, not only this page.
         "readiness": {
             "ready": verdicts["Ready"],

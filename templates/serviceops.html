@@ -11,7 +11,7 @@
   {% if priorities %}<span class="chip-divider" aria-hidden="true"></span>{% for tone in priorities %}<a href="?priority={{ tone }}&amp;show={{ show }}"{% if priority == tone %} aria-current="page"{% endif %}>{{ tone|upper }}</a>{% endfor %}{% endif %}
 </nav>
 {% if incidents %}
-<div class="table-wrap"><table class="incident-table"><thead><tr><th>Incident</th><th>Priority</th><th>State</th><th>Last triage</th><th><span class="sr-only">Open</span></th></tr></thead><tbody>
+<div class="table-wrap"><table class="incident-table"><thead><tr>{% include '_sort_header.html' with column=columns.incident %}{% include '_sort_header.html' with column=columns.priority %}{% include '_sort_header.html' with column=columns.state %}{% include '_sort_header.html' with column=columns.triage %}<th><span class="sr-only">Open</span></th></tr></thead><tbody>
 {% for item in incidents %}<tr>
   <td><a class="incident-link" href="?incident={{ item.entry.pk }}">{% if item.number %}<span class="incident-badge incident-number">{{ item.number }}</span>{% endif %}<strong>{{ item.entry.title }}</strong></a><small class="muted">{% if item.service %}{{ item.service }} · {% endif %}imported <time datetime="{{ item.entry.created_at|date:'c' }}" data-local>{{ item.entry.created_at|date:"M d, H:i" }} UTC</time></small></td>
   <td>{% if item.priority %}<span class="incident-badge incident-priority priority-{{ item.priority_tone }}">{{ item.priority }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>

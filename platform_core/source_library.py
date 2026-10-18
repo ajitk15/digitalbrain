@@ -1,12 +1,13 @@
 """One inventory for uploaded documents and searchable imported records."""
 
 from pathlib import PurePosixPath
-from urllib.parse import urlparse
+from urllib.parse import urlencode, urlparse
 
 from django.core.paginator import Paginator
 from django.db.models import CharField, Count, Prefetch, Q, Value
+from django.db.models.functions import Lower
 
-from . import sensitivity, source_map
+from . import sensitivity, sorting, source_map
 from .models import (
     CodeRepository,
     Connector,
@@ -155,6 +156,14 @@ def graph_usage(app, entries):
     return {source_id: versions for (source_id, digest), versions in usage.items()}
 
 
+#: The Documents table sorts by name or by when a source was added (newest
+#: first). The other columns are worked out per row after the page is read.
+LIBRARY_COLUMNS = {
+    "source": sorting.Column("Source", field="label"),
+    "added": sorting.Column("Added (UTC)", "desc", field="created_at"),
+}
+
+
 def library_context(app, request):
     from .ticket_library import ticket_filter
 
@@ -200,17 +209,22 @@ def library_context(app, request):
         # file by name wants it found wherever it lives, and grouping the answer
         # by origin would hide matches inside sources they have not opened.
         documents = documents.filter(source__isnull=True)
+    # A file is named by its file name and a record by its title, so the union
+    # carries one lower-cased label for the Source heading to sort on.
     inventory = documents.order_by().annotate(
-        kind=Value("document", output_field=CharField())
-    ).values_list("pk", "created_at", "kind")
+        kind=Value("document", output_field=CharField()), label=Lower("name"),
+    ).values_list("pk", "created_at", "kind", "label")
     if enabled:
         inventory = inventory.union(standalone.order_by().annotate(
-            kind=Value("entry", output_field=CharField())
-        ).values_list("pk", "created_at", "kind"))
-    page = Paginator(inventory.order_by("-created_at", "-pk"), 20).get_page(
-        request.GET.get("page")
-    )
-    selected = list(page.object_list)
+            kind=Value("entry", output_field=CharField()), label=Lower("title"),
+        ).values_list("pk", "created_at", "kind", "label"))
+    sort, direction = sorting.choose(request, LIBRARY_COLUMNS, "added")
+    # A union orders by its own column names, not by expressions.
+    field = LIBRARY_COLUMNS[sort].field
+    page = Paginator(
+        inventory.order_by(f"-{field}" if direction == "desc" else field, "-pk"), 20
+    ).get_page(request.GET.get("page"))
+    selected = [(pk, created_at, kind) for pk, created_at, kind, _ in page.object_list]
     docs = {doc.pk: doc for doc in documents.filter(
         pk__in=[pk for pk, _, kind in selected if kind == "document"]
     )}
@@ -340,6 +354,8 @@ def library_context(app, request):
             ]
     return {
         "page": page, "query": search, "source_count": count,
+        "columns": sorting.headers(request, LIBRARY_COLUMNS, sort, direction),
+        "extra_query": urlencode(sorting.carried(sort, direction, LIBRARY_COLUMNS, "added")),
         "ticket_matches": ticket_matches,
         # The grouped view answers "what came from where"; the table answers
         # "find me this file". Only one of them is the right shape at a time.
