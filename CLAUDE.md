@@ -384,6 +384,26 @@ subprocess before the file can go) remain. A failed conversion always keeps its 
 (`active=False`, document released - the one-to-one allows one) and carries a
 restriction over. A failed re-conversion leaves the document ready on its old text.
 
+**Originals may live in a bucket** (`originals.py`, `[originals] store = "s3"`; `"disk"`
+is the default and exactly the old file). Same key as the disk layout
+(`<prefix>/<organization>/<application>/<id>.quarantine`), every read, write and delete
+through `originals.store()` - nothing else touches the path. The scanner, the extractor
+subprocess and the integrity check are handed a **local file**: for a bucket a private
+copy (mode 0700 directory) removed when the block ends, so the extractor still makes no
+network call. The keys are the mounted files `originals_access_key_id` and
+`originals_secret_access_key`; botocore would otherwise take credentials, a profile, an
+endpoint override (`AWS_ENDPOINT_URL_S3`), proxies and a CA bundle from the environment,
+so `originals.connect` states every one (an isolated session, an explicit endpoint -
+AWS's for the region when none is named - `proxies={}`, `verify`), and `test_originals`
+plants each and checks the request botocore would send. The endpoint is the operator's,
+like Redis's host, not a user-supplied URL, so it is not a `fetching` path; production
+refuses one that is not https. Bucket failures are `StoreUnavailable(OSError)`: a
+missing object is a missing file, and a bucket that does not answer is **never** read as
+"upload it again" (`documents.original_stored` returns None, and conversion fails with
+"not answering" so Retry works). `manage.py move_originals [--check]` moves disk
+originals in after their recorded SHA-256 matches, removing each from disk only once the
+bucket returns the same bytes.
+
 **OCR is local, off by default, and says which text it read.** `ocr = true` (with
 `tesseract_path` if Tesseract is not on PATH; the Dockerfile installs it) makes the
 extractor subprocess render each PDF page that has no text layer with pypdfium2, read it,

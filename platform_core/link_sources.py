@@ -13,14 +13,14 @@ is downloading and what failed.
 """
 
 import hashlib
-import os
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .documents import document_folder, document_path, intake_enabled
+from . import originals
+from .documents import intake_enabled
 from .fetching import FetchError, fetch, normalise, resolve, suggested_name
 from .github_sources import is_github
 from .github_sources import plan as github_plan
@@ -250,12 +250,10 @@ def download(document):
         )
         return True
 
-    folder = document_folder(document.application)
-    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path = document_path(document.application, document.pk)
-    # Same restrictive mode the upload path uses: originals stay owner-only.
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(descriptor, "wb") as destination:
+    # Wherever uploads go, and as privately: a retried download replaces it.
+    store = originals.store()
+    store.delete(document.application, document.pk)
+    with store.writer(document.application, document.pk) as destination:
         destination.write(body)
     Document.objects.filter(pk=document.pk, status="fetching").update(
         # Keep the name the link resolved to unless the server offered a better one.

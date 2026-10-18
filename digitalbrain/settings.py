@@ -86,6 +86,8 @@ GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "rows")
 #: replay and follow them, and Stop and the API rate limit reach every process
 #: (`platform_core/broker.py`). Its password is the mounted `redis_password`.
 REDIS = CONFIG.get("redis", {})
+# Where originals are kept: disk unless [originals] store = "s3" (originals.py).
+ORIGINALS = CONFIG.get("originals", {})
 #: How long audit events and usage receipts are kept (platform_core/retention.py).
 #: Empty keeps everything, which is the default.
 RETENTION = CONFIG.get("retention", {})

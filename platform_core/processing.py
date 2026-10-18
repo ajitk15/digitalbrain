@@ -14,6 +14,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from . import originals
 from .models import Document, KnowledgeEntry
 from .services import audit
 from .workbench import access, add_knowledge
@@ -139,14 +140,49 @@ def process_document(user, app_id, document_id):
         return KnowledgeEntry.objects.get(document=doc)
     if doc.status == "rejected":
         raise ValidationError("This document was rejected by security scanning.")
-    path = (
-        Path(settings.BASE_DIR)
-        / ".runtime"
-        / "documents"
-        / str(app.organization_id)
-        / str(app.pk)
-        / f"{doc.pk}.quarantine"
-    )
+    try:
+        with originals.store().opened(app, doc.pk) as path:
+            report, content = read_original(user, app, doc, path)
+    except originals.StoreUnavailable:
+        raise ValidationError(
+            "The document store is not answering. The original is still stored; "
+            "Retry converts it."
+        ) from None
+    with transaction.atomic():
+        app, _ = access(user, app_id, "knowledge", write=True)
+        locked = Document.objects.select_for_update().get(pk=doc.pk, application=app)
+        if locked.status == "ready":
+            return KnowledgeEntry.objects.get(document=locked)
+        if locked.status not in {"quarantined", "failed", "queued", "converting"}:
+            raise ValidationError("This document is no longer eligible for processing.")
+        locked.conversion_report = report
+        entry = supersede(user, app_id, locked, content)
+        locked.status = "ready"
+        locked.converter = "MarkItDown " + version("markitdown")
+        locked.conversion_error = ""
+        locked.save(
+            update_fields=["status", "converter", "conversion_error", "conversion_report"]
+        )
+        if not settings.KEEP_ORIGINAL_DOCUMENTS:
+            # After commit: until the text is stored for certain, the file is
+            # the only copy of what was uploaded.
+            transaction.on_commit(lambda: remove_original(locked.pk, app))
+        audit(
+            user,
+            "document.processed",
+            doc.pk,
+            app.product.portfolio.organization,
+            details={"security_scan_required": settings.DOCUMENT_SCAN_REQUIRED},
+        )
+        return entry
+
+
+def read_original(user, app, doc, path):
+    """Check, scan and convert a local copy of the original: (report, text).
+
+    `path` is the file on disk, or a private copy of the bucket's object that
+    is removed when the caller's block ends (`originals.Bucket.opened`).
+    """
     try:
         if path.stat().st_size != doc.size:
             raise ValueError
@@ -194,33 +230,7 @@ def process_document(user, app_id, document_id):
             raise ValueError
     except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
         raise ValidationError(failure_message(refused, ocr)) from None
-    with transaction.atomic():
-        app, _ = access(user, app_id, "knowledge", write=True)
-        locked = Document.objects.select_for_update().get(pk=doc.pk, application=app)
-        if locked.status == "ready":
-            return KnowledgeEntry.objects.get(document=locked)
-        if locked.status not in {"quarantined", "failed", "queued", "converting"}:
-            raise ValidationError("This document is no longer eligible for processing.")
-        locked.conversion_report = report
-        entry = supersede(user, app_id, locked, content)
-        locked.status = "ready"
-        locked.converter = "MarkItDown " + version("markitdown")
-        locked.conversion_error = ""
-        locked.save(
-            update_fields=["status", "converter", "conversion_error", "conversion_report"]
-        )
-        if not settings.KEEP_ORIGINAL_DOCUMENTS:
-            # After commit: until the text is stored for certain, the file is
-            # the only copy of what was uploaded.
-            transaction.on_commit(lambda: remove_original(locked.pk, path))
-        audit(
-            user,
-            "document.processed",
-            doc.pk,
-            app.product.portfolio.organization,
-            details={"security_scan_required": settings.DOCUMENT_SCAN_REQUIRED},
-        )
-        return entry
+    return report, content
 
 
 #: How to turn OCR on, said where a file needed it. An operator's step, so it
@@ -370,9 +380,9 @@ def supersede(user, app_id, document, content):
     return entry
 
 
-def remove_original(document_id, path):
-    """Delete a converted document's stored file, and say when."""
-    path.unlink(missing_ok=True)
+def remove_original(document_id, app):
+    """Delete a converted document's stored original, and say when."""
+    originals.store().delete(app, document_id)
     Document.objects.filter(pk=document_id, status="ready").update(
         original_removed_at=timezone.now()
     )

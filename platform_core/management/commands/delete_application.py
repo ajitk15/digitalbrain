@@ -14,6 +14,7 @@ import uuid
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from platform_core import originals
 from platform_core.demo_reset import ORDER
 from platform_core.documents import document_folder, document_path
 from platform_core.models import (
@@ -97,10 +98,7 @@ class Command(BaseCommand):
 
         removed = {}
         # Paths first: once deleted, the instance no longer has its id.
-        files = [
-            document_path(app, pk)
-            for pk in Document.objects.filter(application=app).values_list("pk", flat=True)
-        ]
+        documents = list(Document.objects.filter(application=app).values_list("pk", flat=True))
         folder = document_folder(app)
         def tally(deleted):
             # Each model's own rows, cascades included under their own name, so
@@ -126,8 +124,11 @@ class Command(BaseCommand):
                 details={"name": name, "removed": removed},
             )
         # Files after the commit: a rolled-back delete must not have lost them.
-        for path in files:
-            path.unlink(missing_ok=True)
+        store = originals.store()
+        for pk in documents:
+            store.delete(app, pk)
+            # And from disk, where it was before a bucket was configured.
+            document_path(app, pk).unlink(missing_ok=True)
         if folder.is_dir() and not any(folder.iterdir()):
             folder.rmdir()
         # Only credentials this platform wrote. An operator's mount is theirs.

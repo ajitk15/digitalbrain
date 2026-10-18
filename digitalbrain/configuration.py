@@ -4,6 +4,7 @@ import os
 import re
 import tomllib
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from django.core.exceptions import ImproperlyConfigured
 from django.views.decorators.debug import sensitive_variables
@@ -69,6 +70,7 @@ def load_config():
         "graph_candidates",
         "ai_gateway",
         "redis",
+        "originals",
         "retention",
         "entra_tenant",
         "entra_client_id",
@@ -288,6 +290,7 @@ def load_config():
                 "Set redis or shared_streams, not both: with redis, streams are shared "
                 "through it."
             )
+    check_originals(config)
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert", "runtime_user", "password_secret"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")
@@ -343,6 +346,70 @@ def admin_identity():
             seen = True
             value = value or entry.strip().strip("\"'")
     return value.strip()
+
+
+#: What `[originals]` may say. The keys are the mounted files
+#: `originals_access_key_id` and `originals_secret_access_key`.
+ORIGINALS_FIELDS = frozenset({
+    "store", "bucket", "region", "endpoint", "prefix", "server_side_encryption",
+    "ca_certificate",
+})
+
+
+def check_originals(config):
+    """`[originals]`: disk (the default) or an S3-compatible bucket."""
+    originals = config.get("originals", {})
+    if not isinstance(originals, dict) or set(originals) - ORIGINALS_FIELDS:
+        raise ImproperlyConfigured(
+            "originals configuration cannot contain credentials; the bucket's keys are "
+            "the mounted files originals_access_key_id and originals_secret_access_key."
+        )
+    store = originals.get("store", "disk")
+    if store not in {"disk", "s3"}:
+        raise ImproperlyConfigured('originals.store must be "disk" or "s3".')
+    if store == "disk":
+        if set(originals) - {"store"}:
+            raise ImproperlyConfigured('originals settings other than store need store = "s3".')
+        return
+    if not isinstance(originals.get("bucket"), str) or not re.fullmatch(
+        r"[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]", originals["bucket"]
+    ):
+        raise ImproperlyConfigured("originals.bucket must be an S3 bucket name.")
+    if not isinstance(originals.get("region"), str) or not re.fullmatch(
+        r"[a-z0-9-]{1,32}", originals["region"]
+    ):
+        raise ImproperlyConfigured("originals.region must be a region name, such as eu-west-2.")
+    endpoint = originals.get("endpoint", "")
+    if not isinstance(endpoint, str):
+        raise ImproperlyConfigured("originals.endpoint must be a URL.")
+    if endpoint:
+        parsed = urlsplit(endpoint)
+        allowed = {"https"} if config.get("mode") == "production" else {"https", "http"}
+        if (
+            parsed.scheme not in allowed
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            # Originals are what people uploaded; never plaintext in production.
+            raise ImproperlyConfigured(
+                "originals.endpoint must be a scheme and host only - https in production."
+            )
+    prefix = originals.get("prefix", "")
+    if not isinstance(prefix, str) or not re.fullmatch(r"[A-Za-z0-9._/-]{0,200}", prefix) or (
+        ".." in prefix.split("/")
+    ):
+        raise ImproperlyConfigured("originals.prefix may hold letters, digits, . _ - and /.")
+    if originals.get("server_side_encryption", "") not in {"", "AES256", "aws:kms"}:
+        raise ImproperlyConfigured(
+            'originals.server_side_encryption must be "AES256" or "aws:kms".'
+        )
+    ca = originals.get("ca_certificate", "")
+    if not isinstance(ca, str) or (ca and not Path(ca).is_absolute()):
+        raise ImproperlyConfigured("originals.ca_certificate must be an absolute path.")
 
 
 @sensitive_variables()

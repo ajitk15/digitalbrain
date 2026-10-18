@@ -226,10 +226,7 @@ class DemoResetTests(TestCase):
         with tempfile.TemporaryDirectory() as folder:
             stored = Path(folder, f"{document.pk}.quarantine")
             stored.write_bytes(b"x")
-            with patch(
-                "platform_core.demo_reset.document_path",
-                lambda app, pk: Path(folder, f"{pk}.quarantine"),
-            ):
+            with patch("platform_core.originals.folder", lambda app: Path(folder)):
                 self.assertEqual(demo_reset.summary(self.org)["link sources"], 1)
                 demo_reset.reset(self.admin, self.org, "ACME")
             self.assertFalse(stored.exists())

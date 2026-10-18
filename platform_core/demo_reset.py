@@ -60,8 +60,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from . import originals
 from .connector_kinds import kind_for
-from .documents import document_path
 from .graph_ai import EXTRACTION_TASK
 from .graphs import fingerprint
 from .models import (
@@ -240,7 +240,7 @@ def reset(user, organization, typed_name):
     for document in brought:
         # The original bytes first, as deleting a document does: a row removed
         # with its file left behind is storage nothing can find again.
-        document_path(document.application, document.pk).unlink(missing_ok=True)
+        originals.store().delete(document.application, document.pk)
     read = KnowledgeEntry.objects.filter(document__in=brought)
     IncidentProfile.objects.filter(entry__in=read).delete()
     count = read.delete()[1].get(ENTRY_LABEL, 0)

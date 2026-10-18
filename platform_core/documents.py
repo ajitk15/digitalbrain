@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import uuid
 from pathlib import Path
 
@@ -17,6 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from . import originals
 from .fetching import FetchError
 from .models import ApplicationGrant, Document, KnowledgeEntry, KnowledgeSource
 from .policy import application_for
@@ -120,7 +120,7 @@ def digest_of_upload(upload):
 
 def remove_document(app, document):
     """What deleting one document does: its file, its knowledge, then the row."""
-    document_path(app, document.pk).unlink(missing_ok=True)
+    originals.store().delete(app, document.pk)
     KnowledgeEntry.objects.filter(document=document).delete()
     Document.objects.filter(pk=document.pk).update(status="deleted", conversion_error="")
 
@@ -203,18 +203,26 @@ class DocumentForm(forms.Form):
 
 
 def document_folder(app):
-    """Private, per-application storage for original bytes. Never public static."""
-    return (
-        Path(settings.BASE_DIR)
-        / ".runtime"
-        / "documents"
-        / str(app.organization_id)
-        / str(app.pk)
-    )
+    """Where originals are kept on this server's disk (`originals.folder`)."""
+    return originals.folder(app)
 
 
 def document_path(app, document_id):
-    return document_folder(app) / f"{document_id}.quarantine"
+    """An original's file on disk; with a bucket configured, `originals.store()`."""
+    return originals.DISK.path(app, document_id)
+
+
+#: Said when a bucket of originals does not answer: the original is not lost.
+STORE_UNANSWERED = "The document store is not answering. Try again shortly."
+
+
+def original_stored(app, document_id):
+    """Whether the original is stored: True, False, or None when the store
+    cannot say right now - which must not read as "upload it again"."""
+    try:
+        return originals.store().exists(app, document_id)
+    except OSError:
+        return None
 
 
 def intake_enabled():
@@ -240,14 +248,11 @@ def store_document(actor, application_id, upload, *, name=None, source=None, ori
     if not intake_enabled() or not feature_enabled("document_uploads", app):
         raise PermissionDenied("Production document intake requires private storage integration.")
     document_id = uuid.uuid4()
-    folder = document_folder(app)
-    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
-    target = folder / f"{document_id}.quarantine"
+    store = originals.store()
     digest = hashlib.sha256()
     size = 0
     try:
-        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(descriptor, "wb") as destination:
+        with store.writer(app, document_id) as destination:
             for chunk in upload.chunks():
                 size += len(chunk)
                 if size > MAX_BYTES:
@@ -286,7 +291,11 @@ def store_document(actor, application_id, upload, *, name=None, source=None, ori
             )
         return doc
     except Exception:
-        target.unlink(missing_ok=True)
+        try:
+            store.delete(app, document_id)
+        except OSError:
+            # A store that is down: report why the upload failed, not the cleanup.
+            pass
         raise
 
 
@@ -498,7 +507,10 @@ def reconvert(request, app, grant, document):
         raise PermissionDenied("Only an owner may convert a document again.")
     with transaction.atomic():
         locked = Document.objects.select_for_update().get(pk=document.pk)
-        stored = document_path(app, locked.pk).is_file() and not locked.original_removed_at
+        stored = not locked.original_removed_at and original_stored(app, locked.pk)
+        if stored is None:
+            messages.error(request, STORE_UNANSWERED)
+            return redirect("document-detail", pk=app.pk, document_id=locked.pk)
         if locked.status != "ready" or not stored:
             messages.info(
                 request,
@@ -619,7 +631,7 @@ def document_detail(request, pk, document_id):
             and feature_enabled("knowledge", app)
             and document.status == "ready"
             and not document.original_removed_at
-            and document_path(app, document.pk).is_file(),
+            and bool(original_stored(app, document.pk)),
         },
     )
 
@@ -725,7 +737,10 @@ def document_retry(request, pk, document_id):
         or (grant.role == "contributor" and doc.uploaded_by_id == request.user.pk)
     ):
         raise PermissionDenied
-    stored = document_path(app, doc.pk).exists()
+    stored = original_stored(app, doc.pk)
+    if stored is None:
+        messages.error(request, STORE_UNANSWERED)
+        return redirect(return_route(request), pk=pk)
     if not stored and not doc.source_url:
         messages.error(
             request,
@@ -766,8 +781,7 @@ def document_delete(request, pk, document_id):
         try:
             with transaction.atomic():
                 locked = Document.objects.select_for_update().get(pk=doc.pk)
-                target = document_path(app, doc.pk)
-                target.unlink(missing_ok=True)
+                originals.store().delete(app, doc.pk)
                 KnowledgeEntry.objects.filter(document=locked).delete()
                 locked.status = "deleted"
                 locked.conversion_error = ""

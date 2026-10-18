@@ -240,7 +240,7 @@ def forget(user, app_id, source_id, *, remove_documents=False):
     row marked deleted rather than erased - so an audit trail survives a source
     being forgotten. Nothing here erases history.
     """
-    from .documents import document_path
+    from . import originals
     from .models import Document, KnowledgeEntry
 
     app, grant = application_for(user, app_id)
@@ -255,8 +255,7 @@ def forget(user, app_id, source_id, *, remove_documents=False):
     with transaction.atomic():
         if remove_documents:
             for document in files:
-                path = document_path(app, document.pk)
-                path.unlink(missing_ok=True)
+                originals.store().delete(app, document.pk)
                 KnowledgeEntry.objects.filter(document=document).delete()
                 Document.objects.filter(pk=document.pk).update(
                     status="deleted", conversion_error=""
