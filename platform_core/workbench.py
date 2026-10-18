@@ -1302,6 +1302,17 @@ def finish_answer(message_id, status, body, citations, error="", provider="", mo
 def answer_worker(
     user_id, app_id, message_id, question, history, session, mode="ai", graph_version=None
 ):
+    """`run_answer`, on a connection narrowed to its application's rows (tenancy.py).
+
+    A thread of its own has a connection of its own, which no request binds.
+    """
+    from . import tenancy
+
+    with tenancy.scoped(app_id):
+        run_answer(user_id, app_id, message_id, question, history, session, mode, graph_version)
+
+
+def run_answer(user_id, app_id, message_id, question, history, session, mode, graph_version):
     """Own the provider call and every database write for one streamed answer.
 
     Runs off the request thread, so it re-resolves its own objects and always

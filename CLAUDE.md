@@ -92,6 +92,24 @@ rotates it. The entrypoint renders both configurations; `DIGITAL_BRAIN_DATABASE_
 connects as the owner again, and an operator's mounted file is used for both. Runtime
 code must never need DDL - there is none today, and the role cannot run it.
 
+**Row security is the second layer, under the code's own scoping** (`tenancy.py`,
+migration 0091). Every table with a required application has a PostgreSQL policy,
+FORCEd, reading the session setting `digitalbrain.tenant`: bound, a connection reads and
+writes only that application's rows; unbound, it sees everything. `TenantMiddleware`
+binds a request under `applications/<uuid:pk>/` to that `pk` before its view runs and
+clears it whatever the view did; `api_auth.authenticate` binds once a token names its
+application; the chat answer thread runs inside `tenancy.scoped`. So a query that forgot
+its `application=` filter reads another application's row as not found and a write for
+another application is refused - it does not replace the code's checks, which still
+decide access, and it defends against a missing filter, never against SQL injection.
+Lanes, management commands, migrations and platform administration run unbound, as
+before. `tenancy.UNSCOPED` names the four tables a request reads across applications
+(grants, features, logos, gateway admissions) and why; `test_tenancy` fails when a new
+model with a required application is in neither the policy list nor that set, so a new
+table chooses in its own migration. A superuser bypasses row security entirely, which is
+one more reason the platform no longer connects as one. SQLite has none: there the code
+is the only layer.
+
 **Citations are verified against live sources.** Before anything is stored or rendered,
 each citation must still be active, have an unchanged digest, and its excerpt must still
 appear in the source. What the model claims is not evidence. Same discipline as the quote

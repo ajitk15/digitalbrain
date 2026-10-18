@@ -54,6 +54,12 @@ class RuntimeRoleTests(SimpleTestCase):
     def setUp(self):
         if connection.vendor != "postgresql":
             self.skipTest("Roles are PostgreSQL's; SQLite has none.")
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user")
+            if not cursor.fetchone()[0]:
+                # The migrate step runs as the image's owner, a superuser:
+                # only one can state NOSUPERUSER, NOREPLICATION and NOBYPASSRLS.
+                self.skipTest("Making the runtime role needs the superuser the migrate step uses.")
         self.role = f"test_runtime_{uuid.uuid4().hex[:12]}"
         self.password = secrets.token_urlsafe(24)
         self.addCleanup(self.drop)

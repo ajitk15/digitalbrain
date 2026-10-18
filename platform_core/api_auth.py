@@ -138,6 +138,11 @@ def authenticate(request, reference):
         raise ApiError("That API token is not valid.", status=401, code="unauthenticated")
     throttle(token)
     ApiToken.objects.filter(pk=token.pk).update(last_used_at=timezone.now())
+    # From here the request reads its own application's rows only (tenancy.py);
+    # the middleware clears it when the response leaves.
+    from . import tenancy
+
+    tenancy.bind(application.pk)
     return token.user, token, application
 
 

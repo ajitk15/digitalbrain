@@ -74,6 +74,17 @@ jobs:
       - run: uv run python manage.py collectstatic --noinput
       - name: Browser for the end-to-end tests
         run: google-chrome --version
+      # Making the runtime role takes the superuser the migrate step runs as;
+      # these are the tests that skip once the suite is not one.
+      - run: uv run python manage.py test platform_core.tests.test_database_roles
+      # A superuser is never held to row security, so from here the suite and
+      # the scorecard run as an owner that is not one: every request they make
+      # passes through the tenant policies (tenancy.py), as production's does.
+      - name: Run as an owner that is not a superuser
+        run: |
+          PGPASSWORD=ci-only psql -h 127.0.0.1 -U brain -d digitalbrain -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE brain_owner LOGIN CREATEDB NOSUPERUSER PASSWORD 'ci-only'"
+          sed -i 's/^user = "brain"$/user = "brain_owner"/' config/local.toml
       - run: uv run python manage.py test
         env:
           DIGITAL_BRAIN_REQUIRE_BROWSER: "1"
