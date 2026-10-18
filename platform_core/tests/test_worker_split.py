@@ -143,7 +143,7 @@ class FakeConnection:
 class PostgresLaneLockTests(SimpleTestCase):
     """The PostgreSQL path, against a stand-in connection: CI runs on SQLite."""
 
-    def keeper(self, connection, lane="factory"):
+    def keeper(self, connection, lane="maintenance"):
         keeper = LaneKeeper(lane)
         vendor = patch.object(document_worker.connection, "vendor", "postgresql")
         create = patch.object(

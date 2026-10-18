@@ -12,6 +12,7 @@ from django.utils import timezone
 
 from .models import Document
 from .processing import convert_document, settle_failure
+from .tenancy import scoped
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ def process_next_link():
         Document.objects.filter(pk=doc.pk, status="fetching").update(status="pending")
         doc.status = "pending"
     try:
-        download(doc)
+        with scoped(doc.application_id):
+            download(doc)
     except Exception:
         Document.objects.filter(pk=doc.pk).exclude(status="deleted").update(
             status="failed", conversion_error="The link could not be downloaded."
@@ -80,7 +82,8 @@ def process_next_document():
         return True
     actor = doc.conversion_actor or doc.uploaded_by
     try:
-        convert_document(actor, doc.application_id, doc.pk)
+        with scoped(doc.application_id):
+            convert_document(actor, doc.application_id, doc.pk)
     except Exception as failure:
         # Validation messages were persisted by convert_document. No content or
         # traceback is logged - a traceback from a conversion can carry the
@@ -283,11 +286,25 @@ LANES = (
 
 
 #: Lanes whose every step claims its own row - a document by a conditional
-#: update, a job by a row lock - so any number of threads and processes may run
-#: them at once. Every other lane is still one process at a time, held by
-#: `LaneKeeper`'s advisory lock, because some of their steps pick a row and act
-#: on it. `run_worker --concurrency intake=4` runs more than one thread.
-SHARED_LANES = frozenset({"intake", "graph", "connectors"})
+#: update, a job by a row lock, a run or review by a guarded status change on
+#: its job token, a poll by moving its turn on - so any number of threads and
+#: processes may run them at once. Work found by its age is kept fresh while it
+#: runs (`keepalive.KeepAlive`), so another process never takes a slow step for
+#: an abandoned one. Only maintenance is still one process at a time, held by
+#: `LaneKeeper`'s advisory lock: its sweeps are cheap, and one is enough.
+#: `run_worker --concurrency factory=2` runs more than one thread.
+SHARED_LANES = frozenset(
+    {
+        "intake",
+        "graph",
+        "connectors",
+        "code-graph",
+        "factory",
+        "serviceops",
+        "serviceops-tests",
+        "automations",
+    }
+)
 
 
 #: How long a lane this process does not hold waits before asking again, and

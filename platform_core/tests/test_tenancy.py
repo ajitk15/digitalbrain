@@ -206,3 +206,63 @@ class MiddlewareTests(Fixture):
         with patch.object(tenancy, "clear") as clear, self.assertRaises(RuntimeError):
             tenancy.TenantMiddleware(failing)(request)
         clear.assert_called_once_with()
+
+
+SEEN = []
+
+
+def counting_handler(job):
+    """A job handler for these tests: what it is bound to, and what it can see."""
+    SEEN.append((tenancy.bound(), KnowledgeEntry.objects.count()))
+
+
+class BackgroundBindingTests(Fixture):
+    """A lane chooses across applications, then works bound to the one it took."""
+
+    def setUp(self):
+        SEEN.clear()
+        self.addCleanup(tenancy.clear)
+
+    def run_job(self, application_id):
+        from platform_core import jobs
+
+        kind = jobs.Kind(lane="graph", handler=f"{__name__}.counting_handler")
+        with patch.dict(jobs.KINDS, {"probe": kind}):
+            jobs.enqueue("probe", "probe", application_id=application_id)
+            self.assertTrue(jobs.run_next("graph"))
+
+    def test_a_job_is_bound_to_its_application_and_cleared_after(self):
+        with patch.object(tenancy, "bind") as bind:
+            self.run_job(self.app.pk)
+        bind.assert_called_once_with(self.app.pk)
+        self.assertIsNone(tenancy.bound())
+
+    def test_a_job_for_no_application_binds_nothing(self):
+        with patch.object(tenancy, "bind") as bind:
+            self.run_job(None)
+        bind.assert_not_called()
+        self.assertEqual(len(SEEN), 1)
+
+    def test_a_code_factory_run_is_worked_bound_to_its_application(self):
+        from platform_core.code_factory import process_next_run
+        from platform_core.models import FactoryRun
+
+        run = FactoryRun.objects.create(
+            application=self.app_b, requested_by=self.owner, ticket_external_id="OPS-1",
+            status="pending",
+        )
+        with (
+            patch.object(tenancy, "bind") as bind,
+            patch("platform_core.code_factory.execute", return_value=True) as execute,
+        ):
+            self.assertTrue(process_next_run())
+        execute.assert_called_once()
+        bind.assert_called_once_with(run.application_id)
+
+    def test_on_postgresql_the_job_sees_only_its_own_applications_rows(self):
+        if connection.vendor != "postgresql":
+            self.skipTest("Row security is PostgreSQL's.")
+        with RowSecurityTests.as_runtime(self):
+            self.run_job(self.app.pk)
+            self.run_job(None)
+        self.assertEqual(SEEN, [(str(self.app.pk), 1), (None, 2)])

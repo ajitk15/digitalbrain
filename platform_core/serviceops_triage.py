@@ -905,5 +905,8 @@ def process_next_triage():
     run = TriageRun.objects.filter(status="queued").order_by("created_at").first()
     if run is None:
         return reclaimed
-    execute_run(run)
+    from .tenancy import scoped
+
+    with scoped(run.application_id):
+        execute_run(run)
     return True

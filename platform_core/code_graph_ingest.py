@@ -443,7 +443,15 @@ def process_next_head():
     )
     if repository is None:
         return False
-    return refresh_head(repository)
+    # Claimed by moving its turn on, so two processes never ask GitHub together.
+    if not CodeRepository.objects.filter(
+        pk=repository.pk, head_checked_at=repository.head_checked_at
+    ).update(head_checked_at=timezone.now()):
+        return True
+    from .tenancy import scoped
+
+    with scoped(repository.application_id):
+        return refresh_head(repository)
 
 
 def process_next_repository():
@@ -452,4 +460,16 @@ def process_next_repository():
         status="queued", job_id=uuid.uuid4(), error="Previous indexing attempt was interrupted."
     )
     repository = CodeRepository.objects.filter(Q(status="queued")).order_by("updated_at").first()
-    return index_repository(repository) if repository else False
+    if repository is None:
+        return False
+    from .keepalive import KeepAlive
+    from .tenancy import scoped
+
+    # Touched while it indexes, so another process's ten-minute check above
+    # reads a stopped worker, never a slow clone (keepalive.py).
+    with KeepAlive(
+        CodeRepository.objects.filter(
+            pk=repository.pk, status="indexing", job_id=repository.job_id
+        )
+    ), scoped(repository.application_id):
+        return index_repository(repository)

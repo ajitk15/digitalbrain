@@ -218,40 +218,44 @@ def process_next_execution():
         if not AutomationRun.objects.filter(pk=run.pk, last_checked_at=run.last_checked_at).update(
                 last_checked_at=now):
             return False
-    checked = False
-    try:
-        app, connection = _check_run(run)
-        checked = True
-        if polling and run.started_at < now - timedelta(minutes=30):
-            _finish(run, "unknown", "Monitoring deadline reached. The external job may still "
-                    "be running; inspect the controller.")
-            return True
-        adapter = ADAPTERS[connection.provider]
-        response = (adapter.poll(app, connection, run.request["job"], run.external_job_id)
-                    if polling else adapter.launch(app, connection, run.request["job"],
-                                                   run.request["inputs"]))
-        _finish(run, response.status,
-                "Verified local execution completed." if connection.provider == "local" else
-                f"AWX job {response.external_id}: {response.status}.", response.output,
-                response.external_id)
-    except LaunchUnknown as exc:
-        _finish(run, "unknown", str(exc))
-    except FetchError:
-        # Polling is read-only and can retry. Launch ambiguity is handled inside the adapter.
-        _finish(run, "running", "Cannot read the controller status yet. Monitoring will retry.")
-    except ValidationError as exc:
-        status = "unknown" if polling and checked else "failed" if checked else "blocked"
-        outcome = " ".join(exc.messages)
-        if polling:
-            outcome += " The external job was not canceled; inspect the controller."
-        _finish(run, status, outcome)
-    except (PermissionDenied, Http404, AutomationConnection.DoesNotExist):
-        _finish(run, "blocked", "Execution blocked: access, approval, source, connection or "
-                "credentials changed. No new launch was made. "
-                "Existing remote jobs are not canceled.")
-    except Exception:
-        _finish(run, "unknown", "Execution outcome could not be recorded. Inspect the target "
-                "before invoking again; the job was not automatically retried.")
+    from .tenancy import scoped
+
+    # Bound to the run's application for its work (tenancy.py).
+    with scoped(run.application_id):
+        checked = False
+        try:
+            app, connection = _check_run(run)
+            checked = True
+            if polling and run.started_at < now - timedelta(minutes=30):
+                _finish(run, "unknown", "Monitoring deadline reached. The external job may still "
+                        "be running; inspect the controller.")
+                return True
+            adapter = ADAPTERS[connection.provider]
+            response = (adapter.poll(app, connection, run.request["job"], run.external_job_id)
+                        if polling else adapter.launch(app, connection, run.request["job"],
+                                                       run.request["inputs"]))
+            _finish(run, response.status,
+                    "Verified local execution completed." if connection.provider == "local" else
+                    f"AWX job {response.external_id}: {response.status}.", response.output,
+                    response.external_id)
+        except LaunchUnknown as exc:
+            _finish(run, "unknown", str(exc))
+        except FetchError:
+            # Polling is read-only and can retry. Launch ambiguity is handled inside the adapter.
+            _finish(run, "running", "Cannot read the controller status yet. Monitoring will retry.")
+        except ValidationError as exc:
+            status = "unknown" if polling and checked else "failed" if checked else "blocked"
+            outcome = " ".join(exc.messages)
+            if polling:
+                outcome += " The external job was not canceled; inspect the controller."
+            _finish(run, status, outcome)
+        except (PermissionDenied, Http404, AutomationConnection.DoesNotExist):
+            _finish(run, "blocked", "Execution blocked: access, approval, source, connection or "
+                    "credentials changed. No new launch was made. "
+                    "Existing remote jobs are not canceled.")
+        except Exception:
+            _finish(run, "unknown", "Execution outcome could not be recorded. Inspect the target "
+                    "before invoking again; the job was not automatically retried.")
     return True
 
 

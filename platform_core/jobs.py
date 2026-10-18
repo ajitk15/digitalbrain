@@ -264,8 +264,12 @@ def run_next(lane):
     if spec is None:
         mine(job).update(status="dead", last_error_type="UnknownKind", finished_at=timezone.now())
         return True
+    from .tenancy import scoped
+
     try:
-        with Renewal(job):
+        # Bound to the application it is for (tenancy.py); a job for none,
+        # such as a reconcile pass, sees every row as before.
+        with Renewal(job), scoped(job.application_id):
             import_string(spec.handler)(job)
     except Later as later:
         put_back(job, timezone.now() + timedelta(seconds=later.seconds), used_attempt=False)

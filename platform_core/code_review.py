@@ -937,7 +937,15 @@ def process_next_review():
         .order_by("updated_at")
         .first()
     )
-    return read_change(review) if review else False
+    if review is None:
+        return False
+    from .keepalive import KeepAlive
+    from .tenancy import scoped
+
+    with KeepAlive(
+        CodeReview.objects.filter(pk=review.pk, status="reading", job_id=review.job_id)
+    ), scoped(review.application_id):
+        return read_change(review)
 
 
 def process_next_review_ai():
@@ -951,7 +959,20 @@ def process_next_review_ai():
         .order_by("updated_at")
         .first()
     )
-    return run_ai(review) if review else False
+    if review is None:
+        return False
+    from .keepalive import KeepAlive
+
+    # A paid call: touched while it runs, so no other process reads it as
+    # abandoned and pays for it again.
+    from .tenancy import scoped
+
+    with KeepAlive(
+        CodeReview.objects.filter(
+            pk=review.pk, ai_status="running", ai_job_id=review.ai_job_id
+        )
+    ), scoped(review.application_id):
+        return run_ai(review)
 
 
 # ── pages ─────────────────────────────────────────────────────────────────────

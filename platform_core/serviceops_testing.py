@@ -158,8 +158,11 @@ def process_next_test():
         return False
     if not claimed:
         return False
+    from .tenancy import scoped
+
     try:
-        status, rows, summary = execute_test(run)
+        with scoped(run.application_id):
+            status, rows, summary = execute_test(run)
     except Exception:
         status, rows, summary = (
             "blocked", [], "Execution unavailable. Check the worker setup/access.")

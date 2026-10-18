@@ -102,8 +102,10 @@ application; the chat answer thread runs inside `tenancy.scoped`. So a query tha
 its `application=` filter reads another application's row as not found and a write for
 another application is refused - it does not replace the code's checks, which still
 decide access, and it defends against a missing filter, never against SQL injection.
-Lanes, management commands, migrations and platform administration run unbound, as
-before. `tenancy.UNSCOPED` names the four tables a request reads across applications
+Background work is bound too: a job to its `application_id` (`jobs.run_next`), a lane
+step to the row it claimed - a document, a run, a triage, a review, an index - for the
+length of its work. Choosing the next row reads every application's queue, so that and
+management commands, migrations and platform administration run unbound. `tenancy.UNSCOPED` names the four tables a request reads across applications
 (grants, features, logos, gateway admissions) and why; `test_tenancy` fails when a new
 model with a required application is in neither the policy list nor that set, so a new
 table chooses in its own migration. A superuser bypasses row security entirely, which is
@@ -938,18 +940,23 @@ release's inserts fail - and remove or rename only a release after the code stop
 it. `test_migration_job.ExpandContractTests` refuses anything else after 0090 unless it is
 named in `CONTRACTS`, the second half of such a pair.
 
-**Most lanes are held by one process at a time** (`document_worker.LaneKeeper`): a PostgreSQL
-session advisory lock on a connection of its own, so `close_old_connections` between steps
-never drops it. A second holder stands by and takes over when the first one's connection
-goes. That is what makes the split safe while some steps (triage, Code Factory) still pick
-a row without claiming it. **`SHARED_LANES` - intake, graph, connectors - take no lock**:
-every step in them claims its own row, so they run in every process, and
-`run_worker --concurrency intake=4` gives one more threads. Moving a lane into that set
-means every one of its steps claims first; `concurrency_from` refuses more than one thread
-for any other lane. **SQLite has no advisory locks**: there every
-keeper holds, so never run `run_worker` beside a `serve.py` that runs its own lanes on the
-same local database. A session lock does not survive a transaction-mode pooler, so a worker
-reaches PostgreSQL directly.
+**Every lane but maintenance runs in every process** (`document_worker.SHARED_LANES`).
+Each step claims its own row before acting: a document by a conditional update, a job by
+a row lock, a Code Factory run, triage, review or index by a guarded status change on
+its job token, a poll (CI checks, a branch head) by moving its turn on. Work found by its
+age - an index "indexing" ten minutes, a review "reading" fifteen - is touched while it
+runs (`keepalive.KeepAlive`), so another process reads a stopped worker, never a slow
+one, and a paid review is never paid for twice. Code Factory's lane claims only
+`prepare_queued` (`prepare(queued=True)`): a run prepared or failed a moment ago is
+finished, and a worker that loses a claim writes nothing to the run it lost.
+`test_shared_lanes` stages each race. `run_worker --concurrency factory=2` gives a lane
+more threads. **Maintenance is still held by one process** (`LaneKeeper`): a PostgreSQL
+session advisory lock on a connection of its own, so `close_old_connections` between
+steps never drops it, with a second holder standing by. Its sweeps are cheap and one is
+enough. Adding a step to a shared lane means it claims first. **SQLite has no advisory
+locks**: there every keeper holds, so never run `run_worker` beside a `serve.py` that runs
+its own lanes on the same local database. A session lock does not survive a
+transaction-mode pooler, so a worker reaches PostgreSQL directly.
 
 A stop (`SIGTERM`) is honoured **between steps, never inside one**: a conversion or a paid
 call that started is finished and recorded. Each holder writes `LaneHeartbeat`;

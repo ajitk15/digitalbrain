@@ -920,7 +920,15 @@ def process_next_docs_ai():
         .order_by("updated_at")
         .first()
     )
-    return run_ai(doc) if doc else False
+    if doc is None:
+        return False
+    from .keepalive import KeepAlive
+    from .tenancy import scoped
+
+    with KeepAlive(
+        CodeDocumentation.objects.filter(pk=doc.pk, ai_status="running", ai_job_id=doc.ai_job_id)
+    ), scoped(doc.application_id):
+        return run_ai(doc)
 
 
 # ── the page ──────────────────────────────────────────────────────────────────

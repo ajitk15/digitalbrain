@@ -11,10 +11,15 @@ row-level security on every table that carries a required `application_id`
   application (`api.authorize`). A query that forgot its ``application=``
   filter then reads another application's row as "not found", and a write
   for another application is refused - instead of either reaching the page.
-* Nothing bound means nothing narrowed. Background lanes, management commands,
-  migrations, the sign-in pages and the platform's own administration see
-  every row, as they did. A binding never outlives its request: the middleware
-  clears it, whatever the view did.
+* Background work is bound to the application it is for: a job to its
+  ``application_id``, a lane step to the row it claimed - a document, a Code
+  Factory run, a triage, a review, an index - for the length of the work.
+  Finding work is not bound: a lane reads every application's queue to choose
+  what is next, then binds for the one it took.
+* Nothing bound means nothing narrowed. Management commands, migrations, the
+  sign-in pages, the platform's own administration and a lane choosing its next
+  row see every row, as they did. A binding never outlives its request or its
+  step: the middleware and `scoped` clear it, whatever the work did.
 
 It defends against a missing filter, not against SQL injection: the setting is
 the session's own, and a statement that can run SQL can clear it. The runtime
@@ -83,7 +88,10 @@ def clear():
 
 @contextmanager
 def scoped(application_id):
-    """Bound for the block, then put back as it was."""
+    """Bound for the block, then put back as it was. None binds nothing."""
+    if application_id is None:
+        yield
+        return
     before = bound()
     bind(application_id)
     try:

@@ -446,10 +446,21 @@ class ConcurrencyTests(SimpleTestCase):
         self.assertEqual(concurrency_from(""), {})
 
     def test_a_lane_that_runs_one_at_a_time_refuses_more(self):
-        for text in ("factory=2", "bogus=2", "intake=0", "intake=many", "intake=99"):
+        for text in ("maintenance=2", "bogus=2", "intake=0", "intake=many", "intake=99"):
             with self.subTest(text=text), self.assertRaises(ValueError):
                 concurrency_from(text)
-        self.assertEqual(concurrency_from("factory=1"), {"factory": 1})
+        self.assertEqual(concurrency_from("maintenance=1"), {"maintenance": 1})
+
+    def test_every_lane_but_maintenance_is_shared(self):
+        # Each of their steps claims its row; see keepalive.py for the ones
+        # found by age.
+        self.assertEqual(
+            {name for name, _, _ in document_worker.LANES} - document_worker.SHARED_LANES,
+            {"maintenance"},
+        )
+        self.assertEqual(
+            concurrency_from("factory=2, code-graph=3"), {"factory": 2, "code-graph": 3}
+        )
 
     def test_each_thread_has_its_own_keeper(self):
         with patch.object(document_worker, "Thread") as thread:
@@ -467,6 +478,8 @@ class ConcurrencyTests(SimpleTestCase):
         self.assertEqual(len(keepers), 4)
 
     def test_only_lanes_that_claim_row_by_row_are_shared(self):
-        self.assertEqual(document_worker.SHARED_LANES, {"intake", "graph", "connectors"})
+        # Every step of these claims its row (test_shared_lanes pins the ones
+        # that did not); maintenance's sweeps need only one process.
         self.assertFalse(document_worker.LaneKeeper("intake").exclusive)
-        self.assertTrue(document_worker.LaneKeeper("factory").exclusive)
+        self.assertFalse(document_worker.LaneKeeper("factory").exclusive)
+        self.assertTrue(document_worker.LaneKeeper("maintenance").exclusive)

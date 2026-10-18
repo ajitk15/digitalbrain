@@ -1611,17 +1611,23 @@ def process_next_preparation():
     )
     if run is None or run.acting_user is None:
         return False
+    from .tenancy import scoped
+
     try:
-        prepare(run.acting_user, run.application_id, run.pk)
+        with scoped(run.application_id):
+            prepare(run.acting_user, run.application_id, run.pk, queued=True)
     except (ValidationError, PermissionDenied, Http404) as failure:
         reason = " ".join(getattr(failure, "messages", ["The request was refused."]))
-        FactoryRun.objects.filter(pk=run.pk).exclude(status="prepared").update(
+        # Only a run still waiting: refused before its claim. One another
+        # process claimed is that process's to finish, and one that failed
+        # after its claim already says why.
+        FactoryRun.objects.filter(pk=run.pk, status="prepare_queued").update(
             status="failed", error=reason[:2000]
         )
     return True
 
 
-def prepare(user, app_id, run_id):
+def prepare(user, app_id, run_id, queued=False):
     """Write the change and check it, without writing it anywhere.
 
     The first half of what used to be one act. Implementation and the pull
@@ -1637,9 +1643,15 @@ def prepare(user, app_id, run_id):
     from .models import ProposedChange
 
     app, run, token = gate(user, app_id, run_id)
-    claimed = FactoryRun.objects.filter(
-        pk=run.pk, status__in=["prepare_queued", "awaiting_review", "prepared", "failed"]
-    ).update(status="preparing", error="")
+    # The lane takes only what is queued: a run another process prepared or
+    # failed a moment ago is finished, not waiting - preparing it again would
+    # pay for every agent twice. A person's button may start it from those.
+    ready = ["prepare_queued"] if queued else [
+        "prepare_queued", "awaiting_review", "prepared", "failed"
+    ]
+    claimed = FactoryRun.objects.filter(pk=run.pk, status__in=ready).update(
+        status="preparing", error=""
+    )
     if not claimed:
         raise ValidationError("This run is not ready to be implemented.")
     run.refresh_from_db()
@@ -2408,12 +2420,20 @@ def process_next_checks():
     )
     if run is None:
         return False
+    # Claimed by moving its turn on, so two processes never ask GitHub together.
+    if not FactoryRun.objects.filter(pk=run.pk, checks_read_at=run.checks_read_at).update(
+        checks_read_at=timezone.now()
+    ):
+        return True
     if run.checks and all(entry.get("conclusion") for entry in run.checks):
         # Settled. Touch the timestamp so it falls to the back of the queue
         # rather than being asked about forever.
         FactoryRun.objects.filter(pk=run.pk).update(checks_read_at=timezone.now())
         return False
-    return refresh_checks(run)
+    from .tenancy import scoped
+
+    with scoped(run.application_id):
+        return refresh_checks(run)
 
 
 #: What a finished run can offer to bring back in line with the code, and what

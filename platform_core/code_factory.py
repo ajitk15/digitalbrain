@@ -1664,7 +1664,10 @@ def process_next_run():
     run = FactoryRun.objects.filter(status="pending").order_by("created_at").first()
     if run is None:
         return False
-    return execute(run)
+    from .tenancy import scoped
+
+    with scoped(run.application_id):
+        return execute(run)
 
 
 def ticket_choices(app, connector=None, viewer=None):
