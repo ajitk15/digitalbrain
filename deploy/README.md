@@ -109,16 +109,44 @@ manager, and one mounted there **always wins** over one typed into the browser
 — which is what makes migrating a credential into a secret manager need no
 change in the product. That is also why the two directories must differ.
 
+## 5. Watching it
+
+Without any of this, `queue_status` says what every lane has waiting:
+
+```bash
+docker compose exec app python manage.py queue_status --check
+```
+
+and `slo` measures the four service levels kept in the platform's own records -
+answers that end complete, answers on time, background work started on time,
+background work that finishes:
+
+```bash
+docker compose exec app python manage.py slo --check
+```
+
+For traces and metrics, add an `[otel]` table to the mounted configuration
+naming an OTLP/HTTP collector (`endpoint = "https://collector:4318"`, https in
+production; its credential, if any, is the mounted file `otel_authorization`).
+Traces carry ids and timings only; metrics carry rates, errors, durations and
+queue figures, and only spend is by application. `metrics = false` keeps the
+traces alone. `deploy/slo-rules.yml` is the Prometheus rule file for the other
+four service levels (server errors, page speed, paid calls admitted, queue age),
+with burn-rate alerts - load it where the collector's metrics land. It is
+generated from `platform_core/slo.py`; regenerate it, never edit it.
+
 ## What is not covered here
 
 - **Backups.** `postgres-data` and `app-runtime` both matter: the second holds
-  every uploaded document's original bytes. `platform-secrets` holds the signing
-  key — lose it and every session is invalidated. Nothing here backs any of
-  them up.
-- **The single-process limit.** Scaling out needs a shared cancellation channel
-  first. Scale with threads inside the one process until then.
-- **ClamAV timing.** `processing.py` gives the scanner 30 seconds, and
-  `clamscan` loads the whole signature database on every invocation. If large
-  documents start failing with "Document scanning failed", that is the cause,
-  and the fix is a `clamd` daemon with `clamdscan` — which needs a code change,
-  because `--fail-if-cvd-older-than` is a `clamscan` option.
+  every uploaded document's original bytes unless `[originals] store = "s3"`
+  puts them in a bucket, which then needs its own versioning or backup.
+  `platform-secrets` holds the signing key - lose it and every session is
+  invalidated. Nothing here backs any of them up.
+- **More than one web container** is `docker-compose.scale.yaml`, which runs a
+  migration job, web replicas (`DIGITAL_BRAIN_WEB_REPLICAS`), a worker, a
+  sandbox for the lanes that hand outside content to other programs, Redis and
+  clamd. On its own, `docker-compose.yaml` still runs everything in one
+  container, and that is a single process.
+- **PostgreSQL availability.** One database container, no replica and no
+  point-in-time recovery. A managed PostgreSQL with both is the production
+  answer; nothing here sets one up or rehearses a restore.
