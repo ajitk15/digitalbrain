@@ -74,6 +74,24 @@ imply application access.
 run starts. Model arguments may only narrow an already-scoped queryset. A foreign id must
 read as "not found", never raise and never leak.
 
+**The platform connects as a role that can only touch rows** (`database_roles.py`). The
+role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
+TO PROGRAM`, drop anything, and is never held to row security - and the platform used to
+run as it. Now the migrate step connects as that owner (`[database] user`, plus
+`runtime_user` naming the role to make) and `apply_migrations` creates or corrects the
+runtime role under its lock: LOGIN and nothing else - no superuser, CREATEDB, CREATEROLE,
+REPLICATION, BYPASSRLS or membership of the owner - with SELECT, INSERT, UPDATE and
+DELETE on every table and default privileges for tables a later migration adds. Every run
+states it all again, so a privilege added by hand is undone. Everything else - web,
+worker, `manage.py` through `docker exec` - reads the configuration that connects as the
+runtime role (`user = "digital_brain_runtime"`, `password_secret =
+"database_runtime_password"`; `password_secret` is one of two names, never a path). The
+password is a mounted file like every secret, sent to the server as a SCRAM verifier
+computed here, so a server logging DDL logs no password; replacing the file and deploying
+rotates it. The entrypoint renders both configurations; `DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0`
+connects as the owner again, and an operator's mounted file is used for both. Runtime
+code must never need DDL - there is none today, and the role cannot run it.
+
 **Citations are verified against live sources.** Before anything is stored or rendered,
 each citation must still be active, have an unchanged digest, and its excerpt must still
 appear in the source. What the model claims is not evidence. Same discipline as the quote

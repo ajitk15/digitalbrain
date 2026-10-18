@@ -66,6 +66,16 @@ allow_self_approval = true
 
 [database]
 name = "digital_brain"
+# The role this process connects as. The entrypoint renders the runtime role
+# here, which can read and write rows and nothing else, with its password in
+# the mounted file database_runtime_password:
+#   user = "digital_brain_runtime"
+#   password_secret = "database_runtime_password"
+# and the migrate step reads a copy that connects as the owner and names the
+# role to create:
+#   user = "digital_brain_app"
+#   runtime_user = "digital_brain_runtime"
+# A file mounted here is used for both, so it connects as one role throughout.
 user = "digital_brain_app"
 # The compose service name. It has to match the certificate's SAN exactly, or
 # sslmode=verify-full rejects a certificate that is otherwise perfectly valid.

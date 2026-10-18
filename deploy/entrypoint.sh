@@ -68,10 +68,24 @@ esac
 # answer for the server and for anyone running manage.py afterwards.
 MOUNTED="/etc/digitalbrain/production.toml"
 CONFIG="/app/.runtime/production.toml"
+# What the migrate step reads: the same, but connecting as the owner of the
+# tables, and naming the runtime role it creates for everything else. Only
+# rendered, never mounted - an operator's own file is used for both.
+OWNER_CONFIG="/app/.runtime/production-owner.toml"
+# The platform connects as a role that can read and write rows and do nothing
+# else (platform_core/database_roles.py); the role Postgres's image creates is
+# a superuser, which can do anything the server can and is never held to row
+# security. DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0 connects as the owner again.
+RUNTIME_ROLE="${DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE:-1}"
+case "$RUNTIME_ROLE" in
+    0|1) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE must be 0 or 1." >&2; exit 1 ;;
+esac
 mkdir -p /app/.runtime
 
 if [ -f "$MOUNTED" ]; then
     cp "$MOUNTED" "$CONFIG.$$" && mv "$CONFIG.$$" "$CONFIG"
+    cp "$CONFIG" "$OWNER_CONFIG.$$" && mv "$OWNER_CONFIG.$$" "$OWNER_CONFIG"
     echo "entrypoint: using the mounted configuration from $MOUNTED"
 else
     hosts=""
@@ -132,7 +146,12 @@ else
         echo ''
         echo '[database]'
         echo 'name = "digital_brain"'
-        echo 'user = "digital_brain_app"'
+        if [ "$RUNTIME_ROLE" = "1" ]; then
+            echo 'user = "digital_brain_runtime"'
+            echo 'password_secret = "database_runtime_password"'
+        else
+            echo 'user = "digital_brain_app"'
+        fi
         # Must match the certificate's SAN exactly, or sslmode=verify-full
         # rejects a certificate that is otherwise perfectly valid.
         echo 'host = "postgres"'
@@ -152,6 +171,14 @@ else
     # Written aside and moved into place: a web and a worker container share
     # this volume, and neither may read the other's half-written file.
     mv "$CONFIG.$$" "$CONFIG"
+    # The owner's copy differs only in whom it connects as.
+    if [ "$RUNTIME_ROLE" = "1" ]; then
+        sed -e 's/^user = "digital_brain_runtime"$/user = "digital_brain_app"\nruntime_user = "digital_brain_runtime"/' \
+            -e '/^password_secret = /d' "$CONFIG" > "$OWNER_CONFIG.$$"
+    else
+        cp "$CONFIG" "$OWNER_CONFIG.$$"
+    fi
+    mv "$OWNER_CONFIG.$$" "$OWNER_CONFIG"
     echo "entrypoint: rendered configuration for ${DIGITAL_BRAIN_HOSTS:-localhost}"
 fi
 export DIGITAL_BRAIN_CONFIG="$CONFIG"
@@ -217,6 +244,13 @@ elif [ ! -f /run/secrets/django_secret_key ]; then
     fi
     rm -f "/run/secrets/.django_secret_key.$$"
 fi
+# The runtime role's password, made the same way where secrets-init has not.
+if [ "$MIGRATIONS" = "apply" ] && [ ! -f /run/secrets/database_runtime_password ]; then
+    head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > "/run/secrets/.database_runtime_password.$$"
+    chmod 600 "/run/secrets/.database_runtime_password.$$"
+    ln "/run/secrets/.database_runtime_password.$$" /run/secrets/database_runtime_password 2>/dev/null || true
+    rm -f "/run/secrets/.database_runtime_password.$$"
+fi
 
 # ---------------------------------------------------------------- signatures
 # processing.py runs clamscan with --fail-if-cvd-older-than=7, so a database
@@ -262,7 +296,9 @@ if [ "$MIGRATIONS" = "wait" ]; then
     done
 else
     echo "entrypoint: applying migrations"
-    python manage.py apply_migrations
+    # As the owner; the run also creates the runtime role and grants it every
+    # table, so it exists before anything below connects as it.
+    DIGITAL_BRAIN_CONFIG="$OWNER_CONFIG" python manage.py apply_migrations
 fi
 
 # Django's own production audit, with warnings fatal. It reads the same

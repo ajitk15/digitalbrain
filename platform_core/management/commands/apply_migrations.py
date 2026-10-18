@@ -8,12 +8,18 @@ whole run, so a second caller waits and then finds nothing left to do. The
 one-shot `migrate` service in docker-compose.scale.yaml is the normal way in;
 the lock is what makes any other way safe too.
 
+When the configuration names a `runtime_user`, the same run creates or
+corrects that role and grants it every table, still under the lock
+(`database_roles.ensure`): the role everything else connects as exists, with
+access to every table this release has, before anything connects as it.
+
 SQLite is one machine's file, with no second process to race: it just migrates.
 """
 
 import hashlib
 import time
 
+from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import OperationalError, connection, connections
@@ -75,6 +81,8 @@ class Command(BaseCommand):
             with connection.cursor() as cursor:
                 cursor.execute("SET statement_timeout = 0")
             migrate(self.stdout.write, verbosity)
+            if settings.DATABASE_RUNTIME_USER:
+                self.runtime_role(settings.DATABASE_RUNTIME_USER)
         finally:
             try:
                 with holder.cursor() as cursor:
@@ -82,6 +90,14 @@ class Command(BaseCommand):
             except Exception:
                 pass
             holder.close()
+
+    def runtime_role(self, role):
+        from digitalbrain.configuration import read_secret
+        from platform_core import database_roles
+
+        password = read_secret(settings.SECRET_DIRECTORY, "database_runtime_password")
+        database_roles.ensure(role, password)
+        self.stdout.write(f"The runtime role {role} can read and write rows, and nothing more.")
 
     def acquire(self, holder, wait):
         deadline = time.monotonic() + wait

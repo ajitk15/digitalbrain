@@ -58,6 +58,13 @@ services:
           head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/database_password
           echo "secrets: generated database password"
         fi
+        # The role the platform connects as, which can touch rows and nothing
+        # else; the migrate step creates it (platform_core/database_roles.py).
+        # Postgres never reads this file, so it is written once.
+        if [ ! -f /secrets/database_runtime_password ]; then
+          head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/database_runtime_password
+          echo "secrets: generated runtime database password"
+        fi
         if [ ! -f /secrets/redis_password ]; then
           head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/redis_password
           echo "secrets: generated redis password"
@@ -83,7 +90,8 @@ services:
         cp /secrets/redis_password /redisconf/password
         chown -R 10001:10001 /secrets
         chmod 700 /secrets
-        chmod 600 /secrets/django_secret_key /secrets/database_password /secrets/redis_password
+        chmod 600 /secrets/django_secret_key /secrets/database_password \
+          /secrets/database_runtime_password /secrets/redis_password
         chown -R 70:70 /dbsecret
         chmod 600 /dbsecret/database_password
         chown -R 999 /redisconf

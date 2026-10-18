@@ -264,11 +264,33 @@ def load_config():
                 "through it."
             )
     db = config.get("database", {})
-    if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
+    if set(db) - {"name", "user", "host", "port", "sslrootcert", "runtime_user", "password_secret"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")
+    # `runtime_user` is read by the migrate step, which runs as `user` (the
+    # owner) and creates that role for everything else to run as
+    # (platform_core/database_roles.py). `password_secret` names which mounted
+    # file holds `user`'s password - a choice between two names, never a path.
+    if "runtime_user" in db and (
+        not isinstance(db["runtime_user"], str)
+        or not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", db["runtime_user"])
+        or db["runtime_user"] == db.get("user")
+    ):
+        raise ImproperlyConfigured(
+            "database.runtime_user must be a lower-case role name other than database.user."
+        )
+    if db.get("password_secret", "database_password") not in DATABASE_PASSWORDS:
+        raise ImproperlyConfigured(
+            "database.password_secret must be one of: " + ", ".join(sorted(DATABASE_PASSWORDS))
+        )
     if not config.get("hosts") or "*" in config["hosts"]:
         raise ImproperlyConfigured("Explicit allowed hosts are required.")
     return config
+
+
+#: The mounted files a database password may be read from: the owner's, and
+#: the runtime role's. Closed, so a configuration cannot point at any other
+#: secret - or anywhere else - and have it sent to the database as a password.
+DATABASE_PASSWORDS = {"database_password", "database_runtime_password"}
 
 
 def self_approval_allowed(config):

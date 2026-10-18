@@ -154,6 +154,12 @@ TEMPLATES = [
         },
     }
 ]
+#: The role the migrate step creates for everything else to connect as
+#: (platform_core/database_roles.py). Set only in the configuration that step
+#: reads, which connects as the owner.
+DATABASE_RUNTIME_USER = CONFIG.get("database", {}).get("runtime_user", "")
+#: Which mounted file holds the password of the role this process connects as.
+DATABASE_PASSWORD_SECRET = CONFIG.get("database", {}).get("password_secret", "database_password")
 if PRODUCTION:
     db = CONFIG["database"]
     DATABASES = {
@@ -163,7 +169,7 @@ if PRODUCTION:
             "USER": db["user"],
             "HOST": db["host"],
             "PORT": db.get("port", 5432),
-            "PASSWORD": read_secret(SECRET_DIRECTORY, "database_password"),
+            "PASSWORD": read_secret(SECRET_DIRECTORY, DATABASE_PASSWORD_SECRET),
             "OPTIONS": {
                 "sslmode": "verify-full",
                 "sslrootcert": db["sslrootcert"],
@@ -189,7 +195,7 @@ elif CONFIG.get("database"):
             "USER": db["user"],
             "HOST": db["host"],
             "PORT": db.get("port", 5432),
-            "PASSWORD": read_secret(SECRET_DIRECTORY, "database_password"),
+            "PASSWORD": read_secret(SECRET_DIRECTORY, DATABASE_PASSWORD_SECRET),
             "OPTIONS": {
                 **(
                     {"sslmode": "verify-full", "sslrootcert": db["sslrootcert"]}
