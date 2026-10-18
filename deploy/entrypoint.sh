@@ -18,11 +18,25 @@ HOST="${DIGITAL_BRAIN_HOST:-0.0.0.0}"
 # and "worker" runs `manage.py run_worker` and nothing else - the split that
 # docker-compose.scale.yaml sets up, so a deploy or a long provider call in one
 # does not stop the other. The worker never runs migrations: it waits for them.
+# "migrate" applies them, writes the signing key if there is none, checks the
+# deployment settings and exits - the one-shot job docker-compose.scale.yaml
+# runs before any web or worker container starts.
 ROLE="${DIGITAL_BRAIN_ROLE:-all}"
 case "$ROLE" in
-    all|web|worker) ;;
-    *) echo "entrypoint: DIGITAL_BRAIN_ROLE must be all, web or worker." >&2; exit 1 ;;
+    all|web|worker|migrate) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_ROLE must be all, web, worker or migrate." >&2; exit 1 ;;
 esac
+# Whether this container applies migrations or waits for them. A worker always
+# waits. A web container applies them unless a migrate job does (then "wait"),
+# which is what lets it run as more than one replica. Applying takes a lock
+# either way (manage.py apply_migrations), so two at once is safe, not just rare.
+MIGRATIONS="${DIGITAL_BRAIN_MIGRATIONS:-apply}"
+case "$MIGRATIONS" in
+    apply|wait) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_MIGRATIONS must be apply or wait." >&2; exit 1 ;;
+esac
+[ "$ROLE" = "worker" ] && MIGRATIONS="wait"
+[ "$ROLE" = "migrate" ] && MIGRATIONS="apply"
 # A clamd daemon to scan through (host:port or an absolute socket path). Set,
 # no clamscan or freshclam runs in this container: the daemon keeps its own
 # signatures and processing.py still refuses ones more than a week old.
@@ -180,22 +194,28 @@ if [ ! -w /run/secrets ]; then
     exit 1
 fi
 chmod 700 /run/secrets 2>/dev/null || true
-if [ "$ROLE" = "worker" ]; then
-    # Only the web container writes the key. Two containers each finding it
-    # absent and each writing one would leave them signing with different keys.
+if [ "$MIGRATIONS" = "wait" ]; then
+    # Whoever applies the migrations writes the key. A container that waits for
+    # them waits for the key too, so it never starts signing with one of its own.
     waited=0
     while [ ! -f /run/secrets/django_secret_key ]; do
         if [ "$waited" -ge 600 ]; then
-            echo "entrypoint: no signing key after 10 minutes; is the web container running?" >&2
+            echo "entrypoint: no signing key after 10 minutes; has the migrate job or the web container run?" >&2
             exit 1
         fi
-        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for the web container's signing key"
+        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for the signing key"
         sleep 5; waited=$((waited + 5))
     done
 elif [ ! -f /run/secrets/django_secret_key ]; then
-    head -c 64 /dev/urandom | base64 | tr -d '\n=' > /run/secrets/django_secret_key
-    chmod 600 /run/secrets/django_secret_key
-    echo "entrypoint: generated a signing key"
+    # Written aside and linked into place: a link fails if the name exists, so
+    # two containers finding it absent at once still end up with one key, the
+    # first one's, rather than each signing with the key it wrote.
+    head -c 64 /dev/urandom | base64 | tr -d '\n=' > "/run/secrets/.django_secret_key.$$"
+    chmod 600 "/run/secrets/.django_secret_key.$$"
+    if ln "/run/secrets/.django_secret_key.$$" /run/secrets/django_secret_key 2>/dev/null; then
+        echo "entrypoint: generated a signing key"
+    fi
+    rm -f "/run/secrets/.django_secret_key.$$"
 fi
 
 # ---------------------------------------------------------------- signatures
@@ -209,7 +229,7 @@ fi
 # Only where documents are scanned: not in a web container (the intake lane
 # runs in the worker), and not at all when a clamd daemon keeps its own.
 FRESHCLAM="${DIGITAL_BRAIN_FRESHCLAM:-1}"
-if [ "$ROLE" = "web" ] || [ -n "$CLAMD" ]; then
+if [ "$ROLE" = "web" ] || [ "$ROLE" = "migrate" ] || [ -n "$CLAMD" ]; then
     FRESHCLAM=0
 fi
 if [ "$FRESHCLAM" = "1" ]; then
@@ -226,22 +246,23 @@ if [ "$FRESHCLAM" = "1" ]; then
 fi
 
 # ------------------------------------------------------------------ database
-# Migrations run in the one web (or all-in-one) container, so there is never a
-# second writer to race. A worker waits until they are applied rather than
-# starting lanes against a schema that is about to change under them.
-if [ "$ROLE" = "worker" ]; then
+# Applied under a lock (manage.py apply_migrations), so a second container
+# applying at the same moment waits and then finds nothing left to do. One that
+# waits instead - every worker, and a web replica beside a migrate job - does
+# not start against a schema that is about to change under it.
+if [ "$MIGRATIONS" = "wait" ]; then
     waited=0
     until python manage.py migrate --check >/dev/null 2>&1; do
         if [ "$waited" -ge 900 ]; then
             echo "entrypoint: migrations still pending after 15 minutes." >&2
             exit 1
         fi
-        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for the web container to apply migrations"
+        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for migrations to be applied"
         sleep 5; waited=$((waited + 5))
     done
 else
     echo "entrypoint: applying migrations"
-    python manage.py migrate --noinput
+    python manage.py apply_migrations
 fi
 
 # Django's own production audit, with warnings fatal. It reads the same
@@ -249,6 +270,11 @@ fi
 # stops the deploy instead of being discovered by a user.
 echo "entrypoint: checking deployment settings"
 python manage.py check --deploy --fail-level WARNING
+
+if [ "$ROLE" = "migrate" ]; then
+    echo "entrypoint: migrations applied; nothing else runs in this container"
+    exit 0
+fi
 
 if [ "$ROLE" = "worker" ]; then
     # Comma-separated lane names, or every lane. Most lanes are held by one

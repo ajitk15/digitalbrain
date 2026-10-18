@@ -804,7 +804,7 @@ in transit, never a record, so the compose service has no volume: TLS from the P
 CA, a generated password in its own config file, `noeviction`. Without `[redis]` none of
 it is used. `test_redis_streams` runs against fakeredis and again against a real Redis
 when `DIGITAL_BRAIN_TEST_REDIS` names one, which CI's PostgreSQL job does and requires.
-The web container is still one replica - each applies migrations as it starts.
+With it, and the migration job below, the web container can be more than one replica.
 
 **Source-system permissions on answers** (`permissions.py`, connector "Enforce source
 permissions", Jira only). Each record from an enforcing connector carries the platform
@@ -868,9 +868,29 @@ resume after a dropped connection - see "With Redis" above.
 
 `scripts/serve.py` runs every worker lane inside the web process unless it is started with
 `--no-worker`; `manage.py run_worker [--lanes a,b]` runs them in a process of their own
-(`DIGITAL_BRAIN_ROLE=all|web|worker` in `deploy/entrypoint.sh`, and
+(`DIGITAL_BRAIN_ROLE=all|web|worker|migrate` in `deploy/entrypoint.sh`, and
 `docker-compose.scale.yaml` for the split). Chat answers are not a lane - each runs on a
 thread its stream request starts - so they stay in the web process either way.
+
+**Migrations are applied once, under a lock** (`manage.py apply_migrations`). `migrate`
+takes no lock of its own, so two containers starting together both applied the pending
+list - which is what held the web container to one replica. The command holds a session
+advisory lock on a connection of its own for the whole run; a second caller says it is
+waiting, then finds nothing to do. It lifts the 10 s `statement_timeout` for its own
+session (an index on a large table outlasts a request's limit) and keeps `lock_timeout`,
+trying a migration again only on `lock_not_available` - each is one transaction on
+PostgreSQL, so that undoes it whole. The entrypoint never calls `migrate` directly. The
+scale overlay runs it as a one-shot `migrate` service (`restart: "no"`) that applies,
+writes the signing key if there is none, runs `check --deploy` and exits; `app` and
+`worker` start only after it exits cleanly, and the web container waits rather than
+applies (`DIGITAL_BRAIN_MIGRATIONS=wait`), so `DIGITAL_BRAIN_WEB_REPLICAS` can be more
+than one. The signing key is linked into place, so two writers still end up with one key.
+**A migration must be one the previous release can run against**: the new schema is in
+place while the old web containers still serve. Add a column nullable or with a
+`db_default` - a Python `default` is dropped from the column once it is filled, so the old
+release's inserts fail - and remove or rename only a release after the code stopped using
+it. `test_migration_job.ExpandContractTests` refuses anything else after 0090 unless it is
+named in `CONTRACTS`, the second half of such a pair.
 
 **Most lanes are held by one process at a time** (`document_worker.LaneKeeper`): a PostgreSQL
 session advisory lock on a connection of its own, so `close_old_connections` between steps

@@ -13,6 +13,9 @@ staticfiles
 .ruff_cache
 .coverage
 htmlcov
+# Local agent settings and worktrees: other checkouts of this repository, with
+# their own .runtime and configuration, which the image must never carry.
+.claude
 
 # Never: the only thing .env may hold is SITE_ADMIN_USER_ID, and config/local.toml
 # is a development file whose mode is "development".

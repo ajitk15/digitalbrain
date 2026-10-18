@@ -2,13 +2,15 @@
 #
 # One image, one process per container. By default (DIGITAL_BRAIN_ROLE=all)
 # `scripts/serve.py` runs the WSGI listener and hosts the document worker as a
-# thread inside it. DIGITAL_BRAIN_ROLE=web and =worker run the same image as two
-# containers instead (docker-compose.scale.yaml). Either way the web listener
-# must never be scaled past one replica: the API rate limit is counted in
-# process memory, and without shared_streams the stream registry in
-# platform_core/agent_runtime/streaming.py is too, so a second process makes
-# Stop silently fail to cancel a provider call the application is still being
-# billed for.
+# thread inside it. DIGITAL_BRAIN_ROLE=migrate, =web and =worker run the same
+# image as a one-shot migration job and separate containers instead
+# (docker-compose.scale.yaml). More than one web replica needs that migration
+# job (each container would otherwise apply migrations as it starts - safely,
+# under a lock, but while the others serve) and Redis or shared_streams: without
+# either, the API rate limit and the stream registry in
+# platform_core/agent_runtime/streaming.py are counted in process memory, and a
+# second process makes Stop silently fail to cancel a provider call the
+# application is still being billed for.
 #
 # The Claude Code CLI is NOT installed here. It arrives inside the
 # claude-agent-sdk wheel (_bundled/claude) and agent_runtime/claude_runtime.py

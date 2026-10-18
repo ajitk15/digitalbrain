@@ -1,16 +1,23 @@
-# Digital Brain split into a web container, a worker container and clamd.
+# Digital Brain split into a migration job, web containers, a worker and clamd.
 #
 #   docker compose -f docker-compose.yaml -f docker-compose.scale.yaml up -d
 #
 # An overlay on docker-compose.yaml, which on its own still runs everything in
 # one container exactly as before. With this file:
 #
-# * "app" serves requests only (DIGITAL_BRAIN_ROLE=web). It applies migrations
-#   and writes the signing key, as it always has.
+# * "migrate" runs once per deploy (DIGITAL_BRAIN_ROLE=migrate): it applies
+#   migrations, writes the signing key if there is none, checks the deployment
+#   settings and exits. Nothing else starts until it has exited cleanly, so a
+#   migration that fails stops the deploy before any container serves on the
+#   new code.
+# * "app" serves requests only (DIGITAL_BRAIN_ROLE=web) and applies nothing
+#   (DIGITAL_BRAIN_MIGRATIONS=wait). That is what lets it run as more than one
+#   replica: DIGITAL_BRAIN_WEB_REPLICAS, 1 unless set. Sessions, sign-in
+#   lockouts and jobs are in the database, and streams, Stop and the API rate
+#   limit in Redis, so any replica can answer any request.
 # * "worker" runs every background lane (`manage.py run_worker`). A deploy of
 #   the web container no longer stops an import or a Code Factory phase half
-#   way, and a long provider call no longer shares a process with sign-in. It
-#   waits for the web container's migrations and signing key before starting.
+#   way, and a long provider call no longer shares a process with sign-in.
 # * "clamd" scans documents. clamscan loaded the whole signature database for
 #   every file; the daemon loads it once. processing.py still refuses
 #   signatures more than a week old, by asking the daemon for their date.
@@ -19,15 +26,56 @@
 # document_worker.LaneKeeper), so a second worker replica stands by and takes
 # over when the first goes, rather than running anything twice.
 #
-# The web container is still ONE replica, for the reason docker-compose.yaml
-# gives: it applies migrations as it starts. Streams, Stop and the API rate
-# limit already reach every process through Redis.
+# Migrations are applied under a lock (manage.py apply_migrations) wherever
+# they run, so even two migrate jobs at once apply each migration once. The new
+# schema is in place before the old web containers stop, which is why every
+# migration has to be one the previous release can still run against.
+#
+# More than one web replica needs a platform that lets a service have several
+# containers. Some name each container themselves, which allows only one per
+# service; leave DIGITAL_BRAIN_WEB_REPLICAS unset there.
 
 services:
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
+    environment:
+      DIGITAL_BRAIN_ROLE: "migrate"
+      # The same settings the web container renders, so `check --deploy` here
+      # judges the configuration the web container is about to serve with.
+      DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
+      DIGITAL_BRAIN_INSTANCE: "coolify-1-migrate"
+      DIGITAL_BRAIN_CLAMD: "clamd:3310"
+      DIGITAL_BRAIN_REDIS: "redis:6379"
+    volumes:
+      - platform-secrets:/run/secrets
+      - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
+      - managed-credentials:/var/lib/digitalbrain/credentials
+      - app-runtime:/app/.runtime
+
   app:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     environment:
       DIGITAL_BRAIN_ROLE: "web"
+      DIGITAL_BRAIN_MIGRATIONS: "wait"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
+    deploy:
+      replicas: ${DIGITAL_BRAIN_WEB_REPLICAS:-1}
+    healthcheck:
+      # No signatures to download in a web container, so it listens within
+      # seconds; the base file's ten minutes would hide a replica that never does.
+      start_period: 60s
 
   worker:
     build:
@@ -41,6 +89,8 @@ services:
         condition: service_healthy
       clamd:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
     environment:
       DIGITAL_BRAIN_ROLE: "worker"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"

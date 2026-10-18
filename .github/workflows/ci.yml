@@ -67,7 +67,9 @@ jobs:
           secrets=$(uv run python -c "import tomllib; print(tomllib.load(open('config/local.toml', 'rb'))['secret_directory'])")
           (umask 077 && printf '%s' ci-only > "$secrets/database_password")
           printf '\n[database]\nname = "digitalbrain"\nuser = "brain"\nhost = "127.0.0.1"\nport = 5432\n' >> config/local.toml
-      - run: uv run python manage.py migrate --noinput
+      # The command every container applies migrations with: under a lock, so a
+      # second process waits rather than applying them twice.
+      - run: uv run python manage.py apply_migrations
       - run: uv run python manage.py makemigrations --check --dry-run
       - run: uv run python manage.py collectstatic --noinput
       - name: Browser for the end-to-end tests

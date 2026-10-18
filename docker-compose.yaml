@@ -17,14 +17,13 @@
 # limit. It holds copies in transit, never a record, so it has no volume. TLS
 # from the same CA as Postgres, and a generated password, as for the database.
 #
-# THE APP SERVICE IS STILL ONE REPLICA. Streams and the rate limit no longer
-# hold it there - both go through Redis - but each web container applies
-# migrations as it starts, and two applying them at once is not safe. That
-# moves to a one-shot job before the web container can be scaled.
+# THE APP SERVICE HERE IS ONE CONTAINER doing everything: it applies
+# migrations (under a lock, manage.py apply_migrations), serves requests and
+# runs every background lane.
 #
-# To run the background lanes in a container of their own, with clamd for
-# scanning, add docker-compose.scale.yaml on top of this file. The web
-# container is still one replica there.
+# To split that - a one-shot migration job, web containers that can be more
+# than one replica, the background lanes in a worker of their own and clamd
+# for scanning - add docker-compose.scale.yaml on top of this file.
 
 services:
   # Generates, once, the two things a deployment cannot start without: the
