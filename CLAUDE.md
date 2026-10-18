@@ -937,6 +937,21 @@ resume after a dropped connection - see "With Redis" above.
 `docker-compose.scale.yaml` for the split). Chat answers are not a lane - each runs on a
 thread its stream request starts - so they stay in the web process either way.
 
+**The lanes that hand outside content to another program run in a sandbox**
+(`sandbox` in `docker-compose.scale.yaml`): intake (converters, OCR, the virus scan on
+uploads), code-graph (git on a repository) and factory (the Claude CLI over a
+repository's code). Same image, `DIGITAL_BRAIN_ROLE=worker` with those lanes, in a
+container that is read-only but for `/tmp` and the runtime volume, drops every Linux
+capability, cannot gain one (`no-new-privileges`), reads secrets and credentials
+read-only and stops at a process and a memory limit - so a parser bug, a runaway
+converter or a fork bomb is held to that container. The worker runs the other six lanes,
+and a test holds the two lists to `LANES` with no lane in both. Each service's health
+check names only its own lanes (`queue_status --check --lanes`). A container that waits
+for migrations only reads `/run/secrets`; only the one that applies them must write it.
+Still not in a sandbox: chat on Claude starts the CLI on the web container's stream
+thread, and every container still mounts the whole secrets volume, owner's database
+password included.
+
 **Migrations are applied once, under a lock** (`manage.py apply_migrations`). `migrate`
 takes no lock of its own, so two containers starting together both applied the pending
 list - which is what held the web container to one replica. The command holds a session

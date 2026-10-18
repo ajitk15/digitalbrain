@@ -238,11 +238,44 @@ class DeploymentTests(SimpleTestCase):
         job = service(self.scale, "migrate")
         self.assertIn('DIGITAL_BRAIN_ROLE: "migrate"', job)
         self.assertIn('restart: "no"', job)
-        for name in ("app", "worker"):
+        for name in ("app", "worker", "sandbox"):
             block = service(self.scale, name)
             self.assertRegex(
                 block, r"migrate:\n\s+condition: service_completed_successfully", name
             )
+
+    def test_every_lane_runs_in_exactly_one_of_the_worker_and_the_sandbox(self):
+        from platform_core.document_worker import LANES
+
+        def lanes(name):
+            found = re.search(r'DIGITAL_BRAIN_LANES: "([^"]+)"', service(self.scale, name))
+            return found[1].split(",")
+
+        worker, sandbox = lanes("worker"), lanes("sandbox")
+        self.assertEqual(set(worker) & set(sandbox), set())
+        self.assertEqual(sorted(worker + sandbox), sorted(name for name, _, _ in LANES))
+        # The lanes that give outside content to another program.
+        self.assertEqual(set(sandbox), {"intake", "code-graph", "factory"})
+
+    def test_the_sandbox_cannot_write_its_image_or_gain_a_privilege(self):
+        sandbox = service(self.scale, "sandbox")
+        for line in (
+            "read_only: true",
+            "cap_drop:\n      - ALL",
+            '"no-new-privileges:true"',
+            "pids_limit: ",
+            "mem_limit: ",
+            "- /tmp:",
+            "platform-secrets:/run/secrets:ro",
+            "managed-credentials:/var/lib/digitalbrain/credentials:ro",
+        ):
+            self.assertIn(line, sandbox)
+        self.assertNotIn("ports:", sandbox)
+
+    def test_each_service_is_healthy_on_its_own_lanes(self):
+        for name in ("worker", "sandbox"):
+            self.assertIn('queue_status --check --lanes \\"$$DIGITAL_BRAIN_LANES\\"',
+                          service(self.scale, name), name)
 
     def test_the_web_container_waits_and_may_be_replicated(self):
         app = service(self.scale, "app")

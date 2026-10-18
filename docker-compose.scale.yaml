@@ -1,4 +1,5 @@
-# Digital Brain split into a migration job, web containers, a worker and clamd.
+# Digital Brain split into a migration job, web containers, a worker, a
+# sandbox and clamd.
 #
 #   docker compose -f docker-compose.yaml -f docker-compose.scale.yaml up -d
 #
@@ -15,16 +16,28 @@
 #   replica: DIGITAL_BRAIN_WEB_REPLICAS, 1 unless set. Sessions, sign-in
 #   lockouts and jobs are in the database, and streams, Stop and the API rate
 #   limit in Redis, so any replica can answer any request.
-# * "worker" runs every background lane (`manage.py run_worker`). A deploy of
-#   the web container no longer stops an import or a Code Factory phase half
-#   way, and a long provider call no longer shares a process with sign-in.
+# * "worker" runs the background lanes (`manage.py run_worker`) that read only
+#   this platform's own records. A deploy of the web container no longer stops
+#   an import or a Code Factory phase half way, and a long provider call no
+#   longer shares a process with sign-in.
+# * "sandbox" runs the three lanes that hand content from outside to another
+#   program: intake gives uploads to the converters, OCR and the virus scan,
+#   code-graph gives repositories to git, factory gives a repository's code to
+#   the Claude CLI. A parser bug in a hostile file, a fork bomb in a hook that
+#   should never run, a converter that never returns - each is held to this
+#   container: it serves no request, writes only /tmp and the runtime volume,
+#   has no Linux capabilities and cannot gain one, reads every credential
+#   read-only, and stops at a process and a memory limit.
 # * "clamd" scans documents. clamscan loaded the whole signature database for
 #   every file; the daemon loads it once. processing.py still refuses
 #   signatures more than a week old, by asking the daemon for their date.
 #
-# Each lane is held by one process at a time (a PostgreSQL advisory lock, see
-# document_worker.LaneKeeper), so a second worker replica stands by and takes
-# over when the first goes, rather than running anything twice.
+# Every lane but maintenance claims its work row by row
+# (document_worker.SHARED_LANES), so worker and sandbox replicas share their
+# lanes and nothing runs twice. Maintenance is held by one process at a time (a
+# PostgreSQL advisory lock, document_worker.LaneKeeper); a second worker
+# replica stands by for it. Each lane belongs to exactly one of the two
+# services, which a test checks against document_worker.LANES.
 #
 # Migrations are applied under a lock (manage.py apply_migrations) wherever
 # they run, so even two migrate jobs at once apply each migration once. The new
@@ -99,22 +112,74 @@ services:
       # non-secret values the web container renders its configuration from.
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
       DIGITAL_BRAIN_INSTANCE: "coolify-1-worker"
-      # Threads for the lanes that claim row by row. Each holds a database
-      # connection while it works, so count them against max_connections.
-      DIGITAL_BRAIN_CONCURRENCY: "intake=2"
+      DIGITAL_BRAIN_LANES: "graph,connectors,serviceops,serviceops-tests,automations,maintenance"
     volumes:
       - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials
-      # The same originals the web container stores uploads into: the intake
-      # lane reads them from here. One host for both until originals move to
-      # object storage.
+      # The rendered configuration. The sandbox reads uploaded originals from
+      # the same volume; one host for all until originals move to object storage.
       - app-runtime:/app/.runtime
     # A stop is honoured between steps. run_worker lets one in progress finish
     # for up to 50 s before it exits; this has to be longer than that.
     stop_grace_period: 70s
     healthcheck:
-      test: ["CMD", "python", "manage.py", "queue_status", "--check"]
+      # Only this service's own lanes: the other service's going down is its
+      # own health check's to report, not a reason to restart this one.
+      test: ["CMD-SHELL", "python manage.py queue_status --check --lanes \"$$DIGITAL_BRAIN_LANES\""]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+
+  sandbox:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clamd:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DIGITAL_BRAIN_ROLE: "worker"
+      DIGITAL_BRAIN_LANES: "intake,code-graph,factory"
+      # Threads for a lane: each claims its own row and holds a database
+      # connection while it works, so count them against max_connections.
+      DIGITAL_BRAIN_CONCURRENCY: "intake=2"
+      DIGITAL_BRAIN_CLAMD: "clamd:3310"
+      DIGITAL_BRAIN_REDIS: "redis:6379"
+      DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
+      DIGITAL_BRAIN_INSTANCE: "coolify-1-sandbox"
+    volumes:
+      # Read, never written: the signing key and every credential are made by
+      # the migrate job and the web container, never here.
+      - platform-secrets:/run/secrets:ro
+      - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
+      - managed-credentials:/var/lib/digitalbrain/credentials:ro
+      # Uploaded originals to convert, and the rendered configuration.
+      - app-runtime:/app/.runtime
+    read_only: true
+    tmpfs:
+      # Clones, conversions and each Claude CLI run's empty home are scratch
+      # directories under here, gone with the container.
+      - /tmp:size=4g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+    pids_limit: 512
+    mem_limit: 6g
+    stop_grace_period: 70s
+    healthcheck:
+      # Only this service's own lanes: the other service's going down is its
+      # own health check's to report, not a reason to restart this one.
+      test: ["CMD-SHELL", "python manage.py queue_status --check --lanes \"$$DIGITAL_BRAIN_LANES\""]
       interval: 60s
       timeout: 20s
       retries: 3

@@ -216,8 +216,15 @@ done
 # way, and the mount report above says which happened - a key on a
 # non-persistent path signs sessions that will not survive a restart.
 mkdir -p /run/secrets 2>/dev/null || true
-if [ ! -w /run/secrets ]; then
+# Only whoever applies the migrations writes here. A container that waits for
+# them - every worker, the sandbox, a web replica beside a migrate job - only
+# reads, so it may be given the secrets read-only, as the sandbox is.
+if [ "$MIGRATIONS" = "apply" ] && [ ! -w /run/secrets ]; then
     echo "entrypoint: /run/secrets cannot be created or written." >&2
+    exit 1
+fi
+if [ ! -r /run/secrets ] || [ ! -x /run/secrets ]; then
+    echo "entrypoint: /run/secrets cannot be read." >&2
     exit 1
 fi
 chmod 700 /run/secrets 2>/dev/null || true
@@ -313,11 +320,11 @@ if [ "$ROLE" = "migrate" ]; then
 fi
 
 if [ "$ROLE" = "worker" ]; then
-    # Comma-separated lane names, or every lane. Most lanes are held by one
-    # process at a time, so a second worker replica stands by rather than
-    # running anything twice; intake, graph and connectors claim row by row
-    # and run in every replica. DIGITAL_BRAIN_CONCURRENCY ("intake=4") gives
-    # those more threads.
+    # Comma-separated lane names, or every lane - docker-compose.scale.yaml
+    # gives the worker and the sandbox one share each. Every lane but
+    # maintenance claims row by row and runs in every replica; maintenance is
+    # held by one process at a time, so a second stands by for it.
+    # DIGITAL_BRAIN_CONCURRENCY ("intake=4") gives a lane more threads.
     exec python manage.py run_worker --lanes "${DIGITAL_BRAIN_LANES:-}"         --concurrency "${DIGITAL_BRAIN_CONCURRENCY:-}"
 fi
 
