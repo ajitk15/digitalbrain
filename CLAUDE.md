@@ -229,8 +229,10 @@ day and never show that anything had been fixed.
 
 **Absence is not deletion unless the owner says the filter is complete.**
 `connectors.prune` retires knowledge for records a connector no longer returns, and
-only when all three hold: `prune_missing` is ticked, the result was not at
-`MAX_RECORDS` (a full page is a page, not an answer), and no other enabled connector
+only when all three hold: `prune_missing` is ticked, the result is complete
+(`connector_kinds.complete`: a plain list at `MAX_RECORDS` is a page, not an answer;
+Jira follows its own paging - `nextPageToken` on Cloud, `startAt` on Data Center - for
+up to `MAX_PAGES` and returns a `Page` saying whether it reached the last one), and no other enabled connector
 shares the same `Kind.namespace` (two connectors onto one Jira with different
 filters would otherwise retire each other's imports). Retiring is `active=False`,
 the same supersede an updated record performs - nothing is deleted. Leave it

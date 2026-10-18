@@ -28,7 +28,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, MAX_RECORDS, kind_for
+from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, complete, kind_for
 from .masking import stored_content
 from .models import Connector, KnowledgeEntry
 from .permissions import SUPPORTED, enforce
@@ -208,7 +208,8 @@ def prune(connector, app, kind, records):
       filter returns the whole set; under `updated >= -30d` it means the ticket
       is old. Only the person who wrote the filter knows which they have.
     * The result was not truncated. At `MAX_RECORDS` the set is a page, not an
-      answer, and everything past the cap would look deleted.
+      answer, and everything past the cap would look deleted. A kind that pages
+      says whether it reached the end instead (`connector_kinds.complete`).
     * No other enabled connector shares this namespace. Two connectors onto one
       Jira site with different filters would otherwise retire each other's
       imports, each correctly concluding the records are not in *its* results.
@@ -218,7 +219,7 @@ def prune(connector, app, kind, records):
     """
     # An empty response can also mean that provider permissions changed. Never
     # retire every imported source on that ambiguous signal.
-    if not records or not connector.prune_missing or len(records) >= MAX_RECORDS:
+    if not records or not connector.prune_missing or not complete(records):
         return 0
     try:
         namespace = kind.namespace(connector.config)

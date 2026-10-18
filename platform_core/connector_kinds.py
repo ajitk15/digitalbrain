@@ -29,8 +29,12 @@ from django.core.exceptions import ValidationError
 from .fetching import FetchError, fetch, normalise
 
 #: Never import an unbounded backlog: a connector is a knowledge feed, not a mirror.
+#: Also the page size of a kind that follows its source's paging.
 MAX_RECORDS = 100
 MAX_BODY_CHARACTERS = 100_000
+#: Pages of `MAX_RECORDS` one Jira import reads. The writes are one transaction,
+#: so this also bounds how long an import holds its locks.
+MAX_PAGES = 10
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,25 @@ class Record:
     title: str
     body: str
     url: str
+
+
+class Page(list):
+    """Records from a kind that follows its source's paging, and whether it read them all.
+
+    A plain list at `MAX_RECORDS` is a page, not an answer, so `connectors.prune`
+    retires nothing from it. A kind that reads page after page knows better: it
+    reached the last page, or it stopped at `MAX_PAGES` and says so.
+    """
+
+    def __init__(self, records, *, complete):
+        super().__init__(records)
+        self.complete = complete
+
+
+def complete(records):
+    """Whether `records` is everything the source returned for the filter."""
+    stated = getattr(records, "complete", None)
+    return len(records) < MAX_RECORDS if stated is None else stated
 
 
 def api_json(url, headers, *, label):
@@ -273,23 +296,16 @@ def jira_headers(config, secret):
 def jira_records(config, secret):
     base = config["base_url"]
     headers = jira_headers(config, secret)
-    query = urlencode(
-        {
-            "jql": config.get("jql") or "order by updated DESC",
-            "maxResults": MAX_RECORDS,
-            "fields": "summary,description,updated,status,priority,issuetype,labels",
-        }
-    )
-    payload = jira_search(base, headers, query)
-    issues = payload.get("issues") if isinstance(payload, dict) else None
-    if not isinstance(issues, list):
-        raise ValidationError("Jira returned an unexpected issue list.")
+    params = {
+        "jql": config.get("jql") or "order by updated DESC",
+        "maxResults": MAX_RECORDS,
+        "fields": "summary,description,updated,status,priority,issuetype,labels",
+    }
+    issues, read_all = jira_issues(base, headers, params)
     if not issues:
         jira_identity(base, headers)
     records = []
     for issue in issues:
-        if not isinstance(issue, dict) or not isinstance(issue.get("key"), str):
-            raise ValidationError("Jira returned an unexpected issue record.")
         fields = issue.get("fields") if isinstance(issue.get("fields"), dict) else {}
         labels = fields.get("labels")
         state = header(
@@ -313,7 +329,7 @@ def jira_records(config, secret):
                 url=f"{base}/browse/{quote(issue['key'])}",
             )
         )
-    return records
+    return Page(records, complete=read_all)
 
 
 def jira_identity(base, headers):
@@ -339,7 +355,51 @@ def jira_identity(base, headers):
         raise
 
 
-def jira_search(base, headers, query):
+#: Jira Cloud's search, paged by an opaque `nextPageToken`.
+CURRENT_SEARCH = "/rest/api/3/search/jql"
+#: Data Center's, paged by `startAt` against `total`.
+LEGACY_SEARCH = "/rest/api/3/search"
+
+
+def jira_issues(base, headers, params):
+    """Every issue the filter matches, up to `MAX_PAGES`, and whether that was all.
+
+    Each page is its own request through `fetch`. The two endpoints page
+    differently, so whichever answered the first page pages the rest. An issue
+    seen on an earlier page is not taken twice: offset paging shifts when a
+    ticket is updated during the import, and a duplicate would import twice.
+    """
+    payload, path = jira_search(base, headers, params)
+    issues, seen, offset = [], set(), 0
+    for page in range(MAX_PAGES):
+        batch = payload.get("issues") if isinstance(payload, dict) else None
+        if not isinstance(batch, list):
+            raise ValidationError("Jira returned an unexpected issue list.")
+        for issue in batch:
+            if not isinstance(issue, dict) or not isinstance(issue.get("key"), str):
+                raise ValidationError("Jira returned an unexpected issue record.")
+            if issue["key"] not in seen:
+                seen.add(issue["key"])
+                issues.append(issue)
+        if path == CURRENT_SEARCH:
+            token = payload.get("nextPageToken")
+            last = payload.get("isLast") is True or not isinstance(token, str) or not token
+            following = {**params, "nextPageToken": token}
+        else:
+            offset += len(batch)
+            total = payload.get("total")
+            last = not batch or (
+                offset >= total if isinstance(total, int) else len(batch) < MAX_RECORDS
+            )
+            following = {**params, "startAt": offset}
+        if last:
+            return issues, True
+        if page + 1 < MAX_PAGES:
+            payload = api_json(f"{base}{path}?{urlencode(following)}", headers, label="Jira")
+    return issues, False
+
+
+def jira_search(base, headers, params):
     """Run a JQL search against whichever search endpoint this instance has.
 
     Jira Cloud removed `/rest/api/3/search` in 2025 and answers it with `410
@@ -349,14 +409,16 @@ def jira_search(base, headers, query):
     reported once instead of being retried against a second URL and surfacing as
     the wrong error.
 
-    Both return `{"issues": [...]}`, which is all the adapter below reads.
+    Both return `{"issues": [...]}`; the path that answered is returned too,
+    because it decides how `jira_issues` asks for the next page.
     """
+    query = urlencode(params)
     try:
-        return api_json(f"{base}/rest/api/3/search/jql?{query}", headers, label="Jira")
+        return api_json(f"{base}{CURRENT_SEARCH}?{query}", headers, label="Jira"), CURRENT_SEARCH
     except ValidationError as failure:
         if getattr(failure, "http_status", None) not in {404, 410}:
             raise
-    return api_json(f"{base}/rest/api/3/search?{query}", headers, label="Jira")
+    return api_json(f"{base}{LEGACY_SEARCH}?{query}", headers, label="Jira"), LEGACY_SEARCH
 
 
 def adf_text(node, depth=0):

@@ -233,6 +233,94 @@ class AdapterMappingTests(SimpleTestCase):
             jira_records({"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok")
         self.assertEqual(len(calls), 1)
 
+
+    def test_cloud_follows_next_page_tokens_to_the_last_page(self):
+        """An import used to stop at the first hundred issues, whatever matched."""
+        calls = []
+
+        def record(url, headers, *, label):
+            calls.append(url)
+            token = parse_qs(urlsplit(url).query).get("nextPageToken", [""])[0]
+            page = int(token or 0)
+            issues = [{"key": f"OPS-{page * 2 + n}", "fields": {"summary": "x"}} for n in (1, 2)]
+            if page == 2:
+                return {"issues": issues, "isLast": True}
+            return {"issues": issues, "nextPageToken": str(page + 1), "isLast": False}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            records = jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
+                                    "account_email": "a@b.com"}, "tok")
+        self.assertEqual([r.external_id for r in records],
+                         ["OPS-1", "OPS-2", "OPS-3", "OPS-4", "OPS-5", "OPS-6"])
+        self.assertTrue(records.complete)
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all("/rest/api/3/search/jql?" in url for url in calls))
+        self.assertIn("jql=", calls[1], "every page repeats the filter")
+
+    def test_data_center_pages_by_offset_against_the_total(self):
+        calls = []
+
+        def record(url, headers, *, label):
+            calls.append(url)
+            if "/search/jql" in url:
+                gone = ValidationError("Jira: gone")
+                gone.http_status = 404
+                raise gone
+            start = int(parse_qs(urlsplit(url).query).get("startAt", ["0"])[0])
+            keys = [f"OPS-{n}" for n in range(1, 6)][start:start + 2]
+            return {"issues": [{"key": k, "fields": {"summary": k}} for k in keys],
+                    "startAt": start, "total": 5}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            records = jira_records(
+                {"base_url": "https://team.atlassian.net", "auth": "datacenter"}, "tok"
+            )
+        self.assertEqual(len(records), 5)
+        self.assertTrue(records.complete)
+        searches = [url for url in calls if "/rest/api/3/search?" in url]
+        self.assertEqual(len(searches), 3, "the removed endpoint is asked once, not per page")
+        self.assertIn("startAt=4", searches[2])
+
+    def test_an_issue_moved_onto_a_later_page_is_taken_once(self):
+        """Offset paging shifts when a ticket is updated mid-import."""
+        pages = [
+            {"issues": [{"key": "OPS-1", "fields": {}}, {"key": "OPS-2", "fields": {}}],
+             "nextPageToken": "b"},
+            {"issues": [{"key": "OPS-2", "fields": {}}, {"key": "OPS-3", "fields": {}}],
+             "isLast": True},
+        ]
+        with patch("platform_core.connector_kinds.api_json", side_effect=pages):
+            records = jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
+                                    "account_email": "a@b.com"}, "tok")
+        self.assertEqual([r.external_id for r in records], ["OPS-1", "OPS-2", "OPS-3"])
+
+    def test_reading_stops_at_the_page_cap_and_says_the_result_is_incomplete(self):
+        from platform_core.connector_kinds import MAX_PAGES
+
+        calls = []
+
+        def record(url, headers, *, label):
+            calls.append(url)
+            n = len(calls)
+            return {"issues": [{"key": f"OPS-{n}", "fields": {}}], "nextPageToken": str(n)}
+
+        with patch("platform_core.connector_kinds.api_json", side_effect=record):
+            records = jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
+                                    "account_email": "a@b.com"}, "tok")
+        self.assertEqual(len(calls), MAX_PAGES)
+        self.assertEqual(len(records), MAX_PAGES)
+        self.assertFalse(records.complete)
+
+    def test_a_malformed_later_page_fails_the_whole_import(self):
+        pages = [
+            {"issues": [{"key": "OPS-1", "fields": {}}], "nextPageToken": "b"},
+            {"issues": "nope"},
+        ]
+        with patch("platform_core.connector_kinds.api_json", side_effect=pages):
+            with self.assertRaises(ValidationError):
+                jira_records({"base_url": "https://team.atlassian.net", "auth": "cloud",
+                              "account_email": "a@b.com"}, "tok")
+
     def test_deeply_nested_rich_text_terminates(self):
         node = {"type": "text", "text": "deep"}
         for _ in range(40):
@@ -688,6 +776,30 @@ class ConnectorManagementTests(TestCase):
 
         self.assertEqual(prune(connector, self.app, KINDS["jira"], page), 0)
         self.assertTrue(
+            KnowledgeEntry.objects.filter(source__endswith="/browse/OPS-999", active=True).exists()
+        )
+
+    def test_a_paged_answer_read_to_the_end_may_prune_past_one_page(self):
+        """Paging is what lets a board larger than one page be pruned at all, and
+        a page cap that stopped reading must still prune nothing."""
+        from platform_core.connector_kinds import KINDS, MAX_RECORDS, Page, Record
+        from platform_core.connectors import prune
+
+        connector = self.make()
+        Connector.objects.filter(pk=connector.pk).update(prune_missing=True)
+        connector.refresh_from_db()
+        add_knowledge(
+            self.owner, self.app.pk, "Old", "Body",
+            source="https://team.atlassian.net/browse/OPS-999",
+        )
+        records = [
+            Record(str(n), f"Issue {n}", "b", f"https://team.atlassian.net/browse/OPS-{n}")
+            for n in range(MAX_RECORDS + 20)
+        ]
+        jira = KINDS["jira"]
+        self.assertEqual(prune(connector, self.app, jira, Page(records, complete=False)), 0)
+        self.assertEqual(prune(connector, self.app, jira, Page(records, complete=True)), 1)
+        self.assertFalse(
             KnowledgeEntry.objects.filter(source__endswith="/browse/OPS-999", active=True).exists()
         )
 
