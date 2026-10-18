@@ -17,6 +17,10 @@
 # process a user's Stop silently fails to cancel a provider call the
 # application is still being billed for. The per-token API rate limit is
 # process-local for the same reason and would multiply by the replica count.
+#
+# To run the background lanes in a container of their own, with clamd for
+# scanning, add docker-compose.scale.yaml on top of this file. The web
+# container is still one replica there.
 
 services:
   # Generates, once, the two things a deployment cannot start without: the

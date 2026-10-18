@@ -2053,6 +2053,20 @@ class StreamLease(models.Model):
     stop_requested = models.BooleanField(default=False)
 
 
+class LaneHeartbeat(models.Model):
+    """Which process is running a worker lane, and when it last said so.
+
+    Written by `document_worker.LaneKeeper` while it holds the lane. Once the
+    worker can run apart from the web process, nothing else tells anyone that
+    a lane has died: a quiet heartbeat is how `queue_status` says so.
+    """
+
+    lane = models.CharField(max_length=32, primary_key=True)
+    owner = models.CharField(max_length=80)
+    started_at = models.DateTimeField()
+    beat_at = models.DateTimeField()
+
+
 class ExternalIdentity(models.Model):
     """Which account a platform user is in one external system.
 

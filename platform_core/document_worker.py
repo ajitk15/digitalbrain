@@ -1,11 +1,12 @@
 """Durable local document queue, hosted by the managed application process."""
 
+import hashlib
 import logging
 import time
 from datetime import timedelta
 from threading import Thread
 
-from django.db import close_old_connections, transaction
+from django.db import close_old_connections, connection, connections, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -196,13 +197,15 @@ def automation_steps():
 
 def maintenance_steps():
     from .knowledge_sources import process_next_source
+    from .queue_status import log_if_due
 
     # Checking a source is maintenance, not intake: it reads one cheap signal,
     # writes a status and touches no document. It shares the lane with the
     # retention sweep because neither is urgent and neither may hold up a
     # conversion - and because putting it in the intake lane would have it
-    # competing with the downloads it might one day cause.
-    return (purge_chat_if_due, process_next_source)
+    # competing with the downloads it might one day cause. The queue figures
+    # are logged here for the same reason: they are read, never acted on.
+    return (purge_chat_if_due, process_next_source, log_if_due)
 
 
 #: Independent queues, each on its own thread.
@@ -238,8 +241,150 @@ LANES = (
 )
 
 
-def run_lane(name, steps_for, idle_seconds):
-    """Run one queue forever. A failure in this lane never reaches another.
+#: How long a lane this process does not hold waits before asking again, and
+#: how often a lane it does hold proves its lock connection alive and writes
+#: its heartbeat.
+LANE_RETRY_SECONDS = 15
+HEARTBEAT_SECONDS = 15
+
+
+def lane_key(name):
+    """The advisory lock number for a lane: the same in every process and release."""
+    digest = hashlib.sha256(f"digitalbrain-lane:{name}".encode()).digest()
+    return int.from_bytes(digest[:8], "big", signed=True)
+
+
+class LaneKeeper:
+    """At most one process per database runs each lane.
+
+    The lanes were written for a single worker. Several steps claim their row
+    with a conditional update and would be safe twice over; others pick a row
+    and act on it - a scheduled connector import, a triage run - and would do
+    the work twice. Until every step claims for itself, the lane is the unit of
+    exclusion: a PostgreSQL session advisory lock, held on a connection of its
+    own so `close_old_connections` between steps never releases it.
+
+    A second process starting the same lane waits as a standby and takes over
+    once the first one's connection goes. That is what lets the worker run
+    apart from the web process, or in two places, without anything running
+    twice.
+
+    SQLite is one machine's file and has no advisory locks: there every keeper
+    holds, as the single in-process worker always did. A session lock does not
+    survive a transaction-mode pooler such as PgBouncer, so a worker must reach
+    the database directly.
+    """
+
+    def __init__(self, name):
+        self.name = name
+        self.key = lane_key(name)
+        self.connection = None
+        self.holding = False
+        self.since = None
+        self.checked = 0.0
+        self.waiting_said = False
+
+    def ready(self):
+        """Whether this process may run the lane now. Never raises."""
+        now = time.monotonic()
+        if self.holding and now - self.checked < HEARTBEAT_SECONDS:
+            return True
+        try:
+            if self.holding:
+                self.confirm()
+            else:
+                self.acquire()
+            if self.holding:
+                self.beat()
+        except Exception as failure:
+            self.drop()
+            logger.warning(
+                "worker lane lock failed",
+                extra={
+                    "event": "worker_lane_lock_failed",
+                    "lane": self.name,
+                    "exception_type": type(failure).__name__,
+                },
+            )
+        self.checked = now
+        return self.holding
+
+    def acquire(self):
+        if connection.vendor != "postgresql":
+            self.holding = True
+            self.since = timezone.now()
+            return
+        self.connection = connections.create_connection("default")
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT pg_try_advisory_lock(%s)", [self.key])
+            self.holding = bool(cursor.fetchone()[0])
+        if self.holding:
+            self.since = timezone.now()
+            self.waiting_said = False
+            logger.info(
+                "worker lane taken", extra={"event": "worker_lane_taken", "lane": self.name}
+            )
+            return
+        # Another process runs this lane. Nothing is held open while waiting.
+        self.connection.close()
+        self.connection = None
+        if not self.waiting_said:
+            self.waiting_said = True
+            logger.info(
+                "worker lane standing by",
+                extra={"event": "worker_lane_standby", "lane": self.name},
+            )
+
+    def confirm(self):
+        """Raise if the connection holding the lock has gone, and the lock with it."""
+        if self.connection is None:
+            return
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+
+    def beat(self):
+        from .agent_runtime.streaming import PROCESS
+        from .models import LaneHeartbeat
+
+        LaneHeartbeat.objects.update_or_create(
+            lane=self.name,
+            defaults={"owner": PROCESS, "started_at": self.since, "beat_at": timezone.now()},
+        )
+
+    def drop(self):
+        self.holding = False
+        self.since = None
+        if self.connection is not None:
+            try:
+                self.connection.close()
+            except Exception:
+                pass
+            self.connection = None
+
+    def release(self):
+        """Give the lane up at a deliberate stop, so a standby need not wait."""
+        if self.connection is not None:
+            try:
+                with self.connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_unlock(%s)", [self.key])
+            except Exception:
+                pass
+        self.drop()
+
+
+def pause(seconds, stop):
+    """Sleep, waking early for a stop request when there is one to wake for."""
+    if stop is None:
+        time.sleep(seconds)
+    else:
+        stop.wait(seconds)
+
+
+def run_lane(name, steps_for, idle_seconds, stop=None, keeper=None):
+    """Run one queue until `stop` is set, or forever without one.
+
+    A failure in this lane never reaches another.
 
     The loop does not sleep while it is finding work, so a backlog drains at the
     speed of the work rather than one item per tick.
@@ -247,40 +392,80 @@ def run_lane(name, steps_for, idle_seconds):
     Each step is contained on its own. The steps once shared one try, so a step
     that raised on every tick - one row it cannot read is enough - starved every
     step after it: a broken reclaim would have stopped every Code Factory run.
+
+    A stop is honoured between steps, never inside one: a conversion or a paid
+    call that has started is finished and recorded.
     """
     steps = steps_for()
-    while True:
-        worked = False
-        for step in steps:
-            try:
-                close_old_connections()
-                worked = bool(step()) or worked
-            except Exception as failure:
-                # The event name is what makes this findable; the formatter
-                # deliberately keeps the message and traceback out of the log.
-                logger.warning(
-                    "worker lane failed",
-                    extra={
-                        "event": "worker_lane_failed",
-                        "lane": name,
-                        "step": step.__name__,
-                        "exception_type": type(failure).__name__,
-                    },
-                    exc_info=True,
-                )
-            finally:
-                close_old_connections()
-        time.sleep(0 if worked else idle_seconds)
+    try:
+        while stop is None or not stop.is_set():
+            if keeper is not None and not keeper.ready():
+                pause(LANE_RETRY_SECONDS, stop)
+                continue
+            worked = False
+            for step in steps:
+                if stop is not None and stop.is_set():
+                    break
+                try:
+                    close_old_connections()
+                    worked = bool(step()) or worked
+                except Exception as failure:
+                    # The event name is what makes this findable; the formatter
+                    # deliberately keeps the message and traceback out of the log.
+                    logger.warning(
+                        "worker lane failed",
+                        extra={
+                            "event": "worker_lane_failed",
+                            "lane": name,
+                            "step": step.__name__,
+                            "exception_type": type(failure).__name__,
+                        },
+                        exc_info=True,
+                    )
+                finally:
+                    close_old_connections()
+            pause(0 if worked else idle_seconds, stop)
+    finally:
+        if keeper is not None:
+            keeper.release()
 
 
 def run_document_worker():
-    """Start every lane. The calling thread becomes the first of them."""
+    """Start every lane in this process. The calling thread becomes the first.
+
+    What `scripts/serve.py` runs unless it is started with `--no-worker`, when
+    `manage.py run_worker` runs the lanes in a process of their own instead.
+    """
     first, *rest = LANES
     for name, steps_for, idle_seconds in rest:
         Thread(
             target=run_lane,
-            args=(name, steps_for, idle_seconds),
+            args=(name, steps_for, idle_seconds, None, LaneKeeper(name)),
             name=f"worker-{name}",
             daemon=True,
         ).start()
-    run_lane(*first)
+    run_lane(*first, None, LaneKeeper(first[0]))
+
+
+def lanes_named(names):
+    """The LANES entries for these names, in the order given. Unknown names raise."""
+    known = {lane[0]: lane for lane in LANES}
+    unknown = [name for name in names if name not in known]
+    if unknown:
+        raise ValueError(f"Unknown lane: {', '.join(unknown)}. Lanes are {', '.join(known)}.")
+    return [known[name] for name in dict.fromkeys(names)]
+
+
+def start_lanes(lanes, stop):
+    """Run each lane on a thread of its own until `stop` is set. Returns the threads."""
+    threads = []
+    for name, steps_for, idle_seconds in lanes:
+        thread = Thread(
+            target=run_lane,
+            args=(name, steps_for, idle_seconds, stop, LaneKeeper(name)),
+            name=f"worker-{name}",
+            daemon=True,
+        )
+        thread.start()
+        threads.append(thread)
+    return threads

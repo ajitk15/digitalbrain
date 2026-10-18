@@ -24,6 +24,14 @@ parser.add_argument(
         "Required behind a TLS terminator; omit when nothing fronts this."
     ),
 )
+parser.add_argument(
+    "--no-worker",
+    action="store_true",
+    help=(
+        "Serve requests only. The background lanes then run in their own process "
+        "under `manage.py run_worker`."
+    ),
+)
 args = parser.parse_args()
 
 #: Waitress discards X-Forwarded-* from anyone it was not told to trust, which
@@ -62,7 +70,12 @@ from platform_core.document_worker import run_document_worker  # noqa: E402
 #: answers leaves nothing to serve the Stop button that would end them.
 REQUEST_THREADS = MAX_ACTIVE_STREAMS * 2
 
-Thread(target=run_document_worker, name="document-conversion", daemon=True).start()
+#: By default the lanes run in this process, as they always have. With
+#: --no-worker they do not, and `manage.py run_worker` runs them elsewhere. Chat
+#: answers are not a lane: each one runs on a thread its stream request starts,
+#: so they stay here either way and Stop needs nothing shared to reach them.
+if not args.no_worker:
+    Thread(target=run_document_worker, name="document-conversion", daemon=True).start()
 serve(
     application,
     host=args.host,

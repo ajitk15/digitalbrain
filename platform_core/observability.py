@@ -32,6 +32,11 @@ class SafeJsonFormatter(logging.Formatter):
             # Which step of a lane failed: a function name, never data.
             "step",
             "count",
+            # Queue figures (queue_status): numbers and a flag, never a record.
+            "waiting",
+            "oldest_seconds",
+            "heartbeat_seconds",
+            "stale",
             "exception_type",
             # A failed Claude CLI result's structured fields: SDK labels and
             # numbers, never the provider's prose (see claude_agents).

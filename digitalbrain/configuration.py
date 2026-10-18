@@ -28,6 +28,7 @@ def load_config():
         "database",
         "trust_proxy",
         "scanner",
+        "clamd",
         "scan_documents",
         "keep_original_documents",
         "ocr",
@@ -64,6 +65,20 @@ def load_config():
         # process happens to run, which is not a decision about which program
         # reads every scanned document.
         raise ImproperlyConfigured("tesseract_path must be an absolute path.")
+    clamd = config.get("clamd", "")
+    if not isinstance(clamd, str):
+        raise ImproperlyConfigured("clamd must be a string.")
+    if clamd and not (
+        re.fullmatch(r"/[^\0]+", clamd)
+        or re.fullmatch(r"[A-Za-z0-9.-]{1,253}:\d{1,5}", clamd)
+        and 0 < int(clamd.rsplit(":", 1)[1]) < 65536
+    ):
+        # The daemon every document is handed to: an absolute socket path or
+        # host:port, like `scanner` an absolute path, never something resolved
+        # relative to wherever the process happens to run.
+        raise ImproperlyConfigured(
+            "clamd must be an absolute socket path or host:port, such as clamd:3310."
+        )
     if type(config.get("shared_streams", False)) is not bool:
         raise ImproperlyConfigured("shared_streams must be a boolean.")
     if type(config.get("claude_use_host_login", False)) is not bool:

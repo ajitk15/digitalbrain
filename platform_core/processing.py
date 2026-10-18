@@ -49,8 +49,17 @@ def scanning_ready():
 
     Asked of the running system rather than of a constant, because a scanner is
     configuration: it can be mounted, or go missing, without a new release.
+
+    A configured `clamd` counts as ready without being asked: a page that offers
+    uploads must not wait on a socket. A daemon that is down when a document
+    arrives fails that document closed, with the same message a missing
+    clamscan gives.
     """
+    from . import clamd
+
     if not settings.DOCUMENT_SCAN_REQUIRED:
+        return True
+    if clamd.configured():
         return True
     try:
         scanner_path()
@@ -84,6 +93,45 @@ def ocr_ready():
     return bool(tesseract_path())
 
 
+def scan_file(path):
+    """clamscan's exit code for this file: 0 clean, 1 infected, anything else unscanned.
+
+    Through the `clamd` daemon when one is configured, which loads its signatures
+    once instead of on every file; otherwise a clamscan process, as before. Both
+    refuse signatures more than a week old.
+    """
+    from . import clamd
+
+    if clamd.configured():
+        try:
+            return clamd.scan(path)
+        except clamd.ScanUnavailable:
+            return 2
+    scanner = scanner_path()
+    try:
+        scan = subprocess.run(
+            [
+                scanner,
+                "--no-summary",
+                "--fail-if-cvd-older-than=7",
+                "--alert-exceeds-max=yes",
+                "--max-filesize=25M",
+                "--max-scansize=50M",
+                str(path),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValidationError(
+            "Document scanning failed. The file remains stored privately."
+        ) from None
+    return scan.returncode
+
+
 def process_document(user, app_id, document_id):
     app, _ = access(user, app_id, "knowledge", write=True)
     doc = Document.objects.exclude(status="deleted").get(application=app, pk=document_id)
@@ -109,35 +157,14 @@ def process_document(user, app_id, document_id):
             "The stored file is unavailable or its integrity check failed."
         ) from None
     if settings.DOCUMENT_SCAN_REQUIRED:
-        scanner = scanner_path()
-        try:
-            scan = subprocess.run(
-                [
-                    scanner,
-                    "--no-summary",
-                    "--fail-if-cvd-older-than=7",
-                    "--alert-exceeds-max=yes",
-                    "--max-filesize=25M",
-                    "--max-scansize=50M",
-                    str(path),
-                ],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=30,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            raise ValidationError(
-                "Document scanning failed. The file remains stored privately."
-            ) from None
-        if scan.returncode == 1:
+        returncode = scan_file(path)
+        if returncode == 1:
             with transaction.atomic():
                 doc.status = "rejected"
                 doc.save(update_fields=["status"])
                 audit(user, "document.rejected", doc.pk, app.product.portfolio.organization)
             raise ValidationError("The scanner rejected this file. It will not be processed.")
-        if scan.returncode != 0:
+        if returncode != 0:
             raise ValidationError("Scanner unavailable or signatures stale. File remains private.")
     ocr = tesseract_path()
     refused = None

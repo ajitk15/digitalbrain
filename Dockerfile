@@ -1,11 +1,14 @@
 # syntax=docker/dockerfile:1.7
 #
-# One image, one process. `scripts/serve.py` runs the WSGI listener and hosts
-# the document worker as a thread inside it, which is why there is no second
-# service here and why this must never be scaled past one replica: the stream
-# registry in platform_core/agent_runtime/streaming.py is process-local, so a
-# second process makes Stop silently fail to cancel a provider call the
-# application is still being billed for.
+# One image, one process per container. By default (DIGITAL_BRAIN_ROLE=all)
+# `scripts/serve.py` runs the WSGI listener and hosts the document worker as a
+# thread inside it. DIGITAL_BRAIN_ROLE=web and =worker run the same image as two
+# containers instead (docker-compose.scale.yaml). Either way the web listener
+# must never be scaled past one replica: the API rate limit is counted in
+# process memory, and without shared_streams the stream registry in
+# platform_core/agent_runtime/streaming.py is too, so a second process makes
+# Stop silently fail to cancel a provider call the application is still being
+# billed for.
 #
 # The Claude Code CLI is NOT installed here. It arrives inside the
 # claude-agent-sdk wheel (_bundled/claude) and agent_runtime/claude_runtime.py

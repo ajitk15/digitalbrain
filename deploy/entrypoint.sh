@@ -13,6 +13,20 @@ PORT="${DIGITAL_BRAIN_PORT:-8000}"
 # the note on --trusted-proxy in scripts/serve.py - the wildcard is sound only
 # while that stays true.
 HOST="${DIGITAL_BRAIN_HOST:-0.0.0.0}"
+# What this container is. "all" (the default) is the original single process:
+# the web listener with every worker lane inside it. "web" serves requests only
+# and "worker" runs `manage.py run_worker` and nothing else - the split that
+# docker-compose.scale.yaml sets up, so a deploy or a long provider call in one
+# does not stop the other. The worker never runs migrations: it waits for them.
+ROLE="${DIGITAL_BRAIN_ROLE:-all}"
+case "$ROLE" in
+    all|web|worker) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_ROLE must be all, web or worker." >&2; exit 1 ;;
+esac
+# A clamd daemon to scan through (host:port or an absolute socket path). Set,
+# no clamscan or freshclam runs in this container: the daemon keeps its own
+# signatures and processing.py still refuses ones more than a week old.
+CLAMD="${DIGITAL_BRAIN_CLAMD:-}"
 
 # ------------------------------------------------------------- configuration
 # An operator's own file wins if one is mounted. Otherwise it is rendered from
@@ -35,7 +49,7 @@ CONFIG="/app/.runtime/production.toml"
 mkdir -p /app/.runtime
 
 if [ -f "$MOUNTED" ]; then
-    cp "$MOUNTED" "$CONFIG"
+    cp "$MOUNTED" "$CONFIG.$$" && mv "$CONFIG.$$" "$CONFIG"
     echo "entrypoint: using the mounted configuration from $MOUNTED"
 else
     hosts=""
@@ -80,7 +94,16 @@ else
         # ClamAV, installed in the image. processing.py refuses to convert a
         # document without a scanner, so intake fails closed rather than
         # quietly storing something nobody checked.
-        echo 'scanner = "/usr/bin/clamscan"'
+        if [ -n "$CLAMD" ]; then
+            echo "clamd = \"$CLAMD\""
+        else
+            echo 'scanner = "/usr/bin/clamscan"'
+        fi
+        # More than one process serves this deployment once it is split, so a
+        # chat answer's Stop and "still writing?" must be visible to each.
+        if [ "$ROLE" != "all" ]; then
+            echo 'shared_streams = true'
+        fi
         echo "import_max_files = ${DIGITAL_BRAIN_IMPORT_MAX_FILES:-100}"
         echo ''
         echo '[database]'
@@ -91,7 +114,10 @@ else
         echo 'host = "postgres"'
         echo 'port = 5432'
         echo 'sslrootcert = "/var/lib/digitalbrain/pgcerts/ca.crt"'
-    } > "$CONFIG"
+    } > "$CONFIG.$$"
+    # Written aside and moved into place: a web and a worker container share
+    # this volume, and neither may read the other's half-written file.
+    mv "$CONFIG.$$" "$CONFIG"
     echo "entrypoint: rendered configuration for ${DIGITAL_BRAIN_HOSTS:-localhost}"
 fi
 export DIGITAL_BRAIN_CONFIG="$CONFIG"
@@ -134,7 +160,19 @@ if [ ! -w /run/secrets ]; then
     exit 1
 fi
 chmod 700 /run/secrets 2>/dev/null || true
-if [ ! -f /run/secrets/django_secret_key ]; then
+if [ "$ROLE" = "worker" ]; then
+    # Only the web container writes the key. Two containers each finding it
+    # absent and each writing one would leave them signing with different keys.
+    waited=0
+    while [ ! -f /run/secrets/django_secret_key ]; do
+        if [ "$waited" -ge 600 ]; then
+            echo "entrypoint: no signing key after 10 minutes; is the web container running?" >&2
+            exit 1
+        fi
+        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for the web container's signing key"
+        sleep 5; waited=$((waited + 5))
+    done
+elif [ ! -f /run/secrets/django_secret_key ]; then
     head -c 64 /dev/urandom | base64 | tr -d '\n=' > /run/secrets/django_secret_key
     chmod 600 /run/secrets/django_secret_key
     echo "entrypoint: generated a signing key"
@@ -147,7 +185,14 @@ fi
 # background. A failure here is logged and not fatal: an existing database
 # inside the window keeps working, and one outside it fails the scan closed,
 # which is the behaviour we want anyway.
-if [ "${DIGITAL_BRAIN_FRESHCLAM:-1}" = "1" ]; then
+#
+# Only where documents are scanned: not in a web container (the intake lane
+# runs in the worker), and not at all when a clamd daemon keeps its own.
+FRESHCLAM="${DIGITAL_BRAIN_FRESHCLAM:-1}"
+if [ "$ROLE" = "web" ] || [ -n "$CLAMD" ]; then
+    FRESHCLAM=0
+fi
+if [ "$FRESHCLAM" = "1" ]; then
     if [ ! -f /var/lib/clamav/main.cvd ] && [ ! -f /var/lib/clamav/main.cld ]; then
         echo "entrypoint: fetching ClamAV signatures for the first time; this takes a few minutes."
         freshclam --quiet --stdout || echo "entrypoint: freshclam failed; documents will fail closed." >&2
@@ -161,10 +206,23 @@ if [ "${DIGITAL_BRAIN_FRESHCLAM:-1}" = "1" ]; then
 fi
 
 # ------------------------------------------------------------------ database
-# Migrations run here rather than in a separate one-shot service because there
-# is exactly one app container by design, so there is no second writer to race.
-echo "entrypoint: applying migrations"
-python manage.py migrate --noinput
+# Migrations run in the one web (or all-in-one) container, so there is never a
+# second writer to race. A worker waits until they are applied rather than
+# starting lanes against a schema that is about to change under them.
+if [ "$ROLE" = "worker" ]; then
+    waited=0
+    until python manage.py migrate --check >/dev/null 2>&1; do
+        if [ "$waited" -ge 900 ]; then
+            echo "entrypoint: migrations still pending after 15 minutes." >&2
+            exit 1
+        fi
+        [ "$waited" -eq 0 ] && echo "entrypoint: waiting for the web container to apply migrations"
+        sleep 5; waited=$((waited + 5))
+    done
+else
+    echo "entrypoint: applying migrations"
+    python manage.py migrate --noinput
+fi
 
 # Django's own production audit, with warnings fatal. It reads the same
 # settings the server is about to use, so a misconfigured proxy or cookie flag
@@ -172,8 +230,20 @@ python manage.py migrate --noinput
 echo "entrypoint: checking deployment settings"
 python manage.py check --deploy --fail-level WARNING
 
+if [ "$ROLE" = "worker" ]; then
+    # Comma-separated lane names, or every lane. Each lane is held by one
+    # process at a time, so a second worker replica stands by rather than
+    # running anything twice.
+    exec python manage.py run_worker --lanes "${DIGITAL_BRAIN_LANES:-}"
+fi
+
+WORKER_FLAG=""
+if [ "$ROLE" = "web" ]; then
+    WORKER_FLAG="--no-worker"
+fi
 exec python scripts/serve.py \
     --host "$HOST" \
     --port "$PORT" \
     --instance "$INSTANCE" \
-    --trusted-proxy "${DIGITAL_BRAIN_TRUSTED_PROXY:-*}"
+    --trusted-proxy "${DIGITAL_BRAIN_TRUSTED_PROXY:-*}" \
+    $WORKER_FLAG

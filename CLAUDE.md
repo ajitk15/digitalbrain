@@ -796,6 +796,35 @@ The stream registry in `agent_runtime/streaming.py` is **process-local**. Correc
 single managed worker process; multiple processes would need a shared cancellation channel
 before Stop could be trusted.
 
+## Web and worker can run apart
+
+`scripts/serve.py` runs every worker lane inside the web process unless it is started with
+`--no-worker`; `manage.py run_worker [--lanes a,b]` runs them in a process of their own
+(`DIGITAL_BRAIN_ROLE=all|web|worker` in `deploy/entrypoint.sh`, and
+`docker-compose.scale.yaml` for the split). Chat answers are not a lane - each runs on a
+thread its stream request starts - so they stay in the web process either way.
+
+**Each lane is held by one process at a time** (`document_worker.LaneKeeper`): a PostgreSQL
+session advisory lock on a connection of its own, so `close_old_connections` between steps
+never drops it. A second holder stands by and takes over when the first one's connection
+goes. That is what makes the split safe while some steps (scheduled connector import,
+triage) still pick a row without claiming it. **SQLite has no advisory locks**: there every
+keeper holds, so never run `run_worker` beside a `serve.py` that runs its own lanes on the
+same local database. A session lock does not survive a transaction-mode pooler, so a worker
+reaches PostgreSQL directly.
+
+A stop (`SIGTERM`) is honoured **between steps, never inside one**: a conversion or a paid
+call that started is finished and recorded. Each holder writes `LaneHeartbeat`;
+`manage.py queue_status [--json] [--check]` reports each lane's waiting work, oldest age and
+heartbeat - counts and ages only, never a record - and the maintenance lane logs the same
+figures every five minutes as `queue_status` events.
+
+`clamd = "host:port"` (or an absolute socket path) scans through a running daemon instead
+of a `clamscan` per file, which reloaded the whole signature database for every document.
+Fail-closed rules are the same: anything the daemon does not answer `stream: OK` or
+`… FOUND` to is unscanned, and signatures more than a week old (from the `VERSION` date)
+are refused, as `--fail-if-cvd-older-than=7` refuses them for clamscan.
+
 ## Verified against a live CLI
 
 `agent_runtime/claude_runtime.py:TOOL_PREFIX` — **confirmed**. A live run reported

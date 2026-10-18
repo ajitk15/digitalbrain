@@ -1,0 +1,79 @@
+# Digital Brain split into a web container, a worker container and clamd.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.scale.yaml up -d
+#
+# An overlay on docker-compose.yaml, which on its own still runs everything in
+# one container exactly as before. With this file:
+#
+# * "app" serves requests only (DIGITAL_BRAIN_ROLE=web). It applies migrations
+#   and writes the signing key, as it always has.
+# * "worker" runs every background lane (`manage.py run_worker`). A deploy of
+#   the web container no longer stops an import or a Code Factory phase half
+#   way, and a long provider call no longer shares a process with sign-in. It
+#   waits for the web container's migrations and signing key before starting.
+# * "clamd" scans documents. clamscan loaded the whole signature database for
+#   every file; the daemon loads it once. processing.py still refuses
+#   signatures more than a week old, by asking the daemon for their date.
+#
+# Each lane is held by one process at a time (a PostgreSQL advisory lock, see
+# document_worker.LaneKeeper), so a second worker replica stands by and takes
+# over when the first goes, rather than running anything twice.
+#
+# The web container is still ONE replica. Stop now reaches across processes
+# (shared_streams is rendered on), but the API rate limit is counted in
+# process memory and would multiply with replicas.
+
+services:
+  app:
+    environment:
+      DIGITAL_BRAIN_ROLE: "web"
+      DIGITAL_BRAIN_CLAMD: "clamd:3310"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clamd:
+        condition: service_started
+    environment:
+      DIGITAL_BRAIN_ROLE: "worker"
+      DIGITAL_BRAIN_CLAMD: "clamd:3310"
+      # Settings are read in full by the worker too, so it needs the same
+      # non-secret values the web container renders its configuration from.
+      DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
+      DIGITAL_BRAIN_INSTANCE: "coolify-1-worker"
+    volumes:
+      - platform-secrets:/run/secrets
+      - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
+      - managed-credentials:/var/lib/digitalbrain/credentials
+      # The same originals the web container stores uploads into: the intake
+      # lane reads them from here. One host for both until originals move to
+      # object storage.
+      - app-runtime:/app/.runtime
+    # A stop is honoured between steps. run_worker lets one in progress finish
+    # for up to 50 s before it exits; this has to be longer than that.
+    stop_grace_period: 70s
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "queue_status", "--check"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+
+  clamd:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    # Reached over the compose network only, like the web listener.
+    expose:
+      - "3310"
+    volumes:
+      # Its own volume: the image runs as its own user, and the clamav-db
+      # volume the all-in-one container uses is owned by uid 10001.
+      - clamd-db:/var/lib/clamav
+
+volumes:
+  clamd-db:

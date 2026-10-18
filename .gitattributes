@@ -8,6 +8,7 @@
 Dockerfile      text eol=lf
 *.toml          text eol=lf
 docker-compose.yaml text eol=lf
+docker-compose.scale.yaml text eol=lf
 
 # Documents are bytes. A small PDF holds no NUL byte, so git guessed "text" and a
 # Windows checkout rewrote its line endings: the file then failed to convert, and
