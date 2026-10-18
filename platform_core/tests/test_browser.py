@@ -1300,6 +1300,19 @@ class TicketsTests(BrowserTestCase):
         self.assertIn("KAN-5", rows.first.inner_text())
         self.assertNoScriptErrors()
 
+    def test_a_heading_sorts_the_table_and_a_second_click_turns_it_round(self):
+        self.open("tickets", self.app.pk)
+        self.page.get_by_role("link", name="Key", exact=True).click()
+        self.page.locator("th[aria-sort='ascending'] .sort-link").wait_for()
+        keys = self.page.locator(".tickets-table td.ticket-key strong").all_inner_texts()
+        self.assertEqual(keys, ["KAN-4", "KAN-5"])
+        self.page.get_by_role("link", name="Key", exact=True).click()
+        self.page.locator("th[aria-sort='descending'] .sort-link").wait_for()
+        keys = self.page.locator(".tickets-table td.ticket-key strong").all_inner_texts()
+        self.assertEqual(keys, ["KAN-5", "KAN-4"])
+        self.assertEqual(self.page.evaluate(CONTRAST), [])
+        self.assertNoScriptErrors()
+
 
 class OnboardingTests(BrowserTestCase):
     def test_the_connector_question_opens_as_a_dialog_and_saves(self):

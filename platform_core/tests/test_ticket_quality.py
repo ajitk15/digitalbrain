@@ -110,7 +110,7 @@ class SourcesTests(TestCase):
         self.assertContains(response, "Imported from Jira")
         self.assertNotContains(response, "Imported from Jira ·")
         self.assertNotContains(response, "Imported record")
-        self.assertContains(response, "<th>Readiness</th>", html=False)
+        self.assertContains(response, ">Readiness<svg", html=False)
         self.assertContains(response, '<span class="check-verdict">ready</span>'
                                       '<span class="check-score">100/100</span>', html=False)
         self.assertContains(
@@ -137,7 +137,7 @@ class SourcesTests(TestCase):
         response = self.sources()
         self.assertContains(response, "Imported from GitHub")
         # No scored ticket on the page, so no column of dashes either.
-        self.assertNotContains(response, "<th>Readiness<", html=False)
+        self.assertNotContains(response, ">Readiness<svg", html=False)
 
     def test_a_record_no_connector_claims_stays_an_imported_record(self):
         """A removed connector, or another application's, names nothing."""

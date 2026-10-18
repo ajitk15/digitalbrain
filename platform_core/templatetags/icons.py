@@ -65,6 +65,9 @@ ICONS = {
     "arrow-right": '<path d="M5 12h13"/><path d="m12 5 7 7-7 7"/>',
     "arrow-left": '<path d="M19 12H6"/><path d="m12 19-7-7 7-7"/>',
     "arrow-up": '<path d="M12 19V6"/><path d="m5 12 7-7 7 7"/>',
+    "arrow-down": '<path d="M12 5v13"/><path d="m19 12-7 7-7-7"/>',
+    # A column that can be sorted but is not: both ways, drawn faint.
+    "arrows-up-down": '<path d="m21 16-4 4-4-4"/><path d="M17 20V4"/><path d="m3 8 4-4 4 4"/><path d="M7 4v16"/>',
     # Status. "check" and "cross" are the bare glyphs, with no circle of their
     # own, for painting white inside a filled badge; "success" and "error" are
     # the standalone stroked versions that sit beside a label.

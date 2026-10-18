@@ -4054,10 +4054,20 @@
   .tickets-table td.ticket-key { width: 1%; min-width: 0; white-space: nowrap; }
   .ticket-external { color: var(--c-ink-3); }
   /* Where a ticket came from, in the system's own colour and mark. */
-  .ticket-source { display: flex; width: fit-content; align-items: center; gap: 5px; margin-top: var(--s-1); padding: 2px 8px; border: 1px solid; border-radius: 999px; font-size: var(--t-11); font-weight: 600; line-height: 1.4; white-space: nowrap; }
+  /* Source, then Masked / PHI / Restricted, on one line under the title:
+     each on its own line spent a row on a few characters. */
+  .ticket-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-1); margin-top: var(--s-1); }
+  .ticket-tags .data-tags { display: contents; }
+  .ticket-source { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border: 1px solid; border-radius: 999px; font-size: var(--t-11); font-weight: 600; line-height: 1.4; white-space: nowrap; }
   .ticket-source-jira { background: #e9f2ff; border-color: #b3d1ff; color: #0b4fb3; }
   .ticket-source-servicenow { background: #e6f4ee; border-color: #a9d8c2; color: #18573f; }
   .ticket-source-github { background: var(--c-subtle); border-color: var(--c-line-strong); color: var(--c-ink); }
+  /* Sortable headings keep the header's own look; the arrow says which way. */
+  .sort-link { display: inline-flex; align-items: center; gap: 4px; color: inherit; white-space: nowrap; }
+  .sort-link:hover { text-decoration: none; color: var(--c-brand-strong); }
+  .sort-link svg { color: var(--c-ink-3); opacity: .55; }
+  .sort-link.is-sorted { color: var(--c-brand-strong); }
+  .sort-link.is-sorted svg { color: currentColor; opacity: 1; }
   .ticket-actions { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); }
   .ticket-action { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--c-brand-border); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-brand-strong); font-size: var(--t-12); font-weight: 600; white-space: nowrap; }
   .ticket-action:hover { text-decoration: none; background: var(--c-brand-tint); }

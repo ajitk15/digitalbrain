@@ -1,14 +1,21 @@
 """Knowledge → Tickets: imported work items listed as tickets, apart from documents."""
 
 import hashlib
+import re
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from platform_core.connector_kinds import read_header
 from platform_core.graphs import publish_revision, rebuild
 from platform_core.models import ApplicationFeature, Connector, GraphRevision, KnowledgeEntry
-from platform_core.ticket_library import ticket_connector, ticket_entries
+from platform_core.ticket_library import (
+    key_order,
+    priority_rank,
+    ticket_connector,
+    ticket_entries,
+    when,
+)
 
 from . import test_documents
 from .test_ticket_quality import READY, SETTINGS
@@ -140,7 +147,7 @@ class TicketsTests(TestCase):
         self.assertContains(response, '<h2 class="view-title">Tickets</h2>', html=False)
         self.assertContains(response, "<strong>KAN-4</strong>", html=False)
         self.assertContains(response, '<span class="pill">To Do</span>', html=False)
-        self.assertContains(response, "<td>High</td>", html=False)
+        self.assertContains(response, "<td class=\"nowrap\">High</td>", html=False)
         self.assertContains(response, "<td>Bug</td>", html=False)
         self.assertContains(response, "Oct 03, 2026")
         # The ticket in its own system opens beside this list, not over it.
@@ -169,7 +176,7 @@ class TicketsTests(TestCase):
         response = self.tickets()
         self.assertContains(response, "<strong>INC0010001</strong>", html=False)
         self.assertContains(response, '<span class="pill">New</span>', html=False)
-        self.assertNotContains(response, "<th>Readiness</th>", html=False)
+        self.assertNotContains(response, ">Readiness<svg", html=False)
         self.assertNotContains(response, "Jira readiness")
 
     def test_filters_are_plain_get(self):
@@ -228,6 +235,8 @@ class TicketsTests(TestCase):
         self.entry(f"{JIRA}/browse/KAN-4", sensitivity="restricted")
         response = self.tickets()
         self.assertContains(response, "Restricted")
+        # On the source badge's line, not a line of its own.
+        self.assertContains(response, '</svg>Jira</span><span class="data-tags">', html=False)
         self.assertNotContains(response, "Plan a change")
 
     def test_a_viewer_is_not_offered_a_plan(self):
@@ -282,3 +291,73 @@ class TicketsTests(TestCase):
             f'<a href="{reverse("tickets", args=[self.app.pk])}" aria-current="page">',
             html=False,
         )
+
+
+@override_settings(**SETTINGS)
+class SortTests(TestCase):
+    """The column headings sort the table, as links that keep the filters."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        TicketsTests.connector(self)
+        for key, priority, updated in (
+            ("KAN-9", "Low", "2026-10-05T10:00:00.000+0000"),
+            ("KAN-10", "Highest", "2026-10-01T10:00:00.000+0000"),
+            ("KAN-2", "", "2026-10-09T10:00:00.000+0000"),
+            ("KAN-30", "Medium", "2026-10-07T10:00:00.000+0000"),
+        ):
+            content = (f"Key: {key}\nType: Bug\nStatus: To Do\n"
+                       + (f"Priority: {priority}\n" if priority else "")
+                       + f"Updated: {updated}\n\nSomething is wrong with {key}.")
+            TicketsTests.entry(self, f"{JIRA}/browse/{key}", content, title=f"{key} - Ticket")
+
+    def order(self, query=""):
+        body = self.client.get(reverse("tickets", args=[self.app.pk]) + query).content.decode()
+        return re.findall(r"<strong>(KAN-\d+)</strong>", body), body
+
+    def test_newest_update_first_by_default(self):
+        keys, body = self.order()
+        self.assertEqual(keys, ["KAN-2", "KAN-30", "KAN-9", "KAN-10"])
+        self.assertIn('<th aria-sort="descending"><a class="sort-link is-sorted" '
+                      'href="?sort=updated&amp;dir=asc"', body)
+
+    def test_a_key_sorts_by_its_number(self):
+        keys, body = self.order("?sort=key&dir=asc")
+        self.assertEqual(keys, ["KAN-2", "KAN-9", "KAN-10", "KAN-30"])
+        self.assertIn('aria-sort="ascending"', body)
+        keys, _ = self.order("?sort=key&dir=desc")
+        self.assertEqual(keys, ["KAN-30", "KAN-10", "KAN-9", "KAN-2"])
+
+    def test_priority_sorts_by_urgency_and_a_blank_goes_last(self):
+        keys, _ = self.order("?sort=priority&dir=desc")
+        self.assertEqual(keys, ["KAN-10", "KAN-30", "KAN-9", "KAN-2"])
+        keys, _ = self.order("?sort=priority&dir=asc")
+        self.assertEqual(keys, ["KAN-9", "KAN-30", "KAN-10", "KAN-2"])
+
+    def test_the_heading_links_keep_the_filters_and_turn_the_sorted_column_round(self):
+        _, body = self.order("?status=To+Do&sort=key&dir=asc")
+        self.assertIn('href="?status=To+Do&amp;sort=key&amp;dir=desc"', body)
+        self.assertIn('href="?status=To+Do&amp;sort=priority&amp;dir=desc"', body)
+        # Filtering again keeps the order.
+        self.assertIn('<input type="hidden" name="sort" value="key">', body)
+        self.assertIn('<input type="hidden" name="dir" value="asc">', body)
+
+    def test_an_unknown_sort_is_the_default(self):
+        keys, _ = self.order("?sort=content&dir=sideways")
+        self.assertEqual(keys, ["KAN-2", "KAN-30", "KAN-9", "KAN-10"])
+
+
+class SortOrderTests(SimpleTestCase):
+    def test_priorities_from_jira_and_servicenow_share_one_scale(self):
+        self.assertLess(priority_rank("1 - Critical"), priority_rank("2 - High"))
+        self.assertLess(priority_rank("Highest"), priority_rank("High"))
+        self.assertEqual(priority_rank("3 - Moderate"), priority_rank("Medium"))
+        self.assertIsNone(priority_rank("Whenever"))
+
+    def test_a_key_orders_by_project_then_number(self):
+        self.assertLess(key_order("KAN-9"), key_order("KAN-10"))
+        self.assertLess(key_order("INC0010042"), key_order("INC0010043"))
+
+    def test_a_date_with_no_offset_can_be_compared_with_one_that_has(self):
+        naive, aware = when("2026-10-01 12:00:00"), when("2026-10-01T13:00:00Z")
+        self.assertLess(naive, aware)
