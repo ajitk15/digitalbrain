@@ -11,12 +11,16 @@
 # the "app" service in Coolify's UI - it writes the proxy labels itself, and
 # hand-written ones drift the moment Coolify updates.
 #
-# THE APP SERVICE MUST NEVER BE SCALED. One replica is a correctness
-# constraint, not a capacity choice: the stream registry in
-# platform_core/agent_runtime/streaming.py is process-local, so with a second
-# process a user's Stop silently fails to cancel a provider call the
-# application is still being billed for. The per-token API rate limit is
-# process-local for the same reason and would multiply by the replica count.
+# Redis carries what has to cross processes quickly (platform_core/broker.py):
+# each chat answer's events, so a dropped connection resumes where it left off
+# and Stop reaches whichever process is writing it, and the per-token API rate
+# limit. It holds copies in transit, never a record, so it has no volume. TLS
+# from the same CA as Postgres, and a generated password, as for the database.
+#
+# THE APP SERVICE IS STILL ONE REPLICA. Streams and the rate limit no longer
+# hold it there - both go through Redis - but each web container applies
+# migrations as it starts, and two applying them at once is not safe. That
+# moves to a one-shot job before the web container can be scaled.
 #
 # To run the background lanes in a container of their own, with clamd for
 # scanning, add docker-compose.scale.yaml on top of this file. The web
@@ -40,6 +44,7 @@ services:
     volumes:
       - platform-secrets:/secrets
       - database-secret:/dbsecret
+      - redis-config:/redisconf
     command:
       - /bin/sh
       - -euc
@@ -54,12 +59,37 @@ services:
           head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/database_password
           echo "secrets: generated database password"
         fi
+        if [ ! -f /secrets/redis_password ]; then
+          head -c 32 /dev/urandom | base64 | tr -d '\n=+/' > /secrets/redis_password
+          echo "secrets: generated redis password"
+        fi
         cp /secrets/database_password /dbsecret/database_password
+        # Redis reads its password from its own configuration file, never from
+        # its command line, where any process in the container could see it.
+        # Written twice for the same reason as the database password: Redis
+        # runs as uid 999 and the application as 10001.
+        {
+          echo "port 0"
+          echo "tls-port 6379"
+          echo "tls-cert-file /certs/redis.crt"
+          echo "tls-key-file /certs/redis.key"
+          echo "tls-ca-cert-file /certs/ca.crt"
+          echo "tls-auth-clients no"
+          echo "requirepass $(cat /secrets/redis_password)"
+          echo 'save ""'
+          echo "appendonly no"
+          echo "maxmemory 256mb"
+          echo "maxmemory-policy noeviction"
+        } > /redisconf/redis.conf
+        cp /secrets/redis_password /redisconf/password
         chown -R 10001:10001 /secrets
         chmod 700 /secrets
-        chmod 600 /secrets/django_secret_key /secrets/database_password
+        chmod 600 /secrets/django_secret_key /secrets/database_password /secrets/redis_password
         chown -R 70:70 /dbsecret
         chmod 600 /dbsecret/database_password
+        chown -R 999 /redisconf
+        chmod 700 /redisconf
+        chmod 600 /redisconf/redis.conf /redisconf/password
         echo "secrets: ready"
 
   # Postgres is configured with sslmode=verify-full in digitalbrain/settings.py,
@@ -75,11 +105,11 @@ services:
       - /bin/sh
       - -euc
       - |
-        if [ -f /certs/server.key ]; then
-          echo "certs: already present"; exit 0
-        fi
         apk add --no-cache openssl >/dev/null
         cd /certs
+        if [ -f /certs/server.key ]; then
+          echo "certs: postgres already present"
+        else
         openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
           -keyout ca.key -out ca.crt -subj "/CN=digitalbrain-ca"
         openssl req -newkey rsa:4096 -sha256 -nodes \
@@ -104,6 +134,23 @@ services:
         chmod 600 server.key
         chmod 644 server.crt ca.crt pg_hba.conf
         echo "certs: generated"
+        fi
+        # Redis's certificate, from the same CA, named for the host the
+        # application connects to. Issued separately so a deployment whose
+        # Postgres certificate predates Redis gets one too.
+        if [ -f /certs/redis.key ]; then
+          echo "certs: redis already present"; exit 0
+        fi
+        openssl req -newkey rsa:4096 -sha256 -nodes \
+          -keyout redis.key -out redis.csr -subj "/CN=redis"
+        printf "subjectAltName=DNS:redis\n" > redis-san.cnf
+        openssl x509 -req -in redis.csr -CA ca.crt -CAkey ca.key \
+          -CAcreateserial -out redis.crt -days 3650 -sha256 -extfile redis-san.cnf
+        rm -f redis.csr redis-san.cnf ca.srl
+        chown 999 redis.key redis.crt
+        chmod 600 redis.key
+        chmod 644 redis.crt
+        echo "certs: generated redis"
 
   postgres:
     image: postgres:16-alpine
@@ -139,6 +186,30 @@ services:
       retries: 12
       start_period: 30s
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    depends_on:
+      postgres-certs:
+        condition: service_completed_successfully
+      secrets-init:
+        condition: service_completed_successfully
+    user: "999"
+    command: ["redis-server", "/run/redisconf/redis.conf"]
+    # Reached over the compose network only, like Postgres and the web listener.
+    expose:
+      - "6379"
+    volumes:
+      - redis-config:/run/redisconf:ro
+      - postgres-certs:/certs:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(cat /run/redisconf/password)" redis-cli --tls --cacert /certs/ca.crt -h redis ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
   app:
     build:
       context: .
@@ -146,6 +217,8 @@ services:
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       secrets-init:
         condition: service_completed_successfully
@@ -171,6 +244,9 @@ services:
       # peer address as a literal string - so there is nothing stable to name.
       # Sound only because no port is published here. See scripts/serve.py.
       DIGITAL_BRAIN_TRUSTED_PROXY: "*"
+      # Rendered as a [redis] table, with TLS against the shared CA. Remove it
+      # to run without Redis: answers then stream from process memory again.
+      DIGITAL_BRAIN_REDIS: "redis:6379"
       # The one non-secret .env value the platform accepts. Set it for the
       # first sign-in, then remove it.
       SITE_ADMIN_USER_ID: ${SITE_ADMIN_USER_ID:-}
@@ -206,6 +282,7 @@ volumes:
   platform-secrets:
   managed-credentials:
   database-secret:
+  redis-config:
   postgres-data:
   postgres-certs:
   app-runtime:

@@ -22,6 +22,7 @@ dependencies = [
   "numpy>=2.0,<3",
   "rapidfuzz>=3.0,<4",
   "PyJWT[crypto]>=2.10,<3",
+  "redis>=8.1,<9",
 ]
 
 [dependency-groups]
@@ -29,6 +30,7 @@ dev = [
     "ruff>=0.12,<1",
     "coverage>=7.9,<8",
     "playwright>=1.49,<2",
+    "fakeredis>=2.40,<3",
 ]
 
 [tool.ruff]

@@ -45,6 +45,14 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U brain"
           --health-interval 5s --health-timeout 5s --health-retries 12
+      # For the Redis stream tests' second run, against a real server: blocking
+      # reads and expiry are where fakeredis is likeliest to be kind.
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 12
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.1.0
@@ -67,4 +75,6 @@ jobs:
       - run: uv run python manage.py test
         env:
           DIGITAL_BRAIN_REQUIRE_BROWSER: "1"
+          DIGITAL_BRAIN_TEST_REDIS: "127.0.0.1:6379"
+          DIGITAL_BRAIN_REQUIRE_REDIS: "1"
       - run: uv run python manage.py scorecard --check

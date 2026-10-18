@@ -73,6 +73,10 @@ RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "sources")
 #: Where graph answers find their candidates: the published version's JSON,
 #: prepared in memory, or its rows (`graph_store.RowsGraph`).
 GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "memory")
+#: Redis, when configured: chat answers stream through it so any process can
+#: replay and follow them, and Stop and the API rate limit reach every process
+#: (`platform_core/broker.py`). Its password is the mounted `redis_password`.
+REDIS = CONFIG.get("redis", {})
 #: Limits on paid model calls in flight (`platform_core/gateway.py`).
 AI_GATEWAY = {**AI_GATEWAY_DEFAULTS, **CONFIG.get("ai_gateway", {})}
 # How many files one import may take from a directory - a GitHub /tree/ link or

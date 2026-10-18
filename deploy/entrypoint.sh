@@ -27,6 +27,14 @@ esac
 # no clamscan or freshclam runs in this container: the daemon keeps its own
 # signatures and processing.py still refuses ones more than a week old.
 CLAMD="${DIGITAL_BRAIN_CLAMD:-}"
+# Redis as host:port. Set, chat answers stream through it and resume after a
+# dropped connection, and Stop and the API rate limit reach every process.
+REDIS="${DIGITAL_BRAIN_REDIS:-}"
+case "$REDIS" in
+    ""|*[!A-Za-z0-9.:-]*) [ -z "$REDIS" ] || { echo "entrypoint: DIGITAL_BRAIN_REDIS must be host:port." >&2; exit 1; } ;;
+    *:*) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_REDIS must be host:port." >&2; exit 1 ;;
+esac
 
 # ------------------------------------------------------------- configuration
 # An operator's own file wins if one is mounted. Otherwise it is rendered from
@@ -101,7 +109,9 @@ else
         fi
         # More than one process serves this deployment once it is split, so a
         # chat answer's Stop and "still writing?" must be visible to each.
-        if [ "$ROLE" != "all" ]; then
+        # Redis does that and more (answers resume after a dropped connection),
+        # so the database lease is only for a split deployment without it.
+        if [ "$ROLE" != "all" ] && [ -z "$REDIS" ]; then
             echo 'shared_streams = true'
         fi
         echo "import_max_files = ${DIGITAL_BRAIN_IMPORT_MAX_FILES:-100}"
@@ -114,6 +124,16 @@ else
         echo 'host = "postgres"'
         echo 'port = 5432'
         echo 'sslrootcert = "/var/lib/digitalbrain/pgcerts/ca.crt"'
+        if [ -n "$REDIS" ]; then
+            # The password is the mounted redis_password file, never here. The
+            # certificate is issued by the same CA as Postgres's, for "redis".
+            echo ''
+            echo '[redis]'
+            echo "host = \"${REDIS%%:*}\""
+            echo "port = ${REDIS##*:}"
+            echo 'tls = true'
+            echo 'ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"'
+        fi
     } > "$CONFIG.$$"
     # Written aside and moved into place: a web and a worker container share
     # this volume, and neither may read the other's half-written file.

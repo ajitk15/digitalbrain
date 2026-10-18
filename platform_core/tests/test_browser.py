@@ -1058,6 +1058,64 @@ class ChatTests(BrowserTestCase):
         self.assertEqual(self.page.evaluate("window.__streams.length"), 1)
         self.assertNoScriptErrors()
 
+    def test_with_redis_a_dropped_stream_reconnects_and_the_answer_carries_on(self):
+        """With Redis the answer outlives its connection. The server ends the
+        first response after two events, as a proxy timing out would; the
+        browser's own EventSource reconnects with the last event it saw, and the
+        answer carries on from there - no word twice, and no second paid call."""
+        import fakeredis
+
+        from platform_core import broker
+        from platform_core.agent_runtime import streaming
+
+        redis_on = override_settings(REDIS={"host": "redis"})
+        redis_on.enable()
+        self.addCleanup(redis_on.disable)
+        broker.use(fakeredis.FakeRedis(decode_responses=True))
+        self.addCleanup(broker.use, None)
+        config = SimpleNamespace(provider="openai", model="gpt-5.6-luna")
+        started = []
+
+        def answer(user, app, config, token, question, seed, history, session):
+            started.append(question)
+            for piece in ("one ", "two ", "three ", "four"):
+                session.emit("delta", {"t": piece})
+                time.sleep(0.4)
+            return "one two three four", []
+
+        real_follow, cut = streaming.follow, []
+
+        def follow(client, message_id, cursor):
+            frames = real_follow(client, message_id, cursor)
+            if cut:
+                yield from frames
+                return
+            cut.append(cursor)
+            for _ in range(2):
+                yield next(frames)
+            frames.close()
+
+        for item in (
+            patch("platform_core.ai.chat_configuration", return_value=(self.app, config, "k")),
+            patch("platform_core.ai.stream_chat_answer", side_effect=answer),
+            patch("platform_core.ai.generate_title", return_value=None),
+            patch.object(streaming, "follow", side_effect=follow),
+        ):
+            item.start()
+            self.addCleanup(item.stop)
+        self.open("chat", self.app.pk, query="?new=1")
+        self.mark_page()
+        self.ask("Count to four?")
+        self.page.locator('.chat-assistant[data-status="complete"]').last.wait_for(timeout=30000)
+        self.assertSamePage()
+        self.assertEqual(len(cut), 1, "the first response was never cut")
+        self.assertEqual(len(started), 1, "the reconnect asked the model again")
+        answer_row = ChatMessage.objects.get(role="assistant")
+        self.assertEqual((answer_row.status, answer_row.body), ("complete", "one two three four"))
+        self.assertIn("one two three four", self.page.locator(".chat-assistant").last.inner_text())
+        self.assertTrue(self.page.locator("#chat-status").is_hidden())
+        self.assertNoScriptErrors()
+
 
 class LiveProgressTests(BrowserTestCase):
     """A run page follows the run by itself, and says so when it cannot."""

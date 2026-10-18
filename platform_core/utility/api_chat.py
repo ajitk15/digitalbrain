@@ -19,11 +19,10 @@ nothing about spend beyond asking a question.
 """
 
 import json
-import threading
 import uuid
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import JsonResponse, StreamingHttpResponse
+from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -206,7 +205,7 @@ def chat_stream(request, reference, message_id):
     generator would arrive after the 200 headers and truncate the body rather
     than returning 403. Same reason the browser's stream view does it here.
     """
-    from ..workbench import answer_worker, conversation_context
+    from ..workbench import conversation_context, event_stream, stream_answer
 
     try:
         user, _, app = authorize_chat(request, reference)
@@ -214,13 +213,13 @@ def chat_stream(request, reference, message_id):
         return error(failure)
     missing = ApiError("No answer is streaming here.", status=404, code="not_found")
     message = ChatMessage.objects.filter(
-        pk=message_id,
-        application=app,
-        user=user,
-        role="assistant",
-        status="streaming",
+        pk=message_id, application=app, user=user, role="assistant"
     ).first()
-    if message is None:
+    # As the browser's stream: a finished answer is replayed while Redis still
+    # holds its events, so a client reconnecting late gets what it missed.
+    if message is None or (
+        message.status != "streaming" and not streaming.replayable(message.pk)
+    ):
         return error(missing)
     conversation = message.conversation
     history = conversation_context(conversation, app, user)
@@ -232,28 +231,9 @@ def chat_stream(request, reference, message_id):
     if not question:
         return error(missing)
     try:
-        session = streaming.open_session(message.pk)
+        frames = stream_answer(
+            request, user, app, message, question, history, name="api-chat-answer"
+        )
     except streaming.StreamCapacityError as full:
         return error(ApiError(str(full), status=503, code="busy"))
-    threading.Thread(
-        target=answer_worker,
-        args=(
-            user.pk,
-            app.pk,
-            message.pk,
-            question,
-            history,
-            session,
-            conversation.mode,
-            conversation.graph_version,
-        ),
-        name=f"api-chat-answer-{message.pk}",
-        daemon=True,
-    ).start()
-    response = StreamingHttpResponse(
-        streaming.stream_frames(session), content_type="text/event-stream"
-    )
-    # No Content-Length, or waitress buffers the whole body instead of chunking.
-    response["Cache-Control"] = "no-cache, no-transform"
-    response["X-Accel-Buffering"] = "no"
-    return response
+    return event_stream(frames)

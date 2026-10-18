@@ -48,10 +48,21 @@ allow_self_approval = true
 # applications belong to different teams.
 # connector_secret_directory = "/run/connector-secrets"
 
-# Only when more than one server process serves this instance. Each streamed
-# chat answer then holds a database lease, so Stop and "is this answer still
-# being written?" reach every process. One process (the default) needs nothing.
+# Only when more than one server process serves this instance and there is no
+# Redis. Each streamed chat answer then holds a database lease, so Stop and "is
+# this answer still being written?" reach every process. One process (the
+# default) needs nothing. Not with [redis] below, which does this and more.
 # shared_streams = true
+
+# Optional. Chat answers stream through Redis: a dropped connection resumes
+# where it left off, on any web process, and Stop and the API rate limit reach
+# every process. The password is the mounted file redis_password; production
+# requires verified TLS. Redis holds copies in transit, never a record.
+# [redis]
+# host = "redis"
+# port = 6379
+# tls = true
+# ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"
 
 [database]
 name = "digital_brain"

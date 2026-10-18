@@ -19,9 +19,9 @@
 # document_worker.LaneKeeper), so a second worker replica stands by and takes
 # over when the first goes, rather than running anything twice.
 #
-# The web container is still ONE replica. Stop now reaches across processes
-# (shared_streams is rendered on), but the API rate limit is counted in
-# process memory and would multiply with replicas.
+# The web container is still ONE replica, for the reason docker-compose.yaml
+# gives: it applies migrations as it starts. Streams, Stop and the API rate
+# limit already reach every process through Redis.
 
 services:
   app:
@@ -37,11 +37,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       clamd:
         condition: service_started
     environment:
       DIGITAL_BRAIN_ROLE: "worker"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
+      DIGITAL_BRAIN_REDIS: "redis:6379"
       # Settings are read in full by the worker too, so it needs the same
       # non-secret values the web container renders its configuration from.
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"

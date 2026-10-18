@@ -1,5 +1,10 @@
 """Server-sent event plumbing for streamed chat answers.
 
+Three modes, chosen by the deployment: process-local (the default), shared
+through a database lease (`shared_streams = true`), and through Redis (a
+`[redis]` table), described at "Redis mode" below - the only one in which an
+answer outlives the connection that started it.
+
 PROCESS-LOCAL BY DEFAULT. The session registry is module state, so a stop request
 only reaches a stream started by the same process. `scripts/serve.py` runs one
 waitress process, which is what makes that correct.
@@ -25,6 +30,7 @@ import json
 import logging
 import os
 import queue
+import re
 import socket
 import threading
 import time
@@ -147,12 +153,15 @@ def request_stop(message_id):
     """Signal a running stream to stop. True when a live stream was signalled.
 
     Shared, a stream in another process is signalled through its lease, and
-    that process's keeper sees it within `LEASE_POLL_SECONDS`.
+    that process's keeper sees it within `LEASE_POLL_SECONDS`. With Redis it is
+    pushed onto a list that process is blocked on.
     """
     session = get_session(message_id)
     if session is not None:
         session.cancel.set()
         return True
+    if resumable():
+        return redis_stop(message_id)
     if not shared():
         return False
     from ..models import StreamLease
@@ -168,6 +177,10 @@ def is_live(message_id):
     """Whether an answer is being streamed now: by this process, or, shared, any."""
     if get_session(message_id) is not None:
         return True
+    if resumable():
+        from .. import broker
+
+        return bool(broker.client().exists(owner_key(message_id)))
     if not shared():
         return False
     from ..models import StreamLease
@@ -288,3 +301,308 @@ def stream_frames(session):
         # A client that walked away must not leave the worker producing forever.
         session.cancel.set()
         close_session(session.message_id)
+
+
+# ── Redis mode ───────────────────────────────────────────────────────────────
+#
+# An answer's events are appended to a Redis stream as the worker produces
+# them, and every reader - the request that started the answer, a browser that
+# reconnected, a second tab, on any web process - reads that stream from the
+# start or from the `Last-Event-ID` it last saw. So:
+#
+# * **A dropped connection resumes.** The browser's own EventSource reconnect
+#   carries `Last-Event-ID`, and the reader picks up after it. A reader leaving
+#   no longer stops the answer; Stop does, and `MAX_STREAM_SECONDS` still does.
+# * **Nothing is paid for twice.** The process writing an answer holds its
+#   owner key (renewed every `LEASE_POLL_SECONDS`, gone `LEASE_STALE_SECONDS`
+#   after it stops). A reader that finds an owner follows; one that finds
+#   events but no owner has found an answer whose process died, and closes it
+#   out as interrupted - once, under the same key - rather than asking the
+#   model again. Only an answer with no events at all is started.
+# * **Rules unchanged.** The worker still owns every database write for its
+#   message; readers touch Redis only. Events expire `SESSION_TTL_SECONDS`
+#   after an answer ends: the row is the record, the stream a copy in transit.
+
+#: Events one answer may write before it is stopped, bounding what Redis holds.
+MAX_STREAM_EVENTS = 20000
+#: What a reader says when the process writing an answer went away.
+INTERRUPTED = "The server stopped while this answer was being written. Press Regenerate."
+#: A reader holds a waitress thread for its whole life, like a local stream.
+_readers = threading.BoundedSemaphore(MAX_ACTIVE_STREAMS)
+LAST_EVENT = re.compile(r"\d{1,20}-\d{1,20}")
+
+
+def resumable():
+    """Whether answers stream through Redis, and so survive a dropped connection."""
+    from .. import broker
+
+    return broker.enabled()
+
+
+def replayable(message_id):
+    """Whether Redis still holds this answer's events, finished or not."""
+    if not resumable():
+        return False
+    from .. import broker
+
+    return bool(broker.client().exists(events_key(message_id)))
+
+
+def events_key(message_id):
+    from .. import broker
+
+    return broker.key("answer", message_id, "events")
+
+
+def owner_key(message_id):
+    from .. import broker
+
+    return broker.key("answer", message_id, "owner")
+
+
+def stop_key(message_id):
+    from .. import broker
+
+    return broker.key("answer", message_id, "stop")
+
+
+class RedisSession:
+    """The producing side of one answer: what `answer_worker` writes to."""
+
+    def __init__(self, message_id, client):
+        self.message_id = str(message_id)
+        self.client = client
+        self.cancel = threading.Event()
+        self.ended = threading.Event()
+        self.started_at = time.monotonic()
+        self.written = 0
+
+    def append(self, event, data=None):
+        fields = {"e": event}
+        if data is not None:
+            fields["d"] = json.dumps(data, separators=(",", ":"))
+        self.client.xadd(events_key(self.message_id), fields)
+
+    def emit(self, event, data):
+        if self.cancel.is_set() and event == "delta":
+            return
+        self.written += 1
+        if self.written > MAX_STREAM_EVENTS:
+            self.cancel.set()
+            return
+        try:
+            self.append(event, data)
+        except Exception:
+            # Nobody can read this answer now; stop paying for it. The worker
+            # still saves what it has.
+            logger.exception("stream_publish_failed", extra={"event": "stream_publish_failed"})
+            self.cancel.set()
+
+    def finish(self):
+        try:
+            self.append("_end")
+            self.client.expire(events_key(self.message_id), SESSION_TTL_SECONDS)
+            release_owner(self.client, self.message_id)
+        except Exception:
+            logger.exception("stream_publish_failed", extra={"event": "stream_publish_failed"})
+        finally:
+            self.ended.set()
+            close_session(self.message_id)
+
+    @property
+    def stopped(self):
+        return self.cancel.is_set()
+
+
+def release_owner(client, message_id):
+    if client.get(owner_key(message_id)) == PROCESS:
+        client.delete(owner_key(message_id))
+
+
+def begin(message_id, client):
+    """Start producing an answer here, or None when another process already is."""
+    key = str(message_id)
+    with _lock:
+        _sweep(time.monotonic())
+        if key in _sessions:
+            return None
+        if len(_sessions) >= MAX_ACTIVE_STREAMS:
+            raise StreamCapacityError("Too many answers are streaming right now.")
+        if not client.set(owner_key(key), PROCESS, nx=True, ex=LEASE_STALE_SECONDS):
+            return None
+        session = RedisSession(key, client)
+        _sessions[key] = session
+    # Written before the model is asked, so a reader can tell "started and its
+    # process died" from "never started".
+    session.append("_start")
+    client.expire(events_key(key), SESSION_TTL_SECONDS)
+    threading.Thread(
+        target=keep_owner, args=(session,), name=f"stream-owner-{key}", daemon=True
+    ).start()
+    return session
+
+
+def keep_owner(session):
+    """Renew the owner key, honour Stop at once, and bound the answer's time."""
+    client, key = session.client, session.message_id
+    try:
+        while not session.ended.is_set():
+            if client.blpop([stop_key(key)], timeout=LEASE_POLL_SECONDS):
+                session.cancel.set()
+            if session.ended.is_set():
+                return
+            if client.get(owner_key(key)) != PROCESS:
+                # Taken over by a reader that judged this process gone.
+                session.cancel.set()
+                return
+            client.expire(owner_key(key), LEASE_STALE_SECONDS)
+            if time.monotonic() - session.started_at > MAX_STREAM_SECONDS and not session.stopped:
+                session.emit("error", {"message": "This answer took too long."})
+                session.cancel.set()
+    except Exception:
+        # An owner key that cannot be renewed expires, and readers then treat
+        # the answer as interrupted; the worker carries on and saves its row.
+        logger.exception("stream_owner_failed", extra={"event": "stream_owner_failed"})
+
+
+def redis_stop(message_id):
+    from .. import broker
+
+    connection = broker.client()
+    if not connection.exists(owner_key(message_id)):
+        return False
+    pipe = connection.pipeline()
+    pipe.rpush(stop_key(message_id), "1")
+    pipe.expire(stop_key(message_id), LEASE_STALE_SECONDS)
+    pipe.execute()
+    return True
+
+
+def written_text(client, message_id):
+    """The answer text an interrupted stream got as far as."""
+    return "".join(
+        json.loads(fields.get("d", "{}")).get("t", "")
+        for _, fields in client.xrange(events_key(message_id))
+        if fields.get("e") == "delta"
+    )
+
+
+def close_interrupted(client, message_id, interrupted):
+    """An answer whose process died: closed out once, never asked again."""
+    key = str(message_id)
+    if not client.set(owner_key(key), PROCESS, nx=True, ex=LEASE_STALE_SECONDS):
+        return
+    try:
+        interrupted(written_text(client, key))
+        session = RedisSession(key, client)
+        session.append("error", {"message": INTERRUPTED})
+        session.append("done", {"status": "failed"})
+        session.append("_end")
+        client.expire(events_key(key), SESSION_TTL_SECONDS)
+    finally:
+        release_owner(client, key)
+
+
+def ended(client, message_id):
+    last = client.xrevrange(events_key(message_id), count=1)
+    return bool(last) and last[0][1].get("e") == "_end"
+
+
+def attach(message_id, last_event_id, start, interrupted):
+    """The frames for one answer, started here if nothing has started it.
+
+    `start(session)` launches the worker for a new answer; `interrupted(text)`
+    closes out one whose process died. Called by the view, before the response
+    exists, so both may touch the database. Either is None for an answer that
+    is already finished, which is then only replayed. Without Redis this is
+    exactly the old path: one reader, which starts the answer and stops it by
+    leaving.
+    """
+    if not resumable():
+        session = open_session(message_id)
+        start(session)
+        return stream_frames(session)
+    from .. import broker
+
+    client = broker.client()
+    if not _readers.acquire(blocking=False):
+        raise StreamCapacityError("Too many answers are streaming right now.")
+    try:
+        if not client.exists(owner_key(message_id)):
+            if client.exists(events_key(message_id)):
+                if interrupted is not None and not ended(client, message_id):
+                    close_interrupted(client, message_id, interrupted)
+            elif start is not None:
+                session = begin(message_id, client)
+                if session is not None:
+                    start(session)
+    except BaseException:
+        _readers.release()
+        raise
+    cursor = last_event_id if last_event_id and LAST_EVENT.fullmatch(last_event_id) else "0-0"
+    return Reader(follow(client, str(message_id), cursor), _readers.release)
+
+
+class Reader:
+    """Frames that give their reader slot back however they end.
+
+    A generator's own `finally` never runs if it is closed before its first
+    frame, so the slot is released here, by `close` - which Django calls on a
+    streaming response's content - or on exhaustion, whichever comes first.
+    """
+
+    def __init__(self, frames, release):
+        self.frames, self._release = frames, release
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            return next(self.frames)
+        except BaseException:
+            self.close()
+            raise
+
+    def close(self):
+        self.frames.close()
+        release, self._release = self._release, None
+        if release is not None:
+            release()
+
+
+def follow(client, message_id, cursor):
+    """Replay an answer's events after `cursor`, then follow it until it ends.
+
+    A reader that leaves does not stop the answer - that is what lets a
+    browser reconnect.
+    """
+    started = time.monotonic()
+    while True:
+        if time.monotonic() - started > MAX_STREAM_SECONDS + LEASE_STALE_SECONDS:
+            return
+        try:
+            found = client.xread(
+                {events_key(message_id): cursor}, count=200, block=HEARTBEAT_SECONDS * 1000
+            )
+        except Exception:
+            # Redis went away mid-answer. Ending the response makes the browser
+            # reconnect from the last event it has; the worker saves the row.
+            logger.exception("stream_follow_failed", extra={"event": "stream_follow_failed"})
+            return
+        if not found:
+            if not client.exists(owner_key(message_id)):
+                # Nothing more is coming from anywhere. Ending the response
+                # makes the browser reconnect, and that request closes the
+                # answer out as interrupted.
+                return
+            yield ": keep-alive\n\n"
+            continue
+        for entry, fields in found[0][1]:
+            cursor = entry
+            event = fields.get("e", "")
+            if event == "_end":
+                return
+            if event.startswith("_"):
+                continue
+            yield encode(event, json.loads(fields.get("d", "{}")), entry)

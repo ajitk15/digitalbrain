@@ -127,6 +127,15 @@
 
     const source = new EventSource(payload.stream);
     active = source;
+    let reconnecting = false;
+
+    // Back after a dropped connection: the server replays from the last event
+    // this page received, so the text simply carries on.
+    source.addEventListener("open", () => {
+      if (!reconnecting) return;
+      reconnecting = false;
+      status.hidden = true;
+    });
 
     source.addEventListener("delta", (event) => {
       try {
@@ -185,6 +194,15 @@
       // running, so the answer is shown as it stands.
       if (source.readyState === EventSource.CLOSED) {
         finish(payload, assistant, text);
+        return;
+      }
+      // Dropped mid-answer, on a server that keeps writing it (Redis): the
+      // browser reconnects by itself, sending the last event it has, and the
+      // answer carries on from there. Nothing is asked of the model again.
+      if (payload.resumes) {
+        reconnecting = true;
+        status.textContent = "Connection lost. Reconnecting…";
+        status.hidden = false;
         return;
       }
       // Dropped mid-answer. The browser would reconnect by itself, and
@@ -333,13 +351,16 @@
   // An answer saved as streaming that nothing is producing: the request that
   // would have opened its stream was lost, or the server restarted. Open it
   // now. The server starts at most one stream per answer, so a second tab
-  // doing the same is simply refused. Only the latest can be in flight.
+  // doing the same is simply refused. Only the latest can be in flight. With
+  // Redis an answer still being written is opened too, and replayed from its
+  // first word.
   const stranded = [...messages.querySelectorAll(".chat-assistant[data-resume]")].pop();
   if (canStream && stranded) {
     const payload = {
       stream: stranded.dataset.resume,
       fragment: stranded.dataset.fragment,
       stop: stranded.dataset.stop,
+      resumes: "resumes" in stranded.dataset,
     };
     const body = stranded.querySelector(".message-body");
     body.textContent = "";

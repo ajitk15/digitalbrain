@@ -59,6 +59,7 @@ def load_config():
         "retrieval_candidates",
         "graph_candidates",
         "ai_gateway",
+        "redis",
         "entra_tenant",
         "entra_client_id",
         "entra_create_users",
@@ -227,6 +228,41 @@ def load_config():
     # records that its author approved it - so what was traded is the
     # guarantee, not the visibility. Write `allow_self_approval = false` where
     # two people really do review every change.
+    redis = config.get("redis", {})
+    if not isinstance(redis, dict) or set(redis) - {
+        "host", "port", "db", "tls", "ca_certificate", "username"
+    }:
+        # The password is the mounted file `redis_password`, like the database's.
+        raise ImproperlyConfigured("Redis configuration cannot contain credentials.")
+    if redis:
+        if not isinstance(redis.get("host"), str) or not re.fullmatch(
+            r"[A-Za-z0-9.-]{1,253}", redis["host"]
+        ):
+            raise ImproperlyConfigured("redis.host must be a host name, such as redis.")
+        port = redis.get("port", 6379)
+        if type(port) is not int or not 0 < port < 65536:
+            raise ImproperlyConfigured("redis.port must be a port number.")
+        if type(redis.get("db", 0)) is not int or redis.get("db", 0) < 0:
+            raise ImproperlyConfigured("redis.db must be a database number.")
+        if type(redis.get("tls", False)) is not bool:
+            raise ImproperlyConfigured("redis.tls must be a boolean.")
+        ca = redis.get("ca_certificate", "")
+        if not isinstance(ca, str) or (ca and not Path(ca).is_absolute()):
+            raise ImproperlyConfigured("redis.ca_certificate must be an absolute path.")
+        if not isinstance(redis.get("username", ""), str):
+            raise ImproperlyConfigured("redis.username must be a string.")
+        if config.get("mode") == "production" and not (redis.get("tls") and ca):
+            # Streamed answers carry what the sources say. Same rule as the
+            # database: verified TLS in production, never plaintext.
+            raise ImproperlyConfigured(
+                "redis needs tls = true and a ca_certificate in production."
+            )
+        if config.get("shared_streams"):
+            # Two answers to "which process is streaming this?" would disagree.
+            raise ImproperlyConfigured(
+                "Set redis or shared_streams, not both: with redis, streams are shared "
+                "through it."
+            )
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")

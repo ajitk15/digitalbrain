@@ -22,10 +22,13 @@ the digest is then compared in constant time.
 
 import hashlib
 import hmac
+import logging
 import secrets
 import uuid
 
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 PREFIX = "dbk"
 PREFIX_BYTES = 6
@@ -142,13 +145,33 @@ _recent = {}
 
 
 def throttle(token):
-    """A small fixed-window limit per token, held in process memory.
+    """A small fixed-window limit per token.
 
-    Process-local like the streaming registry, which is correct for the single
-    managed worker process this runs in; several worker processes would each
-    allow the window, so a shared counter would be needed before scaling out.
+    With Redis it is one counter per token and window shared by every web
+    process (`broker.count`), which is what lets the web container run more
+    than one replica; a Redis that cannot be reached refuses the request
+    rather than letting it through uncounted. Without Redis it is held in
+    process memory, which is correct only for a single web process.
     """
+    from . import broker
+
     now = timezone.now().timestamp()
+    if broker.enabled():
+        window = int(now // RATE_WINDOW)
+        try:
+            count = broker.count(f"rate:{token.pk}:{window}", RATE_WINDOW * 2)
+        except Exception:
+            logger.exception("rate_limit_unavailable", extra={"event": "rate_limit_unavailable"})
+            raise ApiError(
+                "The service is busy. Try again in a moment.", status=503, code="busy"
+            ) from None
+        if count > RATE_LIMIT:
+            raise ApiError(
+                f"Rate limit exceeded: {RATE_LIMIT} requests per {RATE_WINDOW} seconds.",
+                status=429,
+                code="rate_limited",
+            )
+        return
     window_start, count = _recent.get(token.pk, (now, 0))
     if now - window_start >= RATE_WINDOW:
         window_start, count = now, 0

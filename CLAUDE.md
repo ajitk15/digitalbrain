@@ -779,9 +779,32 @@ included. `FULL_TEXT` and `chunks.CHUNK_TEXT` name it, table-qualified, because 
 passage query joins both tables.
 
 **Shared streams** (`shared_streams = true`, `StreamLease`) let Stop and `is_live` reach
-every process when there is more than one. Only those two cross processes - a stream and
-its worker always share one - so a polled lease row, written by a keeper thread and never
-by the SSE generator, replaces the Redis the roadmap assumed.
+every process when there is more than one and no Redis. Only those two cross processes
+there - a stream and its worker share one - so a polled lease row, written by a keeper
+thread and never by the SSE generator, is enough. `load_config` refuses it beside `[redis]`.
+
+**With Redis, an answer outlives its connection** (`broker.py`, the Redis mode in
+`agent_runtime/streaming.py`, a `[redis]` table; the password is the mounted
+`redis_password`, and production refuses it without verified TLS). Each answer's events
+are a Redis stream, and every reader - the request that started it, a browser reconnecting
+with `Last-Event-ID`, a second tab, on any web process - replays it from the start or from
+that id and follows it. So a dropped connection resumes (`chat.js` lets the EventSource
+reconnect only when the start payload says `resumes`), and a reader leaving no longer stops
+the answer: Stop does, pushed onto a list the writing process is blocked on, and
+`MAX_STREAM_SECONDS` does. **Nothing is paid for twice**: the writing process holds an
+owner key, renewed every `LEASE_POLL_SECONDS`; a reader that finds one follows, one that
+finds events and no owner has found an answer whose process died and closes it out once as
+interrupted (with the text it got to), and only an answer with no events is started. A
+finished answer is replayed while its events last (`SESSION_TTL_SECONDS`) and never
+started again - the views start or close out only a row still marked streaming. The
+worker still owns every database write; readers touch Redis only, and hold a reader slot
+each (`MAX_ACTIVE_STREAMS`, a waitress thread apiece). The API rate limit is one Redis
+counter per token and window, refusing (503) when Redis cannot count. Redis holds copies
+in transit, never a record, so the compose service has no volume: TLS from the Postgres
+CA, a generated password in its own config file, `noeviction`. Without `[redis]` none of
+it is used. `test_redis_streams` runs against fakeredis and again against a real Redis
+when `DIGITAL_BRAIN_TEST_REDIS` names one, which CI's PostgreSQL job does and requires.
+The web container is still one replica - each applies migrations as it starts.
 
 **Source-system permissions on answers** (`permissions.py`, connector "Enforce source
 permissions", Jira only). Each record from an enforcing connector carries the platform
@@ -837,9 +860,9 @@ write** for that message; the SSE generator does no ORM work at all. That single
 rule is what makes a racing stop safe — completion is a guarded
 `filter(status="streaming").update(...)`.
 
-The stream registry in `agent_runtime/streaming.py` is **process-local**. Correct for the
-single managed worker process; multiple processes would need a shared cancellation channel
-before Stop could be trusted.
+The stream registry in `agent_runtime/streaming.py` is **process-local** unless a deployment
+shares it: through a database lease (`shared_streams`) or Redis, which also lets an answer
+resume after a dropped connection - see "With Redis" above.
 
 ## Web and worker can run apart
 

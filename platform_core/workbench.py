@@ -1004,6 +1004,11 @@ def chat(request, pk):
                         "stream": reverse("chat-stream", args=[pk, placeholder.pk]),
                         "stop": reverse("chat-stop", args=[pk, placeholder.pk]),
                         "fragment": reverse("chat-message", args=[pk, placeholder.pk]),
+                        # Whether a dropped connection may reconnect: with Redis
+                        # the answer carries on and is replayed from where the
+                        # browser left off; without it, reconnecting would start
+                        # the answer again.
+                        "resumes": streaming.resumable(),
                     },
                     status=201,
                 )
@@ -1047,9 +1052,12 @@ def chat(request, pk):
         # An answer still marked streaming that no stream in this process is
         # producing: its request was lost, or the server restarted mid-answer.
         # chat.js resumes it; without script, Regenerate is offered.
-        message.stranded = (
-            message.status == "streaming" and not streaming.is_live(message.pk)
-        )
+        live = message.status == "streaming" and streaming.is_live(message.pk)
+        message.stranded = message.status == "streaming" and not live
+        # With Redis an answer another tab or process is writing can be
+        # followed from its first word, so the page picks it up too.
+        message.following = live and streaming.resumable()
+        message.resumes = streaming.resumable()
     return render(
         request,
         "chat.html",
@@ -1388,13 +1396,13 @@ def chat_stream(request, pk, message_id):
     app, _ = access(request.user, pk, "chat")
     access(request.user, pk, "knowledge")
     message = get_object_or_404(
-        ChatMessage,
-        pk=message_id,
-        application=app,
-        user=request.user,
-        role="assistant",
-        status="streaming",
+        ChatMessage, pk=message_id, application=app, user=request.user, role="assistant"
     )
+    # A finished answer is still replayed while Redis holds its events: a
+    # browser reconnecting after the last word was written must get the words
+    # it missed, not a 404. It is never started again - see `stream_answer`.
+    if message.status != "streaming" and not streaming.replayable(message.pk):
+        raise Http404
     history = conversation_context(message.conversation, app, request.user)
     question = (
         message.conversation.messages.filter(role="user", sequence=message.sequence - 1)
@@ -1404,28 +1412,54 @@ def chat_stream(request, pk, message_id):
     if not question:
         raise Http404
     try:
-        session = streaming.open_session(message.pk)
+        frames = stream_answer(request, request.user, app, message, question, history)
     except streaming.StreamCapacityError as full:
         return JsonResponse({"error": str(full)}, status=503)
+    return event_stream(frames)
+
+
+def stream_answer(request, user, app, message, question, history, name="chat-answer"):
+    """The frames for one answer: its worker started here unless it already runs.
+
+    One definition for the browser's stream and the API's. With Redis a request
+    may be a reconnect - it carries `Last-Event-ID` - and then follows the
+    answer instead of starting it, on whichever process it reached.
+    """
     conversation = message.conversation
-    threading.Thread(
-        target=answer_worker,
-        args=(
-            request.user.pk,
-            app.pk,
-            message.pk,
-            question,
-            history,
-            session,
-            conversation.mode,
-            conversation.graph_version,
-        ),
-        name=f"chat-answer-{message.pk}",
-        daemon=True,
-    ).start()
-    response = StreamingHttpResponse(
-        streaming.stream_frames(session), content_type="text/event-stream"
+    # Only an answer still marked streaming may be started or closed out; a
+    # finished one is only ever replayed.
+    live = message.status == "streaming"
+
+    def start(session):
+        threading.Thread(
+            target=answer_worker,
+            args=(
+                user.pk,
+                app.pk,
+                message.pk,
+                question,
+                history,
+                session,
+                conversation.mode,
+                conversation.graph_version,
+            ),
+            name=f"{name}-{message.pk}",
+            daemon=True,
+        ).start()
+
+    def interrupted(text):
+        finish_answer(message.pk, "failed", text, [], streaming.INTERRUPTED)
+
+    return streaming.attach(
+        message.pk,
+        request.headers.get("Last-Event-ID"),
+        start if live else None,
+        interrupted if live else None,
     )
+
+
+def event_stream(frames):
+    response = StreamingHttpResponse(frames, content_type="text/event-stream")
     # No Content-Length, or waitress buffers the whole body instead of chunking.
     response["Cache-Control"] = "no-cache, no-transform"
     response["X-Accel-Buffering"] = "no"
