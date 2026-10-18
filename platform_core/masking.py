@@ -254,7 +254,9 @@ def remask(user, app):
     changed, totals = 0, {}
     with transaction.atomic():
         entries = (
-            KnowledgeEntry.objects.select_for_update()
+            # Only the entries are locked: PostgreSQL refuses FOR UPDATE on the
+            # nullable side of the outer join select_related makes to document.
+            KnowledgeEntry.objects.select_for_update(of=("self",))
             .filter(application=app)
             .select_related("document")
             .order_by("pk")

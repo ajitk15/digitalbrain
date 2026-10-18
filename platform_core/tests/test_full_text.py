@@ -68,3 +68,34 @@ class CandidateTests(TestCase):
         self.assertEqual(len(found), CANDIDATE_SOURCES)
         self.assertEqual(found[0].pk, best.pk)
         self.assertEqual(retrieve(self.app, "queue worker restart")[0][1].pk, best.pk)
+
+    @unittest.skipUnless(
+        connection.vendor == "postgresql",
+        "The stored search vectors exist only on PostgreSQL; this run uses "
+        f"{connection.vendor}.",
+    )
+    def test_postgres_reads_a_stored_vector_that_follows_the_text(self):
+        from platform_core import chunks
+        from platform_core.models import KnowledgeEntry
+
+        entry = add_knowledge(self.owner, self.app.pk, "Runbook", "Restart the queue worker.")
+        self.assertEqual([e.pk for e in candidate_sources(self.app, "failover")], [])
+        # Rewritten in place, as masking does: the column is regenerated with the
+        # row, so nothing has to remember to refresh it.
+        KnowledgeEntry.objects.filter(pk=entry.pk).update(
+            content="Database failover drill.", digest="1" * 64
+        )
+        self.assertEqual([e.pk for e in candidate_sources(self.app, "failover")], [entry.pk])
+        self.assertEqual(
+            [c.entry_id for c in chunks.candidates(self.app, "failover")], [entry.pk]
+        )
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT tablename, indexdef FROM pg_indexes WHERE indexname IN "
+                "('platform_core_knowledge_search', 'platform_core_chunk_search')"
+            )
+            indexes = dict(cursor.fetchall())
+        self.assertEqual(
+            set(indexes), {"platform_core_knowledgeentry", "platform_core_knowledgechunk"}
+        )
+        self.assertTrue(all("(search_vector)" in d for d in indexes.values()), indexes)

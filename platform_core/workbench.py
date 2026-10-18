@@ -142,10 +142,10 @@ def passage_counts(entry):
 
 #: Sources keyword search ranks per question.
 CANDIDATE_SOURCES = 100
-#: PostgreSQL's full-text expression - identical to the index migration 0073
-#: creates, or the planner will not use the index. The first 200,000 characters:
-#: a tsvector holds at most 1 MB, and a source past that is a log, not prose.
-FULL_TEXT = "to_tsvector('english', left(title || ' ' || content, 200000))"
+#: PostgreSQL's full text: a column generated from the first 200,000 characters
+#: of title and content (migration 0088), so a question never tokenizes a source
+#: again. A tsvector holds at most 1 MB, and a source past that is a log, not prose.
+FULL_TEXT = '"platform_core_knowledgeentry"."search_vector"'
 
 
 def full_text_query(question):

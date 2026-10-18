@@ -7,9 +7,11 @@ whole upload is one source - so demo reset clears it with the link sources.
 """
 
 import json
+from unittest import skipUnless
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
@@ -152,6 +154,7 @@ class FolderUploadTests(TestCase):
         self.assertEqual(Document.objects.exclude(status="deleted").count(), 2)
 
 
+@skipUnless(connection.vendor == "sqlite", "SQLite's write lock; PostgreSQL has none to race.")
 class SqliteWriteLockTests(SimpleTestCase):
     """A read-then-write transaction waits for a worker instead of failing.
 

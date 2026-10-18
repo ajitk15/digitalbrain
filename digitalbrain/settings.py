@@ -158,6 +158,33 @@ if PRODUCTION:
             "CONN_HEALTH_CHECKS": True,
         }
     }
+elif CONFIG.get("database"):
+    # Development against PostgreSQL: what CI runs the suite and the scorecard
+    # on, because the advisory lane locks, SKIP LOCKED claims and full-text
+    # indexes exist only there. The password is still a mounted file, never an
+    # environment variable. The timeouts match production so a query that would
+    # be cut off there fails here too; TLS is verified only when a CA is named,
+    # since a local or CI server has none.
+    db = CONFIG["database"]
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": db["name"],
+            "USER": db["user"],
+            "HOST": db["host"],
+            "PORT": db.get("port", 5432),
+            "PASSWORD": read_secret(SECRET_DIRECTORY, "database_password"),
+            "OPTIONS": {
+                **(
+                    {"sslmode": "verify-full", "sslrootcert": db["sslrootcert"]}
+                    if db.get("sslrootcert")
+                    else {"sslmode": "prefer"}
+                ),
+                "connect_timeout": 5,
+                "options": "-c statement_timeout=10000 -c lock_timeout=5000",
+            },
+        }
+    }
 else:
     DATABASES = {
         "default": {

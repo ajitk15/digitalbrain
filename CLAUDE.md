@@ -44,6 +44,19 @@ Changing `static/*.js`, a CSP-affecting template or a `data-live`/`data-modal` f
 adding or updating one there. Wait on selectors, never `wait_for_function`: that evaluates a
 string, and the CSP refuses it - as it should.
 
+**CI runs the suite and the scorecard twice: on SQLite and on PostgreSQL 16**, the
+second because the advisory lane locks, `SKIP LOCKED` claims and full-text indexes
+exist only there. A `[database]` table (`name`, `user`, `host`, `port`, optional
+`sslrootcert`) in a development config points the process at PostgreSQL, with the
+password in the secret directory's `database_password` file like everything else. To
+run it locally, start a throwaway `postgres:16-alpine`, add that table to a copy of the
+config and set `DIGITAL_BRAIN_CONFIG` to it. Two things it has caught that SQLite
+cannot: `select_for_update` beside a `select_related` on a nullable key must say
+`of=("self",)`, because PostgreSQL refuses to lock the nullable side of an outer join;
+and a test that lets `close_old_connections` or `request_finished` run inside a
+`TestCase` loses its connection there, because the test's transaction makes autocommit
+differ from settings - SQLite's in-memory database ignores the close, PostgreSQL does not.
+
 After changing anything under `static/`, run `manage.py collectstatic` **and restart the
 server**. Templates resolve hashed filenames through the staticfiles manifest, which the
 running process caches at boot — otherwise you will be testing the previous asset and
@@ -729,9 +742,15 @@ seeded off). It sees verified citations and returns their numbers; anything else
 dropped and any failure keeps the original order. Measure it first with
 `manage.py benchmark --rerank --as <user>` - the one benchmark run that spends.
 
-**Keyword candidates come from full text on PostgreSQL** (`workbench.candidate_sources`,
-GIN index from migration 0073, the expression must match `FULL_TEXT`); SQLite keeps the
-substring scan. Its test skips outside PostgreSQL and says so.
+**Keyword candidates come from full text on PostgreSQL** (`workbench.candidate_sources`);
+SQLite keeps the substring scan. Its test skips outside PostgreSQL and says so. The
+tsvector is a **stored generated column** (`search_vector`, migration 0088) with the GIN
+index on it, for sources and passages both: the expression indexes of 0073 and 0087 let
+`ts_rank` tokenize every matching row again on every question, which the first
+PostgreSQL scorecard measured at 51 ms a keyword answer against SQLite's 5 (10 ms after).
+Django does not know the column; PostgreSQL fills it on every write, in-place rewrites
+included. `FULL_TEXT` and `chunks.CHUNK_TEXT` name it, table-qualified, because the
+passage query joins both tables.
 
 **Shared streams** (`shared_streams = true`, `StreamLease`) let Stop and `is_live` reach
 every process when there is more than one. Only those two cross processes - a stream and
@@ -880,7 +899,7 @@ them again. They are a copy, never evidence: citations still verify against
 `KnowledgeEntry.content`, and a passage counts only while its source's `chunked_digest`
 equals its `digest`. Restricted sources keep theirs (lifting is common) and are excluded at
 query time like every other path. `retrieve(candidates="chunks")` takes candidates from them
-- PostgreSQL's GIN index over `CHUNK_TEXT` (migration 0087), a substring scan on SQLite -
+- PostgreSQL's GIN index over the stored `CHUNK_TEXT` column (migration 0088), a substring scan on SQLite -
 with the source text deferred, then ranks exactly as the source path does.
 `retrieval_candidates` (config, default "sources") picks the path. **Switch only when the
 scorecard's Passage answers are no worse than its Keyword answers and

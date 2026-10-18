@@ -97,6 +97,13 @@ class StreamSessionTests(SimpleTestCase):
 class ChatStreamViewTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        # Several tests run the answer worker on this thread. Its last act is
+        # close_old_connections(), which closes a connection whose autocommit
+        # differs from the settings - always true inside a TestCase. SQLite's
+        # in-memory test database ignores that; PostgreSQL really closes it.
+        quiet = patch("django.db.close_old_connections")
+        quiet.start()
+        self.addCleanup(quiet.stop)
         add_knowledge(
             self.owner, self.app.pk, "Refund policy", "Refund requests expire after thirty days."
         )
@@ -454,8 +461,10 @@ class ChatStreamViewTests(TestCase):
             self.assertEqual(response["Content-Type"], "text/event-stream")
             self.assertNotIn("Content-Length", response)
             self.assertEqual(response["X-Accel-Buffering"], "no")
+            # Reading it to the end closes it, as the test client arranges. A
+            # second close() would send request_finished with its connection
+            # cleanup live, which closes this test's transaction on PostgreSQL.
             body = b"".join(response.streaming_content).decode()
-            response.close()
         self.assertIn('data: {"t":"Thirty "}', body)
         self.assertIn("event: done", body)
 

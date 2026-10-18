@@ -35,9 +35,9 @@ from .models import KnowledgeChunk, KnowledgeEntry
 
 logger = logging.getLogger(__name__)
 
-#: PostgreSQL's full-text expression for a passage: identical to the index
-#: migration 0087 creates, or the planner will not use it.
-CHUNK_TEXT = "to_tsvector('english', heading || ' ' || text)"
+#: PostgreSQL's full text for a passage: a column generated from its heading and
+#: text (migration 0088), so ranking never tokenizes a passage per question.
+CHUNK_TEXT = '"platform_core_knowledgechunk"."search_vector"'
 #: Passages a question ranks on the chunk path. The source path ranked every
 #: passage of a hundred sources; this ranks the best passages of any of them.
 CANDIDATE_PASSAGES = 300
