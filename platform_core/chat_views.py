@@ -23,6 +23,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from . import metrics
 from .agent_runtime import streaming
 from .models import AIConfiguration, ChatConversation, ChatMessage
 from .services import audit
@@ -460,15 +461,23 @@ def finish_answer(message_id, status, body, citations, error="", provider="", mo
     The status predicate makes this idempotent and makes a racing stop a no-op,
     which is what lets exactly one thread own the row.
     """
-    return ChatMessage.objects.filter(pk=message_id, status="streaming").update(
+    finished = timezone.now()
+    closed = ChatMessage.objects.filter(pk=message_id, status="streaming").update(
         status=status,
         body=body,
         citations=citations,
         error=error[:300],
         provider=provider,
         model=model,
-        finished_at=timezone.now(),
+        finished_at=finished,
     )
+    if closed and metrics.enabled():
+        asked = ChatMessage.objects.filter(pk=message_id).values_list("created_at", "mode")
+        for created, mode in asked:
+            metrics.record("digitalbrain.answer.duration",
+                           (finished - created).total_seconds(),
+                           mode=mode, provider=provider or "none", outcome=status)
+    return closed
 
 
 def answer_worker(

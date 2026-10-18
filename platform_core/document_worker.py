@@ -10,7 +10,7 @@ from django.db import close_old_connections, connection, connections, transactio
 from django.db.models import Q
 from django.utils import timezone
 
-from . import telemetry
+from . import metrics, telemetry
 from .models import Document
 from .processing import convert_document, settle_failure
 from .tenancy import scoped
@@ -223,16 +223,19 @@ def maintenance_steps():
     from .graph_store import record_step, slim_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
+    from .metrics import observe
     from .partitions import warn_if_due
     from .queue_status import log_if_due
     from .retention import purge_if_due
+    from .slo import read_if_due
 
     # Checking a source is maintenance, not intake: it reads one cheap signal,
     # writes a status and touches no document. It shares the lane with the
     # retention sweep because neither is urgent and neither may hold up a
     # conversion - and because putting it in the intake lane would have it
     # competing with the downloads it might one day cause. The queue figures
-    # are logged here for the same reason: they are read, never acted on.
+    # are logged here for the same reason: they are read, never acted on, and
+    # read again for the metric gauges, so one process reports them.
     # Reclaiming abandoned jobs is here too: it must run even when the lane
     # whose worker died is the one that would have run it. Writing passages
     # for sources stored before they existed is a batch at a time, last, so a
@@ -248,6 +251,8 @@ def maintenance_steps():
         maintain,
         sweep,
         log_if_due,
+        observe,
+        read_if_due,
         backfill_step,
         record_step,
         slim_step,
@@ -478,6 +483,7 @@ def run_lane(name, steps_for, idle_seconds, stop=None, keeper=None):
             for step in steps:
                 if stop is not None and stop.is_set():
                     break
+                began = time.monotonic()
                 try:
                     close_old_connections()
                     # A step that found nothing is dropped before export.
@@ -486,8 +492,13 @@ def run_lane(name, steps_for, idle_seconds, stop=None, keeper=None):
                     ) as traced:
                         did = bool(step())
                         traced.set(idle=not did)
+                    if did:
+                        metrics.record("digitalbrain.lane.step.duration",
+                                       time.monotonic() - began, lane=name, outcome="ok")
                     worked = did or worked
                 except Exception as failure:
+                    metrics.record("digitalbrain.lane.step.duration",
+                                   time.monotonic() - began, lane=name, outcome="error")
                     # The event name is what makes this findable; the formatter
                     # deliberately keeps the message and traceback out of the log.
                     logger.warning(

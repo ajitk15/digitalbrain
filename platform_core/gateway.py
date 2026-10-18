@@ -49,7 +49,7 @@ from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from . import telemetry
+from . import metrics, telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +237,8 @@ def _admitted(user, app, config, purpose, prompt_characters, max_tokens, traced)
                 extra={"event": "ai_gateway_busy", "purpose": purpose, "provider": config.provider},
             )
             traced.set(outcome="busy")
+            metrics.record("digitalbrain.ai.admission.wait", time.monotonic() - waiting,
+                           purpose=purpose, provider=config.provider, outcome="busy")
             raise ProviderBusy(
                 "The AI provider is busy with this application's other requests. Nothing was "
                 "sent and nothing was charged; try again in a moment."
@@ -244,12 +246,17 @@ def _admitted(user, app, config, purpose, prompt_characters, max_tokens, traced)
         time.sleep(POLL)
     started = time.monotonic()
     traced.set(wait_ms=round((started - waiting) * 1000))
+    metrics.record("digitalbrain.ai.admission.wait", started - waiting,
+                   purpose=purpose, provider=config.provider, outcome="admitted")
     outcome = "failed"
     try:
         yield admission
         outcome = "answered"
     finally:
         traced.set(outcome=outcome)
+        metrics.record("gen_ai.client.operation.duration", time.monotonic() - started,
+                       purpose=purpose, provider=config.provider, model=config.model,
+                       outcome=outcome)
         AIAdmission.objects.filter(pk=admission.pk).delete()
         logger.info(
             "ai_gateway_call",

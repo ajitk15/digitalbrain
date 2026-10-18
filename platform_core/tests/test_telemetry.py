@@ -24,7 +24,7 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExportResult
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from digitalbrain.configuration import load_config
-from platform_core import document_worker, telemetry
+from platform_core import document_worker, metrics, telemetry
 from platform_core.ai import invoke_ai
 from platform_core.models import AIConfiguration
 from platform_core.observability import SafeJsonFormatter
@@ -48,6 +48,13 @@ class Traced:
         self.addCleanup(on.disable)
         telemetry.use(provider)
         self.addCleanup(telemetry.use, None)
+        # Metrics come on with the same table; held in memory, never exported.
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+
+        self.measured = InMemoryMetricReader()
+        metrics.use(MeterProvider(metric_readers=[self.measured], views=metrics.views()))
+        self.addCleanup(metrics.use, None)
 
     def finished(self):
         return self.spans.get_finished_spans()

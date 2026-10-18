@@ -351,10 +351,11 @@ def admin_identity():
 
 
 def check_otel(config):
-    """`[otel]`: an OTLP/HTTP collector to send traces to. Absent, nothing is traced."""
+    """`[otel]`: an OTLP/HTTP collector for traces and metrics. Absent, nothing is sent."""
     otel = config.get("otel", {})
     if not isinstance(otel, dict) or set(otel) - {
-        "endpoint", "service_name", "sample_ratio", "ca_certificate", "authorization"
+        "endpoint", "service_name", "sample_ratio", "ca_certificate", "authorization",
+        "metrics", "metric_interval_seconds",
     }:
         raise ImproperlyConfigured(
             "otel configuration cannot contain credentials; a collector's credential is "
@@ -388,6 +389,13 @@ def check_otel(config):
         raise ImproperlyConfigured("otel.sample_ratio must be above 0 and at most 1.")
     if type(otel.get("authorization", False)) is not bool:
         raise ImproperlyConfigured("otel.authorization must be a boolean.")
+    if type(otel.get("metrics", True)) is not bool:
+        raise ImproperlyConfigured("otel.metrics must be a boolean.")
+    interval = otel.get("metric_interval_seconds", 60)
+    if type(interval) is not int or not 10 <= interval <= 3600:
+        raise ImproperlyConfigured(
+            "otel.metric_interval_seconds must be a whole number from 10 to 3600."
+        )
     ca = otel.get("ca_certificate", "")
     if not isinstance(ca, str) or (ca and not Path(ca).is_absolute()):
         raise ImproperlyConfigured("otel.ca_certificate must be an absolute path.")

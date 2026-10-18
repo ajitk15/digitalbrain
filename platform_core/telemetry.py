@@ -66,6 +66,10 @@ ATTRIBUTES = frozenset({
     "gen_ai.response.id",
     "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
+    "gen_ai.token.type",
+    "digitalbrain.mode",
+    "digitalbrain.objective",
+    "digitalbrain.currency",
     "error.type",
 })
 METHODS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
@@ -130,6 +134,10 @@ SHORT = {
     "response_id": "gen_ai.response.id",
     "input_tokens": "gen_ai.usage.input_tokens",
     "output_tokens": "gen_ai.usage.output_tokens",
+    "token_type": "gen_ai.token.type",
+    "mode": "digitalbrain.mode",
+    "objective": "digitalbrain.objective",
+    "currency": "digitalbrain.currency",
 }
 
 
@@ -274,13 +282,14 @@ class Exporter:
 
     One attempt per batch: a trace is not worth a retry storm against a
     collector that is down, and the batch processor already drops what it
-    cannot hold.
+    cannot hold. `signal` is the OTLP path: traces here, metrics for
+    `metrics.MetricSender`, one collector and one credential for both.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, signal="traces"):
         import requests
 
-        self.url = config["endpoint"].rstrip("/") + "/v1/traces"
+        self.url = config["endpoint"].rstrip("/") + f"/v1/{signal}"
         self.verify = config.get("ca_certificate") or True
         self.headers = {
             "Content-Type": "application/x-protobuf",
@@ -297,7 +306,13 @@ class Exporter:
         from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
         from opentelemetry.sdk.trace.export import SpanExportResult
 
-        body = gzip.compress(encode_spans(spans).SerializeToString())
+        if self.send(encode_spans(spans), len(spans)):
+            return SpanExportResult.SUCCESS
+        return SpanExportResult.FAILURE
+
+    def send(self, message, count):
+        """Post one encoded OTLP message; True when the collector took it."""
+        body = gzip.compress(message.SerializeToString())
         try:
             answer = self.session.post(
                 self.url, data=body, headers=self.headers, verify=self.verify,
@@ -308,15 +323,15 @@ class Exporter:
         except Exception as error:
             ok, failure = False, type(error).__name__
         if ok:
-            return SpanExportResult.SUCCESS
+            return True
         if time.monotonic() - self.warned > WARN_EVERY_SECONDS:
             self.warned = time.monotonic()
             logger.warning(
                 "otel_export_failed",
                 extra={"event": "otel_export_failed", "failure_kind": failure,
-                       "count": len(spans)},
+                       "count": count},
             )
-        return SpanExportResult.FAILURE
+        return False
 
     def shutdown(self):
         self.session.close()
@@ -337,7 +352,10 @@ class TelemetryMiddleware:
     def __call__(self, request):
         if not enabled():
             return self.get_response(request)
+        from . import metrics
+
         method = request.method if request.method in METHODS else "_OTHER"
+        started = time.monotonic()
         with span(method, **{"http.request.method": method}) as traced:
             response = self.get_response(request)
             match = getattr(request, "resolver_match", None)
@@ -345,12 +363,24 @@ class TelemetryMiddleware:
             if route:
                 traced.rename(f"{method} {route}")
             pk = (getattr(match, "kwargs", None) or {}).get("pk")
+            streamed = bool(getattr(response, "streaming", False))
             traced.set(**{
                 "http.route": route or None,
                 "http.response.status_code": response.status_code,
                 "request_id": getattr(request, "request_id", None),
                 "application_id": pk if APPLICATION_ROUTE.match(route)
                 and isinstance(pk, uuid.UUID) else None,
-                "streamed": bool(getattr(response, "streaming", False)),
+                "streamed": streamed,
             })
+            # Until the view returned: a stream's own length is the answer's.
+            metrics.record(
+                "http.server.request.duration",
+                time.monotonic() - started,
+                **{
+                    "http.request.method": method,
+                    "http.route": route or "unmatched",
+                    "http.response.status_code": response.status_code,
+                    "streamed": streamed,
+                },
+            )
             return response

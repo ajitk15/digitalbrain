@@ -452,4 +452,11 @@ def record_ai_usage(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+        from . import metrics
+
+        for kind, count in (("input", input_tokens), ("output", output_tokens)):
+            metrics.record("gen_ai.client.token.usage", count, purpose=purpose,
+                           provider=provider, model=model, token_type=kind)
+        metrics.record("digitalbrain.ai.cost", amount, application_id=app.pk,
+                       purpose=purpose, provider=provider, currency=currency)
     return receipt

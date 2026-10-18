@@ -465,6 +465,35 @@ batch queue drops rather than grows. A log line inside a span carries its `trace
 no table the SDK is never imported. Do not add an attribute to the registry that a person
 or a model wrote.
 
+**Metrics ride the same table and the same exporter** (`metrics.py`; `metrics = false`
+turns them off alone, `metric_interval_seconds` sets the push, 60 by default). Rates,
+errors and durations of requests (until the view returns, the route *pattern*, a stream
+marked `streamed`), lane steps that did work, admission waits, admitted calls, answers
+(question to end, by mode and outcome), receipt tokens and spend; gauges for each lane's
+waiting work, oldest age, dead jobs and heartbeat age, calls in flight, answers streaming.
+**What an instrument may carry is the closed registry `metrics.INSTRUMENTS`**, a subset of
+`telemetry.ATTRIBUTES` with two more rules: nothing new on every call is a label (request
+id, response id, token counts - those are trace attributes), and only spend carries an
+application id. Gauges that read the database are read by the maintenance lane
+(`observe`) and held for the reader, so one process reports them. Histograms are bucketed
+in seconds at `metrics.SECONDS`; exemplars are off, temporality cumulative, and every
+SDK default an `OTEL_*` variable could change is stated.
+
+**Service levels are a registry, checked against records or ruled on metrics**
+(`slo.py`, `manage.py slo [--check] [--json] [--rules]`). *Records* objectives - answers
+end complete (a Stop is neither), a complete answer ends within `ANSWER_SECONDS`, a job
+starts within `START_SECONDS` of falling due (one still waiting past it counts now), a
+job ends done rather than dead - are counted from rows the platform keeps, over
+`WINDOW_DAYS`, so they need no collector; `--check` fails a judged one below target, and
+fewer than `MIN_EVENTS` is reported, never failed. The maintenance lane counts them every
+`READ_SECONDS` for the `digitalbrain.slo.events` gauge and a `slo_status` log line.
+*Metrics* objectives - no server error on a non-streamed request, a page under
+`PAGE_SECONDS`, a paid call admitted rather than busy, intake, graph and import work
+fresher than `QUEUE_SECONDS` - are Prometheus rules with multi-window burn-rate alerts,
+generated from the registry and committed as `deploy/slo-rules.yml`; `test_slo` fails when
+the two differ, so change the registry and regenerate, never edit the file. The synchronous
+chat path writes its answer when it ends, so it reads as instant in `answers_in_time`.
+
 **Audit events and receipts are kept until a deployment says otherwise**
 (`retention.py`, `[retention]`). Nothing removes either by default - a trail and a bill
 are records, not caches. `audit_days` and `usage_days` set windows, and `load_config`

@@ -138,6 +138,12 @@ def shared():
     return bool(getattr(settings, "SHARED_STREAMS", False))
 
 
+def streaming_count():
+    """How many answers this process is streaming, for a metric gauge."""
+    with _lock:
+        return len(_sessions)
+
+
 def open_session(message_id):
     """Register a stream, refusing to start one when the process is saturated.
 
