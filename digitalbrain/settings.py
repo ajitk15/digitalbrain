@@ -77,6 +77,9 @@ GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "memory")
 #: replay and follow them, and Stop and the API rate limit reach every process
 #: (`platform_core/broker.py`). Its password is the mounted `redis_password`.
 REDIS = CONFIG.get("redis", {})
+#: How long audit events and usage receipts are kept (platform_core/retention.py).
+#: Empty keeps everything, which is the default.
+RETENTION = CONFIG.get("retention", {})
 #: Limits on paid model calls in flight (`platform_core/gateway.py`).
 AI_GATEWAY = {**AI_GATEWAY_DEFAULTS, **CONFIG.get("ai_gateway", {})}
 # How many files one import may take from a directory - a GitHub /tree/ link or

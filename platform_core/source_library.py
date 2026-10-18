@@ -143,10 +143,16 @@ def graph_usage(app, entries):
     usage = {(str(entry.pk), entry.digest): [] for entry in entries}
     if not usage:
         return {}
+    from .graph_store import read
+
     revisions = GraphRevision.objects.filter(application=app).values_list(
-        "number", "published_at", "data__sources"
+        "number", "published_at", "data__sources", "data__slimmed"
     )
-    for number, published_at, sources in revisions.iterator():
+    for number, published_at, sources, slimmed in revisions.iterator():
+        if slimmed:
+            # Its sources are rows only now (graph_store.slim).
+            version = GraphRevision(application_id=app.pk, number=number, stored=True)
+            sources = read(version, "sources")
         matched = set()
         for source in sources or []:
             key = (source.get("id"), source.get("digest"))

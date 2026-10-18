@@ -24,6 +24,13 @@ AI_GATEWAY_DEFAULTS = {
 }
 
 
+#: The least a retention window may be, in days (platform_core/retention.py):
+#: six years of audit trail, leap days included, for HIPAA's documentation rule
+#: (164.316(b)(2)), and 400 days of usage receipts - the budget's month, a
+#: year's comparison and a late invoice. 0 keeps everything, the default.
+RETENTION_FLOORS = {"audit_days": 2192, "usage_days": 400}
+
+
 def load_config():
     path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config/local.toml"))
     if not path.is_file():
@@ -60,6 +67,7 @@ def load_config():
         "graph_candidates",
         "ai_gateway",
         "redis",
+        "retention",
         "entra_tenant",
         "entra_client_id",
         "entra_create_users",
@@ -228,6 +236,17 @@ def load_config():
     # records that its author approved it - so what was traded is the
     # guarantee, not the visibility. Write `allow_self_approval = false` where
     # two people really do review every change.
+    kept = config.get("retention", {})
+    if not isinstance(kept, dict) or set(kept) - set(RETENTION_FLOORS):
+        raise ImproperlyConfigured(
+            "retention takes " + " and ".join(sorted(RETENTION_FLOORS)) + " only."
+        )
+    for name, days in kept.items():
+        if type(days) is not int or days < 0 or 0 < days < RETENTION_FLOORS[name]:
+            raise ImproperlyConfigured(
+                f"retention.{name} must be 0 (keep everything) or at least "
+                f"{RETENTION_FLOORS[name]} days."
+            )
     redis = config.get("redis", {})
     if not isinstance(redis, dict) or set(redis) - {
         "host", "port", "db", "tls", "ca_certificate", "username"

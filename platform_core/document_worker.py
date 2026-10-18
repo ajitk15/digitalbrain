@@ -216,10 +216,11 @@ def automation_steps():
 def maintenance_steps():
     from .chunks import backfill_step
     from .gateway import sweep
-    from .graph_store import record_step
+    from .graph_store import record_step, slim_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
     from .queue_status import log_if_due
+    from .retention import purge_if_due
 
     # Checking a source is maintenance, not intake: it reads one cheap signal,
     # writes a status and touches no document. It shares the lane with the
@@ -233,6 +234,8 @@ def maintenance_steps():
     # large library catching up never delays the rest; recording graph versions
     # saved before their elements were rows is the same kind of catching up.
     # Giving back AI gateway slots a dead process left beside the jobs it left.
+    # Retiring audit events and receipts past a window a deployment set, an
+    # hour apart and a batch at a time, because it is never urgent.
     return (
         purge_chat_if_due,
         process_next_source,
@@ -241,6 +244,8 @@ def maintenance_steps():
         log_if_due,
         backfill_step,
         record_step,
+        slim_step,
+        purge_if_due,
     )
 
 

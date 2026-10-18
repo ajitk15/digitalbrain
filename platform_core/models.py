@@ -1991,6 +1991,23 @@ class GraphRevision(models.Model):
     def updated_at(self):
         return self.created_at
 
+    @classmethod
+    def from_db(cls, db, field_names, values):
+        """A version whose lists are held only as rows reads back whole.
+
+        `graph_store.slim` removes an old version's sources, nodes and edges
+        from its JSON once they are rows and read back exactly. Every reader of
+        `data` still sees the whole version: it is put back together here, on
+        load, from the rows - so nothing that reads a version had to change.
+        """
+        instance = super().from_db(db, field_names, values)
+        data = instance.__dict__.get("data")
+        if isinstance(data, dict) and data.get("slimmed"):
+            from .graph_store import inflate
+
+            instance.data = inflate(instance, data)
+        return instance
+
 
 class GraphElement(models.Model):
     """One source, node or edge of a knowledge graph, for the versions it is in.

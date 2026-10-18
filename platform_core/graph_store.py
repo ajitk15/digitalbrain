@@ -320,6 +320,88 @@ def record_step():
     return bool(done)
 
 
+# ── keeping old versions small ────────────────────────────────────────────────
+
+#: Versions of an application kept whole, newest first, besides the latest
+#: published one. Older ones keep their lists only as rows.
+KEEP_WHOLE = 3
+#: Versions slimmed per maintenance pass. Each is read back in full first.
+SLIM_BATCH = 5
+
+
+def inflate(revision, data):
+    """`data` with its lists read back from rows; what `GraphRevision.from_db` calls."""
+    whole = {key: value for key, value in data.items() if key != "slimmed"}
+    for element in ELEMENTS:
+        found = read(revision, element)
+        if found is None:
+            # Never slimmed without rows; if they are gone, say so loudly
+            # rather than answer from an empty graph.
+            raise RuntimeError(f"Graph version {revision.number} has no {element} rows.")
+        whole[element] = found
+    return whole
+
+
+def slimmable(app_id):
+    """Recorded versions of one application that may give up their lists."""
+    revisions = GraphRevision.objects.filter(application_id=app_id)
+    whole = list(revisions.order_by("-number").values_list("pk", flat=True)[:KEEP_WHOLE])
+    published = (
+        revisions.filter(published_at__isnull=False)
+        .order_by("-published_at")
+        .values_list("pk", flat=True)
+        .first()
+    )
+    return (
+        revisions.filter(stored=True, data__slimmed__isnull=True)
+        # Never a None in the list: NOT IN (..., NULL) is never true, so a
+        # missing published version would have slimmed nothing at all.
+        .exclude(pk__in=[pk for pk in [*whole, published] if pk is not None])
+        .order_by("number")
+    )
+
+
+def slim(revision):
+    """Drop a recorded version's lists from its JSON, once they read back exactly.
+
+    Under the application's lock, like `record`, and only after `verify`: the
+    rows are then the version, and the JSON was a second copy of it.
+    """
+    with transaction.atomic():
+        list(
+            Application.objects.select_for_update()
+            .filter(pk=revision.application_id)
+            .values_list("pk")
+        )
+        fresh = GraphRevision.objects.select_for_update().filter(pk=revision.pk).first()
+        if fresh is None or not fresh.stored or fresh.data.get("slimmed") is not None:
+            return False
+        if not verify(fresh):
+            logger.warning("graph_store_not_slimmed", extra={"event": "graph_store_not_slimmed"})
+            return False
+        kept = {key: value for key, value in fresh.data.items() if key not in ELEMENTS}
+        GraphRevision.objects.filter(pk=fresh.pk).update(data={**kept, "slimmed": True})
+    return True
+
+
+def slim_step():
+    """The maintenance lane's share: a few old versions a pass. True when it did work."""
+    done = 0
+    for app_id in (
+        GraphRevision.objects.filter(stored=True, data__slimmed__isnull=True)
+        .order_by()
+        .values_list("application_id", flat=True)
+        .distinct()
+    ):
+        for revision in slimmable(app_id)[: SLIM_BATCH - done]:
+            done += slim(revision)
+        if done >= SLIM_BATCH:
+            break
+    if done:
+        logger.info("graph_store_slimmed", extra={"event": "graph_store_slimmed", "versions": done})
+    return bool(done)
+
+
 # ── answering from rows ───────────────────────────────────────────────────────
 
 

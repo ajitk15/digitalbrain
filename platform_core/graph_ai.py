@@ -695,6 +695,12 @@ def prepared(revision):
             _prepared.move_to_end(key)
             return item
     data = GraphRevision.objects.values_list("data", flat=True).get(pk=revision.pk)
+    if data.get("slimmed"):
+        # An old version keeps its lists only as rows (graph_store.slim); a
+        # values_list read does not pass through GraphRevision.from_db.
+        from .graph_store import inflate
+
+        data = inflate(revision, data)
     item = prepare(data)
     with _prepared_lock:
         _prepared[key] = item

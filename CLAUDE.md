@@ -400,6 +400,16 @@ free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed
 on its own provider request ID.
 
+**Audit events and receipts are kept until a deployment says otherwise**
+(`retention.py`, `[retention]`). Nothing removes either by default - a trail and a bill
+are records, not caches. `audit_days` and `usage_days` set windows, and `load_config`
+refuses less than six years of audit trail (2,192 days, for HIPAA's documentation rule,
+§164.316(b)(2)) or 400 days of receipts (the budget's month, a year's comparison, a late
+invoice); 0 keeps everything. The maintenance lane deletes oldest first, `BATCH` rows a
+statement and at most once an `INTERVAL`, so a first run against years of rows is many
+short deletes rather than one lock on a table every request writes to, and logs counts,
+never rows. Do not lower a floor to make a test or a disk happy.
+
 **The browser never renders model Markdown.** Streamed text is inserted with
 `textContent`; finished messages are replaced by a server-rendered fragment from the
 `chat_text` filter. That filter escapes first and deliberately produces no links. Keeping
@@ -1051,7 +1061,13 @@ The JSON is still written; rows are also read for which sources a version read
 on the application row; one older than the newest recorded is left to its JSON. The
 maintenance lane records older versions a few at a time (`record_step`), and
 `manage.py graph_store [--check]` does it all or fails on anything unrecorded or not
-reading back exactly. Still to come: building per source and removing `MAX_SOURCES`,
+reading back exactly. **Old versions keep their lists only as rows**
+(`graph_store.slim`, the maintenance lane's `slim_step`): once a recorded version reads
+back exactly, its sources, nodes and edges leave its JSON and `data["slimmed"]` says so -
+never the newest `KEEP_WHOLE` or the latest published. `GraphRevision.from_db` puts them
+back on load, so every reader of `data` sees the whole version; a read that skips the
+model (`values_list("data")`, `data__sources`) must inflate it too, as `graph_ai.prepared`
+and `source_library.graph_usage` do. Still to come: building per source and removing `MAX_SOURCES`,
 which the rows now make possible - the in-memory graph was the ceiling.
 
 ## Verified against a live CLI

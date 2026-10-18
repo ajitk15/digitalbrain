@@ -64,6 +64,14 @@ allow_self_approval = true
 # tls = true
 # ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"
 
+# Optional. How long audit events and AI usage receipts are kept, in days.
+# Absent or 0 keeps everything, which is the default; anything shorter than six
+# years of audit trail (2192) or 400 days of receipts is refused. Removed oldest
+# first, a batch at a time, from the maintenance lane (platform_core/retention.py).
+# [retention]
+# audit_days = 2192
+# usage_days = 400
+
 [database]
 name = "digital_brain"
 # The role this process connects as. The entrypoint renders the runtime role
