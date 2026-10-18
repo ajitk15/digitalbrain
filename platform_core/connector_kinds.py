@@ -18,13 +18,16 @@ Two rules every adapter obeys, both from CLAUDE.md:
 
 import base64
 import json
+import math
 import re
 from dataclasses import dataclass
+from datetime import UTC
 from ipaddress import ip_address
 from urllib.parse import quote, urlencode
 
 from django import forms
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 
 from .fetching import FetchError, fetch, normalise
 
@@ -35,6 +38,9 @@ MAX_BODY_CHARACTERS = 100_000
 #: Pages of `MAX_RECORDS` one Jira import reads. The writes are one transaction,
 #: so this also bounds how long an import holds its locks.
 MAX_PAGES = 10
+#: What a kind that is handed its whole list in one answer (Rundeck, Azure
+#: Automation, an automation list) imports of it: as much as a paging kind reads.
+MAX_LISTED = MAX_RECORDS * MAX_PAGES
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,9 @@ class Record:
     title: str
     body: str
     url: str
+    #: When the source last changed it, as the source writes it - what a
+    #: connector's high-water mark is read from (`connectors.high_water`).
+    updated: str = ""
 
 
 class Page(list):
@@ -203,47 +212,72 @@ class GitHubForm(forms.Form):
         return value
 
 
-def github_records(config, secret):
+def github_records(config, secret, since=None):
+    """A repository's issues, page after page up to `MAX_PAGES`.
+
+    Newest first for a full read. With `since` - the connector's high-water
+    mark - only issues updated at or after it, oldest first, so a read that
+    stops at the last page still leaves nothing older than its newest unread.
+    An issue seen on an earlier page is not taken twice: the order is by
+    update, and an issue updated during the import moves.
+    """
     repository = config["repository"]
     headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     if secret:
         headers["Authorization"] = f"Bearer {secret}"
-    items = api_json(
-        f"https://api.github.com/repos/{repository}/issues"
-        f"?state=all&per_page={MAX_RECORDS}&sort=updated",
-        headers,
-        label="GitHub",
+    params = {
+        "state": "all",
+        "per_page": MAX_RECORDS,
+        "sort": "updated",
+        "direction": "asc" if since else "desc",
+    }
+    if since:
+        params["since"] = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    records, seen, read_all = [], set(), False
+    for page in range(1, MAX_PAGES + 1):
+        query = urlencode({**params, "page": page})
+        items = api_json(
+            f"https://api.github.com/repos/{repository}/issues?{query}", headers, label="GitHub"
+        )
+        if not isinstance(items, list):
+            raise ValidationError("GitHub returned an unexpected issue list.")
+        for item in items:
+            # Pull requests come back from the issues endpoint; they are not issues.
+            if not isinstance(item, dict) or "pull_request" in item:
+                continue
+            if type(item.get("number")) is not int or not isinstance(item.get("title"), str):
+                raise ValidationError("GitHub returned an unexpected issue record.")
+            if item["number"] in seen:
+                continue
+            seen.add(item["number"])
+            records.append(github_record(repository, item))
+        # Counted before pull requests are dropped: a short page is the last.
+        if len(items) < MAX_RECORDS:
+            read_all = True
+            break
+    return Page(records, complete=read_all)
+
+
+def github_record(repository, item):
+    labels = item.get("labels")
+    state = header(
+        [
+            ("Number", f"#{item['number']}"),
+            ("State", text(item.get("state"))),
+            (
+                "Labels",
+                " ".join(named(one) for one in labels) if isinstance(labels, list) else "",
+            ),
+            ("Updated", text(item.get("updated_at"))),
+        ]
     )
-    if not isinstance(items, list):
-        raise ValidationError("GitHub returned an unexpected issue list.")
-    records = []
-    for item in items:
-        # Pull requests come back from the issues endpoint; they are not issues.
-        if not isinstance(item, dict) or "pull_request" in item:
-            continue
-        if type(item.get("number")) is not int or not isinstance(item.get("title"), str):
-            raise ValidationError("GitHub returned an unexpected issue record.")
-        labels = item.get("labels")
-        state = header(
-            [
-                ("Number", f"#{item['number']}"),
-                ("State", text(item.get("state"))),
-                (
-                    "Labels",
-                    " ".join(named(one) for one in labels) if isinstance(labels, list) else "",
-                ),
-                ("Updated", text(item.get("updated_at"))),
-            ]
-        )
-        records.append(
-            Record(
-                external_id=str(item["number"]),
-                title=item["title"][:200],
-                body=f"{state}\n\n{text(item.get('body'))}".strip(),
-                url=f"https://github.com/{repository}/issues/{item['number']}",
-            )
-        )
-    return records
+    return Record(
+        external_id=str(item["number"]),
+        title=item["title"][:200],
+        body=f"{state}\n\n{text(item.get('body'))}".strip(),
+        url=f"https://github.com/{repository}/issues/{item['number']}",
+        updated=text(item.get("updated_at")),
+    )
 
 
 # ----------------------------------------------------------------------- Jira
@@ -293,11 +327,32 @@ def jira_headers(config, secret):
     return headers
 
 
-def jira_records(config, secret):
+#: A trailing ORDER BY, outside any quoted value, which a narrowed filter replaces.
+ORDER_BY = re.compile(r"\s*\border\s+by\b[^\"']*$", re.IGNORECASE)
+
+
+def since_jql(jql, since, now=None):
+    """The filter narrowed to issues updated since the mark, oldest first.
+
+    JQL reads an absolute date in the Jira account's own time zone, which this
+    platform does not know; a relative one ("-90m") means the same everywhere.
+    Oldest first, so a read stopped at `MAX_PAGES` still read everything older
+    than the newest issue it took.
+    """
+    minutes = max(1, math.ceil(((now or timezone.now()) - since).total_seconds() / 60))
+    narrowed = f'updated >= "-{minutes}m"'
+    base = ORDER_BY.sub("", jql or "").strip()
+    return f"({base}) AND {narrowed} ORDER BY updated ASC" if base else (
+        f"{narrowed} ORDER BY updated ASC"
+    )
+
+
+def jira_records(config, secret, since=None):
     base = config["base_url"]
     headers = jira_headers(config, secret)
+    jql = config.get("jql") or "order by updated DESC"
     params = {
-        "jql": config.get("jql") or "order by updated DESC",
+        "jql": since_jql(jql, since) if since else jql,
         "maxResults": MAX_RECORDS,
         "fields": "summary,description,updated,status,priority,issuetype,labels",
     }
@@ -327,6 +382,7 @@ def jira_records(config, secret):
                 title=text(fields.get("summary"))[:200] or issue["key"],
                 body=f"{state}\n\n{adf_text(fields.get('description'))}".strip(),
                 url=f"{base}/browse/{quote(issue['key'])}",
+                updated=text(fields.get("updated")),
             )
         )
     return Page(records, complete=read_all)
@@ -630,14 +686,17 @@ def servicenow_records(config, secret):
     encoded_query = config.get("query") or "ORDERBYDESCsys_updated_on"
     if groups:
         encoded_query = f"assignment_group.nameIN{','.join(groups)}^{encoded_query}"
+    # An incident table's depth is the owner's choice; any other table is read
+    # to its end, up to `MAX_PAGES`, so a knowledge base past one page imports.
     try:
-        pages = int(config.get("history_pages") or 1) if table == "incident" else 1
+        pages = int(config.get("history_pages") or 1) if table == "incident" else MAX_PAGES
     except (TypeError, ValueError):
         raise ValidationError("Incident history pages must be between 1 and 10.") from None
     if not 1 <= pages <= 10:
         raise ValidationError("Incident history pages must be between 1 and 10.")
     rows = []
     seen_ids = set()
+    read_all = False
     for page in range(pages):
         query = urlencode(
             {
@@ -661,6 +720,7 @@ def servicenow_records(config, secret):
                 rows.append(row)
                 seen_ids.add(row["sys_id"])
         if len(batch) < MAX_RECORDS:
+            read_all = True
             break
     records = []
     allowed_groups = {group.casefold() for group in groups}
@@ -753,7 +813,7 @@ def servicenow_records(config, secret):
                 url=f"{base}/nav_to.do?uri={quote(table)}.do%3Fsys_id%3D{quote(row['sys_id'])}",
             )
         )
-    return records
+    return Page(records, complete=read_all)
 
 
 # ---------------------------------------------------------------- Automations
@@ -850,21 +910,39 @@ class AWXForm(forms.Form):
         return https_base(self.cleaned_data["base_url"])
 
 
+def awx_templates(base, headers):
+    """Every job template, page after page up to `MAX_PAGES`, and whether that was all.
+
+    Pages are asked for by number rather than by the `next` link AWX returns,
+    so no address the server wrote is ever fetched.
+    """
+    items, seen = [], set()
+    for page in range(1, MAX_PAGES + 1):
+        payload = api_json(
+            f"{base}/api/v2/job_templates/?page_size={MAX_RECORDS}&order_by=-modified&page={page}",
+            headers,
+            label="AWX",
+        )
+        batch = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(batch, list):
+            raise ValidationError("AWX returned an unexpected job template list.")
+        for item in batch:
+            if not isinstance(item, dict) or type(item.get("id")) is not int:
+                raise ValidationError("AWX returned an unexpected job template.")
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                items.append(item)
+        if not payload.get("next"):
+            return items, True
+    return items, False
+
+
 def awx_records(config, secret):
     base = config["base_url"]
     headers = {"Authorization": f"Bearer {secret}", "Accept": "application/json"}
-    payload = api_json(
-        f"{base}/api/v2/job_templates/?page_size={MAX_RECORDS}&order_by=-modified",
-        headers,
-        label="AWX",
-    )
-    items = payload.get("results") if isinstance(payload, dict) else None
-    if not isinstance(items, list):
-        raise ValidationError("AWX returned an unexpected job template list.")
+    items, read_all = awx_templates(base, headers)
     records = []
     for item in items:
-        if not isinstance(item, dict) or type(item.get("id")) is not int:
-            raise ValidationError("AWX returned an unexpected job template.")
         summary = item.get("summary_fields") if isinstance(item.get("summary_fields"), dict) else {}
         labels = (summary.get("labels") or {}).get("results") if isinstance(
             summary.get("labels"), dict
@@ -903,7 +981,7 @@ def awx_records(config, secret):
                 last=(text(last.get("finished")), text(last.get("status"))),
             )
         )
-    return records
+    return Page(records, complete=read_all)
 
 
 class RundeckForm(forms.Form):
@@ -926,7 +1004,7 @@ def rundeck_records(config, secret):
     if not isinstance(items, list):
         raise ValidationError("Rundeck returned an unexpected job list.")
     records = []
-    for item in items[:MAX_RECORDS]:
+    for item in items[:MAX_LISTED]:
         if not isinstance(item, dict) or not isinstance(item.get("id"), str):
             raise ValidationError("Rundeck returned an unexpected job.")
         group = text(item.get("group"))
@@ -942,7 +1020,8 @@ def rundeck_records(config, secret):
                 state="Disabled" if item.get("enabled") is False else "",
             )
         )
-    return records
+    # Rundeck answers with the project's whole list: complete unless it was cut.
+    return Page(records, complete=len(items) <= MAX_LISTED)
 
 
 class AzureAutomationForm(forms.Form):
@@ -1004,7 +1083,7 @@ def azure_automation_records(config, secret):
         raise ValidationError("Azure Automation returned an unexpected runbook list.")
     portal = f"https://portal.azure.com/#@{quote(config['tenant'])}/resource/{path}/runbooks/"
     records = []
-    for item in items[:MAX_RECORDS]:
+    for item in items[:MAX_LISTED]:
         if not isinstance(item, dict) or not isinstance(item.get("name"), str):
             raise ValidationError("Azure Automation returned an unexpected runbook.")
         props = item.get("properties") if isinstance(item.get("properties"), dict) else {}
@@ -1025,7 +1104,9 @@ def azure_automation_records(config, secret):
                 last=(text(props.get("lastModifiedTime")), ""),
             )
         )
-    return records
+    # A `nextLink` means Azure has more; it is not followed, so no address the
+    # server wrote is fetched, and the list is then not taken as complete.
+    return Page(records, complete=len(items) <= MAX_LISTED and not payload.get("nextLink"))
 
 
 class AutomationListForm(forms.Form):
@@ -1088,7 +1169,7 @@ def automation_list_records(config, secret):
     if "name" not in columns:
         raise ValidationError("The automation list needs a header row with a name column.")
     namespace = automation_list_namespace(config)
-    records, seen = [], set()
+    records, seen, cut = [], set(), False
     for row in reader:
         row = {(key or "").strip().casefold(): (value or "").strip() for key, value in row.items()}
         name = row.get("name", "")
@@ -1110,9 +1191,10 @@ def automation_list_records(config, secret):
                 meta=automation_meta([(key, row.get(key, "")) for key in AUTOMATION_META]),
             )
         )
-        if len(records) >= MAX_RECORDS:
+        if len(records) >= MAX_LISTED:
+            cut = True
             break
-    return records
+    return Page(records, complete=not cut)
 
 
 def html_text(value):
@@ -1176,6 +1258,9 @@ class Kind:
     #: the only thing tying the two together - KnowledgeEntry deliberately has no
     #: connector, because knowledge outlives the connector that brought it in.
     namespace: callable
+    #: True when `records` takes `since` - a high-water mark - and then returns
+    #: only what changed after it, oldest first (`connectors.changes_since`).
+    incremental: bool = False
 
     def identity(self, config):
         return (config or {}).get(self.identity_field, "")
@@ -1195,6 +1280,7 @@ KINDS = {
             "repository",
             False,
             github_namespace,
+            incremental=True,
         ),
         Kind(
             "jira",
@@ -1206,6 +1292,7 @@ KINDS = {
             "base_url",
             True,
             jira_namespace,
+            incremental=True,
         ),
         Kind(
             "servicenow",

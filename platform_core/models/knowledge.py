@@ -356,6 +356,13 @@ class Connector(models.Model):
     last_status = models.CharField(max_length=12, blank=True)
     last_error = models.TextField(blank=True)
     last_duration_ms = models.PositiveIntegerField(default=0)
+    #: The newest change a read of this connector has seen, as the source dated
+    #: it: a scheduled import of a kind that can asks only for what changed
+    #: since (`connectors.changes_since`). Cleared when the filter changes.
+    high_water = models.DateTimeField(null=True, blank=True)
+    #: When the whole filter was last asked for. Only a full read may prune,
+    #: and a scheduled import reads in full once this is a day old.
+    last_full_read_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
     )

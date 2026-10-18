@@ -239,6 +239,27 @@ filters would otherwise retire each other's imports). Retiring is `active=False`
 the same supersede an updated record performs - nothing is deleted. Leave it
 default-off: under `updated >= -30d`, absence means the ticket is old.
 
+**Every kind pages, and says whether it read to the end.** GitHub reads up to
+`MAX_PAGES` of issues (a short page is the last, counted before pull requests are
+dropped); ServiceNow reads any table but `incident` to its end the same way, so a
+knowledge base past one page imports; AWX is asked for page numbers and never
+fetched at the `next` address it writes; Rundeck, Azure Automation and an
+automation list are handed their whole list and keep up to `MAX_LISTED`, complete
+only when nothing was cut (and, on Azure, no `nextLink`). Each returns a `Page`, so
+`prune` holds every kind to the same "complete" rule.
+
+**A scheduled import reads what changed since its high-water mark**
+(`Connector.high_water`, `connectors.changes_since`, kinds with `incremental`:
+GitHub and Jira). The mark is the newest `Record.updated` a read saw, never moved
+back. A read since it starts `OVERLAP` (five minutes) earlier and goes oldest first
+- GitHub `since=`, Jira a *relative* `updated >= "-Nm"` clause, because JQL reads an
+absolute date in the account's own time zone - so a read stopped at `MAX_PAGES`
+still read everything older than its newest. A button press always reads the whole
+filter, and so does a schedule whose last full read (`last_full_read_at`) is
+`FULL_READ_EVERY` (a day) old; **only a full read prunes**, and nothing changed since
+the mark is an ordinary answer, not an empty filter. Saving a different filter
+clears both, since the mark said nothing about the new set.
+
 `graph/search/` and the MCP server call no model. `utility/api_chat.py` does - it is the
 one API surface that spends the application's provider budget - so it is gated on
 the `chat_api` feature switch. It used to be **opt-in**, unticked on the create

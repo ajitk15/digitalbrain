@@ -26,6 +26,7 @@ from django.db import models, transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views.decorators.http import require_http_methods
 
 from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, complete, kind_for
@@ -105,11 +106,52 @@ EMPTY_RESULT = {
 }
 
 
-def sync(user, connector_id, app_id):
+#: How often a scheduled import reads the whole filter rather than what changed
+#: since its high-water mark. Only a full read may prune, and it is also what
+#: catches a change the mark missed.
+FULL_READ_EVERY = timedelta(days=1)
+#: How far before the mark a read since it starts: a source's clock and its
+#: search index are not this platform's, and re-reading a few minutes costs
+#: nothing - an unchanged record matches its digest and is skipped.
+OVERLAP = timedelta(minutes=5)
+
+
+def changes_since(connector, kind, now):
+    """Where a scheduled import of `connector` starts reading, or None for all of it.
+
+    From the mark only when the kind can read that way, a full read has set a
+    mark, and that full read is under `FULL_READ_EVERY` old.
+    """
+    if not kind.incremental or connector.high_water is None:
+        return None
+    if connector.last_full_read_at is None or now - connector.last_full_read_at >= FULL_READ_EVERY:
+        return None
+    return connector.high_water - OVERLAP
+
+
+def high_water(records, previous):
+    """The newest change among `records`, never earlier than the mark before.
+
+    Whatever order a read took, the newest change it saw is safe to read from:
+    a full read is newest first, so it saw the newest; a read since the mark is
+    oldest first, so everything before its newest was read too.
+    """
+    found = [parse_datetime(record.updated) for record in records if record.updated]
+    newest = max((when for when in found if when is not None), default=None)
+    if newest is None or (previous is not None and newest < previous):
+        return previous
+    return newest
+
+
+def sync(user, connector_id, app_id, incremental=False):
     """Import one connector's records as knowledge. Returns how many changed.
 
     The provider call happens outside the transaction; only the writes are inside
     it, so a slow or hanging instance never holds a database lock.
+
+    `incremental` - a scheduled import - reads only what changed since the
+    connector's high-water mark where its kind can (`changes_since`). A button
+    press always reads the whole filter, and only a whole read prunes.
     """
     app, _ = owner_access(user, app_id)
     if not feature_enabled("knowledge", app):
@@ -132,8 +174,12 @@ def sync(user, connector_id, app_id):
             "in the configured secret directory before importing."
         )
     started = time.monotonic()
+    since = changes_since(connector, kind, timezone.now()) if incremental else None
     try:
-        records = kind.records(connector.config, secret)
+        if since is None:
+            records = kind.records(connector.config, secret)
+        else:
+            records = kind.records(connector.config, secret, since=since)
     except ValidationError as failure:
         finish(connector, "failed", 0, started, " ".join(failure.messages))
         raise
@@ -171,9 +217,15 @@ def sync(user, connector_id, app_id):
 
                 profile(entry)
             count += 1
-        pruned = prune(locked, app, kind, records)
-        empty = EMPTY_RESULT.get(locked.kind) if not records else None
+        # What did not change since the mark is not absent: only a whole read prunes.
+        pruned = prune(locked, app, kind, records) if since is None else 0
+        # Nothing changed since the mark is an ordinary answer, not an empty filter.
+        empty = EMPTY_RESULT.get(locked.kind) if not records and since is None else None
         finish(locked, "empty" if empty else "ok", count, started, empty or "")
+        marks = {"high_water": high_water(records, locked.high_water)}
+        if since is None:
+            marks["last_full_read_at"] = timezone.now()
+        Connector.objects.filter(pk=locked.pk).update(**marks)
         audit(
             user,
             "connector.synced",
@@ -184,6 +236,7 @@ def sync(user, connector_id, app_id):
                 "imported": count,
                 "seen": len(records),
                 "pruned": pruned,
+                "since": since.isoformat() if since else "",
             },
         )
     # Who may open what: after the commit, because it asks the source system
@@ -305,6 +358,7 @@ def connectors(request, pk):
         else:
             messages.error(request, "Unknown connector action.")
         return redirect("connectors", pk=pk)
+    now = timezone.now()
     return render(
         request,
         "connectors.html",
@@ -318,6 +372,9 @@ def connectors(request, pk):
                     "target": KINDS[row.kind].identity(row.config) if row.kind in KINDS else "",
                     "credential": bool(credential(app, row.kind)),
                     "schedule": dict(SYNC_INTERVALS).get(row.sync_interval_minutes, ""),
+                    "since": (
+                        changes_since(row, KINDS[row.kind], now) if row.kind in KINDS else None
+                    ),
                 }
                 for row in rows
             ],
@@ -358,6 +415,10 @@ def connector_form(request, pk, connector_id=None):
             if connector is None:
                 connector = Connector(application=app, kind=key, created_by=request.user)
             connector.name = name_field["value"]
+            if connector.config != config:
+                # A different filter is a different set: its mark says nothing
+                # about it, and the next scheduled import reads it whole.
+                connector.high_water = connector.last_full_read_at = None
             connector.config = config
             connector.sync_interval_minutes = schedule["interval"]
             connector.prune_missing = schedule["prune"]
@@ -541,7 +602,9 @@ def run_scheduled(connector):
         )
         return
     try:
-        count = sync(connector.created_by, connector.pk, connector.application_id)
+        count = sync(
+            connector.created_by, connector.pk, connector.application_id, incremental=True
+        )
     except PermissionDenied:
         finish(
             connector,

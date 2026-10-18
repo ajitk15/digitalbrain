@@ -9,7 +9,7 @@
 <td><div class="row-lead">{% if item.kind %}{% icon item.kind.icon %}{% endif %}<div><strong>{{ item.row.name }}</strong><small>{{ item.row.get_kind_display }}</small></div></div></td>
 <td class="mono">{{ item.target|default:"—" }}</td>
 <td>{% if not item.row.enabled %}<span class="pill">Disabled</span>{% elif item.row.last_status == 'failed' %}<span class="pill status-failed" title="{{ item.row.last_error }}">Failed</span>{% elif item.row.last_status == 'empty' %}<span class="pill status-queued" title="{{ item.row.last_error }}">No records</span>{% elif not item.credential and item.kind.credential_required %}<span class="pill status-queued">No credential</span>{% elif item.row.last_status == 'ok' %}<span class="pill status-ready">Ready</span>{% else %}<span class="pill">Never imported</span>{% endif %}</td>
-<td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}{% if item.row.sync_interval_minutes %}<small>{{ item.schedule }}</small>{% endif %}</td>
+<td>{% if item.row.last_synced_at %}{{ item.row.last_synced_at|date:"M d, Y H:i" }}{% else %}<span class="muted">never</span>{% endif %}{% if item.row.sync_interval_minutes %}<small>{{ item.schedule }}{% if item.since %} &middot; changes since {{ item.since|date:"M d, H:i" }}, a full read daily{% endif %}</small>{% endif %}</td>
 <td>{{ item.row.last_count }}</td>
 <td><div class="actions">
 <form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="connector" value="{{ item.row.pk }}"><button type="submit" name="action" value="sync" class="link-button">{% icon "download" 12 %}Import</button></form>
