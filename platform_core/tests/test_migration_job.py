@@ -7,8 +7,12 @@ one-shot job that the web and worker containers wait for, which is what lets
 the web container be more than one replica.
 """
 
+import contextlib
+import importlib.util
 import io
+import os
 import re
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -268,7 +272,7 @@ class DeploymentTests(SimpleTestCase):
             "pids_limit: ",
             "mem_limit: ",
             "- /tmp:",
-            "platform-secrets:/run/secrets:ro",
+            "runtime-secrets:/run/secrets:ro",
             "managed-credentials:/var/lib/digitalbrain/credentials:ro",
         ):
             self.assertIn(line, sandbox)
@@ -283,3 +287,206 @@ class DeploymentTests(SimpleTestCase):
         app = service(self.scale, "app")
         self.assertIn('DIGITAL_BRAIN_MIGRATIONS: "wait"', app)
         self.assertIn("replicas: ${DIGITAL_BRAIN_WEB_REPLICAS:-1}", app)
+
+    def test_only_secrets_init_and_the_migrate_job_can_read_the_owner_password(self):
+        base = (ROOT / "docker-compose.yaml").read_text(encoding="utf-8")
+        split = {
+            name: {**mounts(base, name), **mounts(self.scale, name)}
+            for name in sorted(set(services(base)) | set(services(self.scale)))
+        }
+        self.assertEqual(readers(split), {"secrets-init", "postgres", "migrate"})
+        # One container doing everything also applies the migrations, as the owner.
+        alone = {name: mounts(base, name) for name in services(base)}
+        self.assertEqual(readers(alone), {"secrets-init", "postgres", "app"})
+
+    def test_web_worker_and_sandbox_read_the_runtime_set_and_only_web_writes_it(self):
+        for name, writable in (("app", True), ("worker", False), ("sandbox", False)):
+            self.assertEqual(
+                mounts(self.scale, name)["/run/secrets"], ("runtime-secrets", writable), name
+            )
+        self.assertEqual(
+            mounts(self.scale, "migrate")["/run/runtime-secrets"], ("runtime-secrets", True)
+        )
+        self.assertIn(
+            'DIGITAL_BRAIN_RUNTIME_SECRETS: "/run/runtime-secrets"', service(self.scale, "migrate")
+        )
+        self.assertIn("\n  runtime-secrets:", self.scale.split("\nvolumes:\n", 1)[1])
+
+    def test_the_migrate_job_writes_the_runtime_set_last(self):
+        job = self.entrypoint[self.entrypoint.index('if [ "$ROLE" = "migrate" ]; then'):]
+        self.assertLess(
+            job.index('python /app/deploy/runtime_secrets.py "$CONFIG" "$RUNTIME_SECRETS"'),
+            job.index("exit 0"),
+        )
+        self.assertIn("only the migrate job writes DIGITAL_BRAIN_RUNTIME_SECRETS", self.entrypoint)
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("chmod 700 /run/secrets /run/runtime-secrets", dockerfile)
+
+
+#: The volumes that hold the owner's database password: the store, and
+#: Postgres's own copy of it.
+OWNER_PASSWORD_VOLUMES = {"platform-secrets", "database-secret"}
+
+
+def services(text):
+    """The top-level service names of a compose file."""
+    body = text.split("\nservices:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+    return re.findall(r"^  ([a-z][a-z0-9-]*):\n", body, re.M)
+
+
+def mounts(text, name):
+    """One service's named-volume mounts, {target: (volume, writable)}.
+
+    Keyed on the target because that is how compose merges an overlay's
+    volumes into the base file's: the same target is replaced.
+    """
+    if name not in services(text):
+        return {}
+    found = re.search(r"^    volumes:\n((?:      .*\n|\s*\n)+)", service(text, name), re.M)
+    if found is None:
+        return {}
+    return {
+        target: (volume, flag != ":ro")
+        for volume, target, flag in re.findall(
+            r"^      - ([a-z][a-z0-9-]*):(/[^:\s]*)(:ro)?$", found[1], re.M
+        )
+    }
+
+
+def readers(services):
+    """Which services mount a volume holding the owner's database password."""
+    return {
+        name
+        for name, mounted in services.items()
+        if any(volume in OWNER_PASSWORD_VOLUMES for volume, _ in mounted.values())
+    }
+
+
+def runtime_secrets():
+    """deploy/runtime_secrets.py, which is a script and not a package module."""
+    spec = importlib.util.spec_from_file_location(
+        "runtime_secrets", ROOT / "deploy/runtime_secrets.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class RuntimeSecretTests(SimpleTestCase):
+    """The set every container but the migrate job reads, as the job writes it."""
+
+    CLAUDE = "claude_00000000-0000-0000-0000-000000000001"
+
+    def setUp(self):
+        self.module = runtime_secrets()
+        work = tempfile.TemporaryDirectory()
+        self.addCleanup(work.cleanup)
+        self.store = Path(work.name) / "store"
+        self.target = Path(work.name) / "runtime"
+        self.store.mkdir()
+        self.target.mkdir()
+        for name, value in (
+            ("django_secret_key", "value-signing"),
+            ("database_password", "value-owner"),
+            ("database_runtime_password", "value-runtime"),
+            ("redis_password", "value-redis"),
+            (self.CLAUDE, "value-sk-ant"),
+            (".django_secret_key.42", "partial"),
+        ):
+            self.put(self.store / name, value)
+        (self.store / "..data").mkdir()
+
+    def put(self, path, value, mtime=None):
+        path.write_text(value, encoding="utf-8")
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+
+    def held(self):
+        return {path.name: path.read_text(encoding="utf-8") for path in self.target.iterdir()}
+
+    def write(self, password="database_runtime_password"):
+        return self.module.write(self.store, self.target, password)
+
+    def test_the_runtime_set_never_holds_the_owner_password(self):
+        self.write()
+        self.assertEqual(self.held(), {
+            "django_secret_key": "value-signing",
+            "database_runtime_password": "value-runtime",
+            "redis_password": "value-redis",
+            self.CLAUDE: "value-sk-ant",
+        })
+
+    def test_connecting_as_the_owner_gives_the_owner_password_instead(self):
+        self.assertEqual(self.module.runtime_password({"database": {}}), "database_password")
+        self.write()
+        changed = self.write("database_password")
+        self.assertEqual(changed["removed"], ["database_runtime_password"])
+        self.assertEqual(self.held()["database_password"], "value-owner")
+        self.assertNotIn("database_runtime_password", self.held())
+        # Turning the runtime role back on takes the owner's away again.
+        self.write()
+        self.assertNotIn("database_password", self.held())
+
+    def test_a_credential_mounted_since_is_kept_but_a_newer_store_copy_wins(self):
+        self.put(self.store / self.CLAUDE, "old", mtime=1_000)
+        self.put(self.target / self.CLAUDE, "mounted since", mtime=2_000)
+        self.write()
+        self.assertEqual(self.held()[self.CLAUDE], "mounted since")
+        self.put(self.store / self.CLAUDE, "rotated", mtime=3_000)
+        self.write()
+        self.assertEqual(self.held()[self.CLAUDE], "rotated")
+
+    def test_what_the_platform_generates_always_comes_from_the_store(self):
+        for name in ("django_secret_key", "database_runtime_password", "redis_password"):
+            self.put(self.target / name, "edited here", mtime=9_000_000_000)
+        self.write()
+        self.assertEqual(self.held()["django_secret_key"], "value-signing")
+        self.assertEqual(self.held()["database_runtime_password"], "value-runtime")
+        self.assertEqual(self.held()["redis_password"], "value-redis")
+
+    def test_the_previous_signing_key_follows_the_store_both_ways(self):
+        """Rotating the signing key keeps the old one as a fallback for a while.
+
+        An old key left in the runtime set after the store dropped it would go
+        on accepting sessions signed with it.
+        """
+        self.put(self.store / "django_secret_key_previous", "value-old")
+        self.put(self.target / "django_secret_key_previous", "edited here", mtime=9_000_000_000)
+        self.write()
+        self.assertEqual(self.held()["django_secret_key_previous"], "value-old")
+        (self.store / "django_secret_key_previous").unlink()
+        changed = self.write()
+        self.assertEqual(changed["removed"], ["django_secret_key_previous"])
+        self.assertNotIn("django_secret_key_previous", self.held())
+
+    def test_a_missing_password_or_an_unknown_one_stops_the_job(self):
+        (self.store / "database_runtime_password").unlink()
+        with self.assertRaises(SystemExit):
+            self.write()
+        with self.assertRaises(SystemExit):
+            self.module.runtime_password({"database": {"password_secret": "jira_x"}})
+
+    def test_every_file_is_owner_only(self):
+        if os.name == "nt":
+            self.skipTest("Permission bits are POSIX; read_secret checks them only there.")
+        self.write()
+        self.assertEqual(self.target.stat().st_mode & 0o777, 0o700)
+        for path in self.target.iterdir():
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600, path.name)
+
+    def test_it_reads_the_configuration_and_prints_no_value(self):
+        from digitalbrain.configuration import DATABASE_PASSWORDS
+
+        self.assertEqual(self.module.DATABASE_PASSWORDS, DATABASE_PASSWORDS)
+        config = self.store.parent / "production.toml"
+        config.write_text(
+            f'secret_directory = "{self.store.as_posix()}"\n[database]\n'
+            'password_secret = "database_runtime_password"\n',
+            encoding="utf-8",
+        )
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.module.main([str(config), str(self.target)])
+        self.assertNotIn("database_password", self.held())
+        self.assertNotIn("value-", out.getvalue())
+        self.assertIn("never database_password", out.getvalue())

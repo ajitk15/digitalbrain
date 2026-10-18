@@ -72,6 +72,20 @@ esac
 case "$BUCKET" in *[!a-z0-9.-]*) echo "entrypoint: DIGITAL_BRAIN_ORIGINALS_BUCKET must be a bucket name." >&2; exit 1 ;; esac
 case "$REGION" in ""|*[!a-z0-9-]*) echo "entrypoint: DIGITAL_BRAIN_ORIGINALS_REGION must be a region name." >&2; exit 1 ;; esac
 
+# Where the migrate job writes the secrets every other container reads
+# (deploy/runtime_secrets.py). docker-compose.scale.yaml sets it: there only
+# secrets-init and the migrate job mount the store, platform-secrets, which
+# holds the owner's database password, and the web, worker and sandbox
+# containers mount the set written here at /run/secrets instead. Unset - the
+# all-in-one container - nothing is copied and /run/secrets is the store.
+RUNTIME_SECRETS="${DIGITAL_BRAIN_RUNTIME_SECRETS:-}"
+case "$RUNTIME_SECRETS" in
+    "") ;;
+    /run/secrets|/run/secrets/*) echo "entrypoint: DIGITAL_BRAIN_RUNTIME_SECRETS must not be inside /run/secrets." >&2; exit 1 ;;
+    /*) [ "$ROLE" = "migrate" ] || { echo "entrypoint: only the migrate job writes DIGITAL_BRAIN_RUNTIME_SECRETS." >&2; exit 1; } ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_RUNTIME_SECRETS must be an absolute path." >&2; exit 1 ;;
+esac
+
 # ------------------------------------------------------------- configuration
 # An operator's own file wins if one is mounted. Otherwise it is rendered from
 # environment variables, because the non-secret configuration is exactly that -
@@ -97,7 +111,10 @@ OWNER_CONFIG="/app/.runtime/production-owner.toml"
 # The platform connects as a role that can read and write rows and do nothing
 # else (platform_core/database_roles.py); the role Postgres's image creates is
 # a superuser, which can do anything the server can and is never held to row
-# security. DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0 connects as the owner again.
+# security. DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0 connects as the owner again -
+# set it on every service of a split deployment, because the migrate job then
+# gives the owner's password to the runtime secret set instead of the runtime
+# role's.
 RUNTIME_ROLE="${DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE:-1}"
 case "$RUNTIME_ROLE" in
     0|1) ;;
@@ -274,7 +291,7 @@ fi
 # rewrite or drop them, and "Directory nonexistent" for a path the compose file
 # mounts is the kind of thing worth one line of output forever.
 echo "entrypoint: mounts"
-for path in /run/secrets /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials; do
+for path in /run/secrets $RUNTIME_SECRETS /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials; do
     if mount | grep -q " ${path} "; then
         echo "  ${path}: volume"
     elif [ -d "$path" ]; then
@@ -300,9 +317,11 @@ done
 # way, and the mount report above says which happened - a key on a
 # non-persistent path signs sessions that will not survive a restart.
 mkdir -p /run/secrets 2>/dev/null || true
-# Only whoever applies the migrations writes here. A container that waits for
-# them - every worker, the sandbox, a web replica beside a migrate job - only
-# reads, so it may be given the secrets read-only, as the sandbox is.
+# Only whoever applies the migrations writes the platform's own secrets here. A
+# container that waits for them - every worker, the sandbox, a web replica
+# beside a migrate job - only reads them, so it may be given the secrets
+# read-only, as the worker and the sandbox are. In a split deployment what it
+# reads is the migrate job's runtime set, not the store (RUNTIME_SECRETS above).
 if [ "$MIGRATIONS" = "apply" ] && [ ! -w /run/secrets ]; then
     echo "entrypoint: /run/secrets cannot be created or written." >&2
     exit 1
@@ -313,7 +332,8 @@ if [ ! -r /run/secrets ] || [ ! -x /run/secrets ]; then
 fi
 chmod 700 /run/secrets 2>/dev/null || true
 if [ "$MIGRATIONS" = "wait" ]; then
-    # Whoever applies the migrations writes the key. A container that waits for
+    # Whoever applies the migrations writes the key - in a split deployment,
+    # into the runtime set this container reads. A container that waits for
     # them waits for the key too, so it never starts signing with one of its own.
     waited=0
     while [ ! -f /run/secrets/django_secret_key ]; do
@@ -399,6 +419,14 @@ echo "entrypoint: checking deployment settings"
 python manage.py check --deploy --fail-level WARNING
 
 if [ "$ROLE" = "migrate" ]; then
+    if [ -n "$RUNTIME_SECRETS" ]; then
+        # Last, once the runtime role's password is the one the server holds:
+        # the signing key, the Redis password, the database password the
+        # runtime configuration names and every credential, but never the
+        # other database password - the owner's, unless
+        # DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0 makes it the one they connect with.
+        python /app/deploy/runtime_secrets.py "$CONFIG" "$RUNTIME_SECRETS"
+    fi
     echo "entrypoint: migrations applied; nothing else runs in this container"
     exit 0
 fi

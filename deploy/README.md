@@ -195,6 +195,22 @@ manager, and one mounted there **always wins** over one typed into the browser
 — which is what makes migrating a credential into a secret manager need no
 change in the product. That is also why the two directories must differ.
 
+**Split with `docker-compose.scale.yaml`, no runtime container sees the owner's
+database password.** `platform-secrets` becomes the store, and only
+`secrets-init` and the `migrate` job mount it. `migrate` copies everything the
+other containers read into `runtime-secrets` (`deploy/runtime_secrets.py`).
+That covers the signing key, the Redis password, the runtime role's password
+and every credential. The owner's password is never copied. `app` mounts that
+set writable at `/run/secrets`, and `worker` and `sandbox` mount it read-only.
+So mount an operator credential through the `app` container; the other two see
+it at once. A file put in the store instead - the originals and Entra keys
+below say `platform-secrets` - reaches them at the next deploy. To rotate the
+signing key (the old one as `django_secret_key_previous`) or a database
+password, replace it in the store and deploy again: `migrate` copies those from
+the store every time, and drops the previous key once the store has none.
+With `DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0`, set it on every service; the set
+then carries the owner's password, because that is what they connect with.
+
 **Originals go to S3.** Both compose files set
 `DIGITAL_BRAIN_ORIGINALS_BUCKET=digital-brain-originals-prod` and
 `DIGITAL_BRAIN_ORIGINALS_REGION=us-west-2`, which the entrypoint renders as

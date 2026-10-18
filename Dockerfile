@@ -90,11 +90,16 @@ COPY --from=deps  --chown=root:root /app/.venv       /app/.venv
 
 # Written to at runtime: uploaded originals, the event log, and ClamAV's
 # signature database. Everything else stays read-only to the service account.
+# /run/runtime-secrets is where the migrate job of docker-compose.scale.yaml
+# writes the secrets the other containers read: a new volume takes its owner
+# and mode from the directory it is first mounted on, so it has to exist here.
 RUN set -eu; \
-    mkdir -p /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials /var/log/clamav /run/secrets; \
-    chown -R brain:brain /app/.runtime /var/lib/clamav /var/lib/digitalbrain /var/log/clamav /run/secrets; \
+    mkdir -p /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials /var/log/clamav \
+        /run/secrets /run/runtime-secrets; \
+    chown -R brain:brain /app/.runtime /var/lib/clamav /var/lib/digitalbrain /var/log/clamav \
+        /run/secrets /run/runtime-secrets; \
     chmod 700 /var/lib/digitalbrain/credentials; \
-    chmod 700 /run/secrets
+    chmod 700 /run/secrets /run/runtime-secrets
 
 EXPOSE 8000
 

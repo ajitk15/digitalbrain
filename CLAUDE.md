@@ -161,7 +161,8 @@ runtime role (`user = "digital_brain_runtime"`, `password_secret =
 password is a mounted file like every secret, sent to the server as a SCRAM verifier
 computed here, so a server logging DDL logs no password; replacing the file and deploying
 rotates it. The entrypoint renders both configurations; `DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0`
-connects as the owner again, and an operator's mounted file is used for both. Runtime
+connects as the owner again (in the split, set it on every service), and an operator's
+mounted file is used for both. Runtime
 code must never need DDL - there is none today, and the role cannot run it.
 
 **Row security is the second layer, under the code's own scoping** (`tenancy.py`,
@@ -1484,8 +1485,26 @@ and a test holds the two lists to `LANES` with no lane in both. Each service's h
 check names only its own lanes (`queue_status --check --lanes`). A container that waits
 for migrations only reads `/run/secrets`; only the one that applies them must write it.
 Still not in a sandbox: chat on Claude starts the CLI on the web container's stream
-thread, and every container still mounts the whole secrets volume, owner's database
-password included.
+thread.
+
+**Each container is given only the secrets its role reads** (`deploy/runtime_secrets.py`).
+In the split, `platform-secrets` is the store and holds the owner's database password, so
+only `secrets-init` and the migrate job mount it. The migrate job writes `runtime-secrets`
+from it as its last step. The signing key, the Redis password and the database password the
+runtime configuration names are copied on every run, because they are made and rotated in
+the store. So is the previous signing key, which is also removed once the store has none:
+left behind, an old key would go on accepting sessions after its rotation. Every other
+file (credentials) is copied when it is absent or newer in the
+store. The other database password is never copied, and is removed if it is found there.
+Web mounts the set writable at `/run/secrets`: `seed_application_ai` writes into it, and
+it is where an operator mounts a credential now. The worker and sandbox mount it
+read-only. `DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0`, set on every service, makes the set
+carry the owner's password instead. `DeploymentTests` reads both compose files and holds
+the owner's password to secrets-init, Postgres and migrate, or `app` when it runs alone.
+The store is never pruned, so a rollback finds what it left. Shared by all three still:
+the SSO client secret and setup templates, which only web reads. Separate sets would keep
+a credential seeded at creation from reaching the lanes until the next deploy. The
+all-in-one container is unchanged: there, `/run/secrets` is the store.
 
 **Migrations are applied once, under a lock** (`manage.py apply_migrations`). `migrate`
 takes no lock of its own, so two containers starting together both applied the pending

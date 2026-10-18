@@ -27,10 +27,23 @@
 #   should never run, a converter that never returns - each is held to this
 #   container: it serves no request, writes only /tmp and the runtime volume,
 #   has no Linux capabilities and cannot gain one, reads every credential
-#   read-only, and stops at a process and a memory limit.
+#   read-only and never the owner's database password, and stops at a process
+#   and a memory limit.
 # * "clamd" scans documents. clamscan loaded the whole signature database for
 #   every file; the daemon loads it once. processing.py still refuses
 #   signatures more than a week old, by asking the daemon for their date.
+#
+# Each container gets only the secrets its role reads. The platform-secrets
+# volume is the store, and it holds the owner's database password - in the
+# Postgres image, a superuser's - so only secrets-init and the migrate job
+# mount it. The migrate job writes runtime-secrets from it
+# (deploy/runtime_secrets.py): the signing key, the Redis password, the
+# runtime role's database password and every application's credentials, never
+# the owner's password. The web container mounts that set writable, at
+# /run/secrets as before - it is where an operator mounts a credential now -
+# and the worker and the sandbox mount it read-only. With
+# DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0 on every service they connect as the
+# owner, and the set carries the owner's password instead.
 #
 # Every lane but maintenance claims its work row by row
 # (document_worker.SHARED_LANES), so worker and sandbox replicas share their
@@ -75,8 +88,13 @@ services:
       # files originals_access_key_id and originals_secret_access_key.
       DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
       DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
+      # Where it writes the secrets every other container reads.
+      DIGITAL_BRAIN_RUNTIME_SECRETS: "/run/runtime-secrets"
     volumes:
+      # The store, owner's database password included. Nothing but this job
+      # and secrets-init mounts it.
       - platform-secrets:/run/secrets
+      - runtime-secrets:/run/runtime-secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials
       - demo-workspace:/var/lib/digitalbrain/demo
@@ -93,6 +111,12 @@ services:
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
     deploy:
       replicas: ${DIGITAL_BRAIN_WEB_REPLICAS:-1}
+    volumes:
+      # Replaces the store the all-in-one container mounts here (compose merges
+      # a service's volumes by target). Writable: creating an application
+      # copies a setup template into it (ai.seed_application_ai), and an
+      # operator mounts a credential here, where the worker and sandbox see it.
+      - runtime-secrets:/run/secrets
     healthcheck:
       # No signatures to download in a web container, so it listens within
       # seconds; the base file's ten minutes would hide a replica that never does.
@@ -128,7 +152,8 @@ services:
       DIGITAL_BRAIN_INSTANCE: "coolify-1-worker"
       DIGITAL_BRAIN_LANES: "graph,connectors,serviceops,serviceops-tests,automations,maintenance"
     volumes:
-      - platform-secrets:/run/secrets
+      # The runtime set, read-only: never the owner's database password.
+      - runtime-secrets:/run/secrets:ro
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials
       - demo-workspace:/var/lib/digitalbrain/demo
@@ -180,8 +205,9 @@ services:
       DIGITAL_BRAIN_INSTANCE: "coolify-1-sandbox"
     volumes:
       # Read, never written: the signing key and every credential are made by
-      # the migrate job and the web container, never here.
-      - platform-secrets:/run/secrets:ro
+      # the migrate job and the web container, never here. The runtime set, so
+      # never the owner's database password.
+      - runtime-secrets:/run/secrets:ro
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials:ro
       - demo-workspace:/var/lib/digitalbrain/demo
@@ -222,3 +248,5 @@ services:
 
 volumes:
   clamd-db:
+  # Written by the migrate job from platform-secrets; see the top of this file.
+  runtime-secrets:
