@@ -734,19 +734,18 @@ def run_detail(request, pk, run_id):
 
     from . import code_factory, code_factory_build
     from .code_factory import confirm_repository
+    from .code_factory_agents import local_repository
     from .code_factory_build import (
         REFRESH_TARGETS,
-        apply_local,
-        before_after,
         decline_refresh,
         discard,
-        local_repository,
         publish,
         refresh_after,
         request_preparation,
-        run_local_tests,
         write_credential,
     )
+    from .code_factory_local import apply_local, run_local_tests
+    from .code_factory_picture import before_after
     from .models import FactoryRun
     from .readiness import setup
 
@@ -937,7 +936,7 @@ def run_before_after(request, pk, run_id):
     off the small drawing is a plain link here. Nothing is computed that the
     run page does not already show.
     """
-    from .code_factory_build import before_after
+    from .code_factory_picture import before_after
     from .models import FactoryRun
 
     app, _ = access(request.user, pk, "code_factory")

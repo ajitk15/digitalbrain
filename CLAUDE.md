@@ -1138,3 +1138,20 @@ has, through the mocked transport.
 
 `platform_core/agent_runtime/` is deliberately not called `agents` — the OpenAI Agents SDK
 owns the top-level `agents` module and is imported from inside this package.
+
+`platform_core/models/` is a package by sub-domain - `accounts` (users, the organization
+tree, applications, grants, the audit trail), `ai`, `knowledge`, `operations`,
+`code_graph`, `chat`, `factory`, `runtime` - imported in that order, each needing only
+those before it; a later one refers to an earlier one's model by its class, never the
+other way round (use a string reference instead). Import every model from
+`platform_core.models`, which re-exports all of them; a new model goes in its area's
+module and in `__init__`. Moving a model between them changes no migration.
+
+Code Factory after approval is four modules: `code_factory_build` (the gates, the
+preparation queue, `prepare`, `publish`, the stall and checks sweeps, the refresh),
+`code_factory_agents` (each agent, and delivery to GitHub - checks no grant, so call it
+only behind `gate`), `code_factory_local` (delivery into a folder, its tests) and
+`code_factory_picture`. The agents module imports nothing from the build module. A test
+that patches an agent the build module calls - `run_work_order`, `run_implementation` -
+patches it on `code_factory_build`, where `prepare` looks it up; one that patches what an
+agent calls patches it on `code_factory_agents`.

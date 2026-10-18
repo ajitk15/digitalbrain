@@ -748,7 +748,7 @@ class SelectiveApprovalTests(TestCase):
 
     def test_a_rejected_item_reaches_neither_the_files_nor_the_pull_request(self):
         """The whole point: what was not chosen is not built."""
-        from platform_core.code_factory_build import pull_request_body, target_paths
+        from platform_core.code_factory_agents import pull_request_body, target_paths
         from platform_core.factory_views import review_plan
 
         run = self.run_pipeline()

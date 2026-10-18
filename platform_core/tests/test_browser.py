@@ -1470,7 +1470,8 @@ class BeforeAfterTests(BrowserTestCase):
         import tempfile
         from pathlib import Path
 
-        from platform_core.code_factory_build import apply_local, refresh_after
+        from platform_core.code_factory_build import refresh_after
+        from platform_core.code_factory_local import apply_local
         from platform_core.code_graph_ingest import index_repository, register_local
         from platform_core.models import ApplicationGrant, ChangePlan, FactoryRun, ProposedChange
 

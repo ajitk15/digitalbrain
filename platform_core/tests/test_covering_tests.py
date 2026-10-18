@@ -12,13 +12,13 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 
-from platform_core.code_factory_build import (
+from platform_core.code_factory_agents import (
     NEW_FILE,
     covering_tests,
     numbered_files,
     orphaned_tests,
-    prepare,
 )
+from platform_core.code_factory_build import prepare
 from platform_core.code_graph_ingest import register
 from platform_core.models import FactoryRun, PlanItem, ProposedChange
 

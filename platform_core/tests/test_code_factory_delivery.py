@@ -11,7 +11,8 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
-from platform_core.code_factory_build import collect_changes, prepare, publish, target_paths
+from platform_core.code_factory_agents import collect_changes, target_paths
+from platform_core.code_factory_build import prepare, publish
 from platform_core.github_write import (
     BRANCH_PREFIX,
     absent_path,
@@ -162,7 +163,7 @@ class DeliveryGateTests(TestCase):
         # a test path when the plan names none; that is switched off here so the
         # replies still reach the agents they were written for, and is covered
         # on its own by DerivedTestPathTests.
-        derivation = patch("platform_core.code_factory_build.derived_test_paths", return_value=[])
+        derivation = patch("platform_core.code_factory_agents.derived_test_paths", return_value=[])
         derivation.start()
         self.addCleanup(derivation.stop)
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
@@ -1040,7 +1041,7 @@ class AnnotatedTargetTests(SimpleTestCase):
     def paths(self, *targets):
         from types import SimpleNamespace
 
-        from platform_core.code_factory_build import target_paths
+        from platform_core.code_factory_agents import target_paths
 
         items = [
             SimpleNamespace(targets=list(targets), sequence=0, status="accepted")
@@ -1073,7 +1074,7 @@ class DerivedTestPathTests(SimpleTestCase):
     """The test file chosen for a changed source file the plan named no test for."""
 
     def paths(self, changed, known=()):
-        from platform_core.code_factory_build import derived_test_paths
+        from platform_core.code_factory_agents import derived_test_paths
 
         return derived_test_paths([{"path": path} for path in changed], list(known))
 
@@ -1117,7 +1118,7 @@ class DerivedTestPathTests(SimpleTestCase):
         self.assertEqual(self.paths(["app/Main.java", "xsrc/main/java/A.java"]), [])
 
     def test_the_test_language_is_read_from_the_paths(self):
-        from platform_core.code_factory_build import test_language
+        from platform_core.code_factory_agents import test_language
 
         self.assertEqual(test_language(["src/test/java/a/BTest.java"]), "java")
         self.assertEqual(test_language(["web/a.test.ts"]), "javascript")

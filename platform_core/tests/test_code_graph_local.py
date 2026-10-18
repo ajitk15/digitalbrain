@@ -359,7 +359,7 @@ class LocalDeliveryTests(TestCase):
         )
 
     def apply(self):
-        from platform_core.code_factory_build import apply_local
+        from platform_core.code_factory_local import apply_local
 
         return apply_local(self.owner, self.app.pk, self.run.pk)
 
@@ -409,12 +409,12 @@ class LocalDeliveryTests(TestCase):
 
     def test_a_folder_run_never_reaches_github_from_reading_to_refreshing(self):
         """Every step that can talk to GitHub, with a credential set and GitHub refused."""
-        from platform_core.code_factory_build import (
+        from platform_core.code_factory_agents import (
             readable_targets,
-            refresh_after,
             repository_test_setup,
             run_verification,
         )
+        from platform_core.code_factory_build import refresh_after
         from platform_core.models import PlanItem
 
         PlanItem.objects.create(
@@ -458,7 +458,8 @@ class LocalDeliveryTests(TestCase):
         self.assertEqual(self.repository.status, "queued")
 
     def test_the_run_shows_before_and_after_once_the_refresh_lands(self):
-        from platform_core.code_factory_build import before_after, refresh_after
+        from platform_core.code_factory_build import refresh_after
+        from platform_core.code_factory_picture import before_after
 
         write(self.service / "app/main.py", "from app import util\nfrom app import extra\n")
         write(self.service / "app/extra.py", "X = 1\n")
@@ -489,7 +490,7 @@ class LocalDeliveryTests(TestCase):
         self.assertNotContains(page, "data-live-pending")
 
     def test_the_picture_draws_what_is_new_only_after_and_shares_positions(self):
-        from platform_core.code_factory_build import change_picture
+        from platform_core.code_factory_picture import change_picture
 
         before = self.snapshot
         write(self.service / "app/util.py", "from app import extra\n")
@@ -521,7 +522,7 @@ class LocalDeliveryTests(TestCase):
     def test_a_viewer_cannot_write(self):
         from django.core.exceptions import PermissionDenied
 
-        from platform_core.code_factory_build import apply_local
+        from platform_core.code_factory_local import apply_local
 
         with self.assertRaises(PermissionDenied):
             apply_local(self.viewer, self.app.pk, self.run.pk)
@@ -617,7 +618,7 @@ class LocalTestRunTests(LocalDeliveryTests):
     def run_tests(self, returncode=0, stdout="115 passed in 0.60s\n"):
         import subprocess
 
-        from platform_core.code_factory_build import run_local_tests
+        from platform_core.code_factory_local import run_local_tests
 
         calls = []
 

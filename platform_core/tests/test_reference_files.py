@@ -11,7 +11,8 @@ from unittest.mock import patch
 
 from django.test import TestCase, override_settings
 
-from platform_core.code_factory_build import prepare, reference_files
+from platform_core.code_factory_agents import reference_files
+from platform_core.code_factory_build import prepare
 from platform_core.code_graph_ingest import register
 from platform_core.models import CodeRelationship, FactoryRun, PlanItem
 
@@ -111,7 +112,7 @@ class ReferenceFileTests(TestCase):
 
     def test_test_fixtures_are_part_of_the_reference(self):
         """A test author not shown conftest.py invents fixtures."""
-        from platform_core.code_factory_build import test_support
+        from platform_core.code_factory_agents import test_support
 
         self.snapshot.files.create(
             path="tests/conftest.py", language="python", digest="d", content="def client(): ...\n"
