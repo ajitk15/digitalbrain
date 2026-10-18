@@ -2168,6 +2168,33 @@ class AIBudget(models.Model):
         ]
 
 
+class AIAdmission(models.Model):
+    """One paid model call in flight: its place among the gateway's slots, and
+    the most it can cost, held against the application's monthly cap.
+
+    Written by `gateway.admitted` before a call and deleted however it ends; a
+    row a dead process left expires at `expires_at` and is swept. Never a record
+    of what was said - that is the receipt's job, and only the receipt's.
+    `application_id` is not a foreign key for the reason `Job`'s is not.
+    """
+
+    application_id = models.UUIDField()
+    purpose = models.CharField(max_length=24)
+    provider = models.CharField(max_length=24)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    reserved = models.DecimalField(max_digits=20, decimal_places=8, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["application_id", "expires_at"], name="ai_admission_app"),
+            models.Index(fields=["provider", "expires_at"], name="ai_admission_provider"),
+        ]
+
+
 class PersonalDataPolicy(models.Model):
     """Which personal data an application masks before a source is stored.
 

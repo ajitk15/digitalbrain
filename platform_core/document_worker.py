@@ -215,6 +215,7 @@ def automation_steps():
 
 def maintenance_steps():
     from .chunks import backfill_step
+    from .gateway import sweep
     from .graph_store import record_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
@@ -231,10 +232,12 @@ def maintenance_steps():
     # for sources stored before they existed is a batch at a time, last, so a
     # large library catching up never delays the rest; recording graph versions
     # saved before their elements were rows is the same kind of catching up.
+    # Giving back AI gateway slots a dead process left beside the jobs it left.
     return (
         purge_chat_if_due,
         process_next_source,
         maintain,
+        sweep,
         log_if_due,
         backfill_step,
         record_step,

@@ -2,7 +2,14 @@ from datetime import timedelta
 
 from django.core.exceptions import ImproperlyConfigured
 
-from .configuration import ROOT, admin_identity, load_config, read_secret, self_approval_allowed
+from .configuration import (
+    AI_GATEWAY_DEFAULTS,
+    ROOT,
+    admin_identity,
+    load_config,
+    read_secret,
+    self_approval_allowed,
+)
 
 BASE_DIR = ROOT
 CONFIG = load_config()
@@ -66,6 +73,8 @@ RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "sources")
 #: Where graph answers find their candidates: the published version's JSON,
 #: prepared in memory, or its rows (`graph_store.RowsGraph`).
 GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "memory")
+#: Limits on paid model calls in flight (`platform_core/gateway.py`).
+AI_GATEWAY = {**AI_GATEWAY_DEFAULTS, **CONFIG.get("ai_gateway", {})}
 # How many files one import may take from a directory - a GitHub /tree/ link or
 # a SharePoint folder. A knowledge base is not a mirror of a repository, so the
 # walk stays bounded; the bound is configurable because what counts as a

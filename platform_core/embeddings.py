@@ -139,6 +139,7 @@ def embed(user, app, items, write=False):
     """
     from openai import OpenAIError
 
+    from . import gateway
     from .ai import provider_credential
     from .models import Embedding
     from .services import record_ai_usage
@@ -164,27 +165,32 @@ def embed(user, app, items, write=False):
         batch = missing[start : start + BATCH]
         # Per request, not once: a large index can cross the cap part way.
         check_budget(app.pk)
-        try:
-            vectors, request_id, tokens = request(token, config.model, [row[1] for row in batch])
-        except (OpenAIError, OSError, ValueError, TypeError):
-            raise ValidationError(
-                "Embedding request failed. Check the embedding model, the OpenAI "
-                "credential and provider limits. It is not retried automatically."
-            ) from None
-        record_ai_usage(
-            actor=user,
-            application_id=app.pk,
-            provider="OpenAI",
-            model=config.model,
-            request_id=request_id,
-            purpose="embeddings",
-            input_tokens=tokens,
-            output_tokens=0,
-            amount=(Decimal(tokens) * config.input_rate / Decimal(1000000)).quantize(
-                Decimal("0.00000001")
-            ),
-            estimated=True,
-        )
+        texts = [row[1] for row in batch]
+        with gateway.admitted(
+            user, app, config, "embeddings", prompt_characters=sum(map(len, texts))
+        ):
+            try:
+                vectors, request_id, tokens = request(token, config.model, texts)
+            except (OpenAIError, OSError, ValueError, TypeError):
+                raise ValidationError(
+                    "Embedding request failed. Check the embedding model, the OpenAI "
+                    "credential and provider limits. It is not retried automatically."
+                ) from None
+            record_ai_usage(
+                actor=user,
+                application_id=app.pk,
+                provider="OpenAI",
+                model=config.model,
+                request_id=request_id,
+                purpose="embeddings",
+                input_tokens=tokens,
+                output_tokens=0,
+                amount=(Decimal(tokens) * config.input_rate / Decimal(1000000)).quantize(
+                    Decimal("0.00000001")
+                ),
+                estimated=True,
+                authorized=app,
+            )
         Embedding.objects.bulk_create(
             [
                 Embedding(

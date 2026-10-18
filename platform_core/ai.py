@@ -28,7 +28,6 @@ from .model_catalog import (
 from .models import AI_PURPOSES, AIConfiguration
 from .policy import application_for
 from .services import audit, record_ai_usage
-from .workbench import access
 
 #: What each changeable reply cap is, said once on its task's form.
 LIMIT_HELP = {
@@ -452,6 +451,34 @@ def seed_application_ai(user, app, provider=None):
     return provider
 
 
+def cost(config, prompt_tokens, completion_tokens):
+    """What a call cost at the owner's entered rates, per million tokens."""
+    return (
+        (
+            Decimal(prompt_tokens) * config.input_rate
+            + Decimal(completion_tokens) * config.output_rate
+        )
+        / Decimal(1000000)
+    ).quantize(Decimal("0.00000001"))
+
+
+def prompt_size(question, citations, history=None, options=None):
+    """Characters a call sends, for the gateway's reservation: the question, the
+    evidence, the conversation so far and any instructions."""
+    size = len(question or "")
+    for citation in citations or ():
+        size += sum(len(str(citation.get(key) or "")) for key in ("title", "excerpt", "relation"))
+    for turn in history or ():
+        size += len(str(turn.get("content", "")) if isinstance(turn, dict) else str(turn))
+    return size + len(str((options or {}).get("instructions") or ""))
+
+
+def default_reply_tokens():
+    from .agent_runtime.runtime import ANSWER_TOKENS
+
+    return ANSWER_TOKENS
+
+
 def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=None, **options):
     """Ask the configured provider and record what it cost.
 
@@ -459,36 +486,16 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
     token counts of this call. Code Factory writes them onto its run record, so a
     reader can see which model produced each phase and what it spent without
     joining back to the usage table by timestamp and hoping.
+
+    Every call passes `gateway`: the purpose's rule, a slot and a reservation
+    against the monthly cap while it runs, and the rule again after it.
     """
-    app, grant = application_for(user, app_id)
-    access(user, app_id, "knowledge")
-    if purpose in {"chat", "graph_retrieval", "conversation_title"}:
-        access(user, app_id, "chat")
-    elif purpose == "graph_generation":
-        if grant.role not in {"owner", "contributor"}:
-            raise PermissionDenied
-    elif purpose == "plan_drafting":
-        access(user, app_id, "code_factory", write=True)
-    elif purpose == "serviceops_triage":
-        access(user, app_id, "service_ops", write=True)
-    elif purpose == "reranking":
-        # Reorders evidence already verified for this user; knowledge access,
-        # checked above, is what reading it needs.
-        pass
-    elif purpose == "document_typing":
-        # Runs as whoever converted the document, or pressed the button: someone
-        # who may change knowledge, as setting a type by hand needs.
-        if grant.role not in {"owner", "contributor"}:
-            raise PermissionDenied
-    elif purpose == "document_review":
-        if grant.role != "owner":
-            raise PermissionDenied
-    elif purpose in {"code_review", "code_docs"}:
-        # Reads Code Graph's snapshots; pressed by someone who may index them.
-        access(user, app_id, "code_graph")
-        access(user, app_id, purpose, write=True)
-    else:
+    from . import gateway
+
+    if purpose == "embeddings":
+        # Vectors are not answers: `embeddings.embed` is their one paid path.
         raise ValidationError("Unsupported AI purpose.")
+    app, _ = gateway.authorize(user, app_id, purpose)
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
     if not config:
         raise ValidationError(
@@ -508,39 +515,32 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         from .claude_agents import completion as adapter
     elif config.provider != "openai":
         raise ValidationError("Unsupported AI provider.")
-    result, answer = adapter(config, question, citations, token, history=history, **options)
-    usage = result["usage"]
-    amount = (
-        (
-            Decimal(usage["prompt_tokens"]) * config.input_rate
-            + Decimal(usage["completion_tokens"]) * config.output_rate
+    with gateway.admitted(
+        user,
+        app,
+        config,
+        purpose,
+        prompt_characters=prompt_size(question, citations, history, options),
+        max_tokens=options.get("max_tokens") or default_reply_tokens(),
+    ):
+        result, answer = adapter(config, question, citations, token, history=history, **options)
+        usage = result["usage"]
+        record_ai_usage(
+            actor=user,
+            application_id=app.pk,
+            provider="OpenAI" if config.provider == "openai" else "Anthropic",
+            model=config.model,
+            request_id=result["id"],
+            purpose=purpose,
+            input_tokens=usage["prompt_tokens"],
+            output_tokens=usage["completion_tokens"],
+            amount=cost(config, usage["prompt_tokens"], usage["completion_tokens"]),
+            estimated=True,
+            authorized=app,
         )
-        / Decimal(1000000)
-    ).quantize(Decimal("0.00000001"))
-    record_ai_usage(
-        actor=user,
-        application_id=app.pk,
-        provider="OpenAI" if config.provider == "openai" else "Anthropic",
-        model=config.model,
-        request_id=result["id"],
-        purpose=purpose,
-        input_tokens=usage["prompt_tokens"],
-        output_tokens=usage["completion_tokens"],
-        amount=amount,
-        estimated=True,
-    )
-    access(user, app_id, "knowledge")
-    if purpose in {"chat", "graph_retrieval", "conversation_title"}:
-        access(user, app_id, "chat")
-    if purpose == "graph_generation":
-        access(user, app_id, "knowledge", write=True)
-    if purpose == "plan_drafting":
-        access(user, app_id, "code_factory", write=True)
-    if purpose == "serviceops_triage":
-        access(user, app_id, "service_ops", write=True)
-    if purpose in {"code_review", "code_docs"}:
-        access(user, app_id, "code_graph")
-        access(user, app_id, purpose, write=True)
+    # A grant revoked while the model was answering keeps the receipt and loses
+    # the answer: the same rule, read again.
+    gateway.authorize(user, app_id, purpose)
     if receipt is not None:
         receipt.update(
             {
@@ -634,10 +634,10 @@ def chat_configuration(user, app_id, mode="ai"):
     entirely and always load chat, so a conversation labelled "Graph answer" was
     produced by the wrong model against the wrong sources.
     """
-    app, _ = application_for(user, app_id)
-    access(user, app_id, "knowledge")
-    access(user, app_id, "chat")
+    from . import gateway
+
     purpose = MODE_PURPOSE.get(mode, "chat")
+    app, _ = gateway.authorize(user, app_id, purpose)
     config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
     if not config:
         raise ValidationError(
@@ -662,13 +662,7 @@ def record_turns(user, app, config, purpose, turns):
     collapsing distinct calls into one row.
     """
     for turn in turns:
-        amount = (
-            (
-                Decimal(turn.prompt_tokens) * config.input_rate
-                + Decimal(turn.completion_tokens) * config.output_rate
-            )
-            / Decimal(1000000)
-        ).quantize(Decimal("0.00000001"))
+        amount = cost(config, turn.prompt_tokens, turn.completion_tokens)
         record_ai_usage(
             actor=user,
             application_id=app.pk,
@@ -680,6 +674,7 @@ def record_turns(user, app, config, purpose, turns):
             output_tokens=turn.completion_tokens,
             amount=amount,
             estimated=True,
+            authorized=app,
         )
 
 
@@ -691,6 +686,7 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
     """
     import asyncio
 
+    from . import gateway
     from .agent_runtime import claude_runtime, openai_runtime
     from .agent_runtime.tools import CitationRecorder, ToolScope
 
@@ -703,31 +699,42 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
     # Evidence computed before the run seeds the answer, so a single-turn reply is
     # never worse than the non-agentic path.
     recorder.seed(citations)
-    try:
-        turns, answer = asyncio.run(
-            runtime.run(
-                config.model,
-                question,
-                citations,
-                token,
-                history,
-                scope,
-                recorder,
-                session.emit,
-                session.cancel,
-                max_tokens=reply_cap(app.pk, purpose, config),
+    cap = reply_cap(app.pk, purpose, config)
+    # The slot is held for the whole run, every tool turn included; a run that
+    # cannot get one fails before anything is sent, so it says nothing was billed.
+    with gateway.admitted(
+        user,
+        app,
+        config,
+        purpose,
+        prompt_characters=prompt_size(question, citations, history),
+        max_tokens=cap,
+    ):
+        try:
+            turns, answer = asyncio.run(
+                runtime.run(
+                    config.model,
+                    question,
+                    citations,
+                    token,
+                    history,
+                    scope,
+                    recorder,
+                    session.emit,
+                    session.cancel,
+                    max_tokens=cap,
+                )
             )
-        )
-    except (PermissionDenied, Http404):
-        raise
-    except Exception:
-        raise ValidationError(
-            "AI response unavailable. Check the model, credential and provider limits. "
-            "The request may have been billed by the provider; it is not retried automatically."
-        ) from None
-    record_turns(user, app, config, purpose, turns)
-    access(user, app.pk, "knowledge")
-    access(user, app.pk, "chat")
+        except (PermissionDenied, Http404):
+            raise
+        except Exception:
+            raise ValidationError(
+                "AI response unavailable. Check the model, credential and provider limits. "
+                "The request may have been billed by the provider; it is not retried "
+                "automatically."
+            ) from None
+        record_turns(user, app, config, purpose, turns)
+    gateway.authorize(user, app.pk, purpose)
     return answer, recorder.verified_citations()
 
 

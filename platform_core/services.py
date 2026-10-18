@@ -390,14 +390,23 @@ def record_ai_usage(
     currency="USD",
     estimated=False,
     purpose="chat",
+    authorized=None,
 ):
     """Server-side provider adapter boundary; never accepts a browser-supplied bill.
 
     Called after receiving provider usage. No prompts, outputs, keys or source text are stored.
     Idempotent provider request IDs must have identical accounting on replay.
     Costs are recorded even when the reporting feature is disabled.
+
+    `authorized` is the application a gateway-admitted call was authorized for
+    before it was sent. The provider has billed it whatever happened to the
+    grant since, so its receipt is written; looking the grant up again here lost
+    the receipt of every call whose grant was revoked while the model answered.
     """
-    app, _ = application_for(actor, application_id)
+    if authorized is not None and str(authorized.pk) == str(application_id):
+        app = authorized
+    else:
+        app, _ = application_for(actor, application_id)
     from decimal import InvalidOperation
 
     try:

@@ -664,8 +664,34 @@ outgrows memory, so the production database did not change.
 **A monthly AI budget is checked before every paid call** (`budget.py`, `AIBudget`, owner
 sets it in AI settings; no row means no cap). The three choke points are `ai.invoke_ai`,
 `ai.chat_configuration` and `embeddings.embed` - a new paid path must call `budget.check`
-too. It caps *starting* spend from recorded receipts at the entered rates: a call in flight
+too, and go through `gateway.admitted`. It caps *starting* spend from recorded receipts at the entered rates: a call in flight
 is never cut off, and graph extraction that hits the cap keeps what it already paid for.
+
+**Every paid model call passes the gateway** (`gateway.py`, built here rather than
+bought). LiteLLM, Portkey or a cloud AI gateway would hold the provider keys and keep
+their own prices and retry rules, which is four invariants above traded at once, so the
+gateway is a pipeline in front of the SDKs already used: the purpose's rule, the
+configuration, admission, the credential file, the adapter, the receipt, release, the
+rule again. **Purposes are a closed registry** (`gateway.PURPOSES`), the switches and
+roles each needs, read before the call and again after it - it used to be an if/elif
+chain written twice, slightly differently. **Admission** (`AIAdmission`, one row per
+call in flight) is a slot and a reservation: at most `max_calls_per_application` calls in
+flight for one application and `max_calls_per_provider` across the deployment
+(`[ai_gateway]` in the config, `load_config` checks it), so one batch cannot take every
+connection a provider allows; and it reserves the call's most expensive outcome - every
+prompt character a third of a token, the whole reply cap - so recorded spend plus calls in
+flight must be under the cap, and two calls at the cap no longer both start. Admission
+locks the application row (and a PostgreSQL advisory lock per provider) in a short
+transaction of its own: no lock is held across a provider call. A caller waits
+`slot_wait_seconds` and is then told nothing was sent - **never retried for it**. A
+streamed answer holds its slot for the whole run, tool turns included. A row a dead
+process left expires after `admission_minutes`; the maintenance lane sweeps it, and
+`queue_status` counts calls in flight by provider. **A receipt is written for the
+application authorized before the call** (`record_ai_usage(authorized=...)`): it looked
+the grant up again, so a grant revoked while the model answered lost the receipt of a
+call the provider had billed. The answer is still lost. The scorecard's "past a
+reservation or a full gateway" must stay 0. Still to come: a Messages API adapter for
+one-shot Claude calls with an API key, which needs the `anthropic` SDK.
 
 **A price belongs to a model; a reply cap to only four tasks** (AI settings, `ai.py`). The
 page is one list - a row per task with its model, this month's spend and a switch that is a

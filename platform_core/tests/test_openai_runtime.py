@@ -218,6 +218,8 @@ class StreamingRuntimeTests(SimpleTestCase):
                 self.invoke()
 
     def test_the_caller_turns_that_into_a_message_with_no_provider_detail(self):
+        from contextlib import nullcontext
+
         from django.core.exceptions import ValidationError
 
         from platform_core import ai
@@ -226,7 +228,12 @@ class StreamingRuntimeTests(SimpleTestCase):
         session = SimpleNamespace(emit=self.emit, cancel=None, stopped=False)
         app = SimpleNamespace(pk=self.scope.app_id)
         user = SimpleNamespace(pk=self.scope.user_id)
-        with self.failing_transport(), patch.object(ai, "record_turns"), patch.object(ai, "access"):
+        with (
+            self.failing_transport(),
+            patch.object(ai, "record_turns"),
+            patch("platform_core.gateway.authorize"),
+            patch("platform_core.gateway.admitted", return_value=nullcontext()),
+        ):
             with self.assertRaises(ValidationError) as raised:
                 ai.stream_chat_answer(user, app, config, "key", "q", [], [], session)
         message = " ".join(raised.exception.messages)

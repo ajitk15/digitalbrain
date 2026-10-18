@@ -9,8 +9,10 @@ What it is and is not:
 
 - **Checked before each call, never mid-call.** A call already started is
   finished and receipted, so the month can end a single call over the cap.
-  Two calls racing at the cap can both start. It is a cap on starting new
-  spend, not a guarantee to the cent.
+  It is a cap on starting new spend, not a guarantee to the cent. Two calls
+  racing at the cap used to both start; the gateway (`gateway.try_admit`) now
+  counts each call in flight's most expensive outcome against the cap, under
+  a lock, so the second waits for the first's receipt.
 - **Measured from receipts at the rates an owner entered.** A purpose priced
   at zero spends nothing as far as the cap can tell - the AI settings page
   says so next to the cap.
@@ -19,7 +21,8 @@ What it is and is not:
 
 The three choke points are `ai.invoke_ai` (chat, graph extraction, Code
 Factory, triage, titles), `ai.chat_configuration` (streamed chat) and
-`embeddings.embed`. A new paid path must call `check` too.
+`embeddings.embed`. A new paid path must call `check` too, and send the call
+through `gateway.admitted`.
 """
 
 from decimal import Decimal

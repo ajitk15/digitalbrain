@@ -12,6 +12,18 @@ ROOT = Path(__file__).resolve().parent.parent
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
 
+#: The AI gateway's limits (`platform_core/gateway.py`), each overridable in an
+#: `[ai_gateway]` table: paid calls in flight per application and per provider
+#: across the deployment, how long a caller waits for a slot, and when a slot a
+#: dead process left is given back.
+AI_GATEWAY_DEFAULTS = {
+    "max_calls_per_application": 4,
+    "max_calls_per_provider": 16,
+    "slot_wait_seconds": 30,
+    "admission_minutes": 15,
+}
+
+
 def load_config():
     path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config/local.toml"))
     if not path.is_file():
@@ -46,6 +58,7 @@ def load_config():
         "shared_streams",
         "retrieval_candidates",
         "graph_candidates",
+        "ai_gateway",
         "entra_tenant",
         "entra_client_id",
         "entra_create_users",
@@ -87,6 +100,16 @@ def load_config():
         raise ImproperlyConfigured('retrieval_candidates must be "sources" or "chunks".')
     if config.get("graph_candidates", "memory") not in {"memory", "rows"}:
         raise ImproperlyConfigured('graph_candidates must be "memory" or "rows".')
+    gateway = config.get("ai_gateway", {})
+    if not isinstance(gateway, dict) or set(gateway) - set(AI_GATEWAY_DEFAULTS):
+        raise ImproperlyConfigured(
+            "ai_gateway takes only " + ", ".join(sorted(AI_GATEWAY_DEFAULTS)) + "."
+        )
+    for key, value in gateway.items():
+        # Limits on paid calls in flight: a zero would refuse every call, and a
+        # string would compare as nonsense, so only a positive whole number.
+        if type(value) is not int or value < (0 if key == "slot_wait_seconds" else 1):
+            raise ImproperlyConfigured(f"ai_gateway.{key} must be a positive whole number.")
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("allow_self_approval", False)) is not bool:

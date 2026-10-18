@@ -152,4 +152,10 @@ def log_if_due():
                 "stale": row["stale"],
             },
         )
+    from .gateway import in_flight
+
+    logger.info(
+        "ai calls in flight",
+        extra={"event": "ai_gateway_status", "in_flight": in_flight()},
+    )
     return False

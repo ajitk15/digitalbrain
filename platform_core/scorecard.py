@@ -169,6 +169,15 @@ METRICS = {
         "exact",
         0,
     ),
+    # The gateway (`gateway.py`): a call in flight holds its cost against the
+    # cap, and a full set of slots holds the next call back.
+    "paid_calls_past_gateway": (
+        "AI cost control",
+        "Model calls started past a reservation or a full gateway",
+        "",
+        "exact",
+        0,
+    ),
     # Graph storage (`graph_store`): versions as rows held across versions.
     "graph_rows_exact": (
         "Graph storage",
@@ -948,13 +957,73 @@ def cost_control(ws):
         except BudgetExceeded:
             pass
         over = provider.call_count
+    past = gateway_held(ws, owner)
     return {
         "ai_calls_unchanged_rerun": unchanged,
         "ai_calls_one_change": one_change,
         "paid_calls_over_budget": over,
+        "paid_calls_past_gateway": past,
         "graph_rows_exact": round(100 * exact / len(versions), 1),
         "graph_rows_one_change": round(100 * written / max(1, elements), 1),
     }, {"first_run_calls": first, "graph_versions": len(versions), "rows_written": written}
+
+
+def gateway_held(ws, owner):
+    """Provider calls started that the gateway should have held back.
+
+    Two moments: under the cap by receipts, but not once a call in flight's
+    reservation counts; and every slot this application may hold taken. Both
+    must refuse before the provider is reached, with the model replaced.
+    """
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.test.utils import override_settings
+    from django.utils import timezone
+
+    from . import gateway
+    from .ai import invoke_ai
+    from .budget import BudgetExceeded
+    from .models import AIAdmission, AIBudget
+
+    AIBudget.objects.filter(application=ws.app).update(monthly_limit=Decimal("2"))
+    citations = [{"id": "x", "title": "t", "excerpt": "e"}]
+
+    def hold(reserved):
+        return AIAdmission.objects.create(
+            application_id=ws.app.pk,
+            purpose="graph_generation",
+            provider="claude",
+            actor=owner,
+            reserved=Decimal(reserved),
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+
+    started = 0
+    with (
+        patch("platform_core.claude_agents.completion") as provider,
+        patch("platform_core.secrets.application_secret", return_value="unused"),
+        patch.object(gateway, "logger"),
+    ):
+        hold("1.5")
+        try:
+            invoke_ai(owner, ws.app.pk, "graph_generation", "q", citations)
+        except BudgetExceeded:
+            pass
+        AIAdmission.objects.all().delete()
+        with override_settings(
+            AI_GATEWAY={**settings.AI_GATEWAY, "max_calls_per_application": 2,
+                        "slot_wait_seconds": 0}
+        ):
+            hold("0")
+            hold("0")
+            try:
+                invoke_ai(owner, ws.app.pk, "graph_generation", "q", citations)
+            except gateway.ProviderBusy:
+                pass
+        AIAdmission.objects.all().delete()
+        started = provider.call_count
+    return started
 
 
 def speed(ws, revision, questions):
@@ -1110,6 +1179,7 @@ NOT_REPLAYED = {
             "ai_calls_unchanged_rerun",
             "ai_calls_one_change",
             "paid_calls_over_budget",
+            "paid_calls_past_gateway",
         ],
         "not built yet",
     ),

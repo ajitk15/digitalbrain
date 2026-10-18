@@ -9,6 +9,7 @@ import json
 
 from django.core.management.base import BaseCommand, CommandError
 
+from platform_core.gateway import in_flight
 from platform_core.queue_status import lane_status
 
 
@@ -57,6 +58,11 @@ class Command(BaseCommand):
                     f"{row['dead']:>6}{age(row['heartbeat_seconds']):>8}  "
                     f"{row['owner'] or '-'}{'  STALE' if row['stale'] else ''}"
                 )
+            calls = in_flight()
+            self.stdout.write(
+                "AI calls in flight: "
+                + (", ".join(f"{name} {count}" for name, count in calls.items()) or "none")
+            )
         if options["check"]:
             required = wanted or known
             stale = [row["lane"] for row in rows if row["stale"] and row["lane"] in required]

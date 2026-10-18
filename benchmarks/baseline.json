@@ -198,6 +198,14 @@
    "tolerance": 0,
    "value": 0
   },
+  "paid_calls_past_gateway": {
+   "aspect": "AI cost control",
+   "label": "Model calls started past a reservation or a full gateway",
+   "unit": "",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 0
+  },
   "graph_rows_exact": {
    "aspect": "Graph storage",
    "label": "Graph versions read back exactly from rows",
