@@ -54,6 +54,12 @@ METRICS = {
     "keyword_found": ("Retrieval", "Keyword answers: right source found", "of 16", "higher", 0),
     "keyword_top3": ("Retrieval", "Keyword answers: right source in top 3", "of 16", "higher", 0),
     "keyword_mrr": ("Retrieval", "Keyword answers: ranking quality (MRR)", "", "higher", 0.005),
+    # The same keyword answers with candidates chosen from stored passages
+    # (`chunks.py`) - measured beside the path that answers today, so the
+    # switch is a comparison rather than a hope.
+    "chunk_found": ("Retrieval", "Passage answers: right source found", "of 16", "higher", 0),
+    "chunk_top3": ("Retrieval", "Passage answers: right source in top 3", "of 16", "higher", 0),
+    "chunk_mrr": ("Retrieval", "Passage answers: ranking quality (MRR)", "", "higher", 0.005),
     # Citation integrity.
     "citations_verified": (
         "Citation integrity",
@@ -166,6 +172,7 @@ METRICS = {
     # Speed - machine dependent, so a generous tolerance.
     "graph_p50_ms": ("Speed", "Graph answer, median", "ms", "lower", 15.0),
     "keyword_p50_ms": ("Speed", "Keyword answer, median", "ms", "lower", 15.0),
+    "chunk_p50_ms": ("Speed", "Passage answer, median", "ms", "lower", 15.0),
 }
 
 HIPAA = [
@@ -345,7 +352,7 @@ def retrieval(ws, revision, questions):
     ready = prepare(revision.data)
     owner = ws.people["owner"]
     result, details, cited_all = {}, [], []
-    graph_ranks, keyword_ranks = [], []
+    graph_ranks, keyword_ranks, chunk_ranks = [], [], []
     for question in questions:
         cited = citations_from(
             ws.app.pk, revision.data, revision.number, question["question"], ready, viewer=owner
@@ -354,8 +361,14 @@ def retrieval(ws, revision, questions):
         graph_ranks.append(
             ranks(list(dict.fromkeys(c["id"] for c in cited)), question["expected"], entries)
         )
-        found = retrieve(ws.app, question["question"], owner)
+        found = retrieve(ws.app, question["question"], owner, candidates="sources")
         keyword_ranks.append(
+            ranks(
+                list(dict.fromkeys(str(e.pk) for _, e, _ in found)), question["expected"], entries
+            )
+        )
+        found = retrieve(ws.app, question["question"], owner, candidates="chunks")
+        chunk_ranks.append(
             ranks(
                 list(dict.fromkeys(str(e.pk) for _, e, _ in found)), question["expected"], entries
             )
@@ -366,9 +379,14 @@ def retrieval(ws, revision, questions):
                 "expected": question["expected"],
                 "graph_rank": graph_ranks[-1],
                 "keyword_rank": keyword_ranks[-1],
+                "chunk_rank": chunk_ranks[-1],
             }
         )
-    for prefix, values in (("graph", graph_ranks), ("keyword", keyword_ranks)):
+    for prefix, values in (
+        ("graph", graph_ranks),
+        ("keyword", keyword_ranks),
+        ("chunk", chunk_ranks),
+    ):
         result[f"{prefix}_found"] = sum(1 for r in values if r)
         result[f"{prefix}_top3"] = sum(1 for r in values if r and r <= 3)
         result[f"{prefix}_mrr"] = round(sum(1 / r for r in values if r) / len(values), 3)
@@ -840,7 +858,7 @@ def speed(ws, revision, questions):
 
     ready = prepare(revision.data)
     owner = ws.people["owner"]
-    graph, keyword = [], []
+    graph, keyword, chunk = [], [], []
     for _ in range(5):
         for question in questions:
             start = time.perf_counter()
@@ -849,11 +867,15 @@ def speed(ws, revision, questions):
             )
             graph.append((time.perf_counter() - start) * 1000)
             start = time.perf_counter()
-            retrieve(ws.app, question["question"], owner)
+            retrieve(ws.app, question["question"], owner, candidates="sources")
             keyword.append((time.perf_counter() - start) * 1000)
+            start = time.perf_counter()
+            retrieve(ws.app, question["question"], owner, candidates="chunks")
+            chunk.append((time.perf_counter() - start) * 1000)
     return {
         "graph_p50_ms": round(statistics.median(graph), 1),
         "keyword_p50_ms": round(statistics.median(keyword), 1),
+        "chunk_p50_ms": round(statistics.median(chunk), 1),
     }, {}
 
 

@@ -870,6 +870,24 @@ lane's `dead` jobs.
 Intake takes turns (`document_worker.fairly`): the oldest document from an application with
 nothing converting, else the oldest, so one large import cannot hold everyone's single upload.
 
+## Passages are rows
+
+`KnowledgeChunk` (`chunks.py`) holds each **active** source's passages - the same
+`PASSAGE_LENGTH`/`PASSAGE_STEP` windows `retrieve` cuts - written in the transaction that
+writes the source: `triggers.entry_saved` and `KnowledgeEntryQuerySet.update` on a
+`CHUNK_FIELDS` field call `chunks.sync`, a retirement clears them, a new title or text cuts
+them again. They are a copy, never evidence: citations still verify against
+`KnowledgeEntry.content`, and a passage counts only while its source's `chunked_digest`
+equals its `digest`. Restricted sources keep theirs (lifting is common) and are excluded at
+query time like every other path. `retrieve(candidates="chunks")` takes candidates from them
+- PostgreSQL's GIN index over `CHUNK_TEXT` (migration 0087), a substring scan on SQLite -
+with the source text deferred, then ranks exactly as the source path does.
+`retrieval_candidates` (config, default "sources") picks the path. **Switch only when the
+scorecard's Passage answers are no worse than its Keyword answers and
+`manage.py chunk_sources --check` passes**; the maintenance lane backfills a batch at a
+time. Counting deletions: a source's delete cascades to its passages, so count by model
+(`QuerySet.delete()[1]`), never the total.
+
 ## Verified against a live CLI
 
 `agent_runtime/claude_runtime.py:TOOL_PREFIX` — **confirmed**. A live run reported

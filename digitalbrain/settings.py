@@ -57,6 +57,12 @@ CODE_FACTORY_LOCAL_TESTS = bool(CONFIG.get("code_factory_local_tests", False)) a
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.
 SHARED_STREAMS = bool(CONFIG.get("shared_streams", False))
+#: Where keyword search finds its candidate passages: "sources" cuts the best
+#: hundred sources into passages per question, "chunks" asks the database for
+#: stored passages (`platform_core/chunks.py`). "sources" until the scorecard's
+#: Chunk answers are no worse than its Keyword answers and every source has
+#: been written as passages (`manage.py chunk_sources --check`).
+RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "sources")
 # How many files one import may take from a directory - a GitHub /tree/ link or
 # a SharePoint folder. A knowledge base is not a mirror of a repository, so the
 # walk stays bounded; the bound is configurable because what counts as a

@@ -44,6 +44,7 @@ def load_config():
         "sharepoint_tenant",
         "sharepoint_client_id",
         "shared_streams",
+        "retrieval_candidates",
         "entra_tenant",
         "entra_client_id",
         "entra_create_users",
@@ -81,6 +82,8 @@ def load_config():
         )
     if type(config.get("shared_streams", False)) is not bool:
         raise ImproperlyConfigured("shared_streams must be a boolean.")
+    if config.get("retrieval_candidates", "sources") not in {"sources", "chunks"}:
+        raise ImproperlyConfigured('retrieval_candidates must be "sources" or "chunks".')
     if type(config.get("claude_use_host_login", False)) is not bool:
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("allow_self_approval", False)) is not bool:

@@ -102,18 +102,20 @@ class Command(BaseCommand):
             for pk in Document.objects.filter(application=app).values_list("pk", flat=True)
         ]
         folder = document_folder(app)
+        def tally(deleted):
+            # Each model's own rows, cascades included under their own name, so
+            # a source's passages are never counted as sources.
+            for label, count in deleted[1].items():
+                if count:
+                    name = label.rsplit(".", 1)[-1]
+                    removed[name] = removed.get(name, 0) + count
+
         with transaction.atomic():
             for model, lookup in ORDER:
-                count, _ = model.objects.filter(**{lookup: [app.pk]}).delete()
-                if count:
-                    removed[model.__name__] = count
+                tally(model.objects.filter(**{lookup: [app.pk]}).delete())
             for model in REMAINING:
-                count, _ = model.objects.filter(application=app).delete()
-                if count:
-                    removed[model.__name__] = count
-            count, _ = Document.objects.filter(application=app).delete()
-            if count:
-                removed["Document"] = count
+                tally(model.objects.filter(application=app).delete())
+            tally(Document.objects.filter(application=app).delete())
             name = app.name
             app.delete()
             audit(

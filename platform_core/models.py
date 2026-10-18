@@ -355,6 +355,8 @@ class Document(models.Model):
 GRAPH_FIELDS = frozenset(
     {"active", "sensitivity", "digest", "content", "application", "application_id"}
 )
+#: The fields a source's passages are cut from (`chunks.py`).
+CHUNK_FIELDS = frozenset({"active", "content", "title", "digest"})
 
 
 class KnowledgeEntryQuerySet(models.QuerySet):
@@ -366,11 +368,18 @@ class KnowledgeEntryQuerySet(models.QuerySet):
     """
 
     def update(self, **kwargs):
-        if GRAPH_FIELDS.isdisjoint(kwargs):
+        graph = not GRAPH_FIELDS.isdisjoint(kwargs)
+        passages = not CHUNK_FIELDS.isdisjoint(kwargs)
+        if not graph and not passages:
             return super().update(**kwargs)
-        touched = self.touched_applications()
+        touched = self.touched_applications() if graph else set()
+        entry_ids = list(self.order_by().values_list("pk", flat=True)) if passages else []
         count = super().update(**kwargs)
-        if count:
+        if count and passages:
+            from .triggers import passages_changed
+
+            passages_changed(entry_ids, kwargs)
+        if count and graph:
             moved = kwargs.get("application_id", kwargs.get("application"))
             if moved is not None:
                 touched.add(getattr(moved, "pk", moved))
@@ -441,11 +450,47 @@ class KnowledgeEntry(models.Model):
     #: See `permissions.py`.
     access_principals = models.JSONField(null=True, blank=True)
     access_checked_at = models.DateTimeField(null=True, blank=True)
+    #: The digest its `KnowledgeChunk` rows were cut from. Blank, or behind
+    #: `digest`, means the passages are not written yet (`chunks.backfill`).
+    chunked_digest = models.CharField(max_length=64, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["-created_at", "-id"]
         indexes = [models.Index(fields=["application", "active"])]
+
+
+class KnowledgeChunk(models.Model):
+    """One passage of an active source, as keyword search ranks it (`chunks.py`).
+
+    Keyword search loaded up to a hundred whole sources per question and cut
+    them into passages in Python, so a question against a library of large
+    documents read megabytes to rank a few kilobytes. These rows are the same
+    windows - `workbench.PASSAGE_LENGTH` long, `PASSAGE_STEP` apart - written in
+    the transaction that writes the source, so the database can choose the
+    passages and only those are read.
+
+    A copy, never the record: citations still verify against
+    `KnowledgeEntry.content`, and a passage is used only while its source's
+    `chunked_digest` equals its `digest`. Written from the stored text, so it is
+    already masked.
+    """
+
+    entry = models.ForeignKey(KnowledgeEntry, on_delete=models.CASCADE, related_name="chunks")
+    #: Copied from the entry so a search is one index range, not a join first.
+    application_id = models.UUIDField()
+    ordinal = models.PositiveIntegerField()
+    offset = models.PositiveIntegerField()
+    #: The source's title, ranked with every passage as it always was.
+    heading = models.CharField(max_length=200)
+    text = models.TextField()
+    digest = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["entry", "ordinal"], name="unique_chunk_position")
+        ]
+        indexes = [models.Index(fields=["application_id", "entry"])]
 
 
 class IncidentProfile(models.Model):

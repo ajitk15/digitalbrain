@@ -200,7 +200,28 @@ def candidate_sources(app, question):
     return list(entries.filter(condition)[:CANDIDATE_SOURCES])
 
 
-def retrieve(app, question, user=None, limit=5):
+def chunk_counts(chunk):
+    """A stored passage's (term counts, length), cached like `passage_counts`."""
+    from collections import Counter
+
+    from .ranking import terms
+
+    key = ("chunk", chunk.digest, chunk.heading)
+    with _passage_lock:
+        found = _passage_terms.get(key)
+        if found is not None:
+            _passage_terms.move_to_end(key)
+            return found
+    split = terms(f"{chunk.heading} {chunk.text}")
+    found = (Counter(split), len(split))
+    with _passage_lock:
+        _passage_terms[key] = found
+        while len(_passage_terms) > PASSAGE_CACHE:
+            _passage_terms.popitem(last=False)
+    return found
+
+
+def retrieve(app, question, user=None, limit=5, candidates=None):
     """Up to five passages: word matches by BM25, fused with the nearest by meaning.
 
     Deterministic and lexical unless the application switched on search
@@ -208,7 +229,14 @@ def retrieve(app, question, user=None, limit=5):
     is re-read from its source, and skipped unless the passage still reads
     exactly as it did when it was embedded. `user` is who a new question
     vector is charged to; without one only a stored vector is used.
+
+    `candidates` is where word matches come from: "sources" cuts the best
+    hundred sources into passages here, "chunks" lets the database choose
+    stored passages (`chunks.py`). The deployment's `retrieval_candidates`
+    decides when it is not given; everything after the candidates is the same.
     """
+    from django.conf import settings
+
     from .embeddings import digest as text_digest
     from .embeddings import fuse, nearest, passage_matrix, passage_text, question_vector
     from .permissions import only_permitted, permitted
@@ -218,14 +246,24 @@ def retrieve(app, question, user=None, limit=5):
     vector, model = question_vector(user, app.pk, question)
     if not query and vector is None:
         return []
-    passages = []
-    if query:
+    candidates = candidates or settings.RETRIEVAL_CANDIDATES
+    passages, texts, counts = [], [], []
+    if query and candidates == "chunks":
+        from .chunks import candidates as chunk_candidates
+
+        for chunk in chunk_candidates(app, question):
+            if permitted(chunk.entry, user):
+                passages.append((chunk.entry, chunk.offset))
+                texts.append(chunk.text)
+                counts.append(chunk_counts(chunk))
+    elif query:
         entries = only_permitted(candidate_sources(app, question), user)
-        passages = [
-            (entry, offset)
-            for entry in entries
-            for offset in range(0, len(entry.content), PASSAGE_STEP)
-        ]
+        for entry in entries:
+            split = passage_counts(entry)
+            for offset in range(0, len(entry.content), PASSAGE_STEP):
+                passages.append((entry, offset))
+                texts.append(entry.content[offset : offset + PASSAGE_LENGTH])
+                counts.append(split[offset // PASSAGE_STEP])
     by_meaning = []
     if vector is not None:
         rows, matrix = passage_matrix(app.pk, model)
@@ -248,16 +286,13 @@ def retrieve(app, question, user=None, limit=5):
             if (entry.pk, offset) not in known:
                 known[(entry.pk, offset)] = len(passages)
                 passages.append((entry, offset))
+                texts.append(entry.content[offset : offset + PASSAGE_LENGTH])
+                counts.append(passage_counts(entry)[offset // PASSAGE_STEP])
             by_meaning.append(known[(entry.pk, offset)])
-    texts = [entry.content[offset : offset + PASSAGE_LENGTH] for entry, offset in passages]
     # The same ranking the graph uses - passages holding more of the question
     # first, then BM25 - and the same spread: five passages from one document
     # are one source, so each document's best passage comes before its second.
-    split = {}
-    for entry, _ in passages:
-        if entry.pk not in split:
-            split[entry.pk] = passage_counts(entry)
-    index = BM25(counts=[split[entry.pk][offset // PASSAGE_STEP] for entry, offset in passages])
+    index = BM25(counts=counts)
     scored = index.rank_covering(query) if query else []
     scores = {position: score for score, position in scored}
     order = [position for _, position in scored]

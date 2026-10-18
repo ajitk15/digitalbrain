@@ -147,6 +147,9 @@ LABELS = {
 }
 
 
+#: How `QuerySet.delete` names source rows in the count it returns per model.
+ENTRY_LABEL = KnowledgeEntry._meta.label
+
 def imported(ids):
     """Knowledge a connector brought in, for these applications.
 
@@ -226,7 +229,8 @@ def reset(user, organization, typed_name):
         removed["DocumentAIResult extraction"] = count
     entries = imported(ids)
     IncidentProfile.objects.filter(entry__in=entries).delete()
-    count, _ = entries.delete()
+    # Records, not rows: each source's passages go with it and are not counted.
+    count = entries.delete()[1].get(ENTRY_LABEL, 0)
     if count:
         removed["KnowledgeEntry imported"] = count
     sources = KnowledgeSource.objects.filter(application_id__in=ids)
@@ -237,7 +241,7 @@ def reset(user, organization, typed_name):
         document_path(document.application, document.pk).unlink(missing_ok=True)
     read = KnowledgeEntry.objects.filter(document__in=brought)
     IncidentProfile.objects.filter(entry__in=read).delete()
-    count, _ = read.delete()
+    count = read.delete()[1].get(ENTRY_LABEL, 0)
     if count:
         removed["KnowledgeEntry from sources"] = count
     count, _ = brought.delete()

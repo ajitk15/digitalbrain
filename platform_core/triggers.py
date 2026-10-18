@@ -6,6 +6,9 @@ switched on. Anything that writes one of those asks for a `graph_refresh` job
 here, in the writer's own transaction (`jobs.enqueue`). The handler still
 compares fingerprints, so a request that changed nothing costs one query.
 
+The same writes keep a source's passages (`chunks.py`) in step with it, in the
+same transaction.
+
 Saves and deletes arrive as signals. Queryset `update` and `delete` send none,
 so `KnowledgeEntryQuerySet` reports those itself. What neither covers - a bulk
 `update` of a feature switch, an organization reactivated - the graph lane's
@@ -14,7 +17,14 @@ reconcile pass finds within `graphs.RECONCILE_INTERVAL`.
 
 from django.db.models.signals import post_delete, post_save
 
-from .models import GRAPH_FIELDS, AIConfiguration, Application, ApplicationFeature, KnowledgeEntry
+from .models import (
+    CHUNK_FIELDS,
+    GRAPH_FIELDS,
+    AIConfiguration,
+    Application,
+    ApplicationFeature,
+    KnowledgeEntry,
+)
 
 
 def sources_changed(application_ids):
@@ -25,12 +35,25 @@ def sources_changed(application_ids):
             request_refresh(app_id)
 
 
+def passages_changed(entry_ids, written):
+    """After a queryset write: retire passages, or cut them again from the text."""
+    from . import chunks
+
+    if set(written) == {"active"} and written["active"] is False:
+        chunks.clear(entry_ids)
+    else:
+        chunks.sync_ids(entry_ids)
+
+
 def entry_saved(sender, instance, raw=False, update_fields=None, **kwargs):
     if raw:
         return
-    if update_fields is not None and GRAPH_FIELDS.isdisjoint(update_fields):
-        return
-    sources_changed([instance.application_id])
+    if update_fields is None or not CHUNK_FIELDS.isdisjoint(update_fields):
+        from . import chunks
+
+        chunks.sync(instance)
+    if update_fields is None or not GRAPH_FIELDS.isdisjoint(update_fields):
+        sources_changed([instance.application_id])
 
 
 def entry_deleted(sender, instance, **kwargs):
