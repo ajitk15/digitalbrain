@@ -229,6 +229,10 @@ def retrieve(app, question, user=None, limit=5, candidates=None):
     if not query and vector is None:
         return []
     candidates = candidates or settings.RETRIEVAL_CANDIDATES
+    if candidates == "auto":
+        from .chunks import complete
+
+        candidates = "chunks" if complete(app) else "sources"
     passages, texts, counts = [], [], []
     if query and candidates == "chunks":
         from .chunks import candidates as chunk_candidates

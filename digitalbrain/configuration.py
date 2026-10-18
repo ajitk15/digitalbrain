@@ -105,9 +105,9 @@ def load_config():
         )
     if type(config.get("shared_streams", False)) is not bool:
         raise ImproperlyConfigured("shared_streams must be a boolean.")
-    if config.get("retrieval_candidates", "sources") not in {"sources", "chunks"}:
-        raise ImproperlyConfigured('retrieval_candidates must be "sources" or "chunks".')
-    if config.get("graph_candidates", "memory") not in {"memory", "rows"}:
+    if config.get("retrieval_candidates", "auto") not in {"auto", "sources", "chunks"}:
+        raise ImproperlyConfigured('retrieval_candidates must be "auto", "sources" or "chunks".')
+    if config.get("graph_candidates", "rows") not in {"memory", "rows"}:
         raise ImproperlyConfigured('graph_candidates must be "memory" or "rows".')
     gateway = config.get("ai_gateway", {})
     if not isinstance(gateway, dict) or set(gateway) - set(AI_GATEWAY_DEFAULTS):

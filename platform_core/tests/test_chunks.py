@@ -151,6 +151,27 @@ class ChunkTests(TestCase):
             retrieve(self.app, "queue routing", self.owner)
         used.assert_called_once()
 
+    def test_auto_answers_from_passages_only_once_every_source_has_them(self):
+        """A source with no current passages is not among them, so "auto" must
+        not answer from passages while the backfill is still behind."""
+        self.source()
+        with (
+            override_settings(RETRIEVAL_CANDIDATES="auto"),
+            patch.object(chunks, "candidates", wraps=chunks.candidates) as used,
+        ):
+            retrieve(self.app, "queue routing", self.owner)
+            used.assert_called_once()
+            KnowledgeEntry.objects.filter(application=self.app).update(chunked_digest="")
+            found = retrieve(self.app, "queue routing", self.owner)
+            used.assert_called_once()
+        self.assertTrue(found, "the source path still finds the source")
+
+    def test_completeness_is_per_application(self):
+        self.source()
+        self.assertTrue(chunks.complete(self.app))
+        KnowledgeEntry.objects.filter(application=self.app).update(chunked_digest="")
+        self.assertFalse(chunks.complete(self.app))
+
     def test_the_command_writes_what_is_behind_and_checks(self):
         self.source()
         KnowledgeEntry.objects.update(chunked_digest="")

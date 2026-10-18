@@ -66,13 +66,16 @@ CODE_FACTORY_LOCAL_TESTS = bool(CONFIG.get("code_factory_local_tests", False)) a
 SHARED_STREAMS = bool(CONFIG.get("shared_streams", False))
 #: Where keyword search finds its candidate passages: "sources" cuts the best
 #: hundred sources into passages per question, "chunks" asks the database for
-#: stored passages (`platform_core/chunks.py`). "sources" until the scorecard's
-#: Chunk answers are no worse than its Keyword answers and every source has
-#: been written as passages (`manage.py chunk_sources --check`).
-RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "sources")
-#: Where graph answers find their candidates: the published version's JSON,
-#: prepared in memory, or its rows (`graph_store.RowsGraph`).
-GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "memory")
+#: stored passages (`platform_core/chunks.py`), and "auto" - the default since
+#: the scorecard's Passage answers matched its Keyword answers exactly - takes
+#: passages for an application only while every active source has current ones
+#: (`chunks.complete`), and sources otherwise.
+RETRIEVAL_CANDIDATES = CONFIG.get("retrieval_candidates", "auto")
+#: Where graph answers find their candidates: the published version's rows
+#: (`graph_store.RowsGraph`, the default since the scorecard held them to
+#: identical citations), or its JSON prepared in memory. A version not yet
+#: recorded as rows, and a question with an embedding, still answer in memory.
+GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "rows")
 #: Redis, when configured: chat answers stream through it so any process can
 #: replay and follow them, and Stop and the API rate limit reach every process
 #: (`platform_core/broker.py`). Its password is the mounted `redis_password`.

@@ -1057,10 +1057,13 @@ equals its `digest`. Restricted sources keep theirs (lifting is common) and are 
 query time like every other path. `retrieve(candidates="chunks")` takes candidates from them
 - PostgreSQL's GIN index over the stored `CHUNK_TEXT` column (migration 0088), a substring scan on SQLite -
 with the source text deferred, then ranks exactly as the source path does.
-`retrieval_candidates` (config, default "sources") picks the path. **Switch only when the
-scorecard's Passage answers are no worse than its Keyword answers and
-`manage.py chunk_sources --check` passes**; the maintenance lane backfills a batch at a
-time. Counting deletions: a source's delete cascades to its passages, so count by model
+`retrieval_candidates` (config) picks the path. The default is **"auto"**, since the
+scorecard's Passage answers matched its Keyword answers exactly (14/16, MRR 0.674): an
+application answers from passages only while every active source has current ones
+(`chunks.complete`), and from sources otherwise - a source with none current is not among
+the passages, so answering from them mid-backfill would miss it rather than rank it lower.
+"sources" and "chunks" force one path; the maintenance lane backfills a batch at a
+time and `manage.py chunk_sources --check` says when it is done. Counting deletions: a source's delete cascades to its passages, so count by model
 (`QuerySet.delete()[1]`), never the total.
 
 ## Graph versions are rows too
@@ -1083,18 +1086,19 @@ them - all part of the digest, so a node relabelled under an unchanged edge make
 row rather than stale terms. PostgreSQL holds the terms and references as generated
 arrays with GIN indexes (migration 0089); SQLite matches words in the padded text.
 
-**`graph_candidates = "rows"` answers graph questions from them** (`RowsGraph`), and
-`"memory"` (the default) from the prepared JSON. `citations_from` asks one interface of
+**`graph_candidates = "rows"` (the default) answers graph questions from them**
+(`RowsGraph`), and `"memory"` from the prepared JSON; a version not yet recorded as rows
+answers from memory either way. `citations_from` asks one interface of
 either (`graph_ai.InMemory`): the edges holding a question's terms, ranked by the same
 `rank_covering` with the whole version's size and average length (`BM25.population`,
 `graph_store.statistics`) - every edge holding a query term is a candidate, so each term's
 frequency is already right; the walk and the expansion read the rows touching the nodes
 they reach; cross-references read the rows naming the question's references. Verification
 is the one path both share. **The scorecard holds them to identical citations** on every
-benchmark question and seeded ticket (Graph storage), and measures the cost: 40 ms
-against 14 ms on CarePath, where memory is a warm cache - rows do not grow with the
-graph, memory does. A question with an embedding still ranks in memory, where vectors
-are. Switch only with that metric at 100%.
+benchmark question and seeded ticket (Graph storage), and measures the cost: 21 ms
+against 10 ms on CarePath, where memory is a warm cache - rows do not grow with the
+graph, memory does, which is why rows became the default. A question with an embedding
+still ranks in memory, where vectors are. Keep that metric at 100%.
 
 The JSON is still written; rows are also read for which sources a version read
 (`recorded_sources`, for drift on every chat page and the publish check), which is why

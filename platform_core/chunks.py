@@ -113,6 +113,16 @@ def behind():
     return KnowledgeEntry.objects.filter(active=True).exclude(chunked_digest=F("digest"))
 
 
+def complete(app):
+    """Whether every active source of `app` has current passages.
+
+    What `retrieval_candidates = "auto"` asks before answering from passages: a
+    source with none current is not among them, so answering from them while
+    the backfill is still running would miss it rather than rank it lower.
+    """
+    return not behind().filter(application_id=app.pk).exists()
+
+
 def backfill(limit=BACKFILL_BATCH, application_id=None):
     """Write passages for up to `limit` sources that have none current. Returns how many."""
     pending = behind()
