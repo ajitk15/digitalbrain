@@ -71,6 +71,7 @@ def load_config():
         "ai_gateway",
         "redis",
         "originals",
+        "otel",
         "retention",
         "entra_tenant",
         "entra_client_id",
@@ -291,6 +292,7 @@ def load_config():
                 "through it."
             )
     check_originals(config)
+    check_otel(config)
     db = config.get("database", {})
     if set(db) - {"name", "user", "host", "port", "sslrootcert", "runtime_user", "password_secret"}:
         raise ImproperlyConfigured("Database configuration cannot contain credentials.")
@@ -346,6 +348,49 @@ def admin_identity():
             seen = True
             value = value or entry.strip().strip("\"'")
     return value.strip()
+
+
+def check_otel(config):
+    """`[otel]`: an OTLP/HTTP collector to send traces to. Absent, nothing is traced."""
+    otel = config.get("otel", {})
+    if not isinstance(otel, dict) or set(otel) - {
+        "endpoint", "service_name", "sample_ratio", "ca_certificate", "authorization"
+    }:
+        raise ImproperlyConfigured(
+            "otel configuration cannot contain credentials; a collector's credential is "
+            "the mounted file otel_authorization (authorization = true)."
+        )
+    if not otel:
+        return
+    endpoint = otel.get("endpoint")
+    parsed = urlsplit(endpoint) if isinstance(endpoint, str) else None
+    allowed = {"https"} if config.get("mode") == "production" else {"https", "http"}
+    if (
+        parsed is None
+        or parsed.scheme not in allowed
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ImproperlyConfigured(
+            "otel.endpoint must be a collector's scheme and host, such as "
+            "https://collector:4318 - https in production."
+        )
+    if not isinstance(otel.get("service_name", "digital-brain"), str) or not re.fullmatch(
+        r"[A-Za-z0-9._-]{1,64}", otel.get("service_name", "digital-brain")
+    ):
+        raise ImproperlyConfigured("otel.service_name must be a short name.")
+    ratio = otel.get("sample_ratio", 1.0)
+    if type(ratio) not in {int, float} or not 0 < ratio <= 1:
+        raise ImproperlyConfigured("otel.sample_ratio must be above 0 and at most 1.")
+    if type(otel.get("authorization", False)) is not bool:
+        raise ImproperlyConfigured("otel.authorization must be a boolean.")
+    ca = otel.get("ca_certificate", "")
+    if not isinstance(ca, str) or (ca and not Path(ca).is_absolute()):
+        raise ImproperlyConfigured("otel.ca_certificate must be an absolute path.")
 
 
 #: What `[originals]` may say. The keys are the mounted files

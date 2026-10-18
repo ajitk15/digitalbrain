@@ -270,6 +270,9 @@ def run_next(lane):
         # Bound to the application it is for (tenancy.py); a job for none,
         # such as a reconcile pass, sees every row as before.
         with Renewal(job), scoped(job.application_id):
+            from .telemetry import current
+
+            current().set(job_kind=job.kind, application_id=job.application_id)
             import_string(spec.handler)(job)
     except Later as later:
         put_back(job, timezone.now() + timedelta(seconds=later.seconds), used_attempt=False)

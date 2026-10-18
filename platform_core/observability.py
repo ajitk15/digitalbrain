@@ -62,4 +62,9 @@ class SafeJsonFormatter(logging.Formatter):
                 entry[field] = getattr(record, field)
         if record.exc_info:
             entry["exception_type"] = record.exc_info[0].__name__
+        # The trace this line belongs to, when tracing is on (telemetry.py).
+        from .telemetry import trace_id
+
+        if (found := trace_id()) is not None:
+            entry["trace_id"] = found
         return json.dumps(entry, separators=(",", ":"))

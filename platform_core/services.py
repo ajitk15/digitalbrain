@@ -444,4 +444,12 @@ def record_ai_usage(
         raise ValidationError("Conflicting accounting for an existing provider request.")
     if created:
         audit(actor, "ai.usage_recorded", receipt.pk, app.product.portfolio.organization)
+        from .telemetry import current
+
+        current().event(
+            "ai.receipt",
+            response_id=request_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
     return receipt

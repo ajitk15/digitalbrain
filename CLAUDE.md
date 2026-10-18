@@ -424,6 +424,25 @@ free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed
 on its own provider request ID.
 
+**Traces carry ids and timings only, and are off by default** (`telemetry.py`, an `[otel]`
+table naming an OTLP/HTTP collector; https in production, its credential the mounted
+`otel_authorization`). Three things are spans: a request (`TelemetryMiddleware`, first in
+`MIDDLEWARE`: method, the route's *pattern*, status, request id, application id), a lane
+step that did work (`run_lane`; an idle step is dropped by `drop_idle`) with the job kind,
+and a paid call (`gateway.admitted`, from the first try for a slot to its release:
+purpose, provider, model, wait, outcome, and an `ai.receipt` event per receipt - provider
+request id and token counts). **What a span may say is the closed registry
+`telemetry.ATTRIBUTES`**; anything else is dropped, so a prompt, answer, source text, name,
+URL or query cannot reach a collector by accident. Exceptions are their class name, never
+their message. No context is read from incoming headers or sent with outgoing calls, and
+the global tracer provider is never set (the MCP SDK traces through the API, and records
+nothing). The exporter is written here over the SDK's encoder because the OTLP package
+merges headers, certificates and a CA from `OTEL_EXPORTER_OTLP_*` whatever it is given.
+One attempt per batch and one warning per five minutes when the collector is down; the
+batch queue drops rather than grows. A log line inside a span carries its `trace_id`. With
+no table the SDK is never imported. Do not add an attribute to the registry that a person
+or a model wrote.
+
 **Audit events and receipts are kept until a deployment says otherwise**
 (`retention.py`, `[retention]`). Nothing removes either by default - a trail and a bill
 are records, not caches. `audit_days` and `usage_days` set windows, and `load_config`

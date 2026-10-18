@@ -10,6 +10,7 @@ from django.db import close_old_connections, connection, connections, transactio
 from django.db.models import Q
 from django.utils import timezone
 
+from . import telemetry
 from .models import Document
 from .processing import convert_document, settle_failure
 from .tenancy import scoped
@@ -479,7 +480,13 @@ def run_lane(name, steps_for, idle_seconds, stop=None, keeper=None):
                     break
                 try:
                     close_old_connections()
-                    worked = bool(step()) or worked
+                    # A step that found nothing is dropped before export.
+                    with telemetry.span(
+                        f"{name} {step.__name__}", lane=name, step=step.__name__
+                    ) as traced:
+                        did = bool(step())
+                        traced.set(idle=not did)
+                    worked = did or worked
                 except Exception as failure:
                     # The event name is what makes this findable; the formatter
                     # deliberately keeps the message and traceback out of the log.

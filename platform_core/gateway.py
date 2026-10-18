@@ -49,6 +49,8 @@ from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
+from . import telemetry
+
 logger = logging.getLogger(__name__)
 
 
@@ -199,11 +201,32 @@ POLL = 0.25
 
 @contextmanager
 def admitted(user, app, config, purpose, prompt_characters=0, max_tokens=0):
-    """Hold a slot and a reservation for one paid call, released however it ends."""
+    """Hold a slot and a reservation for one paid call, released however it ends.
+
+    Traced as one span from the first try for a slot to the release
+    (`telemetry`): how long admission waited, the outcome, and each receipt
+    the call wrote - ids and counts, never what was sent or answered.
+    """
+    with telemetry.span(
+        f"ai {purpose}",
+        purpose=purpose,
+        provider=config.provider,
+        model=config.model,
+        application_id=app.pk,
+    ) as traced:
+        with _admitted(
+            user, app, config, purpose, prompt_characters, max_tokens, traced
+        ) as admission:
+            yield admission
+
+
+@contextmanager
+def _admitted(user, app, config, purpose, prompt_characters, max_tokens, traced):
     from .models import AIAdmission
 
     amount = estimate(config, prompt_characters, max_tokens)
-    deadline = time.monotonic() + limits()["wait"]
+    waiting = time.monotonic()
+    deadline = waiting + limits()["wait"]
     while True:
         admission = try_admit(app, config, purpose, user, amount)
         if admission is not None:
@@ -213,17 +236,20 @@ def admitted(user, app, config, purpose, prompt_characters=0, max_tokens=0):
                 "ai_gateway_busy",
                 extra={"event": "ai_gateway_busy", "purpose": purpose, "provider": config.provider},
             )
+            traced.set(outcome="busy")
             raise ProviderBusy(
                 "The AI provider is busy with this application's other requests. Nothing was "
                 "sent and nothing was charged; try again in a moment."
             )
         time.sleep(POLL)
     started = time.monotonic()
+    traced.set(wait_ms=round((started - waiting) * 1000))
     outcome = "failed"
     try:
         yield admission
         outcome = "answered"
     finally:
+        traced.set(outcome=outcome)
         AIAdmission.objects.filter(pk=admission.pk).delete()
         logger.info(
             "ai_gateway_call",

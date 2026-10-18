@@ -88,6 +88,8 @@ GRAPH_CANDIDATES = CONFIG.get("graph_candidates", "rows")
 REDIS = CONFIG.get("redis", {})
 # Where originals are kept: disk unless [originals] store = "s3" (originals.py).
 ORIGINALS = CONFIG.get("originals", {})
+# Traces to an OTLP collector; off without an [otel] table (telemetry.py).
+OTEL = CONFIG.get("otel", {})
 #: How long audit events and usage receipts are kept (platform_core/retention.py).
 #: Empty keeps everything, which is the default.
 RETENTION = CONFIG.get("retention", {})
@@ -140,6 +142,8 @@ INSTALLED_APPS = [
     "platform_core",
 ]
 MIDDLEWARE = [
+    # First, so its span covers every other middleware; does nothing without [otel].
+    "platform_core.telemetry.TelemetryMiddleware",
     "platform_core.middleware.RequestContextMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
