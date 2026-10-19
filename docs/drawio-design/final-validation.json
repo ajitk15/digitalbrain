@@ -1,0 +1,54 @@
+{
+  "pages": [
+    {
+      "page": "01-high-level-design",
+      "final_xml_valid": true,
+      "sha256": "7219f55792a01cb8b119cf65cf16d2ad62361e38661481ea64b0ba208f5bfd0f"
+    },
+    {
+      "page": "02-low-level-design",
+      "final_xml_valid": true,
+      "sha256": "76fcbdadbd4e8c774b7961d3de9a9e21f969e49b56ba2f2ecff65cf3f5001f13"
+    },
+    {
+      "page": "03-graph-generation",
+      "final_xml_valid": true,
+      "sha256": "473e259c91ed5641c2d88142b3fc532e71d79adaeede46bee6bff162620448e4"
+    },
+    {
+      "page": "04-graph-retrieval",
+      "final_xml_valid": true,
+      "sha256": "bf351edcbf8fd2e4e6e07dd8c5e0e31be94cb13d6062d47a7b1071c291b32682"
+    },
+    {
+      "page": "05-hostinger-vps-deployment",
+      "final_xml_valid": true,
+      "sha256": "314667ee65a25fda399762ff4fe04b543e2873688735e8471c0a34b8e4f4bbb7"
+    },
+    {
+      "page": "06-aws-vps-deployment",
+      "final_xml_valid": true,
+      "sha256": "7d2baac63cdbd85ca1eb7d2257fa0d4225e8df92a151ab109a6e55d3c9d7b130"
+    },
+    {
+      "page": "07-code-factory",
+      "final_xml_valid": true,
+      "sha256": "ce3ef3b8f29913b1dcf6513e77ad2a2009b4b806e588de33daa7e67c9116dd1d"
+    },
+    {
+      "page": "08-serviceops",
+      "final_xml_valid": true,
+      "sha256": "2e46918a97749fe319faf3fe614999ada226978c9456e4a4d1aa645cdfa380ec"
+    },
+    {
+      "page": "09-chat-application",
+      "final_xml_valid": true,
+      "sha256": "af18d8e7fc7c8b1ebea1e460932c9b78575635dd1849522a74db89e7c0fe2d40"
+    }
+  ],
+  "bundle_pages": 9,
+  "gallery_navigation": true,
+  "gallery_zoom": true,
+  "browser_errors": [],
+  "visual_review": "All nine routed PNG pages inspected in overview.png"
+}

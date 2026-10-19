@@ -1,0 +1,56 @@
+[
+  {
+    "page": "01-high-level-design",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "02-low-level-design",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "03-graph-generation",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "04-graph-retrieval",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "05-hostinger-vps-deployment",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "06-aws-vps-deployment",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "07-code-factory",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "08-serviceops",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  },
+  {
+    "page": "09-chat-application",
+    "native_drawio_import": true,
+    "svg_export": true,
+    "png_preview": true
+  }
+]

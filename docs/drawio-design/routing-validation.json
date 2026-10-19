@@ -1,0 +1,38 @@
+[
+  {
+    "page": "01-high-level-design",
+    "libavoid_routed": true
+  },
+  {
+    "page": "02-low-level-design",
+    "libavoid_routed": true
+  },
+  {
+    "page": "03-graph-generation",
+    "libavoid_routed": true
+  },
+  {
+    "page": "04-graph-retrieval",
+    "libavoid_routed": true
+  },
+  {
+    "page": "05-hostinger-vps-deployment",
+    "libavoid_routed": true
+  },
+  {
+    "page": "06-aws-vps-deployment",
+    "libavoid_routed": true
+  },
+  {
+    "page": "07-code-factory",
+    "libavoid_routed": true
+  },
+  {
+    "page": "08-serviceops",
+    "libavoid_routed": true
+  },
+  {
+    "page": "09-chat-application",
+    "libavoid_routed": true
+  }
+]

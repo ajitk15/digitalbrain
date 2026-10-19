@@ -1,0 +1,2419 @@
+[
+  {
+    "slug": "01-high-level-design",
+    "title": "01 / Digital Brain \u2014 high level design",
+    "subtitle": "Application-isolated knowledge, engineering and operations on one Django platform.",
+    "evidence": "README.md; digitalbrain/settings.py; platform_core/broker.py; docker-compose*.yaml",
+    "nodes": [
+      {
+        "id": "clients",
+        "title": "People and agents",
+        "detail": "Browser \u2022 bearer-token API \u2022 MCP",
+        "x": 45,
+        "y": 130,
+        "w": 1030,
+        "h": 64,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "access",
+        "title": "Application boundary",
+        "detail": "Authentication \u2192 feature and grant checks \u2192 tenant binding",
+        "x": 45,
+        "y": 235,
+        "w": 1030,
+        "h": 64,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "knowledge",
+        "title": "Knowledge",
+        "detail": "Sources, graph generation\nand published retrieval",
+        "x": 45,
+        "y": 350,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "chat",
+        "title": "Chat",
+        "detail": "Excerpts, AI answers\nand graph answers",
+        "x": 315,
+        "y": 350,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "factory",
+        "title": "Code Factory",
+        "detail": "Evidence \u2192 plan \u2192 approval\n\u2192 implementation \u2192 delivery",
+        "x": 585,
+        "y": 350,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "ops",
+        "title": "ServiceOps",
+        "detail": "Incident evidence, hypotheses\nand gated automation",
+        "x": 855,
+        "y": 350,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "lanes",
+        "title": "Background work",
+        "detail": "Database-backed work claims \u2022 graph / connectors / intake / factory / ServiceOps / maintenance",
+        "x": 45,
+        "y": 485,
+        "w": 1030,
+        "h": 72,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "pg",
+        "title": "PostgreSQL",
+        "detail": "Records, graph versions,\nchat, jobs and audit",
+        "x": 45,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "redis",
+        "title": "Redis over TLS",
+        "detail": "Answer events, Stop signals\nand API rate limits",
+        "x": 315,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "files",
+        "title": "Private files",
+        "detail": "Runtime, app credentials\nand code workspace",
+        "x": 585,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "s3",
+        "title": "Originals in S3",
+        "detail": "Uploaded source objects\nvia configured adapter",
+        "x": 855,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "providers",
+        "title": "External integrations",
+        "detail": "Claude / OpenAI \u2022 GitHub \u2022 SharePoint \u2022 Jira \u2022 ServiceNow \u2022 AWX",
+        "x": 45,
+        "y": 780,
+        "w": 1030,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "access",
+        "target": "knowledge",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "chat",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "factory",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "ops",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lanes",
+        "target": "pg",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lanes",
+        "target": "redis",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lanes",
+        "target": "files",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lanes",
+        "target": "s3",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "clients",
+        "target": "access",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "knowledge",
+        "target": "lanes",
+        "label": "",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "factory",
+        "target": "lanes",
+        "label": "",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "ops",
+        "target": "lanes",
+        "label": "",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "chat",
+        "target": "redis",
+        "label": "events",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "chat",
+        "target": "pg",
+        "label": "transcript",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "chat",
+        "target": "providers",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lanes",
+        "target": "providers",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "02-low-level-design",
+    "title": "02 / Digital Brain \u2014 low level design",
+    "subtitle": "Concrete Python modules, runtime boundaries and persisted domain records.",
+    "evidence": "digitalbrain/urls.py; platform_core/{chat_views,graph_ai,graph_store,document_worker,tenancy}.py; models/",
+    "nodes": [
+      {
+        "id": "entry",
+        "title": "HTTP entry",
+        "detail": "urls.py \u2192 views / api.py / mcp",
+        "x": 45,
+        "y": 130,
+        "w": 1030,
+        "h": 60,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "policy",
+        "title": "Access + tenancy",
+        "detail": "policy / permissions / tenancy\nFeature, grant and row scope",
+        "x": 45,
+        "y": 240,
+        "w": 1030,
+        "h": 68,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "ingest",
+        "title": "Source pipeline",
+        "detail": "documents / processing\nconnectors / chunks",
+        "x": 45,
+        "y": 360,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "graph",
+        "title": "Graph pipeline",
+        "detail": "graphs / graph_ai\ngraph_store / embeddings",
+        "x": 315,
+        "y": 360,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "answer",
+        "title": "Answer runtime",
+        "detail": "chat_views / ai\nagent_runtime / streaming",
+        "x": 585,
+        "y": 360,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "work",
+        "title": "Domain workflows",
+        "detail": "code_factory_* / serviceops_*\nautomation_execution",
+        "x": 855,
+        "y": 360,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "worker",
+        "title": "Claimed worker lanes",
+        "detail": "document_worker.py / jobs.py\nRow claims; scoped execution; maintenance advisory lock",
+        "x": 45,
+        "y": 500,
+        "w": 490,
+        "h": 80,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "runtime",
+        "title": "Provider + tool boundary",
+        "detail": "agent_runtime/tools.py binds app + user\ncredentials.py \u2022 budget.py \u2022 usage receipts",
+        "x": 585,
+        "y": 500,
+        "w": 490,
+        "h": 80,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "knowledge",
+        "title": "Knowledge records",
+        "detail": "KnowledgeSource \u2192 Document / KnowledgeEntry\nKnowledgeChunk \u2022 GraphRevision / GraphElement",
+        "x": 45,
+        "y": 650,
+        "w": 490,
+        "h": 94,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "workflow",
+        "title": "Workflow records",
+        "detail": "ChatConversation / ChatMessage\nFactoryRun / ChangePlan \u2022 TriageRun / AutomationRun",
+        "x": 585,
+        "y": 650,
+        "w": 490,
+        "h": 94,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "db",
+        "title": "PostgreSQL + files + Redis",
+        "detail": "Runtime DB role: row operations; migrations use owner role. Secrets: mode-0600 files. Redis: stream events and cancellation.",
+        "x": 45,
+        "y": 800,
+        "w": 1030,
+        "h": 65,
+        "kind": "data",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "policy",
+        "target": "ingest",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "policy",
+        "target": "graph",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "policy",
+        "target": "answer",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "policy",
+        "target": "work",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "entry",
+        "target": "policy",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "ingest",
+        "target": "worker",
+        "label": "",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "work",
+        "target": "worker",
+        "label": "",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "graph",
+        "target": "knowledge",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "answer",
+        "target": "runtime",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "runtime",
+        "target": "workflow",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "worker",
+        "target": "knowledge",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "work",
+        "target": "workflow",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "knowledge",
+        "target": "db",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "workflow",
+        "target": "db",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "03-graph-generation",
+    "title": "03 / Graph generation process",
+    "subtitle": "A source becomes a draft graph; an explicit publication makes it available for answers.",
+    "evidence": "docs/graph-generation-end-to-end.md; platform_core/{processing,graphs,graph_ai,graph_store}.py",
+    "nodes": [
+      {
+        "id": "source",
+        "title": "1. Bring sources in",
+        "detail": "Upload, folder, link, GitHub,\nSharePoint, Jira, ServiceNow",
+        "x": 45,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "store",
+        "title": "2. Private original",
+        "detail": "Record size and SHA-256\nS3 or configured file store",
+        "x": 315,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "scan",
+        "title": "3. Security scan",
+        "detail": "ClamAV; refuse infected\nor unverifiable input",
+        "x": 585,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "reject",
+        "title": "Rejected / failed",
+        "detail": "Record the reason\nNever convert unsafe input",
+        "x": 855,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "error",
+        "parent": "1"
+      },
+      {
+        "id": "convert",
+        "title": "4. Convert + OCR",
+        "detail": "Isolated offline conversion\nMarkdown text + digest",
+        "x": 585,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "record",
+        "title": "5. Knowledge record",
+        "detail": "Immutable source revision\nchunks + source identity",
+        "x": 315,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "checks",
+        "title": "6. Advisory checks",
+        "detail": "PII/PHI, readability, type\nand source relationships",
+        "x": 45,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "structural",
+        "title": "7. Structural graph",
+        "detail": "Automatic, no model call\nReuse verified unchanged AI",
+        "x": 45,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "paid",
+        "title": "8. AI requested?",
+        "detail": "Explicit run or owner refresh\nPermissions + monthly budget",
+        "x": 315,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "enrich",
+        "title": "9. AI enrichment",
+        "detail": "Extract entities / relations\nVerify exact source quotes",
+        "x": 585,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "embed",
+        "title": "10. Embeddings",
+        "detail": "Optional; configured provider\nBudgeted and receipted",
+        "x": 855,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "draft",
+        "title": "11. Draft version",
+        "detail": "GraphRevision snapshot\nGraphElement version ranges",
+        "x": 315,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "review",
+        "title": "12. Measure + review",
+        "detail": "Benchmark + graph health\nReviewer inspects quality",
+        "x": 585,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "publish",
+        "title": "13. Publish?",
+        "detail": "An authorized person\nselects the version",
+        "x": 855,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "published",
+        "title": "Published graph",
+        "detail": "Available to graph answers\nand workflow evidence",
+        "x": 855,
+        "y": 780,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "waiting",
+        "title": "Keep draft",
+        "detail": "Review or rebuild later\nNever answers questions",
+        "x": 585,
+        "y": 780,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "source",
+        "target": "store",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "store",
+        "target": "scan",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "scan",
+        "target": "reject",
+        "label": "unsafe",
+        "dashed": false,
+        "failure": true
+      },
+      {
+        "source": "scan",
+        "target": "convert",
+        "label": "clean",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "convert",
+        "target": "record",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "record",
+        "target": "checks",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "checks",
+        "target": "structural",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "structural",
+        "target": "paid",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "paid",
+        "target": "enrich",
+        "label": "yes",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "enrich",
+        "target": "embed",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "embed",
+        "target": "draft",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "paid",
+        "target": "draft",
+        "label": "no",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "draft",
+        "target": "review",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "review",
+        "target": "publish",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "publish",
+        "target": "published",
+        "label": "yes",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "publish",
+        "target": "waiting",
+        "label": "not yet",
+        "dashed": false,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "04-graph-retrieval",
+    "title": "04 / Graph retrieval process",
+    "subtitle": "Rank candidate relationships, then prove every citation from its live source.",
+    "evidence": "docs/graph-retrieval-end-to-end.md; platform_core/{graph_ai,ranking,rerank,graph_store}.py",
+    "nodes": [
+      {
+        "id": "question",
+        "title": "Question / caller",
+        "detail": "Chat, API, MCP, Code Factory\nCode review or ServiceOps",
+        "x": 45,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "access",
+        "title": "Application access",
+        "detail": "Grant + feature checks\nScope fixed before retrieval",
+        "x": 315,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "version",
+        "title": "Published version",
+        "detail": "Latest or conversation-pinned\nDrafts refused",
+        "x": 585,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "deny",
+        "title": "No evidence / refusal",
+        "detail": "No grant, no published graph\nor no valid citations",
+        "x": 855,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "error",
+        "parent": "1"
+      },
+      {
+        "id": "query",
+        "title": "Read the question",
+        "detail": "Follow-up context, terms\nKeep BR-05-like IDs whole",
+        "x": 585,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "rank",
+        "title": "Rank by words",
+        "detail": "Coverage then BM25\nRows or JSON snapshot",
+        "x": 315,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "semantic",
+        "title": "Fuse by meaning",
+        "detail": "Optional query embedding\nOwner-enabled paid help",
+        "x": 45,
+        "y": 290,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "walk",
+        "title": "Walk relationships",
+        "detail": "Typed two-hop paths\nPlus one-hop neighbours",
+        "x": 45,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "verify",
+        "title": "Verify live evidence",
+        "detail": "Allowed + active + same digest\nExact quote still present",
+        "x": 315,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "spread",
+        "title": "Diverse evidence",
+        "detail": "Spread across sources\nKeep at most 8 citations",
+        "x": 585,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "rerank",
+        "title": "Optional reranking",
+        "detail": "Model reorders IDs only\nCannot invent evidence",
+        "x": 855,
+        "y": 450,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "caller",
+        "title": "Caller decides output",
+        "detail": "Evidence API or answer flow",
+        "x": 585,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "json",
+        "title": "API / MCP evidence",
+        "detail": "JSON citations + graph version\nNo model spend",
+        "x": 315,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "answer",
+        "title": "Compose answer",
+        "detail": "Chat model uses verified pack\nScoped tools may find more",
+        "x": 855,
+        "y": 620,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "final",
+        "title": "Verify again + save",
+        "detail": "Keep only live valid citations\nPersist and render escaped",
+        "x": 855,
+        "y": 780,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "question",
+        "target": "access",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "version",
+        "label": "allowed",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "version",
+        "target": "deny",
+        "label": "none / draft",
+        "dashed": false,
+        "failure": true
+      },
+      {
+        "source": "version",
+        "target": "query",
+        "label": "published",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "query",
+        "target": "rank",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "rank",
+        "target": "semantic",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "semantic",
+        "target": "walk",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "walk",
+        "target": "verify",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "verify",
+        "target": "spread",
+        "label": "valid",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "spread",
+        "target": "rerank",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "rerank",
+        "target": "caller",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "caller",
+        "target": "json",
+        "label": "API / MCP",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "caller",
+        "target": "answer",
+        "label": "chat",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "answer",
+        "target": "final",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "deny",
+        "label": "denied",
+        "dashed": false,
+        "failure": true
+      }
+    ]
+  },
+  {
+    "slug": "05-hostinger-vps-deployment",
+    "title": "05 / Hostinger VPS \u2014 committed deployment",
+    "subtitle": "Coolify deploys the repository stack; diagram describes configuration, not a live server audit.",
+    "evidence": "docker-compose.yaml; docker-compose.scale.yaml; deploy/entrypoint.sh; deploy/README.md",
+    "nodes": [
+      {
+        "id": "browser",
+        "title": "Browser / API clients",
+        "detail": "Public HTTPS",
+        "x": 45,
+        "y": 135,
+        "w": 300,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "git",
+        "title": "Git repository",
+        "detail": "Build pinned release image\nRun release checks",
+        "x": 420,
+        "y": 135,
+        "w": 300,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "cloud",
+        "title": "Hostinger VPS",
+        "detail": "",
+        "x": 35,
+        "y": 225,
+        "w": 1050,
+        "h": 525,
+        "kind": "group",
+        "parent": "1"
+      },
+      {
+        "id": "host",
+        "title": "Coolify + private Compose network",
+        "detail": "",
+        "x": 20,
+        "y": 45,
+        "w": 1010,
+        "h": 465,
+        "kind": "group",
+        "parent": "cloud"
+      },
+      {
+        "id": "proxy",
+        "title": "TLS reverse proxy",
+        "detail": "Coolify owns :80 / :443",
+        "x": 25,
+        "y": 50,
+        "w": 280,
+        "h": 70,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "init",
+        "title": "Init + certificates",
+        "detail": "Secret files + TLS material\nPersist across deploys",
+        "x": 365,
+        "y": 50,
+        "w": 280,
+        "h": 70,
+        "kind": "security",
+        "parent": "host"
+      },
+      {
+        "id": "app",
+        "title": "Django app :8000",
+        "detail": "Default: web + migrations\nand background lanes",
+        "x": 25,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "pg",
+        "title": "PostgreSQL 16",
+        "detail": "Verified TLS; runtime role\nDurable DB + graph + jobs",
+        "x": 365,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "redis",
+        "title": "Redis 7.4",
+        "detail": "Verified TLS\nEvents / Stop / rate limit",
+        "x": 705,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "volumes",
+        "title": "Persistent volumes",
+        "detail": "Runtime / credentials / originals*\ndemo workspace / AV signatures",
+        "x": 25,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "scale",
+        "title": "Optional scale overlay",
+        "detail": "Migrate \u2192 web / worker / sandbox\nClamd daemon; shared Redis",
+        "x": 365,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "backup",
+        "title": "Backup + restore plan",
+        "detail": "DB dump + persistent volumes\nOff-host copy + restore drill",
+        "x": 705,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "security",
+        "parent": "host"
+      },
+      {
+        "id": "s3",
+        "title": "S3 originals + external APIs",
+        "detail": "Configured S3 bucket; Claude / OpenAI; source connectors",
+        "x": 45,
+        "y": 780,
+        "w": 1030,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "browser",
+        "target": "proxy",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "git",
+        "target": "app",
+        "label": "deploy",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "app",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "pg",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "redis",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "proxy",
+        "target": "app",
+        "label": "private :8000",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "pg",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "redis",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "volumes",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "s3",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "scale",
+        "target": "pg",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "scale",
+        "target": "redis",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "pg",
+        "target": "backup",
+        "label": "backup",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "volumes",
+        "target": "backup",
+        "label": "backup",
+        "dashed": true,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "06-aws-vps-deployment",
+    "title": "06 / AWS EC2 VPS \u2014 proposed deployment",
+    "subtitle": "Single-host EC2 adaptation of the Compose stack; no AWS infrastructure is provisioned by this diagram.",
+    "evidence": "docker-compose.yaml; docker-compose.scale.yaml; deploy/entrypoint.sh; deploy/README.md",
+    "nodes": [
+      {
+        "id": "browser",
+        "title": "Browser / API clients",
+        "detail": "Public HTTPS",
+        "x": 45,
+        "y": 135,
+        "w": 300,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "git",
+        "title": "Git repository",
+        "detail": "Build pinned release image\nRun release checks",
+        "x": 420,
+        "y": 135,
+        "w": 300,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "cloud",
+        "title": "AWS VPC / public subnet",
+        "detail": "",
+        "x": 35,
+        "y": 225,
+        "w": 1050,
+        "h": 525,
+        "kind": "group",
+        "parent": "1"
+      },
+      {
+        "id": "host",
+        "title": "EC2 Linux + EBS volumes",
+        "detail": "",
+        "x": 20,
+        "y": 45,
+        "w": 1010,
+        "h": 465,
+        "kind": "group",
+        "parent": "cloud"
+      },
+      {
+        "id": "proxy",
+        "title": "TLS reverse proxy",
+        "detail": "Coolify on EC2 (proposed)",
+        "x": 25,
+        "y": 50,
+        "w": 280,
+        "h": 70,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "init",
+        "title": "Init + certificates",
+        "detail": "Secret files + TLS material\nPersist across deploys",
+        "x": 365,
+        "y": 50,
+        "w": 280,
+        "h": 70,
+        "kind": "security",
+        "parent": "host"
+      },
+      {
+        "id": "app",
+        "title": "Django app :8000",
+        "detail": "Default: web + migrations\nand background lanes",
+        "x": 25,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "pg",
+        "title": "PostgreSQL 16",
+        "detail": "Verified TLS; runtime role\nDurable DB + graph + jobs",
+        "x": 365,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "redis",
+        "title": "Redis 7.4",
+        "detail": "Verified TLS\nEvents / Stop / rate limit",
+        "x": 705,
+        "y": 185,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "volumes",
+        "title": "Persistent volumes",
+        "detail": "Runtime / credentials / originals*\ndemo workspace / AV signatures",
+        "x": 25,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "data",
+        "parent": "host"
+      },
+      {
+        "id": "scale",
+        "title": "Optional scale overlay",
+        "detail": "Migrate \u2192 web / worker / sandbox\nClamd daemon; shared Redis",
+        "x": 365,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "step",
+        "parent": "host"
+      },
+      {
+        "id": "backup",
+        "title": "Backup + restore plan",
+        "detail": "DB dump + persistent volumes\nEBS snapshots",
+        "x": 705,
+        "y": 350,
+        "w": 280,
+        "h": 90,
+        "kind": "security",
+        "parent": "host"
+      },
+      {
+        "id": "s3",
+        "title": "S3 originals + external APIs",
+        "detail": "Configured S3 bucket; Claude / OpenAI; source connectors",
+        "x": 45,
+        "y": 780,
+        "w": 1030,
+        "h": 65,
+        "kind": "external",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "browser",
+        "target": "proxy",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "git",
+        "target": "app",
+        "label": "deploy",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "app",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "pg",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "init",
+        "target": "redis",
+        "label": "files",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "proxy",
+        "target": "app",
+        "label": "private :8000",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "pg",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "redis",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "volumes",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "app",
+        "target": "s3",
+        "label": "HTTPS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "scale",
+        "target": "pg",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "scale",
+        "target": "redis",
+        "label": "TLS",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "pg",
+        "target": "backup",
+        "label": "backup",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "volumes",
+        "target": "backup",
+        "label": "backup",
+        "dashed": true,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "07-code-factory",
+    "title": "07 / Code Factory process",
+    "subtitle": "Evidence-backed planning and controlled implementation with separate delivery authorization.",
+    "evidence": "platform_core/models/factory.py; code_factory.py; code_factory_analysis.py; code_factory_build.py",
+    "nodes": [
+      {
+        "id": "ticket",
+        "title": "Ticket / manual request",
+        "detail": "Authorize feature and user\nCopy ticket + digest",
+        "x": 45,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "pin",
+        "title": "Pin evidence + code",
+        "detail": "Published graph version\nCode snapshot + repository",
+        "x": 315,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "triage",
+        "title": "1. Triage",
+        "detail": "Classify request\nExtract stated requirements",
+        "x": 585,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "analysis",
+        "title": "2. Analysis",
+        "detail": "Stated / functional / NFR gaps\nCite verified evidence",
+        "x": 855,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "design",
+        "title": "3. Design",
+        "detail": "Targets + change summaries\nCreate ChangePlan",
+        "x": 855,
+        "y": 300,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "approval",
+        "title": "Plan approval",
+        "detail": "Authorized approver reviews\nReject or approve digest",
+        "x": 585,
+        "y": 300,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "order",
+        "title": "4. Work order",
+        "detail": "Approved scope\nImplementation instructions",
+        "x": 315,
+        "y": 300,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "implement",
+        "title": "5. Implementation",
+        "detail": "Prepare candidate contents\nNo delivery credential needed",
+        "x": 45,
+        "y": 300,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "tests",
+        "title": "6. Test author",
+        "detail": "Produce relevant tests\nAgainst approved changes",
+        "x": 45,
+        "y": 470,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "review",
+        "title": "7. Change review",
+        "detail": "Review scope, safety\nand evidence",
+        "x": 315,
+        "y": 470,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "verify",
+        "title": "8. Verification",
+        "detail": "Check prepared change\nRecord phase result",
+        "x": 585,
+        "y": 470,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "delivergate",
+        "title": "Delivery gate",
+        "detail": "Confirm repo + base branch\nSeparate write credential",
+        "x": 855,
+        "y": 470,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "delivery",
+        "title": "9. Delivery",
+        "detail": "GitHub branch + pull request\nOr permitted local demo delivery",
+        "x": 855,
+        "y": 640,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "ci",
+        "title": "Checks + refresh",
+        "detail": "Read repository CI outcomes\nRefresh code knowledge",
+        "x": 585,
+        "y": 640,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "receipt",
+        "title": "Run history",
+        "detail": "Phase status, costs, events\nEvidence and output digests",
+        "x": 315,
+        "y": 640,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "blocked",
+        "title": "Rejected / failed / stalled",
+        "detail": "No next phase on failure\nReview reason before retry",
+        "x": 45,
+        "y": 640,
+        "w": 220,
+        "h": 86,
+        "kind": "error",
+        "parent": "1"
+      },
+      {
+        "id": "notephase",
+        "title": "Prepare \u2260 deliver",
+        "detail": "Preparation can finish without GitHub write access. Publishing re-checks grants, plan, repository and credentials.",
+        "x": 45,
+        "y": 800,
+        "w": 1030,
+        "h": 65,
+        "kind": "security",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "ticket",
+        "target": "pin",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "pin",
+        "target": "triage",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "triage",
+        "target": "analysis",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "analysis",
+        "target": "design",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "design",
+        "target": "approval",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "approval",
+        "target": "order",
+        "label": "approved",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "order",
+        "target": "implement",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "implement",
+        "target": "tests",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "tests",
+        "target": "review",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "review",
+        "target": "verify",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "verify",
+        "target": "delivergate",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "delivergate",
+        "target": "delivery",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "delivery",
+        "target": "ci",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "ci",
+        "target": "receipt",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "approval",
+        "target": "blocked",
+        "label": "rejected",
+        "dashed": false,
+        "failure": true
+      },
+      {
+        "source": "verify",
+        "target": "blocked",
+        "label": "failed",
+        "dashed": false,
+        "failure": true
+      },
+      {
+        "source": "delivergate",
+        "target": "blocked",
+        "label": "not ready",
+        "dashed": false,
+        "failure": true
+      }
+    ]
+  },
+  {
+    "slug": "08-serviceops",
+    "title": "08 / ServiceOps process",
+    "subtitle": "Read-only incident triage and separately gated real automation.",
+    "evidence": "platform_core/serviceops*.py; automation_execution.py; automation_adapters.py; docs/serviceops-real-automation.md",
+    "nodes": [
+      {
+        "id": "incident",
+        "title": "Incident intake",
+        "detail": "ServiceNow / Jira import\nOr manual incident",
+        "x": 45,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "profile",
+        "title": "1. Profile symptoms",
+        "detail": "Service, CI, priority, terms\nDigest + fingerprint",
+        "x": 315,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "evidence",
+        "title": "2. Gather evidence",
+        "detail": "Ops graph + precedents\nChanges + published runbooks",
+        "x": 585,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "model",
+        "title": "3. Optional AI triage",
+        "detail": "At most three hypotheses\nRead-only checks only",
+        "x": 855,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "verify",
+        "title": "4. Verify citations",
+        "detail": "Exact quotes; source usable\nDigest and app scope",
+        "x": 855,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "score",
+        "title": "5. Rate evidence",
+        "detail": "Support + counter-evidence\nReport limits and uncertainty",
+        "x": 585,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "save",
+        "title": "6. Save brief",
+        "detail": "TriageRun + hypotheses\nEvidence-only fallback",
+        "x": 315,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "verdict",
+        "title": "Responder verdict",
+        "detail": "Accept / reject / partial\nRecord confirmed cause",
+        "x": 45,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "request",
+        "title": "Owner requests runbook",
+        "detail": "Discover allowed catalog\nIdempotent request key",
+        "x": 45,
+        "y": 500,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "approve",
+        "title": "Execution approval",
+        "detail": "Different owner if required\nRecheck grants + source digest",
+        "x": 315,
+        "y": 500,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "launch",
+        "title": "Worker launch",
+        "detail": "One active execution per app\nRegistered local or AWX adapter",
+        "x": 585,
+        "y": 500,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "poll",
+        "title": "Monitor + verify",
+        "detail": "Local postconditions\nAWX job status + bounded poll",
+        "x": 855,
+        "y": 500,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "receipt",
+        "title": "Execution receipt",
+        "detail": "Status, timing, effects\nNo secret-bearing stdout",
+        "x": 855,
+        "y": 690,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "reconcile",
+        "title": "Needs reconciliation",
+        "detail": "Ambiguous external launch\nNever blindly retry POST",
+        "x": 585,
+        "y": 690,
+        "w": 220,
+        "h": 86,
+        "kind": "error",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "incident",
+        "target": "profile",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "profile",
+        "target": "evidence",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "evidence",
+        "target": "model",
+        "label": "configured",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "model",
+        "target": "verify",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "verify",
+        "target": "score",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "score",
+        "target": "save",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "save",
+        "target": "verdict",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "verdict",
+        "target": "request",
+        "label": "separate action",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "request",
+        "target": "approve",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "approve",
+        "target": "launch",
+        "label": "authorized",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "launch",
+        "target": "poll",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "poll",
+        "target": "receipt",
+        "label": "finished",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "launch",
+        "target": "reconcile",
+        "label": "ambiguous",
+        "dashed": false,
+        "failure": true
+      },
+      {
+        "source": "evidence",
+        "target": "verify",
+        "label": "evidence only",
+        "dashed": false,
+        "failure": false
+      }
+    ]
+  },
+  {
+    "slug": "09-chat-application",
+    "title": "09 / Chat application process",
+    "subtitle": "Persist first, retrieve scoped evidence, stream an answer and retain a verified transcript.",
+    "evidence": "platform_core/chat_views.py; ai.py; agent_runtime/{runtime,tools,streaming}.py; broker.py; models/chat.py",
+    "nodes": [
+      {
+        "id": "browser",
+        "title": "Browser conversation",
+        "detail": "Create / resume own chat\nSelect mode when created",
+        "x": 45,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "access",
+        "title": "Validate submission",
+        "detail": "Session + CSRF + app grants\nMode available; deduplicate",
+        "x": 315,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "save",
+        "title": "Persist before provider",
+        "detail": "ChatConversation + user message\nAssistant streaming placeholder",
+        "x": 585,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "worker",
+        "title": "Start answer worker",
+        "detail": "Own DB connection\nBind tenant + recheck access",
+        "x": 855,
+        "y": 140,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "mode",
+        "title": "Conversation mode",
+        "detail": "Fixed for conversation\nGraph version may be pinned",
+        "x": 855,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "gate",
+        "parent": "1"
+      },
+      {
+        "id": "graph",
+        "title": "Graph answer",
+        "detail": "Published graph retrieval\nVerified graph citations",
+        "x": 585,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "lexical",
+        "title": "AI answer / excerpts",
+        "detail": "Keyword passage retrieval\nVerified source passages",
+        "x": 315,
+        "y": 310,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "provider",
+        "title": "Model + scoped tools",
+        "detail": "Claude / OpenAI; budgeted\nExcerpts mode needs no model",
+        "x": 315,
+        "y": 490,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "stream",
+        "title": "Emit answer events",
+        "detail": "Redis stream if configured\nLocal registry otherwise",
+        "x": 585,
+        "y": 490,
+        "w": 220,
+        "h": 86,
+        "kind": "step",
+        "parent": "1"
+      },
+      {
+        "id": "sse",
+        "title": "Browser SSE reader",
+        "detail": "Replay after disconnect\nLast-event cursor + heartbeat",
+        "x": 855,
+        "y": 490,
+        "w": 220,
+        "h": 86,
+        "kind": "external",
+        "parent": "1"
+      },
+      {
+        "id": "stop",
+        "title": "Stop request",
+        "detail": "Recheck access; signal producer\nRedis across replicas",
+        "x": 855,
+        "y": 680,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "finish",
+        "title": "Finalize once",
+        "detail": "complete / stopped / failed\nGuarded idempotent DB update",
+        "x": 585,
+        "y": 680,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      },
+      {
+        "id": "citations",
+        "title": "Verify final citations",
+        "detail": "Live source + digest + quote\nEscaped display; usage receipt",
+        "x": 315,
+        "y": 680,
+        "w": 220,
+        "h": 86,
+        "kind": "security",
+        "parent": "1"
+      },
+      {
+        "id": "history",
+        "title": "Saved transcript",
+        "detail": "Owned by app + user\nEdit, regenerate, retention",
+        "x": 45,
+        "y": 680,
+        "w": 220,
+        "h": 86,
+        "kind": "data",
+        "parent": "1"
+      }
+    ],
+    "edges": [
+      {
+        "source": "browser",
+        "target": "access",
+        "label": "POST",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "access",
+        "target": "save",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "save",
+        "target": "worker",
+        "label": "async",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "worker",
+        "target": "mode",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "mode",
+        "target": "graph",
+        "label": "graph",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "mode",
+        "target": "lexical",
+        "label": "AI / excerpts",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "graph",
+        "target": "provider",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "lexical",
+        "target": "provider",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "provider",
+        "target": "stream",
+        "label": "tokens",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "stream",
+        "target": "sse",
+        "label": "SSE",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "sse",
+        "target": "stop",
+        "label": "user stop",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "stop",
+        "target": "stream",
+        "label": "cancel",
+        "dashed": true,
+        "failure": false
+      },
+      {
+        "source": "provider",
+        "target": "citations",
+        "label": "answer",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "citations",
+        "target": "finish",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "finish",
+        "target": "history",
+        "label": "",
+        "dashed": false,
+        "failure": false
+      },
+      {
+        "source": "finish",
+        "target": "sse",
+        "label": "done",
+        "dashed": true,
+        "failure": false
+      }
+    ]
+  }
+]
