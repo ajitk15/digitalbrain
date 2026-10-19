@@ -311,16 +311,16 @@ DEFAULT_CREDENTIAL_NAMES = {"openai": "openai_default", "claude": "claude_defaul
 #: value stays editable in AI settings.
 DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 
-#: Purposes seeded switched off. Graph generation used to be here, and was taken
-#: out deliberately: enabling it only makes enrichment *available* - a paid call
-#: still needs someone to request an enriched run and name a model (see
-#: `graphs.requested_configuration`), and the structural rebuild never makes one. An
-#: owner can still switch it off in AI settings. Reranking is here: it is a
-#: paid call on every question, worth it only once the benchmark says so.
-#: Document typing is here: once on, it spends on every document the rules
-#: cannot type, with nobody asking. Document review is not, for the reason
-#: graph generation is not: it spends only when an owner presses its button.
-SEEDED_DISABLED = {"reranking", "document_typing"}
+#: Purposes seeded switched off. Empty, deliberately, and kept as the mechanism
+#: (like `services.OPT_IN_FEATURES`): every task starts on, in development and
+#: production alike, so a new application does not need an owner to find and
+#: tick reranking, document typing and embeddings first. That was traded for the
+#: spend those three make with nobody asking - reranking and a question
+#: embedding on every question, typing on every document the rules cannot type -
+#: which every receipt, the budget and the gateway still govern, and an owner
+#: can still switch any of them off in AI settings. Embeddings start on only for
+#: an application with an OpenAI credential, since no other provider has them.
+SEEDED_DISABLED = set()
 
 #: Chat and graph answers: the range an owner may set their reply cap to. The
 #: default stays `ANSWER_TOKENS`; the ceiling is a guard against a typo.
@@ -381,6 +381,33 @@ def configured_providers():
     return [name for name, file in DEFAULT_CREDENTIAL_NAMES.items() if (directory / file).is_file()]
 
 
+def copy_template(app, provider):
+    """Copy `<provider>_default` to this application's own file, if there is one to copy."""
+    directory = Path(settings.SECRET_DIRECTORY)
+    source = directory / DEFAULT_CREDENTIAL_NAMES[provider]
+    target = directory / f"{provider}_{app.pk}"
+    if source.is_file() and not target.exists():
+        # O_EXCL with the mode set at creation: never briefly world-readable, and
+        # never overwriting a credential someone mounted on purpose.
+        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(source.read_text(encoding="utf-8").strip())
+        except OSError:
+            # A half-written key is worse than no key: the file now exists, so the
+            # O_EXCL guard above would refuse to seed it ever again and every run
+            # would fail authentication against a truncated secret.
+            target.unlink(missing_ok=True)
+            raise
+
+
+def has_embeddings_credential(app):
+    """Whether this application has an OpenAI credential of its own. Presence only."""
+    from .secrets import source_of
+
+    return source_of(app, "openai") in {"operator", "managed"}
+
+
 def seed_application_ai(user, app, provider=None):
     """Give a newly created application a usable AI configuration.
 
@@ -400,29 +427,16 @@ def seed_application_ai(user, app, provider=None):
         provider = available[0] if available else ("claude" if host_login_enabled() else None)
     if provider is None:
         return None
-    directory = Path(settings.SECRET_DIRECTORY)
-    source = directory / DEFAULT_CREDENTIAL_NAMES[provider]
-    target = directory / f"{provider}_{app.pk}"
-    if source.is_file() and not target.exists():
-        # O_EXCL with the mode set at creation: never briefly world-readable, and
-        # never overwriting a credential someone mounted on purpose.
-        descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-                output.write(source.read_text(encoding="utf-8").strip())
-        except OSError:
-            # A half-written key is worse than no key: the file now exists, so the
-            # O_EXCL guard above would refuse to seed it ever again and every run
-            # would fail authentication against a truncated secret.
-            target.unlink(missing_ok=True)
-            raise
+    copy_template(app, provider)
+    # Embeddings are OpenAI's whatever setup chose, so its template is copied
+    # too: a copy, never a read-time fallback, as for the chosen provider.
+    copy_template(app, "openai")
     model = DEFAULT_MODELS[provider]
     listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
     for purpose, _ in AI_PURPOSES:
         if purpose == "embeddings":
-            # Always OpenAI, whatever setup chose, and seeded off: it needs an
-            # OpenAI credential the application may not have, and it spends on
-            # every question once switched on. An owner turns it on.
+            # Always OpenAI, whatever setup chose: on when the application has
+            # an OpenAI credential, off when it has none to call it with.
             AIConfiguration.objects.get_or_create(
                 application=app,
                 purpose=purpose,
@@ -430,7 +444,7 @@ def seed_application_ai(user, app, provider=None):
                     "provider": "openai",
                     "model": DEFAULT_EMBEDDING_MODEL,
                     "configured_by": user,
-                    "enabled": False,
+                    "enabled": has_embeddings_credential(app),
                     "input_rate": Decimal("0"),
                     "output_rate": Decimal("0"),
                 },
@@ -1126,8 +1140,10 @@ def ai_task(request, pk, purpose):
             config.configured_by = request.user
             if before is None:
                 # A task configured here for the first time starts the way a new
-                # application's would: on, unless it spends with nobody asking.
-                config.enabled = purpose not in SEEDED_DISABLED and purpose != "embeddings"
+                # application's would.
+                config.enabled = purpose not in SEEDED_DISABLED and (
+                    purpose != "embeddings" or has_embeddings_credential(app)
+                )
             if (config.provider, config.model) != before:
                 config.input_rate, config.output_rate = model_price(
                     app, config.provider, config.model

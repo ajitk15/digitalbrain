@@ -90,8 +90,10 @@ services:
         cp /secrets/redis_password /redisconf/password
         chown -R 10001:10001 /secrets
         chmod 700 /secrets
-        chmod 600 /secrets/django_secret_key /secrets/database_password \
-          /secrets/database_runtime_password /secrets/redis_password
+        # Every file, not only those generated here: an operator copies in
+        # others (originals_access_key_id, originals_secret_access_key), and
+        # read_secret refuses one with any group or other permission bit.
+        find /secrets -type f -exec chmod 600 {} +
         chown -R 70:70 /dbsecret
         chmod 600 /dbsecret/database_password
         chown -R 999 /redisconf
@@ -254,6 +256,10 @@ services:
       # Rendered as a [redis] table, with TLS against the shared CA. Remove it
       # to run without Redis: answers then stream from process memory again.
       DIGITAL_BRAIN_REDIS: "redis:6379"
+      # Uploaded originals in S3, as in development; its keys are the mounted
+      # files originals_access_key_id and originals_secret_access_key.
+      DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
+      DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
       # The one non-secret .env value the platform accepts. Set it for the
       # first sign-in, then remove it.
       SITE_ADMIN_USER_ID: ${SITE_ADMIN_USER_ID:-}

@@ -95,8 +95,8 @@ class DocumentAITests(TestCase):
 
     # ── the typing fallback ──────────────────────────────────────────────────
 
-    def test_it_is_seeded_off_and_never_asked_while_off(self):
-        self.assertIn("document_typing", SEEDED_DISABLED)
+    def test_it_is_seeded_on_and_never_asked_while_off(self):
+        self.assertNotIn("document_typing", SEEDED_DISABLED)
         self.assertNotIn("document_review", SEEDED_DISABLED)
         entry = self.document()
         with self.model(typed()) as call:

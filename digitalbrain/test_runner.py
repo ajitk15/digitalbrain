@@ -1,4 +1,4 @@
-"""The test runner: Django's own, minus machine-local shared credentials."""
+"""The test runner: Django's own, minus machine-local credentials and services."""
 
 from django.conf import settings
 from django.test.runner import DiscoverRunner, ParallelTestSuite, _init_worker
@@ -13,6 +13,17 @@ def hermetic(settings_holder):
     # A developer's `[originals]` bucket must not receive test uploads; a test
     # of the bucket store names one with override_settings.
     settings_holder.ORIGINALS = {}
+    # Development runs the services production does - Redis, a clamd, a
+    # collector - and tests must not stream through, scan with or report to a
+    # developer's. A test of any of them names it with override_settings.
+    settings_holder.REDIS = {}
+    settings_holder.OTEL = {}
+    settings_holder.SHARED_STREAMS = False
+    settings_holder.WEB_SERVER = "waitress"
+    settings_holder.CONFIG = {
+        key: value for key, value in settings_holder.CONFIG.items()
+        if key not in {"clamd", "scanner", "redis", "otel", "originals", "web_server"}
+    }
 
 
 def init_worker(*args, **kwargs):

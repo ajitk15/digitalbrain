@@ -45,6 +45,7 @@ django.setup()
 from django.conf import settings  # noqa: E402
 from django.core.exceptions import ValidationError  # noqa: E402
 
+from platform_core.connector_kinds import KINDS  # noqa: E402
 from platform_core.models import (  # noqa: E402
     Application,
     ApplicationFeature,
@@ -235,7 +236,11 @@ def application(owner, product, name, purpose, ai_purpose):
         ApplicationFeature.objects.update_or_create(
             application=app, key=key, defaults={"enabled": enabled}
         )
-    for kind in ("github", "jira", "servicenow"):
+    # Every kind, as onboarding's connector question writes them: a kind with no
+    # row reads as enabled, so naming only three left AWX, Rundeck, Azure
+    # Automation and an automation list switched on, and onboarding asked for
+    # credentials nobody meant to set.
+    for kind in KINDS:
         ApplicationFeature.objects.update_or_create(
             application=app,
             key=connector_feature(kind),
@@ -254,6 +259,20 @@ def application(owner, product, name, purpose, ai_purpose):
         },
     )
     seed_application_ai(owner, app, "claude")
+    # Every task on, as a new application starts: an application made before
+    # that, or one somebody switched a task off on, is brought back to it.
+    # Embeddings need an OpenAI credential, so without one they stay off and
+    # this says where to set it.
+    from platform_core.ai import has_embeddings_credential
+
+    for config in AIConfiguration.objects.filter(application=app, enabled=False):
+        if config.purpose == "embeddings" and not has_embeddings_credential(app):
+            print(f"note    {name}: embeddings stay off - set an OpenAI key on its "
+                  "Credentials screen and run this again")
+            continue
+        config.enabled = True
+        config.save(update_fields=["enabled"])
+        print(f"set     {name}: AI task {config.purpose} on")
     return app
 
 

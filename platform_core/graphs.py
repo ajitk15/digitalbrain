@@ -371,6 +371,23 @@ def rebuild(app_id):
     if not claimed:
         return False
     entries = list(sources_for(app_id))
+    if not entries:
+        # Nothing to read is not a version. Saving one put an empty "Version 1"
+        # on an application with no documents and no tickets, which read as a
+        # graph that had been built and found nothing. Idle with the fingerprint
+        # of no sources holds the worker off until one arrives; a request made
+        # meanwhile is dropped rather than spent later on something unasked.
+        KnowledgeGraph.objects.filter(pk=graph.pk, fingerprint=before, status="building").update(
+            status="idle",
+            data={},
+            quality={},
+            stage="",
+            started_at=None,
+            requested_provider="",
+            requested_model="",
+            updated_at=timezone.now(),
+        )
+        return True
     data, quality = build_graph(entries)
     # AI enrichment runs only for a run someone asked for, with the model they
     # chose. A background rebuild keeps the structural graph current and never
@@ -1104,6 +1121,11 @@ def graph_view(request, pk):
         glance = at_a_glance(health, graph.quality, sources_for(pk).count(), scored)
         quality_summary = quality_overview(health, glance, graph.quality)
         quality_notes = notes(graph.quality.get("warnings"))
+    trend = None
+    if tab == "quality":
+        from .graph_trend import trend as version_trend
+
+        trend = version_trend(app)
     return render(
         request,
         "graph.html",
@@ -1115,6 +1137,7 @@ def graph_view(request, pk):
             "selected_revision": selected,
             "code_links_enabled": feature_enabled("code_graph", app),
             "knowledge_view": tab,
+            "trend": trend,
             "active_version": active_graph.version if active_graph else None,
             "versions": versions,
             "source_count": sources_for(pk).count(),

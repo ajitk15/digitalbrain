@@ -63,6 +63,32 @@ server**. Templates resolve hashed filenames through the staticfiles manifest, w
 running process caches at boot — otherwise you will be testing the previous asset and
 wondering why your change does nothing.
 
+## Development runs production's services
+
+`start-all.cmd` brings up `docker-compose.dev.yaml` (project `digitalbrain-dev`) before
+anything else: PostgreSQL 16 on 127.0.0.1:5442, Redis 7.4 over TLS on 6390 and a ClamAV
+daemon on 3310 - production's images, TLS from a CA made in a volume (only `ca.crt` leaves,
+into `.runtime/dev-ca`), passwords as files in `.runtime/secrets`. So Redis means uvicorn,
+uploads are scanned, row security and the runtime role hold, exactly as deployed.
+`scripts/init_local.py --services` points `config/local.toml` at them once and writes
+`config/local.runtime.toml` on every start: **`local.toml` is the owner's** - migrations,
+`manage.py`, the gates - and the server is started with the runtime file, which connects
+as `digital_brain_runtime`, the way the entrypoint renders two configurations. Migrations
+run through `apply_migrations`, which makes and corrects that role. Addresses, never
+`localhost`: Windows tries ::1 first, which Docker does not publish, and every connection
+waited ten seconds for it. `scripts/move_to_postgres.py` copies `.runtime/local.sqlite3`
+in once (never into a database that already has a user; the file stays as the backup;
+`.runtime/moved-to-postgres` records it). A `DIGITAL_BRAIN_CONFIG` set beforehand skips all
+of it. What still differs is what production refuses by design - `claude_use_host_login`,
+`allow_demo_reset`, Code Factory's local write and tests, the shared connector folder -
+and the bucket's name. `manage.py test` follows `local.toml`, so the suite runs on that
+PostgreSQL too; `digitalbrain/test_runner.py` blanks Redis, the scanner, OTel, the bucket
+and the web server for tests, as it blanks the shared connector folder.
+
+On a first start the ClamAV image can keep serving its bundled signatures after freshclam
+replaced them; the platform then refuses every scan as stale, correctly. A restart of the
+`clamd` service loads the new ones.
+
 ## Invariants — do not weaken these without a deliberate decision
 
 **Deny by default.** Application access is re-checked on every request and on every tool
@@ -428,9 +454,15 @@ missing object is a missing file, and a bucket that does not answer is **never**
 "upload it again" (`documents.original_stored` returns None, and conversion fails with
 "not answering" so Retry works). `manage.py move_originals [--check]` moves disk
 originals in after their recorded SHA-256 matches, removing each from disk only once the
-bucket returns the same bytes.
+bucket returns the same bytes. The entrypoint renders the table when
+`DIGITAL_BRAIN_ORIGINALS_BUCKET` is set (the compose files name `digital-brain-originals-prod`,
+region `DIGITAL_BRAIN_ORIGINALS_REGION`), and warns at start when the two key files are not
+mounted; development uses `digital-brain-originals-dev`, so dev and production differ in
+the bucket and nothing else.
 
-**OCR is local, off by default, and says which text it read.** `ocr = true` (with
+**OCR is local and says which text it read.** Off unless written down; the entrypoint
+writes it on (`DIGITAL_BRAIN_OCR=0` leaves it off) and so does the development config, so
+both read scans the same way. `ocr = true` (with
 `tesseract_path` if Tesseract is not on PATH; the Dockerfile installs it) makes the
 extractor subprocess render each PDF page that has no text layer with pypdfium2, read it,
 and read `.png`/`.jpg`/`.tif` uploads. Images are refused without it. Tesseract is handed
@@ -709,7 +741,7 @@ removed - the second is the honest measure of reading content rather than names.
 both through `ai.invoke_ai` (grants, `budget.check`, an `AIUsage` receipt), both cached in
 `DocumentAIResult` by text digest and rubric so the same text is never paid for twice -
 a refused verdict included - and neither reads a source `answerable()` excludes.
-`document_typing` (**seeded off**, `ai.SEEDED_DISABLED`) is asked only where the rules
+`document_typing` (seeded on, like every task - see "Every AI task starts on") is asked only where the rules
 say Other with low confidence and no person set a type: after conversion in the worker,
 charged to whoever converted it, or by an owner's or contributor's "Ask AI what it is".
 The model picks one registry key and quotes the lines that show it; a key outside the
@@ -748,6 +780,21 @@ is free and runs automatically after each version is saved. It may score a **dra
 is not answering, and which graph answers is still `graph_snapshot`'s decision, which refuses
 drafts. Change ranking only with a before/after benchmark run; CarePath's questions are in
 `demo-artifacts/demo-kit/benchmark-questions.json`.
+
+**Every version is measured with its AI and without it** (`graph_trend.py`, Knowledge →
+Quality → "Quality by version"). An AI-built version is two graphs - what the rules read
+and what a model proposed and a quote verified - so `without_ai` removes its entity nodes
+and every relationship that is inferred or touches one, and the same questions are scored
+against that too (`BenchmarkRun.structure`, by `benchmark.score` itself; a version with no
+AI is its own structure, and a reranked run is never scored twice, since that would be a
+second paid rerank). The shape figures - cross-document links, largest connected piece,
+orphans, quoted relationships - are taken both ways as well (`GraphRevision.measures`,
+`MEASURES_VERSION`), beside the AI run's own counts (kept, verified share, refused,
+outside the ontology). Both are reports *about* a version, filled by `run_after_save` and,
+for an older version, the first time the Quality tab draws it; `data` is never written.
+The chart is server-drawn SVG (points and classes, no script, no style attribute), and each
+figure is marked better or worse than the version before, a change smaller than rounding
+reading as none. No model is called.
 
 Ranking is `ranking.py`: texts holding more of the question's terms first, BM25 second, then
 `spread` - each source's best citation before any source's second. Both the graph path and
@@ -826,8 +873,8 @@ operations graph when a rule changes. The plan for the rest is
 `docs/retrieval-roadmap-plan.md`.
 
 **Embeddings choose starting points, never citations.** `embeddings.py` (purpose
-`embeddings`, OpenAI only - Anthropic has no endpoint - and **off unless an owner turns it
-on**). A vector's nearest relationships or passages are fused with the BM25 order
+`embeddings`, OpenAI only - Anthropic has no endpoint - and **on only where the
+application has an OpenAI credential of its own**, `ai.has_embeddings_credential`). A vector's nearest relationships or passages are fused with the BM25 order
 (`fuse`); every one is then verified exactly as a word match is, and a passage found by
 meaning is re-read and re-hashed against the text that was embedded. With no vector the
 order is exactly the word order. Spend follows the extraction rule: relationships,
@@ -884,6 +931,18 @@ and drops `ANTHROPIC_CUSTOM_HEADERS`; `test_claude_messages` plants all four and
 the request. No retries. Tests run with it off (`digitalbrain/test_runner.py`) because
 they mount made-up keys and patch the CLI adapter; a test of this path turns it on.
 Agentic runs - chat on Claude, Code Factory's agents - still need the CLI's tools.
+
+**Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
+used to list document typing, embeddings and reranking, so a new application had AI
+features nobody knew to switch on. **That was traded, deliberately, for an application
+that uses its model from the first day**: typing runs after conversion and reranking on
+every answer, each charged and budgeted like any other call. The one condition left is
+a credential: embeddings start on only where the application has its own OpenAI key
+(`ai.has_embeddings_credential`), because Anthropic has no embeddings endpoint and a task
+that could only fail is not "on". `seed_application_ai` copies `openai_default` like
+`<provider>_default` - a template, never read at request time - and `rebuild_demo.py`
+switches on whatever an older demo left off. The budget and the per-task switches in AI
+settings are how an owner says otherwise.
 
 **A price belongs to a model; a reply cap to only four tasks** (AI settings, `ai.py`). The
 page is one list - a row per task with its model, this month's spend and a switch that is a
@@ -955,8 +1014,8 @@ an incremental AI run charged to whoever switched it on, re-checking their grant
 losing it stops the refresh and says why - like a connector schedule. It produces drafts;
 the publish gate is untouched.
 
-**Answer reranking is opt-in and can only reorder** (`rerank.py`, purpose `reranking`,
-seeded off). It sees verified citations and returns their numbers; anything else is
+**Answer reranking can only reorder** (`rerank.py`, purpose `reranking`, seeded on with
+every other task since `SEEDED_DISABLED` was emptied). It sees verified citations and returns their numbers; anything else is
 dropped and any failure keeps the original order. Measure it first with
 `manage.py benchmark --rerank --as <user>` - the one benchmark run that spends.
 

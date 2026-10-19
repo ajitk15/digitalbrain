@@ -521,7 +521,7 @@ change in the same pull request.</p>
 <h3 id="architecture--1-shape-of-the-system"><a class="anchor" href="#architecture--1-shape-of-the-system">#</a>1. Shape of the system</h3>
 <p>It is one Django 5.2 application, server-rendered, with no JavaScript build step. It
 runs as <strong>one Python process</strong> containing the web server&#39;s request threads and seven
-background worker threads. State lives in the database (SQLite locally, PostgreSQL in
+background worker threads. State lives in the database (PostgreSQL in development and in
 production) and in files: uploaded originals and credentials.</p>
 <figure class="diagram" tabindex="0" title="Click to enlarge"><pre class="mermaid">flowchart TB
     subgraph Clients
@@ -790,7 +790,7 @@ code.</p>
         X3["git clone --depth 1&lt;br/&gt;hooks off, scratch HOME, 300 s"]:::sub
         X4["Claude Code CLI (bundled in wheel)&lt;br/&gt;empty CLAUDE_CONFIG_DIR, blank env"]:::sub
         X5["folder's .venv pytest&lt;br/&gt;opt-in, dev only, 5 min"]:::sub
-        S1[("Database&lt;br/&gt;SQLite dev · PostgreSQL 16 prod")]:::store
+        S1[("Database&lt;br/&gt;PostgreSQL 16 dev and prod")]:::store
         S2[(".runtime/documents/org/app/&lt;br/&gt;quarantined originals, 0600")]:::store
         S3[("secret_directory (read-only mount)&lt;br/&gt;managed_secret_directory (0600)&lt;br/&gt;connector_secret_directory (demo)")]:::store
         S4[(".runtime logs&lt;br/&gt;events.jsonl, server.log")]:::store
@@ -1908,7 +1908,7 @@ plan for new developers.</p>
 <div class="table-wrap"><table><thead><tr><th>Layer</th><th>Choice</th><th>Why</th></tr></thead><tbody><tr><td>Language</td><td>Python 3.12 (3.12–3.14 supported)</td><td><code>pyproject.toml</code> <code>requires-python</code></td></tr>
 <tr><td>Web framework</td><td>Django 5.2</td><td>Server-rendered; forms work without JavaScript</td></tr>
 <tr><td>WSGI server</td><td>waitress 3</td><td>Pure Python, the same on Windows and Linux</td></tr>
-<tr><td>Database</td><td>SQLite (dev), PostgreSQL 16 (prod, <code>psycopg</code> 3)</td><td>Full-text GIN index on PostgreSQL</td></tr>
+<tr><td>Database</td><td>PostgreSQL 16 in development and production (<code>psycopg</code> 3); SQLite for the first CI job</td><td>Full-text GIN index on PostgreSQL</td></tr>
 <tr><td>Static files</td><td>WhiteNoise, hashed manifest</td><td>No CDN, no external origin (the CSP forbids one)</td></tr>
 <tr><td>Front end</td><td>Templates + 11 small vanilla JS files, native <code>&lt;dialog&gt;</code></td><td>Progressive enhancement; strict CSP, no <code>unsafe-inline</code></td></tr>
 <tr><td>AI</td><td>OpenAI Agents SDK, Claude Agent SDK</td><td>Both behind one provider-neutral runtime</td></tr>
@@ -2026,9 +2026,9 @@ and how it is configured and deployed.</p>
 <h3 id="infrastructure--landscape"><a class="anchor" href="#infrastructure--landscape">#</a>Landscape</h3>
 <figure class="diagram" tabindex="0" title="Click to enlarge"><pre class="mermaid">flowchart TB
     subgraph Dev["Developer laptop (Windows)"]
-        SA[start-all.cmd&lt;br/&gt;uv · .venv · init_local · migrate · collectstatic]
+        SA[start-all.cmd&lt;br/&gt;uv · .venv · init_local · dev services · apply_migrations · collectstatic]
         PY1[scripts/serve.py&lt;br/&gt;127.0.0.1:8000]
-        SQ[(SQLite)]
+        SQ[(PostgreSQL 16 · Redis · ClamAV&lt;br/&gt;docker-compose.dev.yaml)]
         SA --&gt; PY1 --&gt; SQ
     end
     subgraph VPS["Production (Docker Compose, e.g. Coolify on a VPS)"]
@@ -2064,9 +2064,9 @@ and how it is configured and deployed.</p>
     APP --&gt; AUT
     APP --&gt; CV</pre></figure>
 <h3 id="infrastructure--environments"><a class="anchor" href="#infrastructure--environments">#</a>Environments</h3>
-<div class="table-wrap"><table><thead><tr><th>Environment</th><th>How it starts</th><th>Database</th><th>Notes</th></tr></thead><tbody><tr><td>Local development</td><td><code>start-all.cmd</code> (wraps <code>start-all.ps1</code> with <code>-ExecutionPolicy Bypass</code>)</td><td>SQLite</td><td>First run installs <code>uv</code> (winget, then the official installer), builds <code>.venv</code>, creates <code>config/local.toml</code>, asks for the first admin and an AI provider</td></tr>
-<tr><td>Local demo</td><td><code>start-all.cmd -Demo</code></td><td>SQLite</td><td>Builds the CarePath demo: organizations, CarePathDev and CarePathOps, connectors, knowledge, code</td></tr>
-<tr><td>CI</td><td>GitHub Actions, ubuntu-latest</td><td>SQLite</td><td><code>uv sync --frozen</code>, the gates, Chrome for browser tests</td></tr>
+<div class="table-wrap"><table><thead><tr><th>Environment</th><th>How it starts</th><th>Database</th><th>Notes</th></tr></thead><tbody><tr><td>Local development</td><td><code>start-all.cmd</code> (wraps <code>start-all.ps1</code> with <code>-ExecutionPolicy Bypass</code>)</td><td>PostgreSQL 16 in Docker (<code>docker-compose.dev.yaml</code>), with Redis and ClamAV</td><td>Production's services on loopback; the server connects as the runtime role. First run installs <code>uv</code> (winget, then the official installer), builds <code>.venv</code>, creates <code>config/local.toml</code>, asks for the first admin and an AI provider</td></tr>
+<tr><td>Local demo</td><td><code>start-all.cmd -Demo</code></td><td>PostgreSQL 16 in Docker</td><td>Builds the CarePath demo: organizations, CarePathDev and CarePathOps, connectors, knowledge, code</td></tr>
+<tr><td>CI</td><td>GitHub Actions, ubuntu-latest</td><td>SQLite, then PostgreSQL 16 and Redis</td><td><code>uv sync --frozen</code>, the gates, Chrome for browser tests</td></tr>
 <tr><td>Production (container)</td><td><code>docker-compose.yaml</code> + <code>deploy/entrypoint.sh</code></td><td>PostgreSQL 16</td><td>See <a href="../deploy/README.md"><code>deploy/README.md</code></a> for the Coolify specifics</td></tr></tbody></table></div>
 <p>Local scripts: <code>start-all.cmd -Install</code> re-runs setup, <code>-ConfigureAI</code> re-asks for the
 AI provider, <code>-Port 8123</code> changes the port, and <code>stop-all.cmd</code> stops only the process

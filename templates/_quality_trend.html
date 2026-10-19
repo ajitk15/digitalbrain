@@ -1,0 +1,45 @@
+{% load icons %}{% comment %}graph_trend.trend: every version measured as built and as structure alone. Drawn on the server - points and classes, no script, no style attribute - so it works with JavaScript off and under the CSP.{% endcomment %}
+<section class="card quality-trend" aria-labelledby="quality-trend-title">
+<div class="quality-trend-heading"><div><h2 id="quality-trend-title">{% icon 'history' 18 %}Quality by version</h2><p class="muted">Each version measured twice by the same code: as built, with its AI relationships, and as structure alone with them removed. No model is called.</p></div></div>
+{% for line in trend.verdict %}<p class="trend-verdict trend-{{ line.tone }}">{% if line.tone == 'good' %}{% icon 'arrow-up' 14 %}{% elif line.tone == 'poor' %}{% icon 'warning' 14 %}{% else %}{% icon 'info' 14 %}{% endif %}<span>{{ line.text }}</span></p>{% endfor %}
+{% if trend.chart %}
+<figure class="trend-chart">
+<svg viewBox="0 0 {{ trend.chart.width }} {{ trend.chart.height }}" role="img" aria-labelledby="trend-chart-title trend-chart-desc" focusable="false">
+<title id="trend-chart-title">Mean reciprocal rank by graph version</title>
+<desc id="trend-chart-desc">{% for point in trend.chart.with_ai.points %}Version {{ point.number }}: {{ point.value }} with AI{% if not forloop.last %}; {% endif %}{% endfor %}. {% for point in trend.chart.structure.points %}Version {{ point.number }}: {{ point.value }} structure alone{% if not forloop.last %}; {% endif %}{% endfor %}.</desc>
+{% for line in trend.chart.grid %}<line class="trend-grid" x1="{{ trend.chart.left }}" x2="{{ trend.chart.right }}" y1="{{ line.y }}" y2="{{ line.y }}"/><text class="trend-axis" x="{{ trend.chart.left|add:'-8' }}" y="{{ line.y }}" text-anchor="end" dominant-baseline="middle">{{ line.label }}</text>{% endfor %}
+{% for tick in trend.chart.ticks %}<text class="trend-axis" x="{{ tick.x }}" y="{{ trend.chart.label_y }}" text-anchor="middle">{{ tick.label }}</text>{% endfor %}
+{% if trend.chart.structure.points|length > 1 %}<polyline class="trend-line trend-structure" points="{{ trend.chart.structure.path }}"/>{% endif %}
+{% for point in trend.chart.structure.points %}<circle class="trend-dot trend-structure" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5"><title>v{{ point.number }} structure alone: {{ point.value }}</title></circle>{% endfor %}
+{% if trend.chart.with_ai.points|length > 1 %}<polyline class="trend-line trend-ai" points="{{ trend.chart.with_ai.path }}"/>{% endif %}
+{% for point in trend.chart.with_ai.points %}<circle class="trend-dot trend-ai" cx="{{ point.x }}" cy="{{ point.y }}" r="4"><title>v{{ point.number }} with AI: {{ point.value }}</title></circle>{% endfor %}
+</svg>
+<figcaption><span class="trend-key trend-ai"></span>With AI <span class="trend-key trend-structure"></span>Structure alone <span class="muted">· mean reciprocal rank of the benchmark questions, 1.00 when every expected source is cited first</span></figcaption>
+</figure>
+{% else %}<p class="muted">Retrieval is charted once the application has <a href="{% url 'graph-benchmark' application.pk %}" data-modal>benchmark questions</a>; each version is scored against them as it is saved.</p>{% endif %}
+<div class="table-wrap"><table class="trend-table">
+<thead><tr><th scope="col">Version</th><th scope="col">Built with</th><th scope="col" title="Mean reciprocal rank with AI">MRR</th><th scope="col">Structure alone</th><th scope="col">AI adds</th><th scope="col">Cited / top 3</th><th scope="col">Cross-doc links<span>with AI / without</span></th><th scope="col">Largest piece</th><th scope="col">Orphans</th><th scope="col">Quoted</th><th scope="col">AI kept</th><th scope="col">Verified</th><th scope="col">Refused</th><th scope="col">Outside ontology</th></tr></thead>
+<tbody>{% for row in trend.rows reversed %}<tr>
+<th scope="row"><a href="?tab=quality&amp;version={{ row.number }}" class="version-chip{% if row.published %} is-published{% endif %}">v{{ row.number }}{% if row.published %}<span class="state">Published</span>{% endif %}</a></th>
+<td>{% if row.ai %}{{ row.model|default:"AI" }}{% else %}<span class="trend-flag">Structure only</span>{% endif %}</td>
+{% with r=row.retrieval.with_ai s=row.retrieval.structure c=row.changes l=row.lift %}
+<td>{% if r %}<span class="trend-{{ c.reciprocal_rank|default:'none' }}">{{ r.reciprocal_rank|floatformat:3 }}</span>{% else %}<span class="muted">Not scored</span>{% endif %}</td>
+<td>{% if s %}{{ s.reciprocal_rank|floatformat:3 }}{% elif r and row.ai %}<span class="muted" title="Scored before structure-alone scoring existed; run the benchmark again">—</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{% if l.reciprocal_rank and row.ai %}<span class="trend-{{ l.reciprocal_rank.direction }}">{% if l.reciprocal_rank.change > 0 %}+{% endif %}{{ l.reciprocal_rank.change|floatformat:3 }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{% if r %}<span class="trend-{{ c.found|default:'none' }}">{{ r.found }}</span> / <span class="trend-{{ c.top_three|default:'none' }}">{{ r.top_three }}</span> <span class="muted">of {{ r.questions }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+{% endwith %}
+{% with a=row.shape.with_ai b=row.shape.structure c=row.changes %}
+<td><span class="trend-{{ c.cross_document|default:'none' }}">{{ a.cross_document }}</span> <span class="muted">/ {{ b.cross_document }}</span></td>
+<td><span class="trend-{{ c.largest_percent|default:'none' }}">{{ a.largest_percent|floatformat:0 }}%</span></td>
+<td><span class="trend-{{ c.orphan_percent|default:'none' }}">{{ a.orphan_percent|floatformat:0 }}%</span></td>
+<td><span class="trend-{{ c.evidence_percent|default:'none' }}">{{ a.evidence_percent|floatformat:0 }}%</span></td>
+{% endwith %}
+{% with q=row.ai_run c=row.changes %}
+<td>{% if q.semantic_relationships != None %}<span class="trend-{{ c.semantic_relationships|default:'none' }}">{{ q.semantic_relationships }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{% if q.acceptance_percent != None %}<span class="trend-{{ c.acceptance_percent|default:'none' }}">{{ q.acceptance_percent|floatformat:0 }}%</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{% if q.rejected_relationships != None %}<span class="trend-{{ c.rejected_relationships|default:'none' }}">{{ q.rejected_relationships }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+<td>{% if q.outside_ontology != None %}<span class="trend-{{ c.outside_ontology|default:'none' }}">{{ q.outside_ontology }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+{% endwith %}
+</tr>{% endfor %}</tbody></table></div>
+<p class="muted trend-note"><span class="trend-better">Green</span> is better and <span class="trend-worse">red</span> worse than the version before (a smaller change than rounding shows counts as no change). "AI adds" is this version against its own structure. Cross-document links are value nodes two or more sources share; "Largest piece" is the share of nodes in the biggest connected part; "Quoted" is relationships that carry a line from their source. AI counts are the run's own: relationships kept after their quote verified, proposals refused, and proposals outside the ontology. The newest {{ trend.rows|length }} version{{ trend.rows|length|pluralize }} are shown.</p>
+</section>

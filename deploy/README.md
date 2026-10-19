@@ -109,6 +109,18 @@ manager, and one mounted there **always wins** over one typed into the browser
 — which is what makes migrating a credential into a secret manager need no
 change in the product. That is also why the two directories must differ.
 
+**Originals go to S3.** Both compose files set
+`DIGITAL_BRAIN_ORIGINALS_BUCKET=digital-brain-originals-prod` and
+`DIGITAL_BRAIN_ORIGINALS_REGION=us-west-2`, which the entrypoint renders as
+`[originals] store = "s3"`. The bucket's keys are two more files in the
+`platform-secrets` volume - `originals_access_key_id` and
+`originals_secret_access_key`, mode 0600, owned by uid 10001 - and the
+entrypoint warns at start while either is missing (every upload then fails
+until they are there, and nothing falls back to disk). Clear the variable to
+keep originals on the `app-runtime` volume. `manage.py move_originals --check`
+says whether any disk originals are left to move. OCR is rendered on too
+(`DIGITAL_BRAIN_OCR=0` turns it off); the image installs Tesseract.
+
 ## 5. Watching it
 
 Without any of this, `queue_status` says what every lane has waiting:

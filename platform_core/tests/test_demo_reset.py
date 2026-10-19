@@ -62,6 +62,8 @@ def fill(app, user):
         last_attempt_at=timezone.now() - timedelta(days=1),
         last_count=2,
         last_status="ok",
+        high_water=timezone.now() - timedelta(hours=2),
+        last_full_read_at=timezone.now() - timedelta(hours=1),
     )
     # Two revisions of one imported ticket: both go, the superseded one too.
     for digest, active in (("old", False), ("new", True)):
@@ -87,7 +89,7 @@ def fill(app, user):
         application=app, author=user, title="A source", content="x", digest="d"
     )
     Document.objects.create(application=app, uploaded_by=user, name="a.md", size=1, sha256="s")
-    KnowledgeGraph.objects.create(application=app, status="ready")
+    KnowledgeGraph.objects.create(application=app, status="ready", auto_refresh_by=user)
     GraphRevision.objects.create(application=app, number=1, fingerprint="f")
     repository = CodeRepository.objects.create(
         application=app,
@@ -192,6 +194,22 @@ class DemoResetTests(TestCase):
         """Its last attempt was a day ago; left alone it would be due at once."""
         demo_reset.reset(self.admin, self.org, "ACME")
         self.assertIsNone(due_connector())
+
+    def test_the_next_scheduled_import_reads_the_whole_filter_again(self):
+        """A kept high-water mark made a scheduled import read only what changed
+        since it, so the records the reset removed never came back."""
+        from platform_core.connector_kinds import kind_for
+        from platform_core.connectors import changes_since
+
+        demo_reset.reset(self.admin, self.org, "ACME")
+        connector = Connector.objects.get()
+        self.assertEqual((connector.high_water, connector.last_full_read_at), (None, None))
+        self.assertIsNone(changes_since(connector, kind_for("jira"), timezone.now()))
+
+    def test_automatic_refresh_is_setup_and_survives(self):
+        demo_reset.reset(self.admin, self.org, "ACME")
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertEqual((graph.status, graph.auto_refresh_by), ("idle", self.member))
 
     def test_a_link_source_goes_with_its_documents_files_and_knowledge(self):
         """Pasting the link is a step in the demonstration, so it has to be undone."""

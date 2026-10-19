@@ -55,6 +55,89 @@ def repair_config(path, expected):
     return current.get("secret_directory")
 
 
+#: docker-compose.dev.yaml's services, as production's configuration names them:
+#: the owner connects for migrations and tooling, the runtime role serves. An
+#: address, not "localhost": Windows tries ::1 first, which Docker does not
+#: publish on, and every connection waited ten seconds for it. The certificates
+#: name 127.0.0.1 too.
+SERVICES = """\
+[database]
+name = "digital_brain"
+user = "digital_brain_app"
+runtime_user = "digital_brain_runtime"
+host = "127.0.0.1"
+port = 5442
+sslrootcert = "{ca}"
+
+[redis]
+host = "127.0.0.1"
+port = 6390
+tls = true
+ca_certificate = "{ca}"
+"""
+CLAMD = 'clamd = "127.0.0.1:3310"'
+#: The passwords docker-compose.dev.yaml reads, made once like production's.
+SERVICE_SECRETS = ("database_password", "database_runtime_password", "redis_password")
+
+
+def write_secret(path, value):
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w") as output:
+        output.write(value)
+
+
+def use_services(config, ca):
+    """Point the configuration at the development services, once.
+
+    A `[database]` table already there is the developer's own choice and is left
+    alone. `clamd` is a top-level key, so it goes before the first table rather
+    than after the last, where TOML would read it as part of that table.
+    """
+    with config.open("rb") as source:
+        current = tomllib.load(source)
+    if "database" in current:
+        return False
+    lines = config.read_text(encoding="utf-8").splitlines()
+    if "clamd" not in current:
+        first_table = next((i for i, line in enumerate(lines) if line.startswith("[")), len(lines))
+        # Above the table's own comment, which describes the table.
+        while first_table and lines[first_table - 1].startswith("#"):
+            first_table -= 1
+        lines.insert(first_table, CLAMD)
+    text = "\n".join(lines).rstrip("\n") + "\n\n" + SERVICES.format(ca=ca)
+    config.write_text(text, encoding="utf-8")
+    return True
+
+
+def runtime_config(config):
+    """config/local.runtime.toml: the same file, connecting as the runtime role.
+
+    What the entrypoint does in production - the owner's copy differs only in
+    whom it connects as - done in the other direction, because here the owner's
+    file is the one people edit. Written on every start, so it never drifts.
+    """
+    with config.open("rb") as source:
+        database = tomllib.load(source).get("database", {})
+    if not database.get("runtime_user"):
+        return None
+    out, table = [], ""
+    for line in config.read_text(encoding="utf-8").splitlines():
+        if line.startswith("["):
+            table = line.strip()
+        key = line.partition("=")[0].strip()
+        if table == "[database]" and key == "runtime_user":
+            continue
+        if table == "[database]" and key == "user":
+            out.append(f'user = "{database["runtime_user"]}"')
+            out.append('password_secret = "database_runtime_password"')
+            continue
+        out.append(line)
+    target = config.with_name("local.runtime.toml")
+    header = "# Generated from local.toml by scripts/init_local.py on every start. Do not edit.\n"
+    target.write_text(header + "\n".join(out) + "\n", encoding="utf-8")
+    return target
+
+
 def restrict(directory):
     """Owner-only access, by the platform's own mechanism."""
     if os.name == "nt":
@@ -68,7 +151,8 @@ def restrict(directory):
         directory.chmod(0o700)
 
 
-def main():
+def main(argv=None):
+    services = "--services" in (sys.argv[1:] if argv is None else argv)
     secret_dir = ROOT / ".runtime" / "secrets"
     secret_dir.mkdir(parents=True, exist_ok=True)
     restrict(secret_dir)
@@ -98,6 +182,16 @@ def main():
         if stale is not None:
             print(f"Repaired config/local.toml: secret_directory was {stale!r}.")
             print("This project was moved or copied; it now reads secrets from its own folder.")
+
+    if services:
+        for name in SERVICE_SECRETS:
+            if not (secret_dir / name).exists():
+                write_secret(secret_dir / name, secrets.token_urlsafe(32))
+        ca = ROOT / ".runtime" / "dev-ca"
+        ca.mkdir(parents=True, exist_ok=True)
+        if use_services(config, (ca / "ca.crt").as_posix()):
+            print("config/local.toml now uses docker-compose.dev.yaml's services.")
+        runtime_config(config)
 
     with config.open("rb") as source:
         assert tomllib.load(source)["mode"] == "development", "Refusing production config."

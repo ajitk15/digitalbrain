@@ -64,7 +64,7 @@ def matches(entry, expected):
     return needle in entry.title.casefold() or needle in (entry.source or "").casefold()
 
 
-def score(app, revision, questions, reranker=None):
+def score(app, revision, questions, reranker=None, data=None):
     """Each question's outcome against one version, in the order asked.
 
     The rank counts distinct sources, not citations: three relationships from
@@ -74,22 +74,24 @@ def score(app, revision, questions, reranker=None):
     `reranker` is the person a reranked run is charged to. Only the console
     passes one (`manage.py benchmark --rerank --as`): it is the one benchmark
     that spends, and it exists so reranking is switched on because it was
-    measured to help.
+    measured to help. `data`, when given, is scored in place of the version's
+    own - `graph_trend.without_ai` of it, for the same version without AI.
     """
     from . import rerank
     from .embeddings import question_vector
     from .graph_ai import citations_from, prepare
     from .permissions import EVERYONE
 
+    data = revision.data if data is None else data
     # Built once for every question: a version's relationships are the same for each.
-    ready = prepare(revision.data)
+    ready = prepare(data)
     # Stored question vectors only - no user, so nothing is ever requested and a
     # run stays free. An AI graph run embeds the questions for this.
     vectors = [question_vector(None, app.pk, question.question) for question in questions]
     cited = [
         citations_from(
             app.pk,
-            revision.data,
+            data,
             revision.number,
             question.question,
             ready,
@@ -144,8 +146,11 @@ def run(app, revision, user=None, trigger="saved", reranker=None):
     questions = list(BenchmarkQuestion.objects.filter(application=app)[:MAX_QUESTIONS])
     if not questions:
         return None
+    from .graph_trend import score_structure
+
     results = score(app, revision, questions, reranker=reranker)
     ranks = [result["rank"] for result in results]
+    structure = None if reranker else score_structure(app, revision, questions)
     return BenchmarkRun.objects.create(
         application=app,
         revision=revision,
@@ -154,17 +159,20 @@ def run(app, revision, user=None, trigger="saved", reranker=None):
         top_three=sum(rank is not None and rank <= TOP for rank in ranks),
         reciprocal_rank=round(sum(1 / rank for rank in ranks if rank) / len(ranks), 3),
         results=results,
+        structure=structure,
         trigger=trigger,
         created_by=user,
     )
 
 
 def run_after_save(revision_pk):
-    """The automatic run for a freshly saved version. Never fails the save.
+    """The automatic run for a freshly saved version, and its measures. Never fails the save.
 
     A benchmark is a report about a version, not a condition of having one: a
     question that trips an error here must not cost the application its graph.
     """
+    from .graph_trend import measure
+
     revision = GraphRevision.objects.filter(pk=revision_pk).select_related("application").first()
     if revision is None:
         return
@@ -172,6 +180,10 @@ def run_after_save(revision_pk):
         run(revision.application, revision)
     except Exception:
         logger.exception("benchmark_failed", extra={"event": "benchmark_failed"})
+    try:
+        measure(revision)
+    except Exception:
+        logger.exception("graph_measures_failed", extra={"event": "graph_measures_failed"})
 
 
 def latest_runs(app, revisions):

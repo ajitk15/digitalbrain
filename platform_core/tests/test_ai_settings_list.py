@@ -231,7 +231,8 @@ class AISettingsListTests(TestCase):
         self.assertEqual((config.input_rate, config.output_limit), (Decimal("1.80"), 4000))
 
     def test_a_task_set_up_for_the_first_time_starts_like_a_new_application(self):
-        for purpose, enabled in (("chat", True), ("document_typing", False)):
+        # Every task starts on now (`ai.SEEDED_DISABLED` is empty).
+        for purpose, enabled in (("chat", True), ("document_typing", True)):
             with self.subTest(purpose=purpose):
                 self.client.post(
                     reverse("ai-task", args=[self.app.pk, purpose]),
@@ -263,8 +264,8 @@ class AISettingsListTests(TestCase):
         self.assertEqual(set(configs.values_list("input_rate", flat=True)), {Decimal("5")})
         embeddings.refresh_from_db()
         self.assertEqual(embeddings.model, "text-embedding-3-small")
-        # Rows it had to create start the way a new application's do.
-        self.assertFalse(configs.get(purpose="reranking").enabled)
+        # Rows it had to create start the way a new application's do: on.
+        self.assertTrue(configs.get(purpose="reranking").enabled)
 
     def test_one_model_for_every_task_takes_only_a_listed_model(self):
         response = self.client.post(self.url, {"purpose": "all", "all-model_choice": "custom"})

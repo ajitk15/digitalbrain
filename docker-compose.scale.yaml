@@ -69,6 +69,10 @@ services:
       DIGITAL_BRAIN_INSTANCE: "coolify-1-migrate"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
       DIGITAL_BRAIN_REDIS: "redis:6379"
+      # Uploaded originals in S3, as in development; its keys are the mounted
+      # files originals_access_key_id and originals_secret_access_key.
+      DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
+      DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
     volumes:
       - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
@@ -108,6 +112,10 @@ services:
       DIGITAL_BRAIN_ROLE: "worker"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
       DIGITAL_BRAIN_REDIS: "redis:6379"
+      # Uploaded originals in S3, as in development; its keys are the mounted
+      # files originals_access_key_id and originals_secret_access_key.
+      DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
+      DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
       # Settings are read in full by the worker too, so it needs the same
       # non-secret values the web container renders its configuration from.
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
@@ -154,6 +162,10 @@ services:
       DIGITAL_BRAIN_CONCURRENCY: "intake=2"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
       DIGITAL_BRAIN_REDIS: "redis:6379"
+      # Uploaded originals in S3, as in development; its keys are the mounted
+      # files originals_access_key_id and originals_secret_access_key.
+      DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
+      DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
       DIGITAL_BRAIN_INSTANCE: "coolify-1-sandbox"
     volumes:

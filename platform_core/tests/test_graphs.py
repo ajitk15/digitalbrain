@@ -74,8 +74,12 @@ class GraphTests(TestCase):
         entry.save()
         self.assertTrue(process_next_graph())
         graph.refresh_from_db()
-        self.assertNotEqual(graph.version, old_version)
-        self.assertEqual(graph.data["nodes"], [])
+        # No source left is nothing to build: no empty version is saved, and
+        # the working graph is idle and empty rather than the old one.
+        self.assertEqual(graph.version, old_version)
+        self.assertEqual(GraphRevision.objects.filter(application=self.app).count(), 1)
+        self.assertEqual((graph.status, graph.data), ("idle", {}))
+        self.assertFalse(process_next_graph())
 
     def test_graph_page_has_view_and_quality_and_export_is_scoped(self):
         self.source()

@@ -446,6 +446,9 @@ class GraphRevision(models.Model):
     )
     #: Whether its sources, nodes and edges are also `GraphElement` rows (`graph_store`).
     stored = models.BooleanField(default=False)
+    #: Its shape with AI and as structure alone (`graph_trend.measure`): a report
+    #: about the version, filled after it is saved; `data` is never rewritten.
+    measures = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -577,6 +580,11 @@ class BenchmarkRun(models.Model):
     #: Mean reciprocal rank: 1.0 when every expected source is cited first.
     reciprocal_rank = models.FloatField()
     results = models.JSONField(default=list)
+    #: The same questions against the version without its AI relationships
+    #: (`graph_trend.score_structure`): found, top three, MRR and each rank.
+    #: Empty for a version with no AI, which is its own structure, and for a
+    #: reranked run, whose second scoring would be paid for twice.
+    structure = models.JSONField(null=True, blank=True)
     TRIGGERS = [
         ("saved", "When the version was saved"),
         ("button", "From Knowledge"),

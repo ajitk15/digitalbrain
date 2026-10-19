@@ -4116,3 +4116,33 @@
      its own under the title, grade and hint. */
   .ticket-quality > summary small.ticket-quality-why { flex-basis: 100%; margin: 0 0 0 18px; font-size: var(--t-12); color: var(--c-ink); }
 }
+
+/* Quality by version (templates/_quality_trend.html): drawn on the server, so
+   every colour is a class here and the SVG carries no style of its own. */
+@layer redesign {
+  .quality-trend { margin-top: var(--s-5); display: grid; gap: var(--s-4); }
+  .quality-trend-heading h2 { display: flex; align-items: center; gap: var(--s-2); margin: 0; }
+  .quality-trend-heading p { margin: var(--s-1) 0 0; max-width: 72ch; }
+  .trend-verdict { display: flex; gap: var(--s-2); align-items: flex-start; margin: 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-md); border: 1px solid var(--c-line); background: var(--c-subtle); color: var(--c-ink); }
+  .trend-verdict.trend-good { border-color: var(--c-ok-line); background: var(--c-ok-bg); }
+  .trend-verdict.trend-poor { border-color: var(--c-bad-line); background: var(--c-bad-bg); }
+  .trend-verdict svg { flex: none; margin-top: 3px; }
+  .trend-chart { margin: 0; min-width: 0; }
+  .trend-chart svg { display: block; width: 100%; max-width: 760px; height: auto; }
+  .trend-grid { stroke: var(--c-line); stroke-width: 1; }
+  .trend-axis { fill: var(--c-ink-muted); font-size: 11px; }
+  .trend-line { fill: none; stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  .trend-line.trend-ai { stroke: var(--c-brand); }
+  .trend-line.trend-structure { stroke: var(--c-kind-section); stroke-dasharray: 6 4; }
+  .trend-dot.trend-ai { fill: var(--c-brand); }
+  .trend-dot.trend-structure { fill: var(--c-surface); stroke: var(--c-kind-section); stroke-width: 2; }
+  .trend-chart figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); margin-top: var(--s-2); font-size: var(--t-12); color: var(--c-ink); }
+  .trend-key { display: inline-block; width: 18px; height: 0; border-top: 3px solid var(--c-brand); }
+  .trend-key.trend-structure { border-top: 3px dashed var(--c-kind-section); margin-left: var(--s-2); }
+  .trend-table th span { display: block; font-weight: 400; font-size: var(--t-12); color: var(--c-ink-muted); }
+  .trend-table td, .trend-table th { white-space: nowrap; }
+  .trend-better { color: var(--c-ok); font-weight: 600; }
+  .trend-worse { color: var(--c-bad); font-weight: 600; }
+  .trend-flag { color: var(--c-warn); font-weight: 600; }
+  .trend-note { margin: 0; max-width: 90ch; font-size: var(--t-12); }
+}

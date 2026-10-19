@@ -139,7 +139,13 @@ class PlatformMetricTests(Measured, TestCase):
         def broke():
             raise RuntimeError("row it cannot read")
 
-        with self.assertLogs("platform_core.document_worker", "WARNING"):
+        # The lane closes stale connections between steps; inside a TestCase that
+        # is the test's own connection, which PostgreSQL then really closes and
+        # every later test in the class fails to reach (SQLite ignores it).
+        with (
+            self.assertLogs("platform_core.document_worker", "WARNING"),
+            patch("platform_core.document_worker.close_old_connections"),
+        ):
             document_worker.run_lane("intake", lambda: (found_work, broke, found_nothing), 0, stop)
         outcomes = {point.attributes["digitalbrain.outcome"]: point.count
                     for point in self.points("digitalbrain.lane.step.duration")}

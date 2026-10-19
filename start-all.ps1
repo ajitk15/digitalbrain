@@ -35,6 +35,19 @@ function Get-AdminState {
     }
 }
 
+function Invoke-Docker([string[]]$Arguments) {
+    # Compose reports progress on stderr, which Windows PowerShell turns into a
+    # terminating error when the output is redirected. Only the exit code counts.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker @Arguments 2>&1 | ForEach-Object { "$_" }
+        if ($LASTEXITCODE -ne 0) { throw "docker $($Arguments -join ' ') failed (exit $LASTEXITCODE)." }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 #: Offered when the person just presses Enter at the sign-in prompt.
 $DefaultAdministrator = 'siteadmin@db.com'
 
@@ -114,14 +127,39 @@ try {
     # records an absolute secret_directory, so a project folder that was moved or
     # copied would otherwise keep pointing at the old machine's secrets - or fail
     # with an error that names the missing signing key and not the real cause.
+    $runtimeConfig = $null
     if (-not $env:DIGITAL_BRAIN_CONFIG) {
-        Invoke-Checked $PythonExecutable @('scripts/init_local.py')
+        # The services production runs - PostgreSQL 16 as two roles, Redis over
+        # TLS, a ClamAV daemon - from docker-compose.dev.yaml, so this machine is
+        # configured the way a deployment is rather than the way a laptop is.
+        $previous = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        & docker info *> $null
+        $dockerUp = ($LASTEXITCODE -eq 0)
+        $ErrorActionPreference = $previous
+        if (-not $dockerUp) {
+            throw 'Docker is not running. Start Docker Desktop: PostgreSQL, Redis and ClamAV run in it (docker-compose.dev.yaml).'
+        }
+        Invoke-Checked $PythonExecutable @('scripts/init_local.py', '--services')
+        $compose = @('compose', '-f', 'docker-compose.dev.yaml', '-p', 'digitalbrain-dev')
+        Invoke-Docker ($compose + @('up', '-d', '--wait', 'postgres', 'redis'))
+        # Not waited for: a first start downloads signatures for several minutes,
+        # and until it answers an upload stays unscanned and is refused, as in
+        # production.
+        Invoke-Docker ($compose + @('up', '-d', 'clamd'))
+        $runtimeConfig = Join-Path $ProjectRoot 'config/local.runtime.toml'
     }
     # Local convenience scripts must not perform production migrations implicitly.
     # Kept in a file: cmd.exe strips the quotes out of an inline -c one-liner.
     Invoke-Checked $PythonExecutable @('scripts/assert_development.py')
     Invoke-Checked $PythonExecutable @('manage.py', 'check', '--fail-level', 'WARNING')
-    Invoke-Checked $PythonExecutable @('manage.py', 'migrate', '--noinput')
+    # As the owner, under the lock, as a deployment's migrate step: it also makes
+    # or corrects the runtime role the server then connects as.
+    Invoke-Checked $PythonExecutable @('manage.py', 'apply_migrations')
+    if ($runtimeConfig) {
+        # Once: this machine's SQLite data, copied into PostgreSQL. The file stays.
+        Invoke-Checked $PythonExecutable @('scripts/move_to_postgres.py')
+    }
     # After migrate: the user table has to exist before an administrator can.
     # A -Demo build creates its own administrator (siteadmin@db.com), so it is
     # not asked for here as well.
@@ -150,7 +188,11 @@ try {
     $instance = [guid]::NewGuid().ToString()
     $arguments = @(('"' + $ServerScript + '"'), '--port', "$Port", '--instance', $instance)
     $basePython = (& $PythonExecutable -c 'import sys; print(sys._base_executable)').Trim()
+    # The server connects as the runtime role, which can only touch rows; every
+    # command above connected as the owner. Start-Process inherits this.
+    if ($runtimeConfig) { $env:DIGITAL_BRAIN_CONFIG = $runtimeConfig }
     $started = Start-Process -FilePath $PythonExecutable -ArgumentList $arguments -WorkingDirectory $ProjectRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $RuntimeDirectory 'server.log') -RedirectStandardError (Join-Path $RuntimeDirectory 'server-error.log') -PassThru
+    if ($runtimeConfig) { Remove-Item Env:DIGITAL_BRAIN_CONFIG }
     $state = [ordered]@{ ProjectRoot=$ProjectRoot; ProcessId=$started.Id; StartTicks=$started.StartTime.ToUniversalTime().Ticks.ToString(); Instance=$instance; Port=$Port; BasePython=$basePython }
     $state | ConvertTo-Json | Set-Content -LiteralPath $StateFile -Encoding utf8
     $healthy = $false

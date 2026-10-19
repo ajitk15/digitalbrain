@@ -95,6 +95,15 @@ class RebuildDemoTests(TestCase):
             [("Integrated Care", "Care Coordination")] * 2,
         )
 
+    def test_each_application_uses_only_its_purposes_connectors(self):
+        from platform_core.readiness import chosen_connectors
+        from platform_core.services import DEFAULT_CONNECTORS
+
+        self.build()
+        for name, purpose in (("CarePathDev", "engineering"), ("CarePathOps", "operations")):
+            app = Application.objects.get(name=name)
+            self.assertEqual(sorted(chosen_connectors(app)), sorted(DEFAULT_CONNECTORS[purpose]))
+
     def test_step_zero_writes_every_demo_setting_and_the_config_still_loads(self):
         from digitalbrain.configuration import load_config
 

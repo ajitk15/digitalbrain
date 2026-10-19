@@ -30,9 +30,10 @@ things a demonstration re-creates on screen:
 * **connector imports** - every record a Jira, ServiceNow or GitHub connector
   brought in, superseded revisions included, so "Import" is a step again. The
   connectors themselves stay, configured, with their last-import status
-  cleared. A scheduled connector's interval restarts from the reset rather
-  than finding itself long overdue and importing on the next worker tick -
-  the same trap the graph fell into;
+  cleared and its high-water mark with it, so its next scheduled import reads
+  the whole filter again. A scheduled connector's interval restarts from the
+  reset rather than finding itself long overdue and importing on the next
+  worker tick - the same trap the graph fell into;
 * **link sources** - a GitHub folder or SharePoint library pasted into
   Knowledge, with every document it brought in, their stored files and the
   knowledge read from them, so pasting the link is a step again. A source is
@@ -40,7 +41,8 @@ things a demonstration re-creates on screen:
   address itself. Documents somebody uploaded by hand are not an import and
   stay.
 
-Everything else is kept as it is, including chat history (a conversation pinned
+Everything else is kept as it is, including automatic graph refresh (carried
+to the idle graph row), chat history (a conversation pinned
 to a removed graph version is unpinned, not deleted), spend records and the
 audit log.
 
@@ -217,6 +219,12 @@ def reset(user, organization, typed_name):
             "confirm. Nothing was removed."
         )
     ids = application_ids(organization)
+    # Automatic refresh is a standing request an owner made, which is setup: it
+    # lives on the graph row the reset replaces, so it is carried to the new one.
+    refreshing = dict(
+        KnowledgeGraph.objects.filter(application_id__in=ids, auto_refresh_by__isnull=False)
+        .values_list("application_id", "auto_refresh_by_id")
+    )
     removed = {}
     for model, lookup in ORDER:
         count, _ = model.objects.filter(**{lookup: ids}).delete()
@@ -253,7 +261,11 @@ def reset(user, organization, typed_name):
     if count:
         removed["KnowledgeSource"] = count
     # The connector reads as never imported, and its schedule counts from now.
+    # Its high-water mark goes too: kept, the next scheduled import read only
+    # what changed since it, so the records removed above never came back.
     Connector.objects.filter(application_id__in=ids).update(
+        high_water=None,
+        last_full_read_at=None,
         last_synced_at=None,
         last_attempt_at=timezone.now(),
         last_count=0,
@@ -265,7 +277,8 @@ def reset(user, organization, typed_name):
     # what the worker rebuilds. Matching the fingerprint is what holds it off,
     # and only until the sources actually change.
     KnowledgeGraph.objects.bulk_create(
-        KnowledgeGraph(application_id=pk, status="idle", fingerprint=fingerprint(pk))
+        KnowledgeGraph(application_id=pk, status="idle", fingerprint=fingerprint(pk),
+                       auto_refresh_by_id=refreshing.get(pk))
         for pk in ids
     )
     # A conversation can pin a graph version for its graph answers. The version

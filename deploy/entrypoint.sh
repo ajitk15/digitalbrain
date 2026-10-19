@@ -59,6 +59,19 @@ case "$OTEL" in
     *) echo "entrypoint: DIGITAL_BRAIN_OTEL must be host:port." >&2; exit 1 ;;
 esac
 
+# Where uploaded originals live: an S3 bucket (and its region), the same store
+# development uses. The keys are the mounted files originals_access_key_id and
+# originals_secret_access_key, never variables. Unset, they stay on the
+# app-runtime volume as before.
+BUCKET="${DIGITAL_BRAIN_ORIGINALS_BUCKET:-}"
+REGION="${DIGITAL_BRAIN_ORIGINALS_REGION:-us-west-2}"
+case "$BUCKET" in
+    ""|[a-z0-9]*[a-z0-9]) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_ORIGINALS_BUCKET must be a bucket name." >&2; exit 1 ;;
+esac
+case "$BUCKET" in *[!a-z0-9.-]*) echo "entrypoint: DIGITAL_BRAIN_ORIGINALS_BUCKET must be a bucket name." >&2; exit 1 ;; esac
+case "$REGION" in ""|*[!a-z0-9-]*) echo "entrypoint: DIGITAL_BRAIN_ORIGINALS_REGION must be a region name." >&2; exit 1 ;; esac
+
 # ------------------------------------------------------------- configuration
 # An operator's own file wins if one is mounted. Otherwise it is rendered from
 # environment variables, because the non-secret configuration is exactly that -
@@ -152,6 +165,11 @@ else
             echo 'shared_streams = true'
         fi
         echo "import_max_files = ${DIGITAL_BRAIN_IMPORT_MAX_FILES:-100}"
+        # Scanned PDF pages and images are read by the Tesseract this image
+        # installs, as they are in development. DIGITAL_BRAIN_OCR=0 turns it off.
+        if [ "${DIGITAL_BRAIN_OCR:-1}" = "1" ]; then
+            echo 'ocr = true'
+        fi
         echo ''
         echo '[database]'
         echo 'name = "digital_brain"'
@@ -176,6 +194,13 @@ else
             echo 'tls = true'
             echo 'ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"'
         fi
+        if [ -n "$BUCKET" ]; then
+            echo ''
+            echo '[originals]'
+            echo 'store = "s3"'
+            echo "bucket = \"$BUCKET\""
+            echo "region = \"$REGION\""
+        fi
         if [ -n "$OTEL" ]; then
             # Ids and timings only (telemetry.ATTRIBUTES); a collector's
             # credential, if it needs one, is the mounted otel_authorization.
@@ -199,6 +224,11 @@ else
     echo "entrypoint: rendered configuration for ${DIGITAL_BRAIN_HOSTS:-localhost}"
 fi
 export DIGITAL_BRAIN_CONFIG="$CONFIG"
+if grep -q '^store = "s3"$' "$CONFIG"; then
+    for name in originals_access_key_id originals_secret_access_key; do
+        [ -f "/run/secrets/$name" ] || echo "entrypoint: originals are in S3 but /run/secrets/$name is not mounted; uploads will fail until it is." >&2
+    done
+fi
 
 # ------------------------------------------------------------- what is mounted
 # Printed every start, because this deployment has now failed three times on

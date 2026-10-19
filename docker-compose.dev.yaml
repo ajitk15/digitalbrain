@@ -1,0 +1,155 @@
+# The services production runs, for a development machine: PostgreSQL 16,
+# Redis 7.4 and a ClamAV daemon - the same images, the same TLS from a CA made
+# here, the same passwords in files - published on this machine's loopback only.
+#
+# start-all.cmd brings them up (project name digitalbrain-dev) before anything
+# else and stops nothing on the way out; stop them yourself with
+#
+#   docker compose -f docker-compose.dev.yaml -p digitalbrain-dev stop
+#
+# scripts/init_local.py writes the passwords into .runtime/secrets before the
+# first start and points config/local.toml at these ports. Only the CA's
+# certificate leaves Docker, into .runtime/dev-ca, so the platform can verify
+# the servers' names; every key stays in its volume.
+services:
+  dev-certs:
+    image: alpine:3.20
+    restart: "no"
+    volumes:
+      - dev-certs:/certs
+      - ./.runtime/dev-ca:/export
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        cd /certs
+        if [ ! -f server.key ]; then
+          apk add --no-cache openssl >/dev/null
+          openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+            -keyout ca.key -out ca.crt -subj "/CN=digitalbrain-dev-ca"
+          # The names the platform dials from this machine.
+          printf "subjectAltName=DNS:localhost,IP:127.0.0.1\n" > san.cnf
+          for name in server redis; do
+            openssl req -newkey rsa:4096 -sha256 -nodes \
+              -keyout $$name.key -out $$name.csr -subj "/CN=localhost"
+            openssl x509 -req -in $$name.csr -CA ca.crt -CAkey ca.key \
+              -CAcreateserial -out $$name.crt -days 3650 -sha256 -extfile san.cnf
+          done
+          rm -f ./*.csr san.cnf ca.srl
+          # As production's: TLS only from outside the container.
+          {
+            echo "local   all  all               trust"
+            echo "hostssl all  all  0.0.0.0/0    scram-sha-256"
+            echo "hostssl all  all  ::/0         scram-sha-256"
+          } > pg_hba.conf
+          chown 70:70 server.key server.crt pg_hba.conf
+          chown 999 redis.key redis.crt
+          chmod 600 server.key redis.key
+          chmod 644 server.crt redis.crt ca.crt pg_hba.conf
+          echo "certs: generated"
+        fi
+        cp ca.crt /export/ca.crt
+
+  dev-redis-config:
+    image: alpine:3.20
+    restart: "no"
+    volumes:
+      - dev-redis-config:/redisconf
+      - ./.runtime/secrets/redis_password:/run/redis_password:ro
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        # As production's: a password from its file, never the command line.
+        {
+          echo "port 0"
+          echo "tls-port 6379"
+          echo "tls-cert-file /certs/redis.crt"
+          echo "tls-key-file /certs/redis.key"
+          echo "tls-ca-cert-file /certs/ca.crt"
+          echo "tls-auth-clients no"
+          echo "requirepass $$(cat /run/redis_password)"
+          echo 'save ""'
+          echo "appendonly no"
+          echo "maxmemory 256mb"
+          echo "maxmemory-policy noeviction"
+        } > /redisconf/redis.conf
+        chown -R 999 /redisconf
+        chmod 700 /redisconf
+        chmod 600 /redisconf/redis.conf
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      dev-certs:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_DB: digital_brain
+      POSTGRES_USER: digital_brain_app
+      POSTGRES_PASSWORD_FILE: /run/database_password
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - dev-postgres-data:/var/lib/postgresql/data
+      - dev-certs:/certs:ro
+      - ./.runtime/secrets/database_password:/run/database_password:ro
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/certs/server.crt
+      - -c
+      - ssl_key_file=/certs/server.key
+      - -c
+      - hba_file=/certs/pg_hba.conf
+    ports:
+      - "127.0.0.1:5442:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U digital_brain_app -d digital_brain"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    depends_on:
+      dev-certs:
+        condition: service_completed_successfully
+      dev-redis-config:
+        condition: service_completed_successfully
+    user: "999"
+    command: ["redis-server", "/run/redisconf/redis.conf"]
+    volumes:
+      - dev-redis-config:/run/redisconf:ro
+      - dev-certs:/certs:ro
+    ports:
+      - "127.0.0.1:6390:6379"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$(grep '^requirepass ' /run/redisconf/redis.conf | cut -d' ' -f2)" redis-cli --tls --cacert /certs/ca.crt -h localhost ping | grep -q PONG
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  # The daemon production's split deployment scans through. It downloads its
+  # signatures on first start - several minutes - and keeps them current;
+  # processing.py refuses ones more than a week old, as in production. On a
+  # first start the daemon can keep serving the image's own signatures after
+  # freshclam has replaced them (VERSION shows the old date and every upload
+  # reads "not scanned"); a restart of this service loads the new ones.
+  clamd:
+    image: clamav/clamav:1.4
+    restart: unless-stopped
+    volumes:
+      - dev-clamav-db:/var/lib/clamav
+    ports:
+      - "127.0.0.1:3310:3310"
+
+volumes:
+  dev-certs:
+  dev-redis-config:
+  dev-postgres-data:
+  dev-clamav-db:

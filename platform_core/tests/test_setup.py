@@ -182,15 +182,29 @@ class CredentialSeedingTests(TestCase):
             seed_application_ai(self.admin, app)
         rows = {row.purpose: row for row in AIConfiguration.objects.filter(application=app)}
         self.assertEqual(set(rows), {purpose for purpose, _ in AI_PURPOSES})
-        # Search embeddings are OpenAI's whatever setup chose, and seeded off.
+        # Search embeddings are OpenAI's whatever setup chose, and off with no
+        # OpenAI credential to call them with.
         embeddings = rows.pop("embeddings")
         self.assertEqual((embeddings.provider, embeddings.enabled), ("openai", False))
+        self.assertEqual(SEEDED_DISABLED, set())
         for purpose, row in rows.items():
             self.assertEqual(row.provider, "claude")
             self.assertEqual(row.model, DEFAULT_MODELS["claude"])
             self.assertEqual(row.enabled, purpose not in SEEDED_DISABLED)
         # Enabled only makes enrichment available; a paid run is still requested.
         self.assertTrue(rows["graph_generation"].enabled)
+
+    def test_an_openai_template_switches_embeddings_on_and_is_copied_not_read(self):
+        self.write_default("claude", "sk-ant-api-EXAMPLE")
+        self.write_default("openai", "sk-openai-EXAMPLE")
+        with override_settings(SECRET_DIRECTORY=self.secrets.name, CLAUDE_USE_HOST_LOGIN=False):
+            app = self.make_application()
+            seed_application_ai(self.admin, app)
+            copied = Path(self.secrets.name) / f"openai_{app.pk}"
+            self.assertEqual(copied.read_text(encoding="utf-8"), "sk-openai-EXAMPLE")
+        rows = {row.purpose: row for row in AIConfiguration.objects.filter(application=app)}
+        self.assertTrue(rows["embeddings"].enabled)
+        self.assertTrue(all(row.enabled for row in rows.values()))
 
     def test_host_login_alone_seeds_a_configuration_with_no_file(self):
         with override_settings(SECRET_DIRECTORY=self.secrets.name, CLAUDE_USE_HOST_LOGIN=True):

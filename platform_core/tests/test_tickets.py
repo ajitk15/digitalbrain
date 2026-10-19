@@ -109,13 +109,12 @@ class TicketsTests(TestCase):
         self.assertContains(response, ">Documents</a>", html=False)
         self.assertNotContains(response, reverse("tickets", args=[self.app.pk]))
 
-    def test_the_tab_counts_tickets(self):
+    def test_the_tab_carries_no_count(self):
         self.connector()
         self.entry(f"{JIRA}/browse/KAN-4")
         response = self.documents()
-        self.assertContains(
-            response, 'Tickets <span class="tab-count">1</span></a>', html=False
-        )
+        self.assertContains(response, "Tickets</a>", html=False)
+        self.assertNotContains(response, "tab-count")
 
     def test_tickets_is_part_of_knowledge_in_the_application_menu(self):
         self.connector()
