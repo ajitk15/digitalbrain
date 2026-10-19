@@ -1,0 +1,66 @@
+{
+  "diagram_type": "architecture",
+  "source_revision": "df446fc61362ea143d462b9e64325426da18800a",
+  "live_inventory_verified": false,
+  "primary_sha256": "942986b00517dd2524b834070fdf9a32cc762f25d5a6061648351715f6426eb8",
+  "primary_validation": {
+    "xml": "passed",
+    "all_parents_and_edge_endpoints_resolve": true,
+    "default_named_volume_count": 10,
+    "pages": [
+      {
+        "name": "01 \u00b7 Default VPS demo",
+        "vertices": 75,
+        "relationships": 11
+      },
+      {
+        "name": "02 \u00b7 Optional scaled services",
+        "vertices": 32,
+        "relationships": 6
+      },
+      {
+        "name": "03 \u00b7 Optional monitoring",
+        "vertices": 17,
+        "relationships": 4
+      }
+    ],
+    "svg_and_png_visual_review": "passed",
+    "visual_review_scope": "All three final PNG previews: node fit, boundary placement, labels and relationship routes.",
+    "native_editor_import": "not exercised; previews generated from the same cells as editable XML",
+    "embedded_icon_cells": 64,
+    "embedded_icons_browser_decoding": "passed",
+    "style": "Short labels with embedded brand and generic SVG icons"
+  },
+  "primary_output": "hostinger-vps.drawio",
+  "scaling_labels_checked": true,
+  "artifacts": {
+    "hostinger-vps.drawio": {
+      "sha256": "942986b00517dd2524b834070fdf9a32cc762f25d5a6061648351715f6426eb8",
+      "bytes": 109597
+    },
+    "hostinger-vps-default.svg": {
+      "sha256": "258bf121016bed808896ede02d227c92eabc9019e6d9c4e6d8214113e60dff47",
+      "bytes": 46635
+    },
+    "hostinger-vps-default.png": {
+      "sha256": "9916ecde3a213ec6d2cbd8a617f255af6568e26d43b91820bdce8ce7a648c40d",
+      "bytes": 164136
+    },
+    "hostinger-vps-scaled.svg": {
+      "sha256": "3ba90ac3fdd844cdbaf4492934db092b9b5f3ab75d5271cccb67034e2fe7bc34",
+      "bytes": 19684
+    },
+    "hostinger-vps-scaled.png": {
+      "sha256": "3bc160bf2f0346ecbafdb18796554ccebaa4e6e98a3dd704174f66f3faa0ad47",
+      "bytes": 91891
+    },
+    "hostinger-vps-monitoring.svg": {
+      "sha256": "80f9020028aedf3b8ef0a6134037b6eaaf8a4f71d238d1b8bae64b0d864bbe39",
+      "bytes": 10345
+    },
+    "hostinger-vps-monitoring.png": {
+      "sha256": "ed4ebf800598c78b4d54018dee3ed83e13346efecad1c8711608eb8007f25b01",
+      "bytes": 60053
+    }
+  }
+}

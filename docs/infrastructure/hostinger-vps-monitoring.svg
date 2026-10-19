@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2150" height="1180" viewBox="0 0 2150 1180" role="img" aria-label="03 · Optional monitoring">
+<rect width="100%" height="100%" fill="white"/>
+<defs>
+<marker id="arrow-blue" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#2563EB"/></marker>
+<marker id="arrow-green" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#059669"/></marker>
+<marker id="arrow-purple" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#7C3AED"/></marker>
+<marker id="arrow-amber" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#D97706"/></marker>
+<marker id="arrow-slate" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#64748B"/></marker>
+<marker id="arrow-rose" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0 L9 4.5 L0 9Z" fill="#E11D48"/></marker>
+</defs>
+<rect x="330" y="150" width="1480" height="810" rx="12" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.6" stroke-dasharray="7 5"/>
+<svg x="346" y="162" width="24" height="24" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#2563EB" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></g></svg>
+<text x="382" y="180" text-anchor="start" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">HOSTINGER VPS · PRIVATE NETWORK</text>
+<polyline points="740,335.0 1000,335.0" fill="none" stroke="#7C3AED" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow-purple)"/>
+<polyline points="1175.0,610 1175.0,400" fill="none" stroke="#059669" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow-green)"/>
+<polyline points="1530,682.5 1350,682.5" fill="none" stroke="#64748B" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow-slate)"/>
+<polyline points="565.0,610 565,505 1087.5,505 1087.5,400" fill="none" stroke="#D97706" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow-amber)" stroke-dasharray="7 5"/>
+<rect x="35" y="20" width="2080" height="75" rx="12" fill="#F8FAFC" stroke="#64748B" stroke-width="1.6"/>
+<text x="1075.0" y="46.025" text-anchor="middle" font-family="Arial, sans-serif" font-size="27" font-weight="700" fill="#172554">Optional · Monitoring</text>
+<text x="1075.0" y="65.025" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">Activation unverified · no autoscaling</text>
+<rect x="390" y="270" width="350" height="130" rx="12" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.6"/>
+<svg x="545.0" y="293.0" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#2496ED" d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></svg>
+<text x="565.0" y="358.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">App / workers</text>
+<text x="565.0" y="377.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">Traces · metrics</text>
+<rect x="1000" y="270" width="350" height="130" rx="12" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.6"/>
+<svg x="1155.0" y="293.0" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#7C3AED" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l3-8 6 16 3-8h4"/></g></svg>
+<text x="1175.0" y="358.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">OTEL Collector</text>
+<text x="1175.0" y="377.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">OTLP TLS :4318</text>
+<rect x="1000" y="610" width="350" height="145" rx="12" fill="#ECFDF5" stroke="#059669" stroke-width="1.6"/>
+<svg x="1155.0" y="640.5" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#E6522C" d="M12 0C5.373 0 0 5.372 0 12c0 6.627 5.373 12 12 12s12-5.373 12-12c0-6.628-5.373-12-12-12zm0 22.46c-1.885 0-3.414-1.26-3.414-2.814h6.828c0 1.553-1.528 2.813-3.414 2.813zm5.64-3.745H6.36v-2.046h11.28v2.046zm-.04-3.098H6.391c-.037-.043-.075-.086-.111-.13-1.155-1.401-1.427-2.133-1.69-2.879-.005-.025 1.4.287 2.395.511 0 0 .513.119 1.262.255-.72-.843-1.147-1.915-1.147-3.01 0-2.406 1.845-4.508 1.18-6.207.648.053 1.34 1.367 1.387 3.422.689-.951.977-2.69.977-3.755 0-1.103.727-2.385 1.454-2.429-.648 1.069.168 1.984.894 4.256.272.854.237 2.29.447 3.201.07-1.892.395-4.652 1.595-5.605-.529 1.2.079 2.702.494 3.424.671 1.164 1.078 2.047 1.078 3.716a4.642 4.642 0 01-1.11 2.996c.792-.149 1.34-.283 1.34-.283l2.573-.502s-.374 1.538-1.81 3.019z"/></svg>
+<text x="1175.0" y="705.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">Prometheus</text>
+<text x="1175.0" y="724.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">Metrics · alerts · 15 days</text>
+<rect x="390" y="610" width="350" height="145" rx="12" fill="#FFFBEB" stroke="#D97706" stroke-width="1.6"/>
+<svg x="545.0" y="640.5" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#D97706" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H5v20h14V7zM14 2v6h5"/><circle cx="12" cy="13" r="3"/><path d="m10 16-1 4 3-1 3 1-1-4"/></g></svg>
+<text x="565.0" y="705.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">otel-certs</text>
+<text x="565.0" y="724.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">One-time TLS setup</text>
+<rect x="1530" y="610" width="230" height="145" rx="12" fill="#F8FAFC" stroke="#64748B" stroke-width="1.6"/>
+<svg x="1625.0" y="640.5" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#64748B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="18" rx="3"/><path d="m6 8 4 4-4 4m7 0h5"/></g></svg>
+<text x="1645.0" y="705.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">Operator</text>
+<text x="1645.0" y="724.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">SSH / 127.0.0.1:9090</text>
+<rect x="390" y="835" width="960" height="85" rx="12" fill="#F8FAFC" stroke="#64748B" stroke-width="1.6"/>
+<svg x="854.0" y="849.5" width="32" height="32" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#64748B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 4 18 4 18 0V5M3 12c0 4 18 4 18 0"/></g></svg>
+<text x="870.0" y="905.5" text-anchor="middle" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#172554">otel-certs   ·   prometheus-data</text>
+<rect x="350" y="1010" width="1450" height="120" rx="12" fill="#FFFBEB" stroke="#D97706" stroke-width="1.6"/>
+<svg x="1055.0" y="1028.0" width="40" height="40" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="#D97706" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v6m0-10v.01"/></g></svg>
+<text x="1075.0" y="1093.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#172554">Traces → collector logs</text>
+<text x="1075.0" y="1112.0" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#64748B">No trace storage / Alertmanager</text>
+<rect x="808.6" y="314" width="122.8" height="22" rx="5" fill="white"/>
+<text x="870" y="329" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#334155">OTLP / TLS :4318</text>
+<rect x="1123.8" y="489" width="102.39999999999999" height="22" rx="5" fill="white"/>
+<text x="1175" y="504" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#334155">Metrics :8889</text>
+<rect x="1405.8" y="639" width="68.4" height="22" rx="5" fill="white"/>
+<text x="1440" y="654" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#334155">Loopback</text>
+<rect x="762.4" y="494" width="75.19999999999999" height="22" rx="5" fill="white"/>
+<text x="800" y="509" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#334155">TLS files</text>
+</svg>

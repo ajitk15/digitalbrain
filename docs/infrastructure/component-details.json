@@ -1,0 +1,460 @@
+{
+  "hostinger-vps-default": [
+    {
+      "id": "title",
+      "title": "DIGITAL BRAIN / HOSTINGER VPS DEMO",
+      "details": [
+        "Configured at main df446fc \u00b7 docker-compose.yaml \u00b7 live VPS service inventory not verified"
+      ]
+    },
+    {
+      "id": "host",
+      "title": "HOSTINGER VPS  /  200.141.11.23",
+      "details": [
+        "srv1874861.hstgr.cloud"
+      ]
+    },
+    {
+      "id": "network",
+      "title": "PRIVATE DOCKER COMPOSE NETWORK",
+      "details": []
+    },
+    {
+      "id": "github",
+      "title": "GitHub repository",
+      "details": [
+        "ajitk15/digitalbrain",
+        "main / Dockerfile"
+      ]
+    },
+    {
+      "id": "controller",
+      "title": "Coolify deployment",
+      "details": [
+        "Fetch source \u00b7 build \u00b7 health checks"
+      ]
+    },
+    {
+      "id": "image",
+      "title": "Digital Brain demo image",
+      "details": [
+        "Python 3.12 \u00b7 locked app + CarePath dependencies"
+      ]
+    },
+    {
+      "id": "visitors",
+      "title": "Browser / demo users",
+      "details": [
+        "ajitconnect.in",
+        "www.ajitconnect.in"
+      ]
+    },
+    {
+      "id": "proxy",
+      "title": "Coolify reverse proxy",
+      "details": [
+        "Public :80 / :443",
+        "TLS termination"
+      ]
+    },
+    {
+      "id": "app",
+      "title": "app \u00b7 role=all \u00b7 uid 10001",
+      "details": [
+        "One container \u00b7 internal port 8000"
+      ]
+    },
+    {
+      "id": "web",
+      "title": "Django + Uvicorn",
+      "details": [
+        "UI \u00b7 REST API \u00b7 SSE",
+        "Sessions \u00b7 access policy"
+      ]
+    },
+    {
+      "id": "workers",
+      "title": "Background worker lanes",
+      "details": [
+        "intake \u00b7 graph \u00b7 connectors",
+        "code-graph \u00b7 factory \u00b7 serviceops",
+        "serviceops-tests \u00b7 automations",
+        "maintenance"
+      ]
+    },
+    {
+      "id": "scan",
+      "title": "Local processing",
+      "details": [
+        "ClamAV / freshclam",
+        "Tesseract OCR \u00b7 converters"
+      ]
+    },
+    {
+      "id": "agents",
+      "title": "Agent runtime",
+      "details": [
+        "Claude Agent SDK / CLI",
+        "OpenAI Agents SDK"
+      ]
+    },
+    {
+      "id": "tests",
+      "title": "Demo tools: Chromium / Playwright \u00b7 CarePath pytest",
+      "details": [
+        ""
+      ]
+    },
+    {
+      "id": "demo-flags",
+      "title": "Production security \u00b7 demo reset / local writes / tests",
+      "details": []
+    },
+    {
+      "id": "postgres",
+      "title": "PostgreSQL 16",
+      "details": [
+        "Records \u00b7 jobs \u00b7 audit \u00b7 graph rows",
+        "Restricted runtime role + tenant RLS"
+      ]
+    },
+    {
+      "id": "redis",
+      "title": "Redis 7.4",
+      "details": [
+        "Answer streams \u00b7 cancellation",
+        "API rate limits \u00b7 transient data"
+      ]
+    },
+    {
+      "id": "secretsinit",
+      "title": "secrets-init \u00b7 one shot",
+      "details": [
+        "Signing key + database passwords",
+        "Redis password + Redis config",
+        "Files only \u00b7 owner permissions"
+      ]
+    },
+    {
+      "id": "certinit",
+      "title": "postgres-certs \u00b7 one shot",
+      "details": [
+        "Private CA + server certificates",
+        "Postgres and Redis verified TLS"
+      ]
+    },
+    {
+      "id": "external-title",
+      "title": "EXTERNAL SERVICES",
+      "details": [
+        "Configured separately from VPS containers"
+      ]
+    },
+    {
+      "id": "connectors",
+      "title": "Connectors + Code Factory",
+      "details": [
+        "Jira \u00b7 ServiceNow \u00b7 GitHub / Git",
+        "Import records \u00b7 read source \u00b7 PR delivery",
+        "Per-application credentials"
+      ]
+    },
+    {
+      "id": "models",
+      "title": "AI provider APIs",
+      "details": [
+        "Claude / Anthropic \u00b7 OpenAI",
+        "Answers \u00b7 graphs \u00b7 embeddings"
+      ]
+    },
+    {
+      "id": "s3",
+      "title": "Amazon S3 originals",
+      "details": [
+        "digital-brain-originals-prod",
+        "Region: us-west-2",
+        "Access keys remain mounted files"
+      ]
+    },
+    {
+      "id": "volumes",
+      "title": "PERSISTENT NAMED VOLUMES  /  CONSUMERS",
+      "details": []
+    },
+    {
+      "id": "volume-0",
+      "title": "postgres-data",
+      "details": [
+        "Postgres database files"
+      ]
+    },
+    {
+      "id": "volume-1",
+      "title": "platform-secrets",
+      "details": [
+        "App: signing / DB / Redis / S3 keys"
+      ]
+    },
+    {
+      "id": "volume-2",
+      "title": "managed-credentials",
+      "details": [
+        "App owners: provider credentials"
+      ]
+    },
+    {
+      "id": "volume-3",
+      "title": "demo-workspace",
+      "details": [
+        "CarePath source + approved edits"
+      ]
+    },
+    {
+      "id": "volume-4",
+      "title": "clamav-db",
+      "details": [
+        "App: antivirus signatures"
+      ]
+    },
+    {
+      "id": "volume-5",
+      "title": "app-runtime",
+      "details": [
+        "App: configuration + runtime data"
+      ]
+    },
+    {
+      "id": "volume-6",
+      "title": "postgres-certs",
+      "details": [
+        "Postgres / Redis / app: TLS files"
+      ]
+    },
+    {
+      "id": "volume-7",
+      "title": "database-secret",
+      "details": [
+        "Postgres: password file copy"
+      ]
+    },
+    {
+      "id": "volume-8",
+      "title": "redis-config",
+      "details": [
+        "Redis: TLS / password config"
+      ]
+    },
+    {
+      "id": "volume-9",
+      "title": "connector-credentials",
+      "details": [
+        "App: shared connector files (RO)"
+      ]
+    },
+    {
+      "id": "baseline-note",
+      "title": "DEPLOYMENT SCOPE",
+      "details": [
+        "Solid = runtime traffic. Dashed = deployment / file relationships. Only the proxy publishes public ports. Redis stores no durable record."
+      ]
+    },
+    {
+      "id": "autoscaling",
+      "title": "Autoscaling: OFF",
+      "details": [
+        "Default app must stay at one container"
+      ]
+    }
+  ],
+  "hostinger-vps-scaled": [
+    {
+      "id": "title",
+      "title": "OPTIONAL / SPLIT WORKER DEPLOYMENT",
+      "details": [
+        "docker-compose.yaml + docker-compose.scale.yaml \u00b7 alternative to the default single app \u00b7 activation not verified"
+      ]
+    },
+    {
+      "id": "host",
+      "title": "HOSTINGER VPS / SAME PRIVATE COMPOSE NETWORK",
+      "details": []
+    },
+    {
+      "id": "users",
+      "title": "Demo users",
+      "details": [
+        "ajitconnect.in"
+      ]
+    },
+    {
+      "id": "proxy",
+      "title": "Coolify proxy",
+      "details": [
+        "TLS termination :443"
+      ]
+    },
+    {
+      "id": "web",
+      "title": "app \u00b7 role=web",
+      "details": [
+        "Django / Uvicorn :8000",
+        "Configurable web replicas",
+        "No background lanes"
+      ]
+    },
+    {
+      "id": "worker",
+      "title": "worker \u00b7 role=worker",
+      "details": [
+        "graph \u00b7 connectors \u00b7 serviceops",
+        "serviceops-tests \u00b7 automations",
+        "maintenance",
+        "Chromium / Playwright"
+      ]
+    },
+    {
+      "id": "sandbox",
+      "title": "sandbox \u00b7 role=worker",
+      "details": [
+        "intake \u00b7 code-graph \u00b7 factory",
+        "Read-only root \u00b7 no Linux capabilities",
+        "/tmp 4 GB \u00b7 PID 512 \u00b7 memory 6 GB",
+        "Credentials mounted read-only"
+      ]
+    },
+    {
+      "id": "migrate",
+      "title": "migrate \u00b7 one shot",
+      "details": [
+        "Schema / runtime role / demo seed",
+        "All serving processes wait for success"
+      ]
+    },
+    {
+      "id": "backing",
+      "title": "SHARED BACKING SERVICES / USED BY APP, WORKER AND SANDBOX",
+      "details": []
+    },
+    {
+      "id": "postgres",
+      "title": "PostgreSQL 16",
+      "details": [
+        "Durable records + shared job queues",
+        "TLS :5432 \u00b7 runtime role + RLS"
+      ]
+    },
+    {
+      "id": "redis",
+      "title": "Redis 7.4",
+      "details": [
+        "Shared streams / Stop / rate limits",
+        "Verified TLS :6379"
+      ]
+    },
+    {
+      "id": "clamd",
+      "title": "clamd \u00b7 ClamAV 1.4",
+      "details": [
+        "Signature updates + TCP scanner :3310",
+        "Own clamd-db volume"
+      ]
+    },
+    {
+      "id": "shared",
+      "title": "Shared data and files",
+      "details": [
+        "platform-secrets \u00b7 managed-credentials \u00b7 connector-credentials",
+        "app-runtime \u00b7 demo-workspace \u00b7 postgres-certs",
+        "postgres-data / database-secret / redis-config retain their service owners"
+      ]
+    },
+    {
+      "id": "external",
+      "title": "External dependencies remain unchanged",
+      "details": [
+        "Anthropic / OpenAI \u00b7 Jira / ServiceNow / GitHub \u00b7 Amazon S3",
+        "Bootstrap services secrets-init and postgres-certs remain in the base file."
+      ]
+    },
+    {
+      "id": "autoscaling",
+      "title": "Autoscaling: OFF",
+      "details": [
+        "Manual replicas; no automatic controller or scaling rules"
+      ]
+    }
+  ],
+  "hostinger-vps-monitoring": [
+    {
+      "id": "title",
+      "title": "OPTIONAL / OBSERVABILITY DEPLOYMENT",
+      "details": [
+        "Add docker-compose.observability.yaml; for split workers also add docker-compose.observability.scale.yaml \u00b7 activation not verified"
+      ]
+    },
+    {
+      "id": "host",
+      "title": "HOSTINGER VPS / OBSERVABILITY OVERLAY",
+      "details": []
+    },
+    {
+      "id": "app",
+      "title": "Application processes",
+      "details": [
+        "app; worker + sandbox when split",
+        "Ids, timings, counters and costs",
+        "No document text or credentials"
+      ]
+    },
+    {
+      "id": "collector",
+      "title": "OpenTelemetry Collector",
+      "details": [
+        "OTLP / HTTP over TLS :4318",
+        "Metrics exporter :8889",
+        "Traces go to collector logs"
+      ]
+    },
+    {
+      "id": "prometheus",
+      "title": "Prometheus",
+      "details": [
+        "Scrape collector metrics",
+        "Evaluate SLO burn-rate rules",
+        "Persist metrics for 15 days"
+      ]
+    },
+    {
+      "id": "otelcerts",
+      "title": "otel-certs \u00b7 one shot",
+      "details": [
+        "Issue collector certificate from private CA",
+        "Copy collector key / certificate only",
+        "No CA private key mounted to collector"
+      ]
+    },
+    {
+      "id": "operator",
+      "title": "Operator access",
+      "details": [
+        "127.0.0.1:9090",
+        "SSH tunnel or authenticated proxy"
+      ]
+    },
+    {
+      "id": "volumes",
+      "title": "Persistent volumes",
+      "details": [
+        "otel-certs: collector certificate / key    \u00b7    prometheus-data: metrics TSDB"
+      ]
+    },
+    {
+      "id": "limitations",
+      "title": "Not supplied by this overlay",
+      "details": [
+        "No durable trace backend is configured; traces are logged by the collector.",
+        "No Alertmanager is configured; Prometheus evaluates alerts without external notification routing."
+      ]
+    }
+  ]
+}
