@@ -1,0 +1,149 @@
+# promtool unit tests for deploy/slo-rules.yml:
+#
+#   promtool test rules deploy/observability/slo-rules.test.yml
+#
+# CI runs it in the prom/prometheus image. Every input series is named and
+# labelled exactly as the platform's metrics arrive in Prometheus through the
+# collector (checked against collector 0.120 and Prometheus 3.2 with
+# compose.local.yaml): `digitalbrain_lane`, never `lane`. Each case makes one
+# alert fire and shows a near miss staying quiet, so a selector that matches no
+# real series fails here rather than staying silent in production.
+rule_files:
+  - ../slo-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Half of all requests fail: the hour and the five minutes both burn far
+  # past 14.4x a 0.1% budget.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="false",http_request_method="GET",http_route="applications/<uuid:pk>/",http_response_status_code="500"}'
+        values: '0+5x90'
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="false",http_request_method="GET",http_route="applications/<uuid:pk>/",http_response_status_code="200"}'
+        values: '0+5x90'
+      # A stream's status is sent before its answer; its errors are not counted.
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="true",http_request_method="GET",http_route="chat-stream",http_response_status_code="200"}'
+        values: '0+1000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLORequestsAvailablePage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              objective: requests_available
+            exp_annotations:
+              summary: 'A request is answered without a server error - burning 14.4x over 1h'
+
+  # Only streams fail: a non-streamed request is the only thing judged.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="true",http_request_method="GET",http_route="chat-stream",http_response_status_code="500"}'
+        values: '0+5x90'
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="false",http_request_method="GET",http_route="accounts/login/",http_response_status_code="200"}'
+        values: '0+5x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLORequestsAvailablePage
+        exp_alerts: []
+
+  # Every page takes more than a second: the 1-second bucket stays empty.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="false",http_request_method="GET",http_route="accounts/login/",http_response_status_code="200"}'
+        values: '0+10x90'
+      - series: 'http_server_request_duration_seconds_bucket{digitalbrain_streamed="false",http_request_method="GET",http_route="accounts/login/",http_response_status_code="200",le="1.0"}'
+        values: '0+0x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOPagesFastPage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              objective: pages_fast
+            exp_annotations:
+              summary: 'A page is served in under 1 second - burning 14.4x over 1h'
+
+  # Every page is fast: the bucket holds all of them.
+  - interval: 1m
+    input_series:
+      - series: 'http_server_request_duration_seconds_count{digitalbrain_streamed="false",http_request_method="GET",http_route="accounts/login/",http_response_status_code="200"}'
+        values: '0+10x90'
+      - series: 'http_server_request_duration_seconds_bucket{digitalbrain_streamed="false",http_request_method="GET",http_route="accounts/login/",http_response_status_code="200",le="1.0"}'
+        values: '0+10x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOPagesFastPage
+        exp_alerts: []
+
+  # Half of all paid calls are turned away busy.
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_ai_admission_wait_seconds_count{digitalbrain_outcome="busy",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+10x90'
+      - series: 'digitalbrain_ai_admission_wait_seconds_count{digitalbrain_outcome="admitted",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+10x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOAiAdmittedPage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              objective: ai_admitted
+            exp_annotations:
+              summary: 'A paid call is admitted rather than turned away busy - burning 14.4x over 1h'
+
+  # Intake has waited fifteen minutes for over an hour; a late Code Factory
+  # run is not one of the queues this objective promises.
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_queue_oldest_age_seconds{digitalbrain_lane="intake"}'
+        values: '900x90'
+      - series: 'digitalbrain_queue_oldest_age_seconds{digitalbrain_lane="factory"}'
+        values: '90000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOQueuesFreshPage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              objective: queues_fresh
+            exp_annotations:
+              summary: 'Intake, graph and import work waits under 10 minutes - burning 14.4x over 1h'
+
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_queue_oldest_age_seconds{digitalbrain_lane="intake"}'
+        values: '30x90'
+      - series: 'digitalbrain_queue_oldest_age_seconds{digitalbrain_lane="factory"}'
+        values: '90000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOQueuesFreshPage
+        exp_alerts: []
+
+  # A records objective, from the gauge the maintenance lane holds: 18 of 24
+  # jobs started on time is below 99%, and 24 is enough to judge. 18 of 19 is
+  # too few events to judge at all.
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_slo_events{digitalbrain_objective="work_starts",digitalbrain_outcome="good"}'
+        values: '18x30'
+      - series: 'digitalbrain_slo_events{digitalbrain_objective="work_starts",digitalbrain_outcome="bad"}'
+        values: '6x30'
+      - series: 'digitalbrain_slo_events{digitalbrain_objective="work_succeeds",digitalbrain_outcome="good"}'
+        values: '18x30'
+      - series: 'digitalbrain_slo_events{digitalbrain_objective="work_succeeds",digitalbrain_outcome="bad"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: SLOWorkStartsTicket
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              objective: work_starts
+            exp_annotations:
+              summary: 'Background work starts within 5 minutes of falling due - below target over 28 days'
+      - eval_time: 20m
+        alertname: SLOWorkSucceedsTicket
+        exp_alerts: []

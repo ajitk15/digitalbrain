@@ -1,0 +1,16 @@
+# The worker and the sandbox of docker-compose.scale.yaml report to the
+# collector docker-compose.observability.yaml runs, beside the web container:
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.scale.yaml \
+#     -f docker-compose.observability.yaml -f docker-compose.observability.scale.yaml up -d
+#
+# Each process reports as its own service.instance.id, so replicas and lanes
+# add up rather than overwrite one another. The maintenance lane, in the
+# worker, is the one that reads the queue and service-level gauges.
+services:
+  worker:
+    environment:
+      DIGITAL_BRAIN_OTEL: "otel-collector:4318"
+  sandbox:
+    environment:
+      DIGITAL_BRAIN_OTEL: "otel-collector:4318"

@@ -481,7 +481,26 @@ id, response id, token counts - those are trace attributes), and only spend carr
 application id. Gauges that read the database are read by the maintenance lane
 (`observe`) and held for the reader, so one process reports them. Histograms are bucketed
 in seconds at `metrics.SECONDS`; exemplars are off, temporality cumulative, and every
-SDK default an `OTEL_*` variable could change is stated.
+SDK default an `OTEL_*` variable could change is stated. **Each process reports as its
+own `service.instance.id`** (`telemetry.INSTANCE`, a random id, so it names no host):
+without it a web and a worker exported identical series and the collector kept the
+last - two processes recording 100 tokens each read as 100 in Prometheus. The dashboard's
+route pattern is "", reported as `/`; `unmatched` means nothing resolved.
+
+**This has run against a real collector and Prometheus**
+(`deploy/observability/`: collector 0.120, Prometheus 3.2). `compose.local.yaml` runs both
+on a development machine; `docker-compose.observability.yaml` adds them to a deployment,
+the collector serving https with a certificate from the Postgres CA (`otel-certs` copies
+only its own key) and the entrypoint rendering `[otel]` from `DIGITAL_BRAIN_OTEL`
+(host:port); `docker-compose.observability.scale.yaml` points the worker and sandbox at
+it. Prometheus names an OTLP metric with dots as underscores, seconds as `_seconds`, a
+counter's `_total` - and an **attribute by its dotted name**: `lane` arrives as
+`digitalbrain_lane`. The rules once selected `lane=` and `objective=`, which no series
+carries, so the queue and records alerts could never fire; `slo.label` now writes every
+label from the registry, `test_slo` checks every selector's metric and labels against
+`INSTRUMENTS`, and CI's `slo-rules` job runs `promtool check rules` and `promtool test
+rules deploy/observability/slo-rules.test.yml`, which makes each alert fire from series
+named as they really arrive (and fails on the old rules).
 
 **Service levels are a registry, checked against records or ruled on metrics**
 (`slo.py`, `manage.py slo [--check] [--json] [--rules]`). *Records* objectives - answers
@@ -1306,6 +1325,13 @@ subprocess and the environment scrub are never executed in CI. The OpenAI stream
 runtime has not been run against a live account at all — only its non-streaming sibling
 has, through the mocked transport. The Claude Messages adapter is the real `anthropic` SDK
 over a mocked transport and has not been run against a live API key.
+
+Run live, read-only, on 2026-10-19: a scheduled changes-since read through
+`jira_records` against the CarePathDev Jira (7 issues full, 1 inside the overlap, the
+relative `updated >= "-Nm"` clause accepted) and `github_records` anonymously against a
+public repository (148 issues over several pages, pull requests dropped; a read since a
+mark returned only later issues, oldest first, all within the full read). The stream
+load test has been run only on the development machine, not production hardware.
 
 ## Naming
 

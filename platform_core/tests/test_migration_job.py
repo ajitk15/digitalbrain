@@ -231,7 +231,9 @@ class DeploymentTests(SimpleTestCase):
         self.assertNotIn("> /run/secrets/django_secret_key", self.entrypoint)
 
     def test_the_entrypoint_keeps_unix_line_endings(self):
-        for name in ("deploy/entrypoint.sh", "docker-compose.yaml", "docker-compose.scale.yaml"):
+        for name in ("deploy/entrypoint.sh", "docker-compose.yaml", "docker-compose.scale.yaml",
+                     "docker-compose.observability.yaml",
+                     "docker-compose.observability.scale.yaml"):
             self.assertNotIn(b"\r", (ROOT / name).read_bytes(), name)
 
     def test_the_migrate_job_runs_once_and_everything_else_waits_for_it(self):

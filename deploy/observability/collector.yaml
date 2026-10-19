@@ -1,0 +1,41 @@
+# OpenTelemetry Collector for docker-compose.observability.yaml.
+#
+# Receives the platform's OTLP/HTTP traces and metrics on 4318 and serves the
+# metrics for Prometheus on 8889, named the way Prometheus names OTLP metrics:
+# dots become underscores, a unit becomes a suffix (_seconds) and a counter
+# ends _total. deploy/slo-rules.yml is written against exactly those names.
+#
+# Traces go to the debug exporter (the collector's own log) - replace it with
+# Tempo, Jaeger or a vendor's exporter. A span carries only what
+# telemetry.ATTRIBUTES allows, so nothing a person or a model wrote is in it.
+receivers:
+  otlp:
+    protocols:
+      http:
+        # Plain http here, for a local run (compose.local.yaml). The
+        # deployment overlay adds tls.yaml, because production refuses an
+        # http endpoint.
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+  debug:
+    verbosity: basic
+
+service:
+  telemetry:
+    metrics:
+      level: basic
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]

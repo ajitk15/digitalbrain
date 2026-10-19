@@ -1,0 +1,10 @@
+# Merged over collector.yaml by docker-compose.observability.yaml: the OTLP
+# receiver serves https with a certificate for "otel-collector" issued by the
+# deployment's CA, the one the platform already trusts for Postgres and Redis.
+receivers:
+  otlp:
+    protocols:
+      http:
+        tls:
+          cert_file: /certs/otel-collector.crt
+          key_file: /certs/otel-collector.key

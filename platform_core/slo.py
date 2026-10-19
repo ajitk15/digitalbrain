@@ -109,7 +109,19 @@ def work_succeeds(since, now):
     return ended.filter(status="done").count(), ended.count()
 
 
-STREAMED = 'digitalbrain_streamed="false"'
+def label(key):
+    """A metric attribute's name as Prometheus reads it: `lane` is `digitalbrain_lane`.
+
+    The rules used to write `lane=` and `objective=`, which no exported series
+    carries, so the queue and records alerts matched nothing and could never fire.
+    """
+    from .telemetry import dotted
+
+    return next(iter(dotted({key: None}))).replace(".", "_")
+
+
+STREAMED = f'{label("streamed")}="false"'
+OUTCOME = label("outcome")
 REQUESTS = "http_server_request_duration_seconds"
 ADMISSIONS = "digitalbrain_ai_admission_wait_seconds"
 
@@ -155,7 +167,7 @@ OBJECTIVES = (
     ),
     Objective(
         "ai_admitted", "A paid call is admitted rather than turned away busy.", 0.99, "metrics",
-        errors=f'sum(rate({ADMISSIONS}_count{{digitalbrain_outcome="busy"}}[{{w}}]))',
+        errors=f'sum(rate({ADMISSIONS}_count{{{OUTCOME}="busy"}}[{{w}}]))',
         total=f"sum(rate({ADMISSIONS}_count[{{w}}]))",
         notes="Turned away means nothing was sent and nothing was charged.",
     ),
@@ -164,7 +176,8 @@ OBJECTIVES = (
         f"Intake, graph and import work waits under {QUEUE_SECONDS // 60} minutes.",
         0.99, "metrics",
         errors=("max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds"
-                f'{{lane=~"intake|graph|connectors"}}) > bool {QUEUE_SECONDS})[{{w}}:1m]))'),
+                f'{{{label("lane")}=~"intake|graph|connectors"}}) > bool {QUEUE_SECONDS})'
+                "[{w}:1m]))"),
         total="vector(1)",
         notes="Minutes in which the oldest waiting item was older than that.",
     ),
@@ -261,8 +274,9 @@ def prometheus_rules():
                 )
                 lines += alert(objective, severity, expression, f"burning {burn}x over {long}")
         else:
-            good = f'digitalbrain_slo_events{{objective="{objective.key}",outcome="good"}}'
-            every = f'sum(digitalbrain_slo_events{{objective="{objective.key}"}})'
+            which = f'{label("objective")}="{objective.key}"'
+            good = f'digitalbrain_slo_events{{{which},{OUTCOME}="good"}}'
+            every = f"sum(digitalbrain_slo_events{{{which}}})"
             expression = (f"sum({good}) / {every} < {objective.target} "
                           f"and {every} >= {MIN_EVENTS}")
             lines += alert(objective, "ticket", expression,

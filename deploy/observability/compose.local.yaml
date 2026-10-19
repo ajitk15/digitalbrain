@@ -1,0 +1,32 @@
+# A collector and Prometheus for a development machine, nothing else:
+#
+#   docker compose -f deploy/observability/compose.local.yaml -p digitalbrain-observe up -d
+#
+# then add to config/local.toml
+#
+#   [otel]
+#   endpoint = "http://localhost:4318"
+#   metric_interval_seconds = 10
+#
+# and restart the server. Prometheus is http://localhost:9090. Both ports are
+# bound to this machine only.
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    command: ["--config=/etc/otelcol/collector.yaml"]
+    volumes:
+      - ./collector.yaml:/etc/otelcol/collector.yaml:ro
+    ports:
+      - "127.0.0.1:4318:4318"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    depends_on: [otel-collector]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=2d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../slo-rules.yml:/etc/prometheus/rules/slo-rules.yml:ro
+    ports:
+      - "127.0.0.1:9090:9090"

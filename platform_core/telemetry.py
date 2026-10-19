@@ -221,8 +221,28 @@ def trace_id():
     return format(context.trace_id, "032x") if context.is_valid else None
 
 
-def build(config):
+#: This process, among every process reporting as the same service. Without it
+#: two web replicas, or a web and a worker, export identical series and the
+#: collector keeps whichever arrived last: two processes each recording 100
+#: tokens read as 100 in Prometheus, not 200. A random id, as the semantic
+#: conventions advise, so it names no host.
+INSTANCE = str(uuid.uuid4())
+
+
+def resource(config):
+    """Who is reporting, for traces and metrics alike. Stated, so
+    OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME are not read."""
     from opentelemetry.sdk.resources import Resource
+
+    return Resource({
+        "service.name": config.get("service_name", "digital-brain"),
+        "service.instance.id": INSTANCE,
+        "deployment.environment.name": "production" if settings.PRODUCTION
+        else "development",
+    })
+
+
+def build(config):
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
@@ -230,11 +250,7 @@ def build(config):
     provider = TracerProvider(
         # Stated, so OTEL_TRACES_SAMPLER and OTEL_RESOURCE_ATTRIBUTES are not read.
         sampler=ParentBased(TraceIdRatioBased(float(config.get("sample_ratio", 1.0)))),
-        resource=Resource({
-            "service.name": config.get("service_name", "digital-brain"),
-            "deployment.environment.name": "production" if settings.PRODUCTION
-            else "development",
-        }),
+        resource=resource(config),
     )
     provider.add_span_processor(drop_idle(BatchSpanProcessor(
         Exporter(config),
@@ -360,6 +376,10 @@ class TelemetryMiddleware:
             response = self.get_response(request)
             match = getattr(request, "resolver_match", None)
             route = getattr(match, "route", None) or ""
+            # The dashboard's pattern is "", which read as "unmatched" beside
+            # every 404; "unmatched" now means nothing resolved.
+            if match is not None and not route:
+                route = "/"
             if route:
                 traced.rename(f"{method} {route}")
             pk = (getattr(match, "kwargs", None) or {}).get("pk")

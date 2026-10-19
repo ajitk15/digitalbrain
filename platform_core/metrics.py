@@ -245,7 +245,6 @@ def observe():
 def build(config):
     from opentelemetry.sdk.metrics import AlwaysOffExemplarFilter, MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    from opentelemetry.sdk.resources import Resource
 
     interval = int(config.get("metric_interval_seconds", INTERVAL))
     return MeterProvider(
@@ -255,11 +254,7 @@ def build(config):
             export_interval_millis=interval * 1000,
             export_timeout_millis=telemetry.EXPORT_SECONDS * 1000,
         )],
-        resource=Resource({
-            "service.name": config.get("service_name", "digital-brain"),
-            "deployment.environment.name": "production" if settings.PRODUCTION
-            else "development",
-        }),
+        resource=telemetry.resource(config),
         # An exemplar carries a trace id onto a metric point; stated off, so
         # OTEL_METRICS_EXEMPLAR_FILTER is not read either.
         exemplar_filter=AlwaysOffExemplarFilter(),

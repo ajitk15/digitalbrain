@@ -1,0 +1,99 @@
+# Traces and metrics for docker-compose.yaml: an OpenTelemetry Collector and a
+# Prometheus that loads the service-level rules.
+#
+#   docker compose -f docker-compose.yaml -f docker-compose.observability.yaml up -d
+#
+# With the split deployment add docker-compose.scale.yaml and then
+# docker-compose.observability.scale.yaml, which points the worker and the
+# sandbox at the same collector.
+#
+# * "otel-certs" issues the collector a certificate for "otel-collector" from
+#   the CA docker-compose.yaml made for Postgres and Redis, which the platform
+#   already trusts. Production refuses an http collector, so this is https.
+#   Only the collector's own certificate and key are copied to its volume -
+#   the collector never mounts the CA's key.
+# * "otel-collector" receives OTLP/HTTP on 4318, on the compose network only,
+#   and serves the metrics to Prometheus (deploy/observability/collector.yaml).
+#   Traces go to its log; point its traces pipeline at Tempo, Jaeger or a
+#   vendor to keep them.
+# * "prometheus" scrapes it and evaluates deploy/slo-rules.yml, published on
+#   this host's loopback only - reach it over an SSH tunnel, or put it behind
+#   the proxy with its own sign-in. Alerts fire in Prometheus; add an
+#   Alertmanager to send them anywhere.
+#
+# What reaches the collector is ids, timings and counts only: a span or a
+# metric may carry only what telemetry.ATTRIBUTES allows.
+services:
+  otel-certs:
+    image: alpine:3.20
+    restart: "no"
+    depends_on:
+      postgres-certs:
+        condition: service_completed_successfully
+    volumes:
+      - postgres-certs:/ca
+      - otel-certs:/certs
+    command:
+      - /bin/sh
+      - -euc
+      - |
+        if [ -f /certs/otel-collector.key ]; then
+          echo "certs: otel-collector already present"; exit 0
+        fi
+        apk add --no-cache openssl >/dev/null
+        cd /tmp
+        openssl req -newkey rsa:4096 -sha256 -nodes \
+          -keyout otel-collector.key -out otel-collector.csr -subj "/CN=otel-collector"
+        # The SAN is the host the platform dials (DIGITAL_BRAIN_OTEL).
+        printf "subjectAltName=DNS:otel-collector\n" > san.cnf
+        openssl x509 -req -in otel-collector.csr -CA /ca/ca.crt -CAkey /ca/ca.key \
+          -CAcreateserial -CAserial /tmp/ca.srl -out otel-collector.crt -days 3650 \
+          -sha256 -extfile san.cnf
+        # The collector image runs as 10001.
+        install -m 600 -o 10001 otel-collector.key /certs/otel-collector.key
+        install -m 644 -o 10001 otel-collector.crt /certs/otel-collector.crt
+        echo "certs: generated otel-collector"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    restart: unless-stopped
+    depends_on:
+      otel-certs:
+        condition: service_completed_successfully
+    command:
+      - --config=/etc/otelcol/collector.yaml
+      - --config=/etc/otelcol/tls.yaml
+    volumes:
+      - ./deploy/observability/collector.yaml:/etc/otelcol/collector.yaml:ro
+      - ./deploy/observability/tls.yaml:/etc/otelcol/tls.yaml:ro
+      - otel-certs:/certs:ro
+    expose:
+      - "4318"
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    restart: unless-stopped
+    depends_on: [otel-collector]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # The burn-rate alerts read six hours; the records objectives arrive
+      # already counted over 28 days. Two weeks leaves room to look back.
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/slo-rules.yml:/etc/prometheus/rules/slo-rules.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+
+  app:
+    depends_on:
+      otel-collector:
+        condition: service_started
+    environment:
+      DIGITAL_BRAIN_OTEL: "otel-collector:4318"
+
+volumes:
+  otel-certs:
+  prometheus-data:

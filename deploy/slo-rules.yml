@@ -51,25 +51,25 @@ groups:
         labels:
           objective: ai_admitted
       - record: digitalbrain:slo_errors:ratio_rate1h
-        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{lane=~"intake|graph|connectors"}) > bool 600)[1h:1m]))) / (vector(1))'
+        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{digitalbrain_lane=~"intake|graph|connectors"}) > bool 600)[1h:1m]))) / (vector(1))'
         labels:
           objective: queues_fresh
       - record: digitalbrain:slo_errors:ratio_rate6h
-        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{lane=~"intake|graph|connectors"}) > bool 600)[6h:1m]))) / (vector(1))'
+        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{digitalbrain_lane=~"intake|graph|connectors"}) > bool 600)[6h:1m]))) / (vector(1))'
         labels:
           objective: queues_fresh
       - record: digitalbrain:slo_errors:ratio_rate5m
-        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{lane=~"intake|graph|connectors"}) > bool 600)[5m:1m]))) / (vector(1))'
+        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{digitalbrain_lane=~"intake|graph|connectors"}) > bool 600)[5m:1m]))) / (vector(1))'
         labels:
           objective: queues_fresh
       - record: digitalbrain:slo_errors:ratio_rate30m
-        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{lane=~"intake|graph|connectors"}) > bool 600)[30m:1m]))) / (vector(1))'
+        expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{digitalbrain_lane=~"intake|graph|connectors"}) > bool 600)[30m:1m]))) / (vector(1))'
         labels:
           objective: queues_fresh
   - name: digital-brain-slo-alerts
     rules:
       - alert: SLOAnswersFinishTicket
-        expr: 'sum(digitalbrain_slo_events{objective="answers_finish",outcome="good"}) / sum(digitalbrain_slo_events{objective="answers_finish"}) < 0.99 and sum(digitalbrain_slo_events{objective="answers_finish"}) >= 20'
+        expr: 'sum(digitalbrain_slo_events{digitalbrain_objective="answers_finish",digitalbrain_outcome="good"}) / sum(digitalbrain_slo_events{digitalbrain_objective="answers_finish"}) < 0.99 and sum(digitalbrain_slo_events{digitalbrain_objective="answers_finish"}) >= 20'
         for: 15m
         labels:
           severity: ticket
@@ -77,7 +77,7 @@ groups:
         annotations:
           summary: 'Answers end with an answer, not a failure - below target over 28 days'
       - alert: SLOAnswersInTimeTicket
-        expr: 'sum(digitalbrain_slo_events{objective="answers_in_time",outcome="good"}) / sum(digitalbrain_slo_events{objective="answers_in_time"}) < 0.95 and sum(digitalbrain_slo_events{objective="answers_in_time"}) >= 20'
+        expr: 'sum(digitalbrain_slo_events{digitalbrain_objective="answers_in_time",digitalbrain_outcome="good"}) / sum(digitalbrain_slo_events{digitalbrain_objective="answers_in_time"}) < 0.95 and sum(digitalbrain_slo_events{digitalbrain_objective="answers_in_time"}) >= 20'
         for: 15m
         labels:
           severity: ticket
@@ -85,7 +85,7 @@ groups:
         annotations:
           summary: 'A complete answer ends within 60 seconds of being asked - below target over 28 days'
       - alert: SLOWorkStartsTicket
-        expr: 'sum(digitalbrain_slo_events{objective="work_starts",outcome="good"}) / sum(digitalbrain_slo_events{objective="work_starts"}) < 0.99 and sum(digitalbrain_slo_events{objective="work_starts"}) >= 20'
+        expr: 'sum(digitalbrain_slo_events{digitalbrain_objective="work_starts",digitalbrain_outcome="good"}) / sum(digitalbrain_slo_events{digitalbrain_objective="work_starts"}) < 0.99 and sum(digitalbrain_slo_events{digitalbrain_objective="work_starts"}) >= 20'
         for: 15m
         labels:
           severity: ticket
@@ -93,7 +93,7 @@ groups:
         annotations:
           summary: 'Background work starts within 5 minutes of falling due - below target over 28 days'
       - alert: SLOWorkSucceedsTicket
-        expr: 'sum(digitalbrain_slo_events{objective="work_succeeds",outcome="good"}) / sum(digitalbrain_slo_events{objective="work_succeeds"}) < 0.99 and sum(digitalbrain_slo_events{objective="work_succeeds"}) >= 20'
+        expr: 'sum(digitalbrain_slo_events{digitalbrain_objective="work_succeeds",digitalbrain_outcome="good"}) / sum(digitalbrain_slo_events{digitalbrain_objective="work_succeeds"}) < 0.99 and sum(digitalbrain_slo_events{digitalbrain_objective="work_succeeds"}) >= 20'
         for: 15m
         labels:
           severity: ticket

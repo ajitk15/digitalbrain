@@ -142,11 +142,36 @@ class RulesTests(SimpleTestCase):
         for objective in slo.OBJECTIVES:
             for expression in (objective.errors, objective.total):
                 # A metric name is what a selector or a range follows; a label is not.
-                for name in re.findall(r"((?:http|digitalbrain)_[a-z_]+)(?=[{\[])",
+                for name in re.findall(r"((?:http|digitalbrain)_[a-z_]+)(?=[{\[])",
                                        expression):
                     base = name.removesuffix("_count").removesuffix("_bucket")
                     self.assertIn(base, exported, objective.key)
         self.assertNotIn("\\", rules)
+
+    def test_every_selector_names_a_series_and_labels_it_carries(self):
+        """Names as Prometheus writes an OTLP metric, checked against collector 0.120
+        and Prometheus 3.2 (deploy/observability): dots are underscores, seconds a
+        suffix, a counter ends `_total`, and an attribute is its dotted name -
+        `lane` is `digitalbrain_lane`. The rules once wrote `lane=` and
+        `objective=`, which matched no series, so those alerts could never fire."""
+        series = {}
+        for name, spec in metrics.INSTRUMENTS.items():
+            base = name.replace(".", "_") + ("_seconds" if spec.unit == "s" else "")
+            keys = {key.replace(".", "_") for key in spec.attributes} | {"job", "instance"}
+            if spec.kind == "histogram":
+                for suffix in ("_bucket", "_count", "_sum"):
+                    series[base + suffix] = keys | ({"le"} if suffix == "_bucket" else set())
+            else:
+                series[base + ("_total" if spec.kind == "counter" else "")] = keys
+        recorded = set(re.findall(r"record: (\S+)", slo.prometheus_rules()))
+        for expression in re.findall(r"expr: '(.*)'", slo.prometheus_rules()):
+            for name, selector in re.findall(r"([a-z_:][a-z0-9_:]*)(\{[^}]*\}|\[)", expression):
+                if name in {"rate", "avg_over_time", "max", "sum", "vector", "bool"}:
+                    continue
+                allowed = {"objective"} if name in recorded else series.get(name)
+                self.assertIsNotNone(allowed, f"{name} is not exported: {expression}")
+                used = set(re.findall(r"([a-z_]+)=~?\"", selector))
+                self.assertLessEqual(used, allowed, f"{name} carries no {used - allowed}")
 
     def test_keys_are_unique_and_targets_are_ratios(self):
         self.assertEqual(len(slo.BY_KEY), len(slo.OBJECTIVES))

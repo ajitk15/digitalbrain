@@ -135,6 +135,22 @@ four service levels (server errors, page speed, paid calls admitted, queue age),
 with burn-rate alerts - load it where the collector's metrics land. It is
 generated from `platform_core/slo.py`; regenerate it, never edit it.
 
+To run a collector and Prometheus beside the platform:
+
+```bash
+docker compose -f docker-compose.yaml -f docker-compose.observability.yaml up -d
+```
+
+This issues the collector a certificate from the same CA as Postgres and Redis,
+sets `DIGITAL_BRAIN_OTEL=otel-collector:4318` on the app (the entrypoint renders
+the `[otel]` table from it, https only), and starts Prometheus with the rules,
+on this host's loopback port 9090. With `docker-compose.scale.yaml`, add
+`docker-compose.observability.scale.yaml` after it so the worker and sandbox
+report too. Traces go to the collector's log until its traces pipeline
+(`deploy/observability/collector.yaml`) names a backend, and alerts stay in
+Prometheus until an Alertmanager is added. `deploy/observability/compose.local.yaml`
+is the same pair for a development machine, over plain http.
+
 ## What is not covered here
 
 - **Backups.** `postgres-data` and `app-runtime` both matter: the second holds

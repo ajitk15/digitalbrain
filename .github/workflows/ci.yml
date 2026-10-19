@@ -91,3 +91,20 @@ jobs:
           DIGITAL_BRAIN_TEST_REDIS: "127.0.0.1:6379"
           DIGITAL_BRAIN_REQUIRE_REDIS: "1"
       - run: uv run python manage.py scorecard --check
+
+  # The service-level rules as Prometheus itself reads them: `check` parses
+  # every expression, and `test` makes each alert fire from series named the
+  # way the collector delivers them (deploy/observability/slo-rules.test.yml).
+  # test_slo holds the file equal to the registry; this holds it to Prometheus.
+  slo-rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: promtool check rules
+        run: >-
+          docker run --rm --entrypoint promtool -v "$PWD/deploy:/deploy:ro"
+          prom/prometheus:v3.2.1 check rules /deploy/slo-rules.yml
+      - name: promtool test rules
+        run: >-
+          docker run --rm --entrypoint promtool -v "$PWD/deploy:/deploy:ro"
+          prom/prometheus:v3.2.1 test rules /deploy/observability/slo-rules.test.yml

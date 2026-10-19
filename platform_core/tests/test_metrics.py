@@ -9,6 +9,7 @@ import gzip
 import os
 import tempfile
 import threading
+import uuid
 from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
@@ -117,6 +118,13 @@ class PlatformMetricTests(Measured, TestCase):
         self.assertEqual(point.count, 1)
         self.assertEqual(tuple(point.explicit_bounds), metrics.SECONDS)
         self.assertOnlyRegistered()
+
+    def test_the_dashboard_is_its_own_route_and_a_404_is_unmatched(self):
+        self.client.get("/")
+        self.client.get("/no-such-page/")
+        routes = {point.attributes["http.route"]
+                  for point in self.points("http.server.request.duration")}
+        self.assertEqual(routes, {"/", "unmatched"})
 
     def test_a_lane_step_that_did_work_is_timed_and_an_idle_one_is_not(self):
         stop = threading.Event()
@@ -236,6 +244,24 @@ class SenderTests(SimpleTestCase):
         names = [m.name for r in sent.resource_metrics for s in r.scope_metrics
                  for m in s.metrics]
         self.assertEqual(names, ["digitalbrain.ai.cost"])
+
+
+class ResourceTests(SimpleTestCase):
+    def test_each_process_reports_as_its_own_instance(self):
+        """Two processes with one service name used to export identical series,
+        and the collector kept the last: 100 tokens recorded twice read as 100."""
+        from platform_core import telemetry
+
+        config = {"endpoint": "http://collector:4318", "service_name": "brain"}
+        provider = metrics.build(config)
+        try:
+            attributes = dict(provider._sdk_config.resource.attributes)
+        finally:
+            provider.shutdown()
+        self.assertEqual(attributes["service.name"], "brain")
+        self.assertEqual(attributes["service.instance.id"], telemetry.INSTANCE)
+        self.assertEqual(telemetry.resource(config).attributes, attributes)
+        self.assertEqual(str(uuid.UUID(telemetry.INSTANCE)), telemetry.INSTANCE)
 
 
 class MetricSettingTests(SimpleTestCase):

@@ -2191,7 +2191,7 @@ API rate limit counts per process. The Compose file runs exactly one app contain
 <tr><td>Production</td><td>stdout/stderr, collected by the platform</td></tr>
 <tr><td><code>manage.py queue_status [--check]</code></td><td>Each lane's waiting work, oldest age and heartbeat: counts and ages, never a record</td></tr>
 <tr><td><code>manage.py slo [--check]</code></td><td>The service-level objectives (<code>slo.py</code>) read from records; <code>deploy/slo-rules.yml</code> is the same registry as Prometheus rules</td></tr>
-<tr><td>Traces and metrics</td><td>Off by default. An <code>[otel]</code> table sends spans and RED metrics to an OTLP/HTTP collector; what either may carry is a closed registry of ids, timings and counts</td></tr></tbody></table></div>
+<tr><td>Traces and metrics</td><td>Off by default. An <code>[otel]</code> table sends spans and RED metrics to an OTLP/HTTP collector; what either may carry is a closed registry of ids, timings and counts Run against a real collector and Prometheus: <code>docker-compose.observability.yaml</code> adds both (https, the Postgres CA), and CI checks <code>deploy/slo-rules.yml</code> with <code>promtool check</code> and <code>promtool test rules</code>.</td></tr></tbody></table></div>
 <h3 id="infrastructure--maintenance"><a class="anchor" href="#infrastructure--maintenance">#</a>Maintenance</h3>
 <ul>
 <li><code>manage.py clearsessions</code> daily.</li>

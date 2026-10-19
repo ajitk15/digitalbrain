@@ -49,6 +49,15 @@ case "$REDIS" in
     *:*) ;;
     *) echo "entrypoint: DIGITAL_BRAIN_REDIS must be host:port." >&2; exit 1 ;;
 esac
+# An OTLP/HTTP collector as host:port (docker-compose.observability.yaml runs
+# one). Set, traces and metrics go to it over https, its certificate issued by
+# the same CA as Postgres's. Unset, nothing is sent and the SDK is never loaded.
+OTEL="${DIGITAL_BRAIN_OTEL:-}"
+case "$OTEL" in
+    ""|*[!A-Za-z0-9.:-]*) [ -z "$OTEL" ] || { echo "entrypoint: DIGITAL_BRAIN_OTEL must be host:port." >&2; exit 1; } ;;
+    *:*) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_OTEL must be host:port." >&2; exit 1 ;;
+esac
 
 # ------------------------------------------------------------- configuration
 # An operator's own file wins if one is mounted. Otherwise it is rendered from
@@ -165,6 +174,14 @@ else
             echo "host = \"${REDIS%%:*}\""
             echo "port = ${REDIS##*:}"
             echo 'tls = true'
+            echo 'ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"'
+        fi
+        if [ -n "$OTEL" ]; then
+            # Ids and timings only (telemetry.ATTRIBUTES); a collector's
+            # credential, if it needs one, is the mounted otel_authorization.
+            echo ''
+            echo '[otel]'
+            echo "endpoint = \"https://$OTEL\""
             echo 'ca_certificate = "/var/lib/digitalbrain/pgcerts/ca.crt"'
         fi
     } > "$CONFIG.$$"
