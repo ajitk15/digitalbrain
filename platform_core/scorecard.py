@@ -255,7 +255,9 @@ def convert(path):
 def jira_payload():
     """The repository's Jira export, keyed and titled as the live demo site has them."""
     export = json.loads((KIT / "jira-export.json").read_text(encoding="utf-8"))
-    created = json.loads((KIT / "jira-created.json").read_text(encoding="utf-8"))["issues"]
+    # Frozen here, not read from a demo run's jira-created.json, which is gitignored
+    # and names whatever keys the operator's own Jira handed out.
+    created = json.loads((BENCH / "jira-keys.json").read_text(encoding="utf-8"))["issues"]
     issues = []
     for issue in export["issues"]:
         care = issue["key"]

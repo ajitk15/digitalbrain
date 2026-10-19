@@ -10,6 +10,7 @@ What the platform is measured against, and what it measured.
 | `phi-samples.json` | Labelled text for the personal-data scan. Synthetic values only. |
 | `ontology-samples.json` | Labelled relationship phrasings and name pairs for the ontology. |
 | `document-types.json` | What a person would call each CarePath document, for `document_types`. |
+| `jira-keys.json` | The keys the demo Jira gave the CarePath tickets, frozen so the scorecard imports them under the names the baseline was measured with. |
 | `drift-pack.json` | The frozen inputs `manage.py llm_drift` sends to a model. |
 | `typing-pack.json` | Documents the rules leave as Other, labelled by a person, that `manage.py typing_pack` sends to the Document typing model. |
 | `typing/` | Recorded typing-pack runs, one file per run, named by model. |
