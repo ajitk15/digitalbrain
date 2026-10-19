@@ -65,6 +65,19 @@ wondering why your change does nothing.
 
 ## Development runs production's services
 
+The Hostinger VPS is now the hosted demonstration, replacing the local demo.
+`docker-compose.yaml` and the scale overlay build the `demo` Docker target and
+set `DIGITAL_BRAIN_DEMONSTRATION=1`. This renders production mode with
+`demonstration = true`, allowing reset and Code Factory local write/tests and
+enabling the ServiceOps test workbench. All transport, cookie, scanner and
+database security remains production-grade; host Claude login is still refused.
+`scripts/init_vps_demo.py` seeds the persistent CarePath workspace once, keeping
+approved edits over redeploys. Its `.venv` points to the image's locked Linux
+test environment. `scripts/rebuild_demo.py` accepts a declared hosted demo,
+validates rather than rewrites its config, and prompts for new-account passwords.
+See `deploy/README.md` for setup and credentials. Statements below restricting
+reset/local delivery to development have this explicit demonstration exception.
+
 `start-all.cmd` brings up `docker-compose.dev.yaml` (project `digitalbrain-dev`) before
 anything else: PostgreSQL 16 on 127.0.0.1:5442, Redis 7.4 over TLS on 6390 and a ClamAV
 daemon on 3310 - production's images, TLS from a CA made in a volume (only `ca.crt` leaves,

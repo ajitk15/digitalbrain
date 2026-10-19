@@ -2,6 +2,64 @@
 
 For `srv1874861.hstgr.cloud` (200.141.11.23), serving `ajitconnect.in`.
 
+## Hosted demo on this VPS
+
+This deployment replaces the local demo. Both Compose configurations select
+the Dockerfile's `demo` target and set `DIGITAL_BRAIN_DEMONSTRATION=1` on every
+application service. The entrypoint renders `mode = "production"` with
+`demonstration = true`: demo reset, local Code Factory delivery/tests and the
+ServiceOps test workbench are enabled while TLS, secure cookies, scanning and
+the restricted database role remain enabled. A mounted configuration wins;
+update an existing mounted file using `production.example.toml` if applicable.
+
+The image contains the demo documents, CarePath source, a locked Linux
+CarePath test environment, Playwright and Chromium. The migration/all-in-one
+container seeds `demo-workspace` once at `/var/lib/digitalbrain/demo/carepath`.
+Redeploys update the image's test environment and preserve edits to that source.
+Back up this volume with the database; do not delete it to upgrade the image.
+The ServiceOps workbench runs its fixed suites in a disposable SQLite database
+with its own configuration and signing key, without live provider credentials.
+
+After deploying, create or refresh the demo from the app container:
+
+```bash
+docker compose exec app python scripts/rebuild_demo.py
+```
+
+It creates ACME, CarePathDev, CarePathOps, `acmeadmin` and, if absent,
+`siteadmin@db.com`. New accounts use a password prompted twice with hidden
+input and checked against the platform password rules. Existing passwords and
+privileges are preserved. The script never writes production configuration or
+`.env`. The reset button is available to a **platform administrator** on the
+organization screen and still requires the organization's exact name.
+
+On the first run, missing credentials are reported. Sign in as the application
+owner `acmeadmin` and use each application's Credentials screen to set
+Claude (API key or setup token), OpenAI for embeddings,
+Jira and ServiceNow. Review AI settings, then rerun the command to finish imports
+and graph generation; this step makes the configured model calls. Credentials
+already entered in the browser survive redeploys in `managed-credentials`.
+The optional read-only `connector-credentials` volume accepts shared connector
+files (`jira`, `servicenow`, `git_read`, `git_write`), owned by uid 10001 with
+mode 0600. Per-application credentials take precedence. No shared file is needed
+when the application's Credentials screen has been used. The developer's Claude
+host login is never used by the VPS.
+
+S3 originals still require `originals_access_key_id` and
+`originals_secret_access_key` files in `platform-secrets`; verify those before
+uploading. No local secret is copied into the image. Check the deployed settings:
+
+```bash
+docker compose exec app python manage.py check --deploy --fail-level WARNING
+docker compose exec app python manage.py queue_status --check
+```
+
+Sign in as the platform administrator to verify reset visibility. In CarePathDev,
+verify the server folder is indexed and an approved Code Factory change can be
+written and tested. In CarePathOps, run the ServiceOps test workbench and require
+actual browser results with no skipped coverage. Perform any reset on disposable
+demo work only; the script can reload the sources afterward.
+
 `docs/index.html#infrastructure` is the general procedure and the authority on why each rule
 exists. This is the specific one, and it differs in ways worth knowing.
 

@@ -52,7 +52,7 @@ RUN set -eu; \
     rm -rf /tmp/build-secrets /tmp/build.toml
 
 # ------------------------------------------------------------------ runtime
-FROM python:${PYTHON_VERSION} AS runtime
+FROM python:${PYTHON_VERSION} AS runtime-base
 
 # clamav supplies clamscan, which processing.py invokes with
 # --fail-if-cvd-older-than=7: signatures older than a week fail the scan closed
@@ -87,8 +87,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DIGITAL_BRAIN_CONFIG=/app/.runtime/production.toml
 
 COPY --from=deps  --chown=root:root /app/.venv       /app/.venv
-COPY --from=static --chown=root:root /app/staticfiles /app/staticfiles
-COPY --chown=root:root . /app
 
 # Written to at runtime: uploaded originals, the event log, and ClamAV's
 # signature database. Everything else stays read-only to the service account.
@@ -96,12 +94,51 @@ RUN set -eu; \
     mkdir -p /app/.runtime /var/lib/clamav /var/lib/digitalbrain/credentials /var/log/clamav /run/secrets; \
     chown -R brain:brain /app/.runtime /var/lib/clamav /var/lib/digitalbrain /var/log/clamav /run/secrets; \
     chmod 700 /var/lib/digitalbrain/credentials; \
-    chmod 700 /run/secrets; \
-    chmod +x /app/deploy/entrypoint.sh
+    chmod 700 /run/secrets
 
-USER brain
 EXPOSE 8000
 
 # tini reaps the Claude CLI subprocesses a run leaves behind; without an init,
 # PID 1 is Python and zombies accumulate across runs.
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/deploy/entrypoint.sh"]
+
+FROM runtime-base AS runtime
+COPY --from=static --chown=root:root /app/staticfiles /app/staticfiles
+COPY --chown=root:root . /app
+RUN chmod +x /app/deploy/entrypoint.sh
+USER brain
+
+# The current Hostinger deployment is the demo. Keep a runtime target above
+# for installations that do not need the demo's browser or sample application.
+FROM deps AS demo-deps
+RUN --mount=type=cache,target=/root/.cache/uv \
+    UV_PROJECT_ENVIRONMENT=/opt/demo-venv uv sync --only-dev --frozen --no-install-project
+
+FROM deps AS carepath-deps
+COPY demo-artifacts/carepath/pyproject.toml demo-artifacts/carepath/uv.lock /carepath/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    UV_PROJECT_ENVIRONMENT=/opt/carepath-venv uv sync --project /carepath \
+      --frozen --no-install-project
+
+FROM runtime-base AS demo-browser
+COPY --from=demo-deps /opt/demo-venv /opt/demo-venv
+COPY --from=carepath-deps /opt/carepath-venv /opt/carepath-venv
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright \
+    DIGITAL_BRAIN_BROWSER_CHANNEL=chromium
+RUN printf '/opt/demo-venv/lib/python3.12/site-packages\n' \
+      > /app/.venv/lib/python3.12/site-packages/demo.pth \
+    && python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /opt/playwright \
+    && rm -rf /var/lib/apt/lists/*
+
+# Source changes do not invalidate the browser/dependency installation above.
+FROM demo-browser AS demo
+COPY --from=static --chown=root:root /app/staticfiles /app/staticfiles
+COPY --chown=root:root . /app
+COPY demo-artifacts/docs /opt/digitalbrain/demo-seed/docs
+COPY demo-artifacts/carepath /opt/digitalbrain/demo-seed/carepath
+RUN chmod +x /app/deploy/entrypoint.sh \
+    && mkdir -p /var/lib/digitalbrain/demo /var/lib/digitalbrain/connectors \
+    && chown brain:brain /var/lib/digitalbrain/demo /var/lib/digitalbrain/connectors \
+    && chmod 700 /var/lib/digitalbrain/demo /var/lib/digitalbrain/connectors
+USER brain

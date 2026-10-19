@@ -1,6 +1,8 @@
 """Test workbench authorization, queue lifecycle and failure accounting."""
 
 from datetime import timedelta
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase, override_settings
@@ -67,3 +69,35 @@ class TestWorkbenchTests(TestCase):
     def test_disabled_execution_is_not_queued(self):
         self.assertEqual(self.client.post(self.url, {"suite": "e2e"}).status_code, 403)
         self.assertFalse(ServiceOpsTestRun.objects.exists())
+
+    def test_child_suite_has_its_own_config_and_no_live_credentials(self):
+        import json
+        import tomllib
+
+        from platform_core.serviceops_testing import execute_test
+
+        run = queue_test(self.owner, self.app.pk, "e2e")
+
+        def launch(command, **kwargs):
+            env = kwargs["env"]
+            self.assertNotIn("ANTHROPIC_API_KEY", env)
+            config = tomllib.loads(Path(env["DIGITAL_BRAIN_CONFIG"]).read_text())
+            self.assertEqual(config["mode"], "development")
+            self.assertNotIn("database", config)
+            self.assertEqual(
+                config["secret_directory"], Path(env["SERVICEOPS_TEST_DIRECTORY"]).as_posix()
+            )
+            self.assertTrue((Path(config["secret_directory"]) / "django_secret_key").is_file())
+            self.assertEqual(env["DIGITAL_BRAIN_BROWSER_CHANNEL"], "chromium")
+            Path(env["SERVICEOPS_TEST_REPORT"]).write_text(json.dumps({
+                "tests": [{"test": "closed-suite", "status": "passed"}],
+                "successful": True, "count": 1,
+            }))
+            return SimpleNamespace(returncode=0)
+
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "must-not-reach-child",
+                                      "DIGITAL_BRAIN_BROWSER_CHANNEL": "chromium"}),
+            patch("platform_core.serviceops_testing.subprocess.run", side_effect=launch),
+        ):
+            self.assertEqual(execute_test(run)[0], "passed")

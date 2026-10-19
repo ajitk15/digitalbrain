@@ -105,6 +105,17 @@ case "$RUNTIME_ROLE" in
 esac
 mkdir -p /app/.runtime
 
+# Demo is an explicit production capability, not development mode. Keep TLS,
+# secure cookies, scanning and the restricted database role in force.
+DEMONSTRATION="${DIGITAL_BRAIN_DEMONSTRATION:-0}"
+case "$DEMONSTRATION" in
+    0|1) ;;
+    *) echo "entrypoint: DIGITAL_BRAIN_DEMONSTRATION must be 0 or 1." >&2; exit 1 ;;
+esac
+if [ "$DEMONSTRATION" = "1" ] && [ "$MIGRATIONS" = "apply" ]; then
+    python scripts/init_vps_demo.py
+fi
+
 if [ -f "$MOUNTED" ]; then
     cp "$MOUNTED" "$CONFIG.$$" && mv "$CONFIG.$$" "$CONFIG"
     cp "$CONFIG" "$OWNER_CONFIG.$$" && mv "$OWNER_CONFIG.$$" "$OWNER_CONFIG"
@@ -126,6 +137,14 @@ else
 
     {
         echo 'mode = "production"'
+        if [ "$DEMONSTRATION" = "1" ]; then
+            echo 'demonstration = true'
+            echo 'allow_demo_reset = true'
+            echo 'code_factory_local_write = true'
+            echo 'code_factory_local_tests = true'
+            echo 'code_graph_local_roots = ["/var/lib/digitalbrain/demo"]'
+            echo 'connector_secret_directory = "/var/lib/digitalbrain/connectors"'
+        fi
         echo "hosts = [${hosts%, }]"
         echo "csrf_origins = [${origins%, }]"
         echo 'secret_directory = "/run/secrets"'

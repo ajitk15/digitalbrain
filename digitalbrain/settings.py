@@ -15,7 +15,6 @@ from .configuration import (
 BASE_DIR = ROOT
 CONFIG = load_config()
 PRODUCTION = CONFIG["mode"] == "production"
-SERVICEOPS_TEST_AUTOMATION = not PRODUCTION
 DOCUMENT_AUTO_CONVERT = True
 DOCUMENT_SCAN_REQUIRED = PRODUCTION or CONFIG.get("scan_documents", False)
 #: Keep an uploaded file after it converts. On unless written down as false; when
@@ -48,10 +47,18 @@ WEB_SERVER = web_server(CONFIG)
 #: author approved it; write `allow_self_approval = false` where two people
 #: really do review every change.
 ALLOW_SELF_APPROVAL = self_approval_allowed(CONFIG)
+#: A deployment that declares itself a demonstration instance (`demonstration =
+#: true`): production in every other respect, but it may offer the reset, and
+#: Code Factory's local write and tests, which production otherwise refuses.
+DEMONSTRATION = bool(CONFIG.get("demonstration", False))
+#: Where the demonstration powers below may be honoured: development, or a
+#: production deployment that declared itself a demonstration instance.
+DEMONSTRATION_ALLOWED = DEMONSTRATION or not PRODUCTION
+SERVICEOPS_TEST_AUTOMATION = DEMONSTRATION_ALLOWED
 #: Let a platform administrator empty an organization between demonstrations.
 #: Off unless written down, and `load_config` has already refused it under
-#: production; forced off here as well.
-ALLOW_DEMO_RESET = bool(CONFIG.get("allow_demo_reset", False)) and not PRODUCTION
+#: production unless the instance is a demonstration; forced off here as well.
+ALLOW_DEMO_RESET = bool(CONFIG.get("allow_demo_reset", False)) and DEMONSTRATION_ALLOWED
 # Internal hosts an operator permits link import to reach. Everything else is
 # held to the public-internet rule in platform_core/fetching.py.
 FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", [])]
@@ -62,12 +69,18 @@ FETCH_ALLOW_HOSTS = [h.strip().lower() for h in CONFIG.get("fetch_allow_hosts", 
 CODE_GRAPH_LOCAL_ROOTS = [r.strip() for r in CONFIG.get("code_graph_local_roots", [])]
 # Let Code Factory write an approved, prepared change into the server folder a
 # local Code Graph repository was read from. Off unless written down, and
-# refused under production by load_config; forced off there as well.
-CODE_FACTORY_LOCAL_WRITE = bool(CONFIG.get("code_factory_local_write", False)) and not PRODUCTION
+# refused under production (unless a demonstration) by load_config; forced off
+# there as well.
+CODE_FACTORY_LOCAL_WRITE = (
+    bool(CONFIG.get("code_factory_local_write", False)) and DEMONSTRATION_ALLOWED
+)
 # Let a person run a folder's own test suite after Code Factory wrote into it,
 # with the folder's own .venv. That executes code on this server, so it is off
-# unless written down and refused under production; forced off there as well.
-CODE_FACTORY_LOCAL_TESTS = bool(CONFIG.get("code_factory_local_tests", False)) and not PRODUCTION
+# unless written down and refused under production unless a demonstration;
+# forced off there as well.
+CODE_FACTORY_LOCAL_TESTS = (
+    bool(CONFIG.get("code_factory_local_tests", False)) and DEMONSTRATION_ALLOWED
+)
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

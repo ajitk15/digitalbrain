@@ -26,12 +26,20 @@ with tempfile.TemporaryDirectory() as temporary:
     )
     # Both configurations the entrypoint renders: the one everything runs as
     # (the runtime role), and the owner's copy the migrate step reads.
-    for name, database in [
+    configurations = [
         ("runtime", 'user="test_runtime"\npassword_secret="database_runtime_password"\n'),
         ("owner", 'user="test"\nruntime_user="test_runtime"\n'),
+    ]
+    for name, database in configurations + [
+        (f"demo-{name}", database) for name, database in configurations
     ]:
         config = directory / f"production-{name}.toml"
-        config.write_text(base + database)
+        demo = (
+            'demonstration = true\nallow_demo_reset = true\n'
+            'code_factory_local_write = true\ncode_factory_local_tests = true\n'
+            if name.startswith("demo-") else ""
+        )
+        config.write_text(base.replace("[database]", demo + "[database]") + database)
         env = os.environ.copy()
         env["DIGITAL_BRAIN_CONFIG"] = str(config)
         subprocess.run(

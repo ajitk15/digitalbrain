@@ -21,6 +21,7 @@ htmlcov
 # is a development file whose mode is "development".
 .env
 config/local.toml
+config/local.runtime.toml
 
 # Not part of the running platform.
 demo-artifacts
@@ -32,3 +33,22 @@ start-all.cmd
 start-all.ps1
 stop-all.cmd
 stop-all.ps1
+
+# Only the demo corpus and sample application, never presentations or local venvs.
+!demo-artifacts/
+demo-artifacts/*
+!demo-artifacts/docs/
+!demo-artifacts/docs/**
+!demo-artifacts/carepath/
+!demo-artifacts/carepath/**
+# Frozen offline scorecard inputs, without local Jira issue ids or tooling.
+!demo-artifacts/demo-kit/
+demo-artifacts/demo-kit/*
+!demo-artifacts/demo-kit/benchmark-questions.json
+!demo-artifacts/demo-kit/jira-export.json
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.coverage
+**/*.pyc

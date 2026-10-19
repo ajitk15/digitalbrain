@@ -202,3 +202,26 @@ class RebuildDemoTests(TestCase):
         with override_settings(PRODUCTION=True):
             self.assertEqual(self.demo.main(), 1)
         self.assertFalse(User.objects.filter(username="acmeadmin").exists())
+
+    @override_settings(PRODUCTION=True, DEMONSTRATION=True, ALLOW_DEMO_RESET=True,
+                       CODE_FACTORY_LOCAL_WRITE=True, CODE_FACTORY_LOCAL_TESTS=True,
+                       SERVICEOPS_TEST_AUTOMATION=True)
+    def test_hosted_demo_prompts_without_rewriting_deployed_config(self):
+        original = self.config.read_bytes()
+        password = "HostedDemo!ChooseYourOwn2026"
+        with patch("getpass.getpass", return_value=password):
+            self.build()
+        self.assertEqual(self.config.read_bytes(), original)
+        self.assertFalse((self.config.parent / ".env").exists())
+        for username in ("acmeadmin", "siteadmin@db.com"):
+            self.assertTrue(User.objects.get(username=username).check_password(password))
+
+    @override_settings(PRODUCTION=True, DEMONSTRATION=True, ALLOW_DEMO_RESET=True,
+                       CODE_FACTORY_LOCAL_WRITE=True, CODE_FACTORY_LOCAL_TESTS=True,
+                       SERVICEOPS_TEST_AUTOMATION=True)
+    def test_mismatched_hosted_password_creates_no_demo_data(self):
+        with patch("getpass.getpass", side_effect=["HostedDemo!ChooseYourOwn2026", "different"]):
+            with self.assertRaisesMessage(ValueError, "did not match"):
+                self.demo.main()
+        self.assertFalse(Organization.objects.exists())
+        self.assertFalse(User.objects.filter(username="acmeadmin").exists())

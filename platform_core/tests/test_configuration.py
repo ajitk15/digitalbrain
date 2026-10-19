@@ -221,3 +221,15 @@ class DemoResetConfigurationTests(SimpleTestCase):
     def test_it_must_be_a_boolean(self):
         with self.assertRaises(ImproperlyConfigured):
             self.load(f'mode = "development"\n{self.BASE}allow_demo_reset = "yes"\n')
+
+    def test_hosted_demo_accepts_demo_powers_but_never_host_login(self):
+        base = f'mode = "production"\n{self.BASE}demonstration = true\n'
+        for setting in ("allow_demo_reset", "code_factory_local_write", "code_factory_local_tests"):
+            with self.subTest(setting=setting):
+                self.assertTrue(self.load(base + f"{setting} = true\n")[setting])
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(base + "claude_use_host_login = true\n")
+
+    def test_demonstration_requires_a_boolean(self):
+        with self.assertRaises(ImproperlyConfigured):
+            self.load(f'mode = "production"\n{self.BASE}demonstration = "true"\n')

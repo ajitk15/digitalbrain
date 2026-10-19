@@ -2,6 +2,7 @@
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -49,7 +50,7 @@ def owner_access(user, pk):
 def queue_test(user, pk, suite):
     app, _ = owner_access(user, pk)
     if not settings.SERVICEOPS_TEST_AUTOMATION:
-        raise PermissionDenied("Test automation is available on development instances only.")
+        raise PermissionDenied("Test automation is available on demonstration instances only.")
     if suite not in SUITES:
         raise ValueError("Choose one of the available test suites.")
     with transaction.atomic():
@@ -116,7 +117,22 @@ def execute_test(run):
         allowed_env = ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC",
                        "LOCALAPPDATA", "PROGRAMFILES", "PROGRAMFILES(X86)")
         env = {key: value for key, value in os.environ.items() if key.upper() in allowed_env}
+        # A container has no local.toml. Give the child its own signing key and
+        # configuration, never the live PostgreSQL connection or credentials.
+        scratch = Path(directory)
+        key = scratch / "django_secret_key"
+        key.write_text(secrets.token_urlsafe(64), encoding="utf-8")
+        key.chmod(0o600)
+        config = scratch / "test.toml"
+        config.write_text(
+            'mode = "development"\nhosts = ["localhost", "127.0.0.1", "testserver"]\n'
+            f'secret_directory = {json.dumps(scratch.as_posix())}\n', encoding="utf-8"
+        )
+        for name in ("DIGITAL_BRAIN_BROWSER_CHANNEL", "PLAYWRIGHT_BROWSERS_PATH"):
+            if name in os.environ:
+                env[name] = os.environ[name]
         env.update(SERVICEOPS_TEST_DIRECTORY=directory, SERVICEOPS_TEST_REPORT=str(receipt),
+                   DIGITAL_BRAIN_CONFIG=str(config),
                    DIGITAL_BRAIN_REQUIRE_BROWSER="1", PYTHONIOENCODING="utf-8")
         command = [sys.executable, str(settings.BASE_DIR / "manage.py"), "test",
                    *SUITES[run.suite]["labels"], "--noinput", "--verbosity=1",
@@ -129,7 +145,7 @@ def execute_test(run):
         except subprocess.TimeoutExpired:
             return "failed", [], "The suite exceeded its ten-minute limit."
         if not receipt.is_file():
-            return "blocked", [], "Suite could not start. Check Python, Playwright and Chrome."
+            return "blocked", [], "Suite could not start. Check Python, Playwright and the browser."
         data = json.loads(receipt.read_text(encoding="utf-8"))
         rows = data["tests"]
         skipped = any(row["status"] == "skipped" for row in rows)

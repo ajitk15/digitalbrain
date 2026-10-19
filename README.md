@@ -9,6 +9,11 @@ against its live source. Django 5.2, Python 3.12, server-rendered.
 components, engineering, infrastructure, marketing). Rules for changing code:
 [`CLAUDE.md`](CLAUDE.md).
 
+The hosted demonstration runs on the Hostinger VPS. Docker builds include the
+demo reset, CarePath workspace and test/browser dependencies. See
+[`deploy/README.md`](deploy/README.md#hosted-demo-on-this-vps) for deployment,
+first-time demo setup and credentials.
+
 ## First run on a new machine
 
 **Double-click `start-all.cmd`.** That is the whole thing — no arguments, no

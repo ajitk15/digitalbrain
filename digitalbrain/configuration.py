@@ -58,6 +58,7 @@ def load_config():
         "web_server",
         "allow_self_approval",
         "allow_demo_reset",
+        "demonstration",
         "fetch_allow_hosts",
         "code_graph_local_roots",
         "code_factory_local_write",
@@ -132,25 +133,36 @@ def load_config():
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:
         raise ImproperlyConfigured("allow_self_approval must be a boolean.")
+    if type(config.get("demonstration", False)) is not bool:
+        raise ImproperlyConfigured("demonstration must be a boolean.")
+    # A production deployment that says it is a demonstration instance: every
+    # production rule still holds (TLS, the runtime role, secure cookies), but
+    # the three demonstration powers below are accepted, because a public demo
+    # of Code Factory and of resetting between tellings needs them. Real work
+    # never runs on such an instance - that is what declaring it means.
+    # claude_use_host_login is not one of them: it spends someone else's account.
+    production = config.get("mode") == "production" and not config.get("demonstration")
     if type(config.get("code_factory_local_write", False)) is not bool:
         raise ImproperlyConfigured("code_factory_local_write must be a boolean.")
-    if config.get("code_factory_local_write") and config.get("mode") == "production":
+    if config.get("code_factory_local_write") and production:
         # Reading a folder is opted into by naming roots; writing source files
         # into one is a stronger power, and a production server's disk is not
         # where a reviewed change belongs - a pull request is.
         raise ImproperlyConfigured(
             "code_factory_local_write is for development and demonstration instances "
-            "and cannot be set in production. Deliver through a pull request instead."
+            "and cannot be set in production unless demonstration = true. Deliver "
+            "through a pull request instead."
         )
     if type(config.get("code_factory_local_tests", False)) is not bool:
         raise ImproperlyConfigured("code_factory_local_tests must be a boolean.")
-    if config.get("code_factory_local_tests") and config.get("mode") == "production":
+    if config.get("code_factory_local_tests") and production:
         # Running a folder's tests runs its code - here, code a model just
         # wrote - with this server's privileges. A pull request's CI runs it in
         # somebody else's sandbox, which is where it belongs in production.
         raise ImproperlyConfigured(
             "code_factory_local_tests is for development and demonstration instances "
-            "and cannot be set in production. Let the repository's CI run the tests."
+            "and cannot be set in production unless demonstration = true. Let the "
+            "repository's CI run the tests."
         )
     if type(config.get("allow_demo_reset", False)) is not bool:
         raise ImproperlyConfigured("allow_demo_reset must be a boolean.")
@@ -229,13 +241,14 @@ def load_config():
             "claude_use_host_login is a development convenience and cannot be set in "
             "production. Mount a per-application API key or OAuth token instead."
         )
-    if config.get("allow_demo_reset") and config.get("mode") == "production":
+    if config.get("allow_demo_reset") and production:
         # Nothing else in this platform deletes an application, and a button
         # that empties a workspace has no business on a deployment holding work
         # somebody depends on.
         raise ImproperlyConfigured(
             "allow_demo_reset is for demonstration instances and cannot be set in "
-            "production. Disable an application instead; nothing here deletes one."
+            "production unless demonstration = true. Disable an application instead; "
+            "nothing here deletes one."
         )
     # `allow_self_approval` is deliberately NOT refused under production, unlike
     # its neighbours above. A single-operator deployment has nobody to ask, and

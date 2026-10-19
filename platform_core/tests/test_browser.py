@@ -67,11 +67,13 @@ def browser_or_skip():
         unavailable("Playwright is not installed: uv sync --group dev.")
     driver = sync_playwright().start()
     try:
-        # The Chrome already on the machine: no separate browser download.
-        browser = driver.chromium.launch(channel="chrome", headless=True)
+        # Desktop uses installed Chrome; the demo image ships Chromium.
+        browser = driver.chromium.launch(
+            channel=os.environ.get("DIGITAL_BRAIN_BROWSER_CHANNEL", "chrome"), headless=True
+        )
     except Exception as failure:
         driver.stop()
-        unavailable(f"Chrome could not be started for browser tests: {failure}")
+        unavailable(f"Browser could not be started for browser tests: {failure}")
     return driver, browser
 
 

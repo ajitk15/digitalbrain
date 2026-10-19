@@ -23,8 +23,9 @@ Run by `start-all.cmd -Demo`, or directly:
     .venv/Scripts/python.exe scripts/rebuild_demo.py
 
 Idempotent: a second run reports what already exists and creates nothing new.
-A password is set only when its user is created, never reset, and the whole
-script refuses to run on a production instance. Nothing here deletes anything.
+A password is set only when its user is created, never reset. Production must
+declare demonstration = true and prompts for a strong initial password; the
+published password below is only for development. Nothing here deletes anything.
 The only model call is the one knowledge-graph generation per application
 that step 9 asks for, once; a re-run does not repeat it.
 """
@@ -66,8 +67,14 @@ from platform_core.services import (  # noqa: E402
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS_FOLDER = ROOT / "demo-artifacts" / "docs"
-CODE_FOLDER = ROOT / "demo-artifacts" / "carepath"
+DOCS_FOLDER = (
+    Path("/opt/digitalbrain/demo-seed/docs") if settings.PRODUCTION
+    else ROOT / "demo-artifacts" / "docs"
+)
+CODE_FOLDER = (
+    Path("/var/lib/digitalbrain/demo/carepath") if settings.PRODUCTION
+    else ROOT / "demo-artifacts" / "carepath"
+)
 
 #: The demo's sign-in, for a demonstration instance on this machine only.
 DEMO_USER = "acmeadmin"
@@ -200,6 +207,18 @@ def demo_settings():
     """
     import tomllib
 
+    if settings.PRODUCTION:
+        # The entrypoint owns production configuration. Never append keys after
+        # its [database]/[redis] tables or rewrite it beneath another container.
+        required = ("DEMONSTRATION", "ALLOW_DEMO_RESET", "CODE_FACTORY_LOCAL_WRITE",
+                    "CODE_FACTORY_LOCAL_TESTS", "SERVICEOPS_TEST_AUTOMATION")
+        if not all(getattr(settings, name, False) for name in required):
+            raise ValueError("Deploy with DIGITAL_BRAIN_DEMONSTRATION=1 before building the demo.")
+        if not CODE_FOLDER.is_dir() or not DOCS_FOLDER.is_dir():
+            raise ValueError("The demo image and persistent CarePath workspace are required.")
+        print("found   deployed demonstration configuration (left unchanged)")
+        return
+
     path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config" / "local.toml"))
     current = tomllib.loads(path.read_text(encoding="utf-8"))
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -276,7 +295,7 @@ def application(owner, product, name, purpose, ai_purpose):
     return app
 
 
-def site_admin():
+def site_admin(password=None):
     """siteadmin@db.com as platform administrator, created once and never reset.
 
     Never elevates an account that already exists: bootstrap_admin refuses the
@@ -286,34 +305,40 @@ def site_admin():
 
     user = User.objects.filter(username=SITE_ADMIN).first()
     if user is None:
+        if settings.PRODUCTION and not password:
+            raise ValueError("A password is required to create a VPS demo administrator.")
         user = User(username=SITE_ADMIN, is_platform_admin=True)
-        user.set_password(DEMO_PASSWORD)
+        user.set_password(password or DEMO_PASSWORD)
         user.save()
         AuditEvent.objects.create(
             actor=user, action="platform.admin_bootstrapped", resource_id=str(user.pk)
         )
-        print(f"created platform administrator {SITE_ADMIN}, password {DEMO_PASSWORD}")
+        print(f"created platform administrator {SITE_ADMIN}")
     elif user.is_platform_admin:
         print(f"found   platform administrator {SITE_ADMIN} (password left as it is)")
     else:
         print(f"skipped {SITE_ADMIN} exists but is not a platform administrator; left as it is")
+    if settings.PRODUCTION:
+        return
     env = ROOT / ".env"
     if not env.exists():
         env.write_text(f"SITE_ADMIN_USER_ID={SITE_ADMIN}\n", encoding="utf-8")
         print(f"created .env naming {SITE_ADMIN} as the site administrator")
 
 
-def demo_user():
+def demo_user(password=None):
     user = User.objects.filter(username=DEMO_USER).first()
     if user is not None:
         print(f"found   user {DEMO_USER} (password left as it is)")
         return user
     user = User(username=DEMO_USER)
+    if settings.PRODUCTION and not password:
+        raise ValueError("A password is required to create a VPS demo account.")
     # The demo's published password, set directly rather than through the
     # platform's password rules.
-    user.set_password(DEMO_PASSWORD)
+    user.set_password(password or DEMO_PASSWORD)
     user.save()
-    print(f"created user {DEMO_USER}, password {DEMO_PASSWORD}")
+    print(f"created user {DEMO_USER}")
     return user
 
 
@@ -518,12 +543,25 @@ def import_tickets(owner, app, missing):
 
 
 def main(argv=None):
-    if settings.PRODUCTION:
+    if settings.PRODUCTION and not settings.DEMONSTRATION:
         print("Refusing to build the demo on a production instance.")
         return 1
 
     step(0, "Settings")
     demo_settings()
+    password = None
+    new_accounts = User.objects.filter(username__in=[DEMO_USER, SITE_ADMIN]).count() < 2
+    if settings.PRODUCTION and new_accounts:
+        from getpass import getpass
+
+        from django.contrib.auth.password_validation import validate_password
+
+        # Interactive, hidden input: never an environment variable or a known
+        # public password. Existing accounts are never changed or elevated.
+        password = getpass("Initial password for new demo accounts: ")
+        validate_password(password, User(username=DEMO_USER))
+        if getpass("Confirm initial password: ") != password:
+            raise ValueError("Passwords did not match; no demo data was created.")
     step(1, "Organization")
     org, made = Organization.objects.get_or_create(name="ACME")
     print(f"{'created' if made else 'found  '} organization ACME")
@@ -536,7 +574,7 @@ def main(argv=None):
 
     # The user comes first in the code because the applications need an owner;
     # it is reported as step 6, where it belongs in the list.
-    owner = demo_user()
+    owner = demo_user(password)
     OrganizationMember.objects.update_or_create(
         organization=org, user=owner, defaults={"is_admin": True}
     )
@@ -546,7 +584,7 @@ def main(argv=None):
         built[name] = application(owner, product, name, purpose, ai_purpose)
     step(6, "Users")
     print(f"{DEMO_USER} is owner (administrator) of ACME and owns CarePathDev and CarePathOps")
-    site_admin()
+    site_admin(password)
 
     step(7, "Connectors")
     load_connectors(owner, built)

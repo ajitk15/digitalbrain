@@ -53,6 +53,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: demo
     restart: "no"
     depends_on:
       postgres:
@@ -63,6 +64,7 @@ services:
         condition: service_completed_successfully
     environment:
       DIGITAL_BRAIN_ROLE: "migrate"
+      DIGITAL_BRAIN_DEMONSTRATION: "1"
       # The same settings the web container renders, so `check --deploy` here
       # judges the configuration the web container is about to serve with.
       DIGITAL_BRAIN_HOSTS: "ajitconnect.in,www.ajitconnect.in"
@@ -77,6 +79,8 @@ services:
       - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials
+      - demo-workspace:/var/lib/digitalbrain/demo
+      - connector-credentials:/var/lib/digitalbrain/connectors:ro
       - app-runtime:/app/.runtime
 
   app:
@@ -98,6 +102,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: demo
     restart: unless-stopped
     depends_on:
       postgres:
@@ -110,6 +115,7 @@ services:
         condition: service_completed_successfully
     environment:
       DIGITAL_BRAIN_ROLE: "worker"
+      DIGITAL_BRAIN_DEMONSTRATION: "1"
       DIGITAL_BRAIN_CLAMD: "clamd:3310"
       DIGITAL_BRAIN_REDIS: "redis:6379"
       # Uploaded originals in S3, as in development; its keys are the mounted
@@ -125,6 +131,8 @@ services:
       - platform-secrets:/run/secrets
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials
+      - demo-workspace:/var/lib/digitalbrain/demo
+      - connector-credentials:/var/lib/digitalbrain/connectors:ro
       # The rendered configuration. The sandbox reads uploaded originals from
       # the same volume; one host for all until originals move to object storage.
       - app-runtime:/app/.runtime
@@ -144,6 +152,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: demo
     restart: unless-stopped
     depends_on:
       postgres:
@@ -156,6 +165,7 @@ services:
         condition: service_completed_successfully
     environment:
       DIGITAL_BRAIN_ROLE: "worker"
+      DIGITAL_BRAIN_DEMONSTRATION: "1"
       DIGITAL_BRAIN_LANES: "intake,code-graph,factory"
       # Threads for a lane: each claims its own row and holds a database
       # connection while it works, so count them against max_connections.
@@ -174,6 +184,8 @@ services:
       - platform-secrets:/run/secrets:ro
       - postgres-certs:/var/lib/digitalbrain/pgcerts:ro
       - managed-credentials:/var/lib/digitalbrain/credentials:ro
+      - demo-workspace:/var/lib/digitalbrain/demo
+      - connector-credentials:/var/lib/digitalbrain/connectors:ro
       # Uploaded originals to convert, and the rendered configuration.
       - app-runtime:/app/.runtime
     read_only: true
