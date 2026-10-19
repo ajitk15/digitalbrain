@@ -232,8 +232,9 @@ day and never show that anything had been fixed.
 `connectors.prune` retires knowledge for records a connector no longer returns, and
 only when all three hold: `prune_missing` is ticked, the result is complete
 (`connector_kinds.complete`: a plain list at `MAX_RECORDS` is a page, not an answer;
-Jira follows its own paging - `nextPageToken` on Cloud, `startAt` on Data Center - for
-up to `MAX_PAGES` and returns a `Page` saying whether it reached the last one), and no other enabled connector
+every kind follows its source's paging - Jira's is `nextPageToken` on Cloud, `startAt`
+on Data Center - for up to `MAX_PAGES` and returns a `Page` saying whether it reached
+the last one; a read since a high-water mark never prunes), and no other enabled connector
 shares the same `Kind.namespace` (two connectors onto one Jira with different
 filters would otherwise retire each other's imports). Retiring is `active=False`,
 the same supersede an updated record performs - nothing is deleted. Leave it
@@ -260,7 +261,10 @@ filter, and so does a schedule whose last full read (`last_full_read_at`) is
 the mark is an ordinary answer, not an empty filter. Saving a different filter
 clears both, since the mark said nothing about the new set.
 
-`graph/search/` and the MCP server call no model. `utility/api_chat.py` does - it is the
+`graph/search/` and the MCP server call no model: they pass the token's user as
+the viewer and `spend=False` to `graph_citations`, so source permissions apply and
+no question embedding or rerank is paid for, whatever the application has switched
+on (`test_api` pins it). `utility/api_chat.py` does - it is the
 one API surface that spends the application's provider budget - so it is gated on
 the `chat_api` feature switch. It used to be **opt-in**, unticked on the create
 form through `services.OPT_IN_FEATURES`. **That was traded, deliberately, for

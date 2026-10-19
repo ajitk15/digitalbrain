@@ -158,7 +158,9 @@ the reasons behind them). This document explains the product; that file guards i
 <div class="table-wrap"><table><thead><tr><th>File</th><th>Why it stays</th></tr></thead><tbody><tr><td><a href="../CLAUDE.md"><code>../CLAUDE.md</code></a></td><td>Invariants and trade-offs for anyone (human or agent) changing code</td></tr>
 <tr><td><a href="../README.md"><code>../README.md</code></a></td><td>First run on a Windows machine</td></tr>
 <tr><td><a href="../deploy/README.md"><code>../deploy/README.md</code></a></td><td>The specific Coolify deployment</td></tr>
-<tr><td><a href="retrieval-roadmap-plan.md"><code>retrieval-roadmap-plan.md</code></a></td><td>Live plan for retrieval work</td></tr>
+<tr><td><a href="graph-generation-end-to-end.md"><code>graph-generation-end-to-end.md</code></a></td><td>How a source becomes a published graph, stage by stage</td></tr>
+<tr><td><a href="graph-retrieval-end-to-end.md"><code>graph-retrieval-end-to-end.md</code></a></td><td>How a question becomes a cited answer, stage by stage</td></tr>
+<tr><td><a href="retrieval-roadmap-plan.md"><code>retrieval-roadmap-plan.md</code></a></td><td>How retrieval was measured into its present shape</td></tr>
 <tr><td><a href="../benchmarks/README.md"><code>../benchmarks/README.md</code></a></td><td>What each benchmark file is</td></tr>
 <tr><td><a href="../demo-artifacts/README.md"><code>../demo-artifacts/</code></a></td><td>CarePath demo corpus. <strong>Also scorecard test data, so do not delete it</strong></td></tr></tbody></table></div>
 <h3 id="start--diagrams"><a class="anchor" href="#start--diagrams">#</a>Diagrams</h3>
@@ -555,15 +557,26 @@ it. <code>CLAUDE.md</code> records why each one exists and which trades were mad
 <tr><td>Rules, not models, build the ops graph</td><td>Nothing a model says is written to either graph without a verified quote</td><td><code>ops_graph.py</code></td></tr></tbody></table></div>
 <h3 id="architecture--7-scaling-posture-as-built"><a class="anchor" href="#architecture--7-scaling-posture-as-built">#</a>7. Scaling posture (as built)</h3>
 <ul>
-<li><strong>One process by default.</strong> The chat stop signal and the API rate limit (120
-requests / 60 s per token) are process-local.</li>
-<li><code>shared_streams = true</code> adds a <code>StreamLease</code> row so Stop and &quot;is it live?&quot; work
-across processes. The rate limit still counts per process.</li>
+<li><strong>One process by default; more with Redis.</strong> Without <code>[redis]</code> the chat stop
+signal and the API rate limit (120 requests / 60 s per token) are process-local, and
+<code>shared_streams = true</code> adds a <code>StreamLease</code> row so Stop and &quot;is it live?&quot; work
+across processes. With <code>[redis]</code> an answer is a Redis stream any web process can
+replay and resume, the rate limit is one Redis counter per token, and the web
+container can run as several replicas (<code>docker-compose.scale.yaml</code>).</li>
+<li><strong>Uvicorn wherever Redis is set</strong>, waitress otherwise. Under uvicorn a stream
+reader holds no thread: stream views share eight fixed lanes and a process follows up
+to 100 readers (<code>MAX_ASYNC_READERS</code>), measured by <code>manage.py load_streams</code>.</li>
+<li><strong>Web and worker run apart</strong> when asked, every lane but maintenance runs in every
+worker process, and migrations are applied once under a lock.</li>
 <li>Search runs in-process: BM25 in Python, vectors in numpy (float32). There is no
 vector database. pgvector was deliberately left out until a library outgrows
 memory.</li>
-<li>PostgreSQL keyword search uses a GIN full-text index (migration 0073); SQLite
-falls back to substring matching.</li>
+<li>PostgreSQL keyword search uses stored generated <code>tsvector</code> columns with GIN
+indexes (migration 0088), for sources and passages; SQLite falls back to substring
+matching.</li>
+<li>Graph versions are stored as rows (<code>GraphElement</code>) and graph questions are
+answered from them, so retrieval no longer grows with the graph. The structural
+graph is built a source at a time and takes every source.</li>
 </ul>
 
 <h3 id="architecture--architecture-views-in-detail"><a class="anchor" href="#architecture--architecture-views-in-detail">#</a>Architecture views in detail</h3>
@@ -2016,7 +2029,10 @@ API rate limit counts per process. The Compose file runs exactly one app contain
 <tr><td><code>deploy/healthcheck.py</code></td><td>Container health check</td></tr>
 <tr><td>Request log</td><td>JSON: request id, route name, status, duration. <strong>No</strong> query strings, bodies, credentials or exception text (<a href="../platform_core/observability.py"><code>observability.py</code></a>)</td></tr>
 <tr><td>Local</td><td><code>.runtime/events.jsonl</code> (rotates at 5 MB × 3), <code>.runtime/server.log</code>, <code>.runtime/server-error.log</code></td></tr>
-<tr><td>Production</td><td>stdout/stderr, collected by the platform</td></tr></tbody></table></div>
+<tr><td>Production</td><td>stdout/stderr, collected by the platform</td></tr>
+<tr><td><code>manage.py queue_status [--check]</code></td><td>Each lane's waiting work, oldest age and heartbeat: counts and ages, never a record</td></tr>
+<tr><td><code>manage.py slo [--check]</code></td><td>The service-level objectives (<code>slo.py</code>) read from records; <code>deploy/slo-rules.yml</code> is the same registry as Prometheus rules</td></tr>
+<tr><td>Traces and metrics</td><td>Off by default. An <code>[otel]</code> table sends spans and RED metrics to an OTLP/HTTP collector; what either may carry is a closed registry of ids, timings and counts</td></tr></tbody></table></div>
 <h3 id="infrastructure--maintenance"><a class="anchor" href="#infrastructure--maintenance">#</a>Maintenance</h3>
 <ul>
 <li><code>manage.py clearsessions</code> daily.</li>
@@ -2028,13 +2044,19 @@ way to delete an application. It refuses while a run is in flight.</li>
 <h3 id="infrastructure--known-gaps-as-built"><a class="anchor" href="#infrastructure--known-gaps-as-built">#</a>Known gaps (as built)</h3>
 <p>These are not implemented. Do not claim them:</p>
 <ul>
-<li>No enterprise SSO/MFA; local accounts with lockout only.</li>
-<li>No PostgreSQL row-level security. Isolation is enforced by tested application
-policy.</li>
-<li>No OCR for image-only PDFs.</li>
-<li>No live-provider test in CI.</li>
-<li>No load test or published availability SLO.</li>
+<li>No live-provider test in CI. The OpenAI streaming runtime and the Claude Messages
+adapter have not been run against a live account.</li>
+<li>Chat on Claude starts the CLI on the web container's stream thread, outside the
+sandbox the intake, code-graph and factory lanes run in.</li>
+<li>Every container mounts the whole secrets volume, the owner's database password
+included.</li>
+<li>Source-system permissions on answers are Jira only; ServiceNow and SharePoint need
+delegated per-user access.</li>
+<li>Single sign-on is Microsoft Entra ID only, and never reads groups or roles.</li>
 </ul>
+<p>Built since this list was first written: Entra ID single sign-on, PostgreSQL row
+security under the code's own scoping, local OCR, a stream load test
+(<code>manage.py load_streams</code>) and service-level objectives (<code>manage.py slo</code>).</p>
 </section>
 <section id="components-access-and-security" data-group="Components"><header class="section-head"><span class="kicker">Components</span><h1>Access, tenancy & security</h1></header>
 <p>Who can do what, where credentials live, and how the server talks to the outside
@@ -2256,7 +2278,9 @@ answers.</p>
     S --&gt;|contains record| R[record&lt;br/&gt;one table row]
     R --&gt;|column name| V[value&lt;br/&gt;a cell]</pre></figure>
 <p>Each edge carries the source id, line number, the exact line as evidence, and the
-source digest. Bounds: 100 sources, 2,000 records per source, 6,000 nodes. Node ids
+source digest. Bounds: every usable source; 2,000 rows and lines and 6,000 nodes
+<em>per source</em>, so a row's place in the graph depends only on its own source. Each
+source's structure is kept by its digest, so a rebuild reads only what changed. Node ids
 are hashed with the application id, so two applications never share a node.</p>
 <h3 id="components-knowledge-graph--ai-enrichment-paid-requested-only"><a class="anchor" href="#components-knowledge-graph--ai-enrichment-paid-requested-only">#</a>AI enrichment (paid, requested only)</h3>
 <figure class="diagram" tabindex="0" title="Click to enlarge"><pre class="mermaid">sequenceDiagram
@@ -2586,7 +2610,7 @@ offered, returns 404 on add and edit, and <code>sync</code> refuses it.</p>
     end
     S-&gt;&gt;DB: status, count, duration, last_attempt_at</pre></figure>
 <div class="table-wrap"><table><thead><tr><th>Rule</th><th>Why</th><th>Code</th></tr></thead><tbody><tr><td>Records carry a header: <code>Key / Type / Status / Priority / Labels</code>, then the body</td><td>The digest covers status, so a ticket moving to Done is a <strong>change</strong>, not an identical record</td><td><code>connector_kinds.header</code></td></tr>
-<tr><td>At most 100 records per request page and 100,000 chars per record. ServiceNow incidents can take up to 10 pages per sync for a bounded backfill</td><td>Imports stay bounded</td><td><code>MAX_RECORDS</code>, <code>MAX_BODY_CHARACTERS</code>, <code>history_pages</code></td></tr>
+<tr><td>At most 100 records per page, 10 pages per sync and 100,000 chars per record. Every kind follows its system's paging and says whether it reached the last page; one handed its whole list keeps up to 1,000</td><td>Imports stay bounded, and a cut-off read is never mistaken for the whole answer</td><td><code>MAX_RECORDS</code>, <code>MAX_PAGES</code>, <code>MAX_LISTED</code>, <code>Page</code></td></tr>
 <tr><td>Provider text in incident headers is kept on one line</td><td>It cannot pose as another field</td><td><code>incident_header</code></td></tr>
 <tr><td>Imported text is <strong>data, never instruction</strong></td><td>It is quoted and verified like any document</td><td><code>connectors.py</code> docstring</td></tr>
 <tr><td>A ServiceNow incident import also builds the incident&#39;s <code>IncidentProfile</code></td><td>ServiceOps reads profiles</td><td><code>connectors.sync</code></td></tr></tbody></table></div>
@@ -2601,12 +2625,16 @@ offered, returns 404 on add and edit, and <code>sync</code> refuses it.</p>
 (<a href="../platform_core/connectors.py"><code>connectors.SYNC_INTERVALS</code></a>). There is no
 background identity: <strong>revoking the creator&#39;s grant stops the schedule</strong>. An
 unreachable system waits a full interval instead of being retried on every tick.</p>
+<p><strong>A scheduled import reads only what changed.</strong> GitHub and Jira keep a high-water
+mark (<code>Connector.high_water</code>); a scheduled sync reads from five minutes before it, and
+a full read happens at least daily (<code>FULL_READ_EVERY</code>) and on every button press.</p>
 <h3 id="components-connectors--pruning-opt-in"><a class="anchor" href="#components-connectors--pruning-opt-in">#</a>Pruning (opt-in)</h3>
 <p>Records that a connector no longer returns are retired (<code>active=False</code>, never
 deleted) <strong>only when all three hold</strong>:</p>
 <ol>
 <li>The owner ticked <strong>prune missing</strong>, which is off by default.</li>
-<li>The result did not hit <code>MAX_RECORDS</code>. A full page is a page, not the whole answer.</li>
+<li>The read was a full one and reached the last page (<code>connector_kinds.complete</code>). A
+read since the high-water mark never prunes: what did not change is not absent.</li>
 <li>No other enabled connector shares the same namespace. Two connectors with
 different filters on one Jira would otherwise retire each other&#39;s imports.</li>
 </ol>

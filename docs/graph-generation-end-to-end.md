@@ -191,10 +191,20 @@ waiting in private storage, or (for connector records) directly as text.
   their access stops the schedule, and the reason is recorded on the connector.
   The interval counts from the last attempt, successful or not, so an unreachable
   server is not retried on every tick.
+- **Every kind pages to the end.** Jira, GitHub, ServiceNow and the rest follow
+  their system's own paging, up to 100 records a page and 10 pages, and say
+  whether they reached the last page.
+- **A scheduled import reads only what changed.** GitHub and Jira remember a
+  high-water mark - the newest update they have seen - and a scheduled import
+  asks only for records updated since it (less five minutes, so a clock that
+  disagrees misses nothing). Once a day, and whenever someone presses Sync, the
+  import reads the whole filter again. The connector list says which it will do
+  next.
 - **Absence is not deletion unless the owner says so.** A record that stops
   appearing is retired only when the owner ticked "the filter is complete", the
-  result was not cut off at the page limit, and no other connector reads the same
-  system. Retiring marks it inactive; nothing is deleted.
+  read was a **full** read (never a changes-only one), it reached the last page,
+  and no other connector reads the same system. Retiring marks it inactive;
+  nothing is deleted.
 - **Source permissions (Jira only).** A connector can carry who Jira lets see each
   record. Answers are then filtered by the person asking, and the filter **fails
   closed**: records not yet checked, members with no matched account, and callers
@@ -627,9 +637,12 @@ twice (a refused answer included). Neither reads a restricted source.
 ## 12. Stage 10 - Checking the sources together
 
 The source check judges one document. The **sources check** (the *Check sources*
-popup, a line on the Sources page, and a warning on Generate) reads **the whole
-set a graph would be built from** - so restricted sources are left out here too -
-and calls no model.
+popup, a line on the Sources page, and a warning on Generate) reads **the set a
+graph would be built from** - so restricted sources are left out here too - and
+calls no model. It compares every source with every other, so its work grows as
+the square of the library: it reads the **oldest 100** sources together and, past
+that, says "the oldest 100 of N sources" rather than slowing every page. The graph
+itself is not limited this way (below).
 
 It finds two ways sources meet:
 
@@ -676,6 +689,8 @@ that is **active** and **not restricted**. In order:
 The set is summarised as a **fingerprint**: a hash of every usable source's id and
 digest, the graph generator's version, the graph limits, and the saved AI graph
 settings. If the fingerprint has not changed, there is nothing new to build.
+Because the limits are part of it, the October 2026 change to per-source limits
+rebuilt every application's graph once, as a draft.
 
 ---
 
@@ -693,6 +708,12 @@ A **background worker** loops over applications. For each one:
 4. A run that failed or was interrupted is **not retried automatically** on every
    tick - a failed paid call is never silently repeated.
 5. Otherwise it rebuilds.
+
+A rebuild reads **only the sources that changed**. Each source's structure is
+built from that source alone and kept, keyed by the application, the record, its
+title and its digest; a source whose key is unchanged is not read again, so a
+rebuild after one ticket moves reads one ticket. The kept structure is copied
+into each version, so nothing a later step does to a version can reach it.
 
 Two kinds of run reach the rebuild:
 
@@ -765,12 +786,17 @@ exactly what the sources check reports as "shared values".
 
 | Limit | Value |
 | --- | --- |
-| Nodes per graph | 6,000 |
+| Sources per graph | every usable source |
 | Rows and lines read per source | 2,000 |
-| Sources per graph | 100 |
+| Nodes per source | 6,000 |
+
+Each source is held to its own limits, so whether a row is in the graph depends
+only on its own source - never on how large the sources before it were. A value
+node two sources share is counted by each.
 
 The version's quality record counts what was read and what was not, and warns
-when: sources were cut off by the limits, table cells were empty, rows were
+when: a source reached its limits ("N source(s) reached the row or node limit
+for one source."), table cells were empty, rows were
 repeated, nodes have no relationships, or there were no sources at all. It
 reports **coverage** (share of rows and lines included) and **provenance** (100%:
 every structural edge quotes its line).
@@ -917,6 +943,8 @@ the reason it is refused, and the version counts refusals by reason:
 7. **Object not in quote** - no exception.
 8. **Outside the ontology** - unknown relation, or types the relation does not
    allow.
+9. **Source full** - the relationship would take its source's entities past
+   6,000, the same per-source limit the structural graph keeps.
 
 **The quote is checked first and always decides.** A type is a filter on
 relationships that already verified, never a reason to accept one.
@@ -1086,6 +1114,10 @@ it is the point of publishing - and is made safe by re-verifying every citation
 
 ## 22. Stage 20 - Answering from a published graph
 
+This is the summary. Every stage of retrieval - which version answers, how a
+question is read and ranked, the walk, verification, the answer and its callers -
+is in [Knowledge graph retrieval, end to end](graph-retrieval-end-to-end.md).
+
 Chat has three modes:
 
 | Mode | Retrieval | Model |
@@ -1153,7 +1185,7 @@ restricting a source removes it from answers at once.
 | Change | What happens |
 | --- | --- |
 | A source is added, changed, retired or restricted | the fingerprint moves; the worker builds a new draft, free: the structural graph plus the AI relationships of every unchanged text |
-| A connector sync moves a ticket to Done | the record's text (which includes status) changes; same as above |
+| A connector sync moves a ticket to Done | the record's text (which includes status) changes; same as above, and only that record is read again |
 | A source is restricted | additionally, its relationships vanish from **every** published version at once |
 | You want the AI layer updated | press **Generate** with a model: only text with no saved answer is paid for |
 | You want that to happen by itself | an owner switches on **automatic refresh** |
@@ -1232,7 +1264,8 @@ does not imply access to any application.
 | Source check | 6 checks, 100 points; Ready at 80 with no failed check |
 | Document type | needs 5 points and a 2-point lead, else Other |
 | Graph | every usable source; 2,000 rows and lines and 6,000 nodes per source |
-| Check sources (read together) | the oldest 100 sources |
+| Check sources (read together) | the oldest 100 sources, saying so past that |
+| Connector import | 100 records a page, 10 pages; changes only on a schedule, a full read daily |
 | AI extraction per run | 25 model calls; 24,000-character windows, 8 per source; 12 relationships asked per call, no new calls after 300; 300-character quotes, 8,192 output tokens, 10 minutes a call |
 | Benchmark | 100 questions; top-3 and MRR |
 | Answer | 8 citations; graph walk 2 hops, 6 finds, hub at 25 links; Code Factory +4 references |
@@ -1279,6 +1312,9 @@ description derived from the code cannot prove the code is right.
 | "... characters ... were not read by the model" | a source is longer than 8 windows of 24,000 characters | split the document; its end still has structural evidence |
 | A draft has AI relationships nobody asked for | the background build carried forward saved answers for unchanged text; no model was called | nothing to do - it cost nothing, and is still a draft until published |
 | Nothing rebuilds after an import | documents are still converting | the graph waits for the whole batch; check for failed documents |
+| "N source(s) reached the row or node limit for one source" | one source has over 2,000 rows and lines or 6,000 nodes | split the document; the rest of it is not in the structural graph |
+| Check sources says "the oldest 100 of N" | the library is larger than the sources check reads together | nothing - the graph still takes every source |
+| A retired ticket is still active after a scheduled sync | a scheduled sync reads only changes and never retires | wait for the daily full read, or press Sync |
 
 ---
 

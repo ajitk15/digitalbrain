@@ -114,6 +114,23 @@ class RerankTests(TestCase):
         plain = lexical_citations(app, "consent export note")
         self.assertEqual(ranked[0]["id"], plain[1]["id"])
 
+    def test_a_graph_answer_without_javascript_runs_no_keyword_search(self):
+        from platform_core.workbench import answer_question
+
+        with (
+            patch("platform_core.workbench.lexical_citations",
+                  side_effect=AssertionError("keyword search in a graph answer")),
+            patch("platform_core.ai.invoke_ai", return_value="Answer [1]") as invoked,
+        ):
+            conversation = answer_question(self.owner, self.app, None,
+                                           "consent export note", "graph")
+        reply = conversation.messages.get(role="assistant")
+        self.assertTrue(reply.citations)
+        self.assertTrue(all(c["excerpt"].startswith("Graph v1:") for c in reply.citations))
+        purposes = [call.args[2] for call in invoked.call_args_list]
+        self.assertEqual(purposes[:2], ["reranking", "graph_retrieval"])
+        self.assertEqual(purposes.count("reranking"), 1)
+
     def test_the_benchmark_measures_it_only_when_asked_and_paid_for(self):
         BenchmarkQuestion.objects.create(
             application=self.app, question="consent export note", expected="Doc 3"

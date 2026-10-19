@@ -17,7 +17,7 @@
   "mainPath": ["sources", "structural", "windows", "judge", "save", "publish", "answer"],
   "nodes": [
     { "id": "sources", "lane": "build", "col": 0, "type": "external", "label": "Sources + trigger", "sublabel": "oldest first, max 100", "tag": "worker / Generate", "width": 150 },
-    { "id": "structural", "lane": "build", "col": 1, "type": "backend", "label": "Structural graph", "sublabel": "lines, rows, cells", "tag": "max 6,000 nodes", "width": 150 },
+    { "id": "structural", "lane": "build", "col": 1, "type": "backend", "label": "Structural graph", "sublabel": "lines, rows, cells", "tag": "6,000 nodes a source", "width": 150 },
     { "id": "windows", "lane": "build", "col": 2, "type": "database", "label": "Windows + cache", "sublabel": "24k chars, max 8", "tag": "new", "width": 150 },
     { "id": "judge", "lane": "build", "col": 3, "type": "security", "label": "Judge + merge", "sublabel": "exact quote, own source", "tag": "new check", "width": 150 },
     { "id": "save", "lane": "build", "col": 4, "type": "backend", "label": "Save draft", "sublabel": "fingerprint re-check", "width": 150 },

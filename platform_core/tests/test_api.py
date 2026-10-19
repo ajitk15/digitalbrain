@@ -209,6 +209,26 @@ class GraphApiTests(TestCase):
         self.assertNotIn(self.source.digest, body)
         self.assertNotIn("digest", body)
 
+    def test_search_spends_nothing_with_embeddings_and_reranking_on(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        def paid(*args, **kwargs):
+            raise AssertionError("graph search made a paid call")
+
+        on = SimpleNamespace(model="text-embedding-3-small", provider="openai")
+        with (
+            patch("platform_core.embeddings.configuration", return_value=on),
+            patch("platform_core.embeddings.embed", side_effect=paid),
+            patch("platform_core.rerank.configuration", return_value=on),
+            patch("platform_core.rerank.rerank", side_effect=paid),
+        ):
+            response = self.call(self.secret, q="Service Alpha")
+            tool = self.rpc("tools/call", name="search_knowledge_graph",
+                            arguments={"question": "Service Alpha"})
+        self.assertEqual(response.json()["count"], 1)
+        self.assertFalse(tool.json()["result"].get("isError"))
+
     # ---- MCP ----
 
     def rpc(self, method, secret=None, **params):

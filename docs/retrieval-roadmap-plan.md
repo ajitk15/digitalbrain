@@ -18,10 +18,10 @@ tests and the four verification gates in `CLAUDE.md`. They are not calendar time
 | 1 Ontology | 3 Typed graph | 2-3 d | None | None (same call) | **Done** |
 | 2 Merge names | 4 Merged names, runbook aliases | 2-3 d | None | None | **Done** |
 | 3 Multi-hop | 6 Traversal (2 hops, typed) | 2-3 d | None | None | **Done** |
-| 4 Speed | Cached published graphs, Postgres full-text | 2-3 d | None (index migration) | None | **Done** - full-text not run on PostgreSQL here |
+| 4 Speed | Cached published graphs, Postgres full-text | 2-3 d | None (index migration) | None | **Done** - run on PostgreSQL 16 in CI since; stored columns in 0088 |
 | 5 Embeddings | 5 Vector starting points | 6-8 d | OpenAI credential (pgvector later) | **Yes** | **Done** - not yet measured |
 | 6 Spend and rerank | Spend caps, reranker | 3-5 d | None (reranker uses the app's model) | Yes (reranker, opt-in) | **Done** |
-| 7 Enterprise | Labels, incremental updates, source permissions, shared streams | 20-29 d | None (database lease, not Redis) | Auto-refresh only, opt-in | **Done** - Jira permissions only; not run against live Jira |
+| 7 Enterprise | Labels, incremental updates, source permissions, shared streams | 20-29 d | None (database lease; Redis came later, optional) | Auto-refresh only, opt-in | **Done** - Jira permissions only; not run against live Jira |
 
 Phases 0-4 need no new infrastructure and no new spend: **about 11-16 days**. With 5 and 6,
 **about 20-29 days**. Phase 7 is a separate project of roughly another month.
@@ -191,14 +191,17 @@ relationship or passage verified against its live source.
   <user>` is the one benchmark that spends, so it is switched on because it was measured.
   Not measured on CarePath (paid).
 
-## Phase 4b - Postgres full-text (done, not run on PostgreSQL here)
+## Phase 4b - Postgres full-text (done, now run on PostgreSQL in CI)
 
 `workbench.candidate_sources` asks PostgreSQL's full-text index (GIN, migration 0073,
 `to_tsvector('english', left(title || ' ' || content, 200000))`) for the 100 best-matching
 sources by `ts_rank`, instead of the first 100 that contain any word. Questions become
 prefix tsqueries from letters and digits only, so nothing typed becomes tsquery syntax.
-SQLite keeps the substring scan. The PostgreSQL test skips here (no PostgreSQL on this
-machine) and says so; run the suite against PostgreSQL before relying on it.
+SQLite keeps the substring scan. The PostgreSQL test skips on SQLite and says so; CI
+now runs the suite and the scorecard on PostgreSQL 16 too. The first PostgreSQL
+scorecard measured `ts_rank` re-tokenizing every matching row at 51 ms a keyword
+answer, so migration 0088 made the `tsvector` a stored generated column with the GIN
+index on it, for sources and passages both: 10 ms after.
 
 ## Phase 7 - Enterprise hardening (done)
 
@@ -215,3 +218,17 @@ identical to before them, since nothing there is restricted or permission-checke
 added checks cost 2-3 ms a question: graph 6.8 -> 8.8 ms, keyword 4.4 -> 7.1 ms median,
 still under the original 22.2 and 10.4 ms.
 
+## Since this plan
+
+Built after the roadmap closed, each measured by the scorecard
+(`manage.py scorecard`) rather than this plan's benchmark runs:
+
+| Item | What was built |
+|---|---|
+| Passages as rows | `KnowledgeChunk` (`chunks.py`): each active source's passages, written with the source; keyword answers come from them once every source has current ones (`retrieval_candidates = "auto"`). Same 14/16, MRR 0.674. |
+| Graph versions as rows | `GraphElement` (`graph_store.py`): each element stored once for every version it is in, and graph questions answered from the rows (`graph_candidates = "rows"`), held by the scorecard to identical citations. |
+| Graph built a source at a time | `MAX_SOURCES` removed: every usable source is in the graph, each held to its own 2,000 rows and 6,000 nodes, and a rebuild reads only the sources that changed. |
+| References followed | `graph_ai.referenced`: Code Factory's evidence follows the references its ticket names; planted-bug evidence recall 76% -> 96%. |
+| Redis streams | an answer outlives its connection and resumes on any web process; uvicorn serves stream readers without a thread each. |
+
+How retrieval works today, stage by stage, is `docs/graph-retrieval-end-to-end.md`.

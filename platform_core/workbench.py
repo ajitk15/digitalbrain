@@ -637,15 +637,19 @@ def answer_question(
     first_exchange = conversation is None
     history = conversation_context(conversation, app, user, before=trim_from)
     query = retrieval_query(question, history)
-    citations = lexical_citations(app, query, user)
+    if mode == "graph":
+        from .graph_ai import graph_citations
+
+        # Graph evidence only: keyword retrieval here used to run first and be
+        # thrown away, and with reranking on that was a paid call for nothing.
+        citations = graph_citations(app.pk, query, version=graph_version, user=user)
+    else:
+        citations = lexical_citations(app, query, user)
     answer = readable_evidence(citations)
     if mode in {"ai", "graph"}:
         from .ai import answer_with_ai, invoke_ai
 
         if mode == "graph":
-            from .graph_ai import graph_citations
-
-            citations = graph_citations(app.pk, query, version=graph_version, user=user)
             answer = invoke_ai(
                 user, app.pk, "graph_retrieval", question, citations, history=history
             )

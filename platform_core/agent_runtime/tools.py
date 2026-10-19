@@ -232,20 +232,26 @@ def verify_citations(app_id, candidates, viewer=None):
         if entry is None or entry.digest != candidate.get("digest"):
             continue
         excerpt = candidate.get("excerpt") or ""
-        if not excerpt or excerpt not in entry.content:
+        # A graph citation's excerpt is "Graph vN: <relationship> ... Source
+        # evidence: <quote>", which never appears in the source; its `quote` is
+        # the source's own words. Checking the excerpt dropped every graph
+        # citation from a streamed graph answer.
+        quote = candidate.get("quote") or excerpt
+        if not excerpt or not quote or quote not in entry.content:
             continue
         key = (str(entry.pk), excerpt)
         if key in seen:
             continue
         seen.add(key)
-        verified.append(
-            {
-                "id": str(entry.pk),
-                "title": entry.title,
-                "digest": entry.digest,
-                "excerpt": excerpt,
-            }
-        )
+        citation = {
+            "id": str(entry.pk),
+            "title": entry.title,
+            "digest": entry.digest,
+            "excerpt": excerpt,
+        }
+        if candidate.get("quote"):
+            citation["quote"] = quote
+        verified.append(citation)
     return verified
 
 

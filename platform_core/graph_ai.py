@@ -743,14 +743,17 @@ def available_graph_versions(app_id):
     )
 
 
-def graph_citations(app_id, question, version=None, user=None, references=0):
+def graph_citations(app_id, question, version=None, user=None, references=0, spend=True):
     """Verified citations from the published graph.
 
-    `user` is who a new question embedding is charged to, when the application
-    has search embeddings on; without one, only a stored vector is used and
-    otherwise the ranking is by words alone, exactly as before embeddings.
-    `references` adds up to that many cross-references after the eight
-    (`referenced`); Code Factory asks for them, chat does not.
+    `user` is who is asking - what a source system lets them see decides what
+    may be cited - and who a new question embedding and a rerank are charged
+    to, when the application has them on; without one, only a stored vector is
+    used and otherwise the ranking is by words alone, exactly as before
+    embeddings. `spend=False` keeps `user` as the viewer and charges nobody: the
+    graph search API and the MCP server call no model. `references` adds up to
+    that many cross-references after the eight (`referenced`); Code Factory
+    asks for them, chat does not.
     """
     from django.conf import settings
 
@@ -759,7 +762,7 @@ def graph_citations(app_id, question, version=None, user=None, references=0):
     from .graph_store import RowsGraph
 
     revision = snapshot_revision(app_id, version)
-    vector, model = question_vector(user, app_id, question)
+    vector, model = question_vector(user if spend else None, app_id, question)
     rows = None
     # From the version's rows when the deployment says so and they exist; a
     # question with an embedding still ranks in memory, where the vectors are.
@@ -768,7 +771,7 @@ def graph_citations(app_id, question, version=None, user=None, references=0):
     else:
         ready = prepared(revision)
         data = ready.data
-    wide = user is not None and rerank.configuration(app_id) is not None
+    wide = spend and user is not None and rerank.configuration(app_id) is not None
     found = citations_from(
         app_id,
         data,

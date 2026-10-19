@@ -147,6 +147,36 @@ class CitationVerificationTests(TestCase):
     def test_duplicate_citations_collapse(self):
         self.assertEqual(len(verify_citations(self.app.pk, [self.citation(), self.citation()])), 1)
 
+    def test_a_graph_citation_is_checked_by_its_quote(self):
+        graph = self.citation(
+            excerpt="Graph v1: Refund requests expire after thirty days\n"
+                    "Source evidence: Refund requests expire after thirty days.",
+            quote="Refund requests expire after thirty days.",
+        )
+        kept = verify_citations(self.app.pk, [graph])
+        self.assertEqual([c["excerpt"] for c in kept], [graph["excerpt"]])
+        self.assertEqual(kept[0]["quote"], graph["quote"])
+        self.assertEqual(
+            verify_citations(self.app.pk, [{**graph, "quote": "Refunds never expire."}]), []
+        )
+
+    def test_a_streamed_graph_answer_keeps_its_graph_citations(self):
+        from django.utils import timezone
+
+        from platform_core.graph_ai import graph_citations
+        from platform_core.graphs import rebuild
+        from platform_core.models import GraphRevision
+
+        add_knowledge(self.owner, self.app.pk, "Consent policy",
+                      "| Requirement | Owner |\n| --- | --- |\n| BR-05 consent export | Ops |\n")
+        rebuild(self.app.pk)
+        GraphRevision.objects.filter(application=self.app).update(published_at=timezone.now())
+        found = graph_citations(self.app.pk, "consent export owner", user=self.owner)
+        recorder = CitationRecorder(ToolScope(user_id=self.owner.pk, app_id=self.app.pk))
+        recorder.seed(found)
+        self.assertTrue(found)
+        self.assertEqual(len(recorder.verified_citations()), len(found))
+
     def test_citations_are_capped(self):
         recorder = CitationRecorder(ToolScope(user_id=self.owner.pk, app_id=self.app.pk))
         # Distinct excerpts, all genuine, exceeding the cap.
