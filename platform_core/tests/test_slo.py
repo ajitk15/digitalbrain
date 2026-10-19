@@ -106,7 +106,7 @@ class RecordsTests(TestCase):
         self.addCleanup(metrics.use, None)
         self.answer("complete")
         self.answer("failed")
-        slo._read = 0.0
+        slo._read = None
         with self.assertLogs("platform_core.slo", "INFO") as logged:
             self.assertFalse(slo.read_if_due())
         finish = [r for r in logged.records if r.objective == "answers_finish"]

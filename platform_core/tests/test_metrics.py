@@ -201,7 +201,7 @@ class PlatformMetricTests(Measured, TestCase):
 
         Job.objects.create(kind="graph_refresh", lane="graph", key="graph:x",
                            run_after=timezone.now())
-        metrics._observed = 0.0
+        metrics._observed = None
         self.assertFalse(metrics.observe())
         waiting = {p.attributes["digitalbrain.lane"]: p.value
                    for p in self.points("digitalbrain.queue.waiting")}

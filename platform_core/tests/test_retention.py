@@ -72,7 +72,7 @@ class PurgeTests(TestCase):
         cls.app = Application.objects.create(name="Refunds", product=product)
 
     def setUp(self):
-        retention._last = 0.0
+        retention._last = None
         self.now = timezone.now()
 
     def audit(self, days_old):

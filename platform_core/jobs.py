@@ -347,7 +347,7 @@ def purge_finished(now=None):
     return removed + dead
 
 
-_last_maintained = 0.0
+_last_maintained = None
 
 
 def maintain():
@@ -357,7 +357,7 @@ def maintain():
     """
     global _last_maintained
     now = time.monotonic()
-    if now - _last_maintained < MAINTAIN_INTERVAL:
+    if _last_maintained is not None and now - _last_maintained < MAINTAIN_INTERVAL:
         return False
     _last_maintained = now
     reclaim_expired()

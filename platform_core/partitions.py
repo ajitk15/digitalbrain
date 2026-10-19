@@ -239,13 +239,14 @@ def problems(found):
     return said
 
 
-_last = 0.0
+_last = None
 
 
 def warn_if_due(now=None):
     """A maintenance step: say when the migrate job is needed. Never raises."""
     global _last
-    if default_connection.vendor != "postgresql" or time.monotonic() - _last < INTERVAL:
+    if default_connection.vendor != "postgresql" or (
+            _last is not None and time.monotonic() - _last < INTERVAL):
         return False
     _last = time.monotonic()
     try:

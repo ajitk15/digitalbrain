@@ -108,7 +108,7 @@ def process_next_document():
     return True
 
 
-_last_purge = 0.0
+_last_purge = None
 
 #: Retention is measured in days; checking hourly is ample and keeps the lane
 #: from running a table scan on every tick.
@@ -118,7 +118,7 @@ PURGE_INTERVAL = 3600
 def purge_chat_if_due():
     global _last_purge
     now = time.monotonic()
-    if now - _last_purge < PURGE_INTERVAL:
+    if _last_purge is not None and now - _last_purge < PURGE_INTERVAL:
         return False
     _last_purge = now
     from .workbench import purge_expired_conversations

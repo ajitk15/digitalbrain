@@ -656,13 +656,13 @@ def process_next_graph():
 #: lost with a database restore - and the work that waited while the worker
 #: was stopped, since the first pass runs as the lane starts.
 RECONCILE_INTERVAL = 600
-_last_reconciled = 0.0
+_last_reconciled = None
 
 
 def reconcile_if_due():
     global _last_reconciled
     now = time.monotonic()
-    if _last_reconciled and now - _last_reconciled < RECONCILE_INTERVAL:
+    if _last_reconciled is not None and now - _last_reconciled < RECONCILE_INTERVAL:
         return False
     _last_reconciled = now
     for app_id in candidate_applications():

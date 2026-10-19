@@ -160,14 +160,14 @@ class CommandTests(PostgreSQLOnly):
         ensure.assert_called_once_with(retention={"audit_days": 2192})
 
     def test_the_maintenance_lane_warns_and_never_raises(self):
-        partitions._last = 0.0
+        partitions._last = None
         with (
             patch.object(partitions, "status", return_value={TABLE: {"ahead": 0, "waiting": True}}),
             self.assertLogs("platform_core.partitions", "WARNING") as logged,
         ):
             self.assertFalse(partitions.warn_if_due())
         self.assertEqual(logged.records[0].event, "partitions_short")
-        partitions._last = 0.0
+        partitions._last = None
         with (
             patch.object(partitions, "status", side_effect=RuntimeError("gone")),
             self.assertLogs("platform_core.partitions", "WARNING") as logged,

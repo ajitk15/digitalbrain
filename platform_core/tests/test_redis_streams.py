@@ -394,7 +394,9 @@ class RedisSettingTests(SimpleTestCase):
         with tempfile.TemporaryDirectory() as directory:
             with override_settings(SECRET_DIRECTORY=directory, PRODUCTION=False):
                 self.assertIsNone(broker.password())
-                (Path(directory) / "redis_password").write_text("s3cret\n", encoding="utf-8")
+                secret = Path(directory) / "redis_password"
+                secret.write_text("s3cret\n", encoding="utf-8")
+                secret.chmod(0o600)
                 self.assertEqual(broker.password(), "s3cret")
             with override_settings(SECRET_DIRECTORY=directory + "-missing", PRODUCTION=True):
                 with self.assertRaises(ImproperlyConfigured):

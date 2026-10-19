@@ -330,7 +330,7 @@ class GraphTriggerTests(TestCase):
         self.source()
         KnowledgeGraph.objects.create(application=self.other, status="ready")
         self.settle()
-        with patch.object(graphs, "_last_reconciled", 0.0):
+        with patch.object(graphs, "_last_reconciled", None):
             reconcile_if_due()
             self.assertEqual(self.waiting(), 1)
             self.assertEqual(self.waiting(self.other), 1)

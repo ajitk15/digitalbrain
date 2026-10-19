@@ -125,7 +125,7 @@ def lane_status(now=None):
     return rows
 
 
-_last_logged = 0.0
+_last_logged = None
 
 
 def log_if_due():
@@ -136,7 +136,7 @@ def log_if_due():
     """
     global _last_logged
     now = time.monotonic()
-    if now - _last_logged < LOG_INTERVAL:
+    if _last_logged is not None and now - _last_logged < LOG_INTERVAL:
         return False
     _last_logged = now
     for row in lane_status():

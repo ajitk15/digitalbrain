@@ -211,13 +211,13 @@ def measure(now=None, days=WINDOW_DAYS):
     return rows
 
 
-_read = 0.0
+_read = None
 
 
 def read_if_due():
     """Count the records objectives for the gauge and the log. A maintenance step."""
     global _read
-    if time.monotonic() - _read < READ_SECONDS:
+    if _read is not None and time.monotonic() - _read < READ_SECONDS:
         return False
     _read = time.monotonic()
     from . import metrics

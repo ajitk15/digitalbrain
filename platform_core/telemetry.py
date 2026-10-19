@@ -316,7 +316,7 @@ class Exporter:
         self.session = requests.Session()
         # Not HTTPS_PROXY, not REQUESTS_CA_BUNDLE, not ~/.netrc.
         self.session.trust_env = False
-        self.warned = 0.0
+        self.warned = None
 
     def export(self, spans):
         from opentelemetry.exporter.otlp.proto.common.trace_encoder import encode_spans
@@ -340,7 +340,7 @@ class Exporter:
             ok, failure = False, type(error).__name__
         if ok:
             return True
-        if time.monotonic() - self.warned > WARN_EVERY_SECONDS:
+        if self.warned is None or time.monotonic() - self.warned > WARN_EVERY_SECONDS:
             self.warned = time.monotonic()
             logger.warning(
                 "otel_export_failed",

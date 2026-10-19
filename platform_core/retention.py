@@ -74,14 +74,14 @@ def purge(model, days, now=None):
     return removed
 
 
-_last = 0.0
+_last = None
 
 
 def purge_if_due(now=None):
     """One retention step for the maintenance lane. Never raises."""
     global _last
     chosen = windows()
-    if not chosen or time.monotonic() - _last < INTERVAL:
+    if not chosen or (_last is not None and time.monotonic() - _last < INTERVAL):
         return False
     _last = time.monotonic()
     counts = {}

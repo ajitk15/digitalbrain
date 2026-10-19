@@ -213,7 +213,7 @@ def held(name):
         return dict(_held.get(name, {}))
 
 
-_observed = 0.0
+_observed = None
 
 
 def observe():
@@ -222,7 +222,8 @@ def observe():
     Returns False like the other figures-only steps: reading is not work.
     """
     global _observed
-    if meter() is None or time.monotonic() - _observed < OBSERVE_SECONDS:
+    if meter() is None or (_observed is not None
+                            and time.monotonic() - _observed < OBSERVE_SECONDS):
         return False
     _observed = time.monotonic()
     from .gateway import in_flight
