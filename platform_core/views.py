@@ -569,7 +569,9 @@ def create_application(request, pk=None, organization_id=None):
                         portfolio=portfolio, name=values["new_product"].strip()
                     )
                     audit(request.user, "product.created", target.pk, org)
-            app = Application.objects.create(product=target, name=values["name"])
+            app = Application.objects.create(
+                product=target, name=values["name"], ontology=values.get("ontology") or ""
+            )
             ApplicationGrant.objects.create(
                 application=app,
                 user=values["owner"],
@@ -595,7 +597,13 @@ def create_application(request, pk=None, organization_id=None):
                 for key, enabled in form.selected_features().items()
                 if not enabled
             )
-            audit(request.user, "application.created", app.pk, org)
+            audit(
+                request.user,
+                "application.created",
+                app.pk,
+                org,
+                details={"ontology": app.ontology} if app.ontology else None,
+            )
             # Inside the transaction on purpose: an application that exists must
             # have its AI rows. The credential copy is a filesystem write and so
             # cannot roll back, but an unreferenced file under a UUID that is now

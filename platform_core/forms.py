@@ -6,6 +6,7 @@ from django.db.models import Q
 from PIL import Image, UnidentifiedImageError
 
 from .models import ApplicationGrant, ChatRetention, Portfolio, Product, User
+from .ontology import CHOICES as ONTOLOGY_CHOICES
 from .services import (
     AREA_ICONS,
     OPT_IN_FEATURES,
@@ -98,6 +99,18 @@ class ApplicationForm(ResourceForm):
         required=False,
         label="What is this application for?",
         widget=forms.RadioSelect(attrs={"required": True}),
+    )
+    # Not required, so a caller that predates the question gets the core
+    # registry, exactly what every application had before packs.
+    ontology = forms.ChoiceField(
+        choices=ONTOLOGY_CHOICES,
+        required=False,
+        label="Industry domain",
+        help_text=(
+            "What AI graph extraction looks for in your sources. It adds the domain's types "
+            "and relations to the software delivery ones; an owner can change it later "
+            "under Generate graph."
+        ),
     )
     # Ticked by default. Approval can only be handed on by someone who holds it
     # (`services.change_grant`), so an owner created without it could never give

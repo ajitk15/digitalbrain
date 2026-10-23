@@ -89,6 +89,10 @@ class Application(NamedResource):
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     identity_icon = models.CharField(max_length=24, blank=True)
     logo_digest = models.CharField(max_length=64, blank=True)
+    #: The industry domain AI graph extraction follows, a key of
+    #: `ontology.PACKS`; blank is the core registry alone. A database default,
+    #: so the release before this one can still insert applications.
+    ontology = models.CharField(max_length=40, blank=True, default="", db_default="")
 
     def save(self, *args, **kwargs):
         if not self.slug:

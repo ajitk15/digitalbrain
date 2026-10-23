@@ -22,9 +22,10 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .graph_ai import EXTRACTION_TIMEOUT
+from .graph_ai import EXTRACTION_TIMEOUT, rubric
 from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
+from .ontology import CORE, PACKS, for_application
 from .services import audit, feature_enabled
 from .workbench import access
 
@@ -63,17 +64,18 @@ def fingerprint(app_id):
         application_id=app_id, purpose="graph_generation", enabled=True
     ).first()
     ai_settings = [config.provider, config.model, str(config.configured_by_id)] if config else None
-    return hashlib.sha256(
-        json.dumps(
-            {
-                "generator": "structural-v2",
-                "ai": ai_settings,
-                "limits": ["per-source", MAX_NODES_PER_SOURCE, MAX_RECORDS_PER_SOURCE],
-                "sources": [(str(pk), digest) for pk, digest in records],
-            },
-            separators=(",", ":"),
-        ).encode()
-    ).hexdigest()
+    settings = {
+        "generator": "structural-v2",
+        "ai": ai_settings,
+        "limits": ["per-source", MAX_NODES_PER_SOURCE, MAX_RECORDS_PER_SOURCE],
+        "sources": [(str(pk), digest) for pk, digest in records],
+    }
+    domain = for_application(app_id)
+    if domain is not CORE:
+        # Only a pack is named, so choosing none leaves every graph's
+        # fingerprint as it was and rebuilds nothing.
+        settings["ontology"] = rubric(domain)
+    return hashlib.sha256(json.dumps(settings, separators=(",", ":")).encode()).hexdigest()
 
 
 def cells(line):
@@ -754,6 +756,46 @@ def set_auto_refresh(request, app, pk):
     return redirect("graph", pk=pk)
 
 
+def set_ontology(request, app, pk):
+    """The owner's choice of industry domain for AI extraction (`ontology.PACKS`).
+
+    Refused while a run is in flight, so one version is never judged under two
+    ontologies. Answers paid for under the previous one are kept in the cache,
+    under its rubric, but not carried into this one: the next AI generation
+    reads every source again, which is what the page says before anyone
+    presses the button.
+    """
+    key = request.POST.get("ontology", "")
+    if key not in PACKS:
+        messages.error(request, "Choose one of the listed industry domains.")
+        return redirect("graph-generate", pk=pk)
+    if run_in_flight(KnowledgeGraph.objects.filter(application=app).first()):
+        messages.info(
+            request, "A graph generation is running. Change the domain once it finishes."
+        )
+        return redirect("graph-generate", pk=pk)
+    before = app.ontology
+    if key == before:
+        messages.info(request, f"AI extraction already follows {PACKS[key].label}.")
+        return redirect("graph-generate", pk=pk)
+    type(app).objects.filter(pk=app.pk).update(ontology=key)
+    audit(
+        request.user,
+        "graph.ontology_changed",
+        app.pk,
+        app.product.portfolio.organization,
+        details={"from": before or "core", "to": key or "core"},
+    )
+    request_refresh(app.pk)
+    messages.success(
+        request,
+        f"AI extraction now follows {PACKS[key].label}. Relationships extracted under the "
+        "previous domain are not carried over: the next AI generation reads every source "
+        "again, and provider charges apply.",
+    )
+    return redirect("graph-generate", pk=pk)
+
+
 def revision_added(revision, app_id):
     """Sources added since this revision was saved: `revision_drift`'s blind spot."""
     from .graph_store import recorded_sources
@@ -926,6 +968,11 @@ def graph_generate(request, pk):
             if grant.role != "owner":
                 raise PermissionDenied("Only an owner may switch automatic refresh.")
             return set_auto_refresh(request, app, pk)
+        if request.POST.get("action") == "ontology":
+            # Owner-only: it decides what every later AI run is paid to read.
+            if grant.role != "owner":
+                raise PermissionDenied("Only an owner may change the industry domain.")
+            return set_ontology(request, app, pk)
         return queue_generation(request, app, pk)
     graph = KnowledgeGraph.objects.filter(application=app).select_related("auto_refresh_by").first()
     return render(
@@ -942,6 +989,8 @@ def graph_generate(request, pk):
             "graph_ai_configured": AIConfiguration.objects.filter(
                 application=app, purpose="graph_generation", enabled=True
             ).exists(),
+            "ontology": PACKS.get(app.ontology, CORE),
+            "ontology_choices": PACKS.values(),
         },
     )
 
