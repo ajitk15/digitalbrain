@@ -1,4 +1,5 @@
 import hashlib
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlencode
@@ -16,7 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
-from . import console, invitations, sorting
+from . import access_review, console, invitations, sorting
 from .ai import seed_application_ai
 from .forms import (
     AcceptInvitationForm,
@@ -49,6 +50,7 @@ from .models import (
     User,
 )
 from .policy import (
+    CAPABILITIES,
     application_for,
     applications_for,
     organization_for,
@@ -371,6 +373,10 @@ def my_access(request):
             .select_related("organization")
             .order_by("organization__name"),
             "rows": rows,
+            "capabilities": [
+                (label, CAPABILITIES[value]) for value, label in ApplicationGrant.Role.choices
+            ],
+            "approval_capabilities": CAPABILITIES["can_approve"],
         },
     )
 
@@ -388,6 +394,7 @@ def platform_console(request):
         "platform.html",
         {
             "attention": console.attention(),
+            "spend": console.spend_by_organization(),
             "organization_count": Organization.objects.count(),
             "user_count": User.objects.filter(is_active=True).count(),
             "application_count": Application.objects.count(),
@@ -790,6 +797,14 @@ def application_access(request, pk):
             else:
                 return redirect_with_link(request, "application-access", pk, invitation)
             return redirect("application-access", pk=pk)
+    elif action == "review":
+        grants = access_review.review(request.user, pk)
+        messages.success(
+            request,
+            f"Access confirmed: {grants} grant{'' if grants == 1 else 's'} reviewed. "
+            f"Next review due in {access_review.REVIEW_DAYS} days.",
+        )
+        return redirect("application-access", pk=pk)
     elif action in {"withdraw", "link"}:
         invitation = get_object_or_404(
             Invitation, pk=request.POST.get("invitation"), application=app
@@ -823,6 +838,7 @@ def application_access(request, pk):
                 form.cleaned_data["role"],
                 can_approve,
                 revoke=action == "revoke",
+                expires_at=form.expires_at(),
             )
         except ValidationError as error:
             form.add_error(None, error)
@@ -844,6 +860,12 @@ def application_access(request, pk):
             "invitations": app.invitations.filter(status__in=invitations.PENDING),
             "link": link or request.session.pop(LINK_KEY, None),
             "link_hours": invitations.LINK_HOURS,
+            "review": access_review.review_state(app),
+            "capabilities": [
+                (label, CAPABILITIES[value]) for value, label in ApplicationGrant.Role.choices
+            ],
+            "approval_capabilities": CAPABILITIES["can_approve"],
+            "earliest_expiry": (timezone.now() + timedelta(days=1)).date(),
         },
     )
 

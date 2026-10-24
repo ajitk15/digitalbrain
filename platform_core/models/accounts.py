@@ -120,6 +120,16 @@ class Application(NamedResource):
     #: `ontology.PACKS`; blank is the core registry alone. A database default,
     #: so the release before this one can still insert applications.
     ontology = models.CharField(max_length=40, blank=True, default="", db_default="")
+    #: When an owner last confirmed that everyone on the Access screen still
+    #: needs what they hold (`access_review.py`), and who. Empty: never.
+    access_reviewed_at = models.DateTimeField(null=True, blank=True)
+    access_reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -150,6 +160,9 @@ class ApplicationGrant(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     role = models.CharField(max_length=16, choices=Role.choices)
     can_approve = models.BooleanField(default=False)
+    #: When this grant stops opening the application (`access_review.py`).
+    #: Empty, the default, never; an owner's grant never expires.
+    expires_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

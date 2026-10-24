@@ -7,6 +7,7 @@ from decimal import Decimal
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from .api_auth import revoke_all
 from .models import (
@@ -372,7 +373,9 @@ def update_branding(user, png):
 
 
 @transaction.atomic
-def change_grant(actor, application_id, target, role, can_approve=False, revoke=False):
+def change_grant(
+    actor, application_id, target, role, can_approve=False, revoke=False, expires_at=None
+):
     # Serialize owner changes, preventing concurrent requests from removing every owner.
     if role not in ApplicationGrant.Role.values:
         raise ValidationError("Invalid application role.")
@@ -395,22 +398,28 @@ def change_grant(actor, application_id, target, role, can_approve=False, revoke=
         )
         if owners.count() <= 1:
             raise ValidationError("Keep at least one active application owner.")
+    if expires_at is not None and not revoke:
+        # An owner who expired would leave the application to whoever is left,
+        # possibly nobody - the case the owner checks above refuse.
+        if role == "owner":
+            raise ValidationError("An owner's access does not expire. Choose another role.")
+        if expires_at <= timezone.now():
+            raise ValidationError("Choose an expiry date in the future.")
     if revoke:
         if existing:
             existing.delete()
         action = "application.access_revoked"
     else:
         ApplicationGrant.objects.update_or_create(
-            application=app, user=target, defaults={"role": role, "can_approve": can_approve}
+            application=app,
+            user=target,
+            defaults={"role": role, "can_approve": can_approve, "expires_at": expires_at},
         )
         action = "application.access_changed"
-    audit(
-        actor,
-        action,
-        target.pk,
-        app.product.portfolio.organization,
-        details={"application_id": str(app.pk), "role": role, "can_approve": can_approve},
-    )
+    details = {"application_id": str(app.pk), "role": role, "can_approve": can_approve}
+    if expires_at is not None and not revoke:
+        details["expires_at"] = expires_at.isoformat()
+    audit(actor, action, target.pk, app.product.portfolio.organization, details=details)
 
 
 @transaction.atomic

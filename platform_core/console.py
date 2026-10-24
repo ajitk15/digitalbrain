@@ -11,11 +11,11 @@ is its organization's Structure or Members page.
 """
 
 from django.conf import settings
-from django.db.models import Exists, OuterRef, Q, Sum
+from django.db.models import Count, Exists, OuterRef, Q, Sum
 from django.urls import reverse
 from django.utils import timezone
 
-from . import invitations, slo
+from . import access_review, invitations, slo
 from .gateway import in_flight
 from .models import (
     Application,
@@ -117,6 +117,14 @@ def attention(now=None):
         reverse("platform-operations"),
         "; ".join(row["promise"] for row in missed),
     )
+    due = list(access_review.due_for_review(now).select_related("product__portfolio__organization"))
+    add(
+        f"Applications whose access is due a review (every {access_review.REVIEW_DAYS} days)",
+        len(due),
+        reverse("platform-organizations"),
+        "Their owners confirm it on the Access screen.",
+        level="note",
+    )
     locked = locked_usernames()
     add(
         "Accounts locked out",
@@ -178,3 +186,14 @@ def operations(now=None):
         "window_days": slo.WINDOW_DAYS,
         "min_events": slo.MIN_EVENTS,
     }
+
+
+def spend_by_organization():
+    """Recorded AI spend per organization and currency, largest first. Receipts only."""
+    from .models import AIUsage
+
+    return (
+        AIUsage.objects.values("application__product__portfolio__organization__name", "currency")
+        .annotate(amount=Sum("amount"), calls=Count("id"))
+        .order_by("-amount")
+    )

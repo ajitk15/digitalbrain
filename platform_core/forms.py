@@ -1,5 +1,6 @@
 import io
 import warnings
+from datetime import UTC, datetime, time
 
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
@@ -248,6 +249,18 @@ class GrantForm(forms.Form):
     user = forms.ModelChoiceField(queryset=User.objects.none())
     role = forms.ChoiceField(choices=ApplicationGrant.Role.choices)
     can_approve = forms.BooleanField(required=False, label="May approve Code Factory plans")
+    expires_on = forms.DateField(
+        required=False,
+        label="Access ends",
+        help_text="Optional. At the start of this day (UTC). Never for an owner.",
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def expires_at(self):
+        day = self.cleaned_data.get("expires_on")
+        if day is None:
+            return None
+        return datetime.combine(day, time.min, tzinfo=UTC)
 
     def __init__(self, *args, application, **kwargs):
         super().__init__(*args, **kwargs)

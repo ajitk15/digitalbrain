@@ -92,7 +92,9 @@ def offboard(actor, leaver_pk, successor_username):
         existing = ApplicationGrant.objects.filter(application=app, user=successor).first()
         can_approve = grant.can_approve or bool(existing and existing.can_approve)
         ApplicationGrant.objects.update_or_create(
-            application=app, user=successor, defaults={"role": "owner", "can_approve": can_approve}
+            application=app,
+            user=successor,
+            defaults={"role": "owner", "can_approve": can_approve, "expires_at": None},
         )
         audit(
             actor,

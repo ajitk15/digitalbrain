@@ -218,6 +218,7 @@ def automation_steps():
 
 
 def maintenance_steps():
+    from .access_review import expire_due
     from .chunks import backfill_step
     from .gateway import sweep
     from .graph_store import record_step, slim_step
@@ -245,8 +246,11 @@ def maintenance_steps():
     # Retiring audit events and receipts past a window a deployment set, an
     # hour apart and a batch at a time, because it is never urgent. Saying
     # when the audit table runs short of months, which only the owner can make.
+    # Revoking grants past the date an owner gave them, which already open
+    # nothing (`policy.applications_for`), so every other reader agrees.
     return (
         purge_chat_if_due,
+        expire_due,
         process_next_source,
         maintain,
         sweep,

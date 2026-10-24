@@ -45,7 +45,7 @@ class AccessScreenTests(TestCase):
 
     def test_every_grant_is_a_row_that_can_be_changed_in_place(self):
         response = self.client.get(self.url)
-        self.assertContains(response, 'form="grant-', count=4)
+        self.assertContains(response, 'form="grant-', count=5)
         saved = self.client.post(
             self.url, {"user": self.bob.pk, "role": "contributor", "action": "save"}
         )
