@@ -49,7 +49,7 @@ from django.views.decorators.http import require_http_methods
 
 from digitalbrain.configuration import read_secret
 
-from .api_auth import presented
+from .api_auth import presented, revoke_all
 from .models import ApplicationGrant, OrganizationMember, ProvisionedUser, User
 from .services import audit
 
@@ -330,6 +330,7 @@ def apply(user, found, actor):
             audit(actor, "account.reprovisioned", user.pk)
         else:
             audit(actor, "account.deprovisioned", user.pk, details=orphaned(user))
+            revoke_all(user, actor, reason="account deprovisioned")
     rest = [field for field in changed if field != "is_active"]
     if rest:
         audit(actor, "account.updated", user.pk, details={"fields": sorted(rest)})

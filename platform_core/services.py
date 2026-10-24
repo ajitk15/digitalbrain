@@ -8,6 +8,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Q
 
+from .api_auth import revoke_all
 from .models import (
     AIUsage,
     Application,
@@ -16,6 +17,7 @@ from .models import (
     AuditEvent,
     Branding,
     FeatureSwitch,
+    Organization,
     OrganizationMember,
 )
 from .observability import request_id_context
@@ -407,6 +409,86 @@ def change_grant(actor, application_id, target, role, can_approve=False, revoke=
         app.product.portfolio.organization,
         details={"application_id": str(app.pk), "role": role, "can_approve": can_approve},
     )
+
+
+@transaction.atomic
+def remove_member(actor, organization, target):
+    """Take `target` out of `organization`, with every grant and token they hold in it.
+
+    Membership could only be added, so somebody who moved team kept it - and
+    every grant in the organization - until their whole account was disabled.
+    Refused while they are its last active administrator, or the last active
+    owner of one of its applications: the rules a disable follows. The caller
+    decides who may do it. Returns (grants removed, tokens revoked).
+    """
+    Organization.objects.select_for_update().get(pk=organization.pk)
+    member = OrganizationMember.objects.filter(organization=organization, user=target).first()
+    if member is None:
+        raise ValidationError("This person is not a member of this organization.")
+    if (
+        member.is_admin
+        and not OrganizationMember.objects.filter(
+            organization=organization, is_admin=True, user__is_active=True
+        )
+        .exclude(user=target)
+        .exists()
+    ):
+        raise ValidationError(
+            "Assign another organization administrator before removing this one."
+        )
+    # Locked like change_grant locks them, so a racing owner change cannot
+    # leave an application with none.
+    app_ids = list(
+        Application.objects.select_for_update(of=("self",))
+        .filter(product__portfolio__organization=organization, grants__user=target)
+        .values_list("pk", flat=True)
+    )
+    grants = list(
+        ApplicationGrant.objects.filter(application_id__in=app_ids, user=target).select_related(
+            "application"
+        )
+    )
+    for grant in grants:
+        if (
+            grant.role == "owner"
+            and not ApplicationGrant.objects.filter(
+                application_id=grant.application_id,
+                role="owner",
+                user__is_active=True,
+                user__organizationmember__organization=organization,
+            )
+            .exclude(user=target)
+            .exists()
+        ):
+            raise ValidationError(
+                f"Make someone else an owner of {grant.application.name} before removing "
+                "this member."
+            )
+    for grant in grants:
+        grant.delete()
+        audit(
+            actor,
+            "application.access_revoked",
+            target.pk,
+            organization,
+            details={
+                "application_id": str(grant.application_id),
+                "role": grant.role,
+                "reason": "removed from organization",
+            },
+        )
+    revoked = revoke_all(
+        target, actor, organization=organization, reason="removed from organization"
+    )
+    member.delete()
+    audit(
+        actor,
+        "organization.member_removed",
+        target.pk,
+        organization,
+        details={"grants": len(grants), "tokens": revoked},
+    )
+    return len(grants), revoked
 
 
 @transaction.atomic

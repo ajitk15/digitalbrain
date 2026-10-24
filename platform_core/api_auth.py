@@ -69,6 +69,40 @@ def digest_of(value):
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def revoke_all(user, actor, *, organization=None, reason):
+    """Revoke every active token `user` holds - only in `organization`, if named.
+
+    A token used to outlive the access it acted with. Disabling an account
+    paused its tokens, because `authenticate` refuses an inactive user, but left
+    them active, so re-enabling the account brought every one back. Each is
+    audited where its own revocation would be. Returns how many were revoked.
+    """
+    from .models import ApiToken
+    from .services import audit
+
+    tokens = ApiToken.objects.filter(user=user, revoked_at__isnull=True).select_related(
+        "application__product__portfolio__organization"
+    )
+    if organization is not None:
+        tokens = tokens.filter(application__product__portfolio__organization=organization)
+    now = timezone.now()
+    revoked = 0
+    for token in tokens:
+        if not ApiToken.objects.filter(pk=token.pk, revoked_at__isnull=True).update(
+            revoked_at=now
+        ):
+            continue
+        revoked += 1
+        audit(
+            actor,
+            "api_token.revoked",
+            token.application_id,
+            token.application.product.portfolio.organization,
+            details={"name": token.name, "prefix": token.prefix, "reason": reason},
+        )
+    return revoked
+
+
 def presented(request):
     """The bearer token on this request, if one was presented."""
     header = request.META.get("HTTP_AUTHORIZATION", "")

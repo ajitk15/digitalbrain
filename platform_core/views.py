@@ -63,6 +63,7 @@ from .services import (
     feature_enabled,
     knowledge_labels,
     purposes,
+    remove_member,
     update_branding,
 )
 
@@ -472,6 +473,26 @@ def organization(request, pk):
 @require_http_methods(["GET", "POST"])
 def organization_members(request, pk):
     org = organization_for(request.user, pk, admin=True)
+    if request.method == "POST" and request.POST.get("action") == "remove":
+        member = get_object_or_404(
+            OrganizationMember.objects.select_related("user"),
+            organization=org,
+            user_id=request.POST.get("user"),
+        )
+        try:
+            grants, tokens = remove_member(request.user, org, member.user)
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        else:
+            messages.success(
+                request,
+                f"{member.user.username} removed: {grants} application grant"
+                f"{'' if grants == 1 else 's'} and {tokens} API token"
+                f"{'' if tokens == 1 else 's'} went with the membership.",
+            )
+            if member.user == request.user:
+                return redirect("dashboard")
+        return redirect("organization-members", pk=pk)
     form = MemberForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
         target = User.objects.filter(username=form.cleaned_data["username"], is_active=True).first()

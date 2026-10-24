@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from . import hierarchy
+from .api_auth import revoke_all
 from .forms import OrganizationAdministratorsForm
 from .models import Application, ApplicationGrant, Organization, OrganizationMember, User
 from .policy import organization_for, require_platform_admin
@@ -109,7 +110,12 @@ def user_status(request, pk):
     user.is_active = state == "enable"
     user.save(update_fields=["is_active"])
     audit(request.user, "account.enabled" if user.is_active else "account.disabled", user.pk)
-    messages.success(request, "Account status updated.")
+    revoked = 0 if user.is_active else revoke_all(user, request.user, reason="account disabled")
+    messages.success(
+        request,
+        "Account status updated."
+        + (f" {revoked} API token{'' if revoked == 1 else 's'} revoked." if revoked else ""),
+    )
     return redirect("users")
 
 
