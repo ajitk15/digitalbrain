@@ -161,6 +161,68 @@ class ApplicationGrant(models.Model):
         ]
 
 
+class Invitation(models.Model):
+    """An application owner asking for someone to be given access (`invitations.py`).
+
+    Someone already in the organization needs no invitation: the owner's
+    grant is written at once. Anyone else is a pending membership the
+    organization's administrator approves, because who joins an organization
+    is still theirs to decide. Once approved, an existing account is a member
+    with its grant; a person with no account yet gets a one-time link to make
+    one. Only a digest of the link's secret is kept, as with an API token.
+    """
+
+    class Status(models.TextChoices):
+        AWAITING = "awaiting", "Waiting for approval"
+        OPEN = "open", "Approved, link not used yet"
+        ACCEPTED = "accepted", "Accepted"
+        DECLINED = "declined", "Declined"
+        WITHDRAWN = "withdrawn", "Withdrawn"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="invitations"
+    )
+    #: What the owner typed - a user ID or an email address - kept to show.
+    invitee = models.CharField(max_length=254)
+    #: The account it matched, or the one made from the link.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name="invitations",
+    )
+    role = models.CharField(max_length=16, choices=ApplicationGrant.Role.choices)
+    can_approve = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.AWAITING)
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    #: SHA-256 of the link's secret; blank until a link is issued.
+    link_digest = models.CharField(max_length=64, blank=True)
+    link_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(role__in=["viewer", "contributor", "owner"]),
+                name="valid_invitation_role",
+            ),
+        ]
+
+
 class Branding(models.Model):
     """Small canonical PNG kept in the database for atomic, multi-instance updates."""
 

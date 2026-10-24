@@ -40,13 +40,16 @@ SETTING = "digitalbrain.tenant"
 #: Tables with a required application_id that are deliberately not narrowed,
 #: because a request for one application reads them across applications:
 #: grants and features (who may open which application, and the nav that lists
-#: them), logos (drawn in that nav), and gateway admissions (the per-provider
-#: cap counts every application's calls in flight).
+#: them), logos (drawn in that nav), gateway admissions (the per-provider
+#: cap counts every application's calls in flight), and invitations - pending
+#: grants, read across an organization's applications by its Members screen
+#: and by a link that names no application in its address.
 UNSCOPED = {
     "ApplicationGrant",
     "ApplicationFeature",
     "ApplicationLogo",
     "AIAdmission",
+    "Invitation",
 }
 
 

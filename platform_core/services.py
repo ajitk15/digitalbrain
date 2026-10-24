@@ -276,6 +276,7 @@ CONTROL_PLANE = (
     "application.disabled",
     "application.deleted",
     "application.files_left",
+    "invitation.",
 )
 
 

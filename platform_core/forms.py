@@ -2,6 +2,7 @@ import io
 import warnings
 
 from django import forms
+from django.contrib.auth.forms import UserCreationForm
 from django.db.models import Q
 from PIL import Image, UnidentifiedImageError
 
@@ -222,6 +223,25 @@ class ApplicationForm(ResourceForm):
         # existed - is "Both", so nothing is switched off that used to be on.
         purpose = getattr(self, "cleaned_data", {}).get("purpose") or self.data.get("purpose")
         return chosen | features_for_purpose(purpose)
+
+
+class InviteForm(forms.Form):
+    invitee = forms.CharField(
+        max_length=254,
+        label="User ID or email",
+        help_text="Someone in this organization gets access now. Anyone else waits for its "
+        "administrator to approve them.",
+    )
+    role = forms.ChoiceField(choices=ApplicationGrant.Role.choices, initial="viewer")
+    can_approve = forms.BooleanField(required=False, label="May approve Code Factory plans")
+
+
+class AcceptInvitationForm(UserCreationForm):
+    """The account an approved invitation makes: the password is the invitee's own."""
+
+    class Meta(UserCreationForm.Meta):
+        model = User
+        fields = ("username", "first_name", "last_name")
 
 
 class GrantForm(forms.Form):

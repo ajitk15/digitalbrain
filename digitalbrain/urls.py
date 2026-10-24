@@ -305,6 +305,11 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("attention/", views.attention_list, name="attention"),
     path("my-access/", views.my_access, name="my-access"),
+    path(
+        "invitations/<uuid:pk>/<str:secret>/",
+        views.accept_invitation,
+        name="invitation-accept",
+    ),
     path("branding/logo.png", views.logo, name="logo"),
     path("favicon.ico", views.favicon, name="favicon"),
     path("platform/", views.platform_console, name="platform-console"),

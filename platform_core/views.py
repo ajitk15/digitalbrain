@@ -16,14 +16,16 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
-from . import sorting
+from . import invitations, sorting
 from .ai import seed_application_ai
 from .forms import (
+    AcceptInvitationForm,
     ApplicationForm,
     ApplicationIdentityForm,
     BrandingForm,
     ChatRetentionForm,
     GrantForm,
+    InviteForm,
     MemberForm,
     OrganizationForm,
     ResourceForm,
@@ -39,6 +41,7 @@ from .models import (
     ChatConversation,
     ChatRetention,
     FeatureSwitch,
+    Invitation,
     Organization,
     OrganizationMember,
     Portfolio,
@@ -501,6 +504,25 @@ def organization(request, pk):
 @require_http_methods(["GET", "POST"])
 def organization_members(request, pk):
     org = organization_for(request.user, pk, admin=True)
+    if request.method == "POST" and request.POST.get("action") in {"approve", "decline"}:
+        invitation = get_object_or_404(
+            Invitation,
+            pk=request.POST.get("invitation"),
+            application__product__portfolio__organization=org,
+        )
+        try:
+            if request.POST["action"] == "decline":
+                invitations.decline(request.user, invitation.pk)
+                messages.success(request, f"Invitation for {invitation.invitee} declined.")
+            else:
+                secret = invitations.approve(request.user, invitation.pk)
+                if secret:
+                    request.session[LINK_KEY] = invitation_link(request, invitation, secret)
+                else:
+                    messages.success(request, f"{invitation.invitee} approved and given access.")
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        return redirect("organization-members", pk=pk)
     if request.method == "POST" and request.POST.get("action") == "remove":
         member = get_object_or_404(
             OrganizationMember.objects.select_related("user"),
@@ -538,7 +560,14 @@ def organization_members(request, pk):
     return render(
         request,
         "members.html",
-        {"form": form, "organization": org, "members": org.members.select_related("user")},
+        {
+            "form": form,
+            "organization": org,
+            "members": org.members.select_related("user"),
+            "waiting": invitations.pending_for(request.user, org.pk),
+            "link": request.session.pop(LINK_KEY, None),
+            "link_hours": invitations.LINK_HOURS,
+        },
     )
 
 
@@ -697,32 +726,73 @@ def create_application(request, pk=None, organization_id=None):
 @require_http_methods(["GET", "POST"])
 def application_access(request, pk):
     app, grant = application_for(request.user, pk, owner=True)
-    form = GrantForm(request.POST or None, application=app)
-    if request.method == "POST" and form.is_valid():
-        if request.POST.get("action") not in {"save", "revoke"}:
-            form.add_error(None, "Choose a valid action.")
+    action = request.POST.get("action") if request.method == "POST" else None
+    invite_form = InviteForm(request.POST if action == "invite" else None, auto_id="invite_%s")
+    link = None
+    if action == "invite" and invite_form.is_valid():
+        try:
+            invitation = invitations.invite(
+                request.user,
+                pk,
+                invite_form.cleaned_data["invitee"],
+                invite_form.cleaned_data["role"],
+                invite_form.cleaned_data["can_approve"],
+            )
+        except ValidationError as error:
+            invite_form.add_error(None, error)
         else:
-            target = form.cleaned_data["user"]
-            can_approve = form.cleaned_data["can_approve"]
-            if not grant.can_approve:
-                # Their checkbox is disabled, so it posts nothing: keep what the
-                # person already holds rather than read the silence as "no".
-                existing = ApplicationGrant.objects.filter(application=app, user=target).first()
-                can_approve = bool(existing and existing.can_approve)
-            try:
-                change_grant(
-                    request.user,
-                    pk,
-                    target,
-                    form.cleaned_data["role"],
-                    can_approve,
-                    revoke=request.POST["action"] == "revoke",
+            if invitation is None:
+                messages.success(request, "They are already in this organization: access given.")
+            elif invitation.status == Invitation.Status.AWAITING:
+                messages.success(
+                    request, "Invitation sent to the organization administrator for approval."
                 )
-            except ValidationError as error:
-                form.add_error(None, error)
+            elif invitation.status == Invitation.Status.ACCEPTED:
+                messages.success(request, "Approved and access given.")
             else:
-                messages.success(request, f"Access for {target.username} updated.")
-                return redirect("application-access", pk=pk)
+                return redirect_with_link(request, "application-access", pk, invitation)
+            return redirect("application-access", pk=pk)
+    elif action in {"withdraw", "link"}:
+        invitation = get_object_or_404(
+            Invitation, pk=request.POST.get("invitation"), application=app
+        )
+        try:
+            if action == "withdraw":
+                invitations.withdraw(request.user, invitation.pk)
+                messages.success(request, f"Invitation for {invitation.invitee} withdrawn.")
+            else:
+                link = invitation_link(request, invitation, invitations.issue_link(
+                    request.user, invitation.pk
+                ))
+        except ValidationError as error:
+            messages.error(request, " ".join(error.messages))
+        if link is None:
+            return redirect("application-access", pk=pk)
+    form = GrantForm(request.POST if action in {"save", "revoke"} else None, application=app)
+    if action in {"save", "revoke"} and form.is_valid():
+        target = form.cleaned_data["user"]
+        can_approve = form.cleaned_data["can_approve"]
+        if not grant.can_approve:
+            # Their checkbox is disabled, so it posts nothing: keep what the
+            # person already holds rather than read the silence as "no".
+            existing = ApplicationGrant.objects.filter(application=app, user=target).first()
+            can_approve = bool(existing and existing.can_approve)
+        try:
+            change_grant(
+                request.user,
+                pk,
+                target,
+                form.cleaned_data["role"],
+                can_approve,
+                revoke=action == "revoke",
+            )
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, f"Access for {target.username} updated.")
+            return redirect("application-access", pk=pk)
+    elif action not in {None, "invite", "save", "revoke"}:
+        return HttpResponse("Choose a valid action.", status=400)
     return render(
         request,
         "access.html",
@@ -732,7 +802,52 @@ def application_access(request, pk):
             "grants": app.grants.select_related("user").order_by("user__username"),
             "grant": grant,
             "roles": ApplicationGrant.Role.choices,
+            "invite_form": invite_form,
+            "invitations": app.invitations.filter(status__in=invitations.PENDING),
+            "link": link or request.session.pop(LINK_KEY, None),
+            "link_hours": invitations.LINK_HOURS,
         },
+    )
+
+
+#: Where a just-issued invitation link waits for the page the redirect lands on.
+#: The session is the server's, and the value is removed the first time it is
+#: read, so the link is shown once - never in a URL, never stored in the database.
+LINK_KEY = "invitation_link"
+
+
+def invitation_link(request, invitation, secret):
+    return {
+        "invitee": invitation.invitee,
+        "url": request.build_absolute_uri(
+            reverse("invitation-accept", args=[invitation.pk, secret])
+        ),
+    }
+
+
+def redirect_with_link(request, name, pk, invitation):
+    secret = invitations.issue_link(request.user, invitation.pk)
+    request.session[LINK_KEY] = invitation_link(request, invitation, secret)
+    return redirect(name, pk=pk)
+
+
+@require_http_methods(["GET", "POST"])
+def accept_invitation(request, pk, secret):
+    """Make the account an approved invitation asked for. No sign-in needed."""
+    invitation = invitations.opened(pk, secret)
+    form = AcceptInvitationForm(request.POST or None)
+    if invitation is not None and request.method == "POST" and form.is_valid():
+        try:
+            user = invitations.accept(pk, secret, form)
+        except ValidationError as error:
+            form.add_error(None, error)
+        else:
+            messages.success(request, f"Account {user.username} made. Sign in with it now.")
+            return redirect("login")
+    return render(
+        request,
+        "invitation_accept.html",
+        {"invitation": invitation, "form": form},
     )
 
 
