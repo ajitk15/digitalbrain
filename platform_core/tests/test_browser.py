@@ -1583,6 +1583,11 @@ class PlatformAdministrationTests(BrowserTestCase):
             ("platform-console", ()),
             ("users", ()),
             ("person", (self.owner.pk,)),
+            ("person-offboard", (self.owner.pk,)),
+            ("platform-organizations", ()),
+            ("platform-security", ()),
+            ("platform-operations", ()),
+            ("platform-settings", ()),
             ("organization-structure", (organization.pk,)),
             ("audit", ()),
             ("my-access", ()),
@@ -1595,7 +1600,7 @@ class PlatformAdministrationTests(BrowserTestCase):
 
     def test_disabling_an_organization_asks_in_a_popup_and_cancel_changes_nothing(self):
         organization = self.app.product.portfolio.organization
-        self.open("platform-console")
+        self.open("platform-organizations")
         self.page.locator(
             f"a[data-modal][href='{reverse('organization-status', args=[organization.pk])}']"
         ).click()
@@ -1610,7 +1615,7 @@ class PlatformAdministrationTests(BrowserTestCase):
 
     def test_disabling_from_the_popup_disables(self):
         organization = self.app.product.portfolio.organization
-        self.open("platform-console")
+        self.open("platform-organizations")
         self.page.locator(
             f"a[data-modal][href='{reverse('organization-status', args=[organization.pk])}']"
         ).click()

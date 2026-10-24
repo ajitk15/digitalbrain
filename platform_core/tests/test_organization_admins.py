@@ -35,7 +35,7 @@ class OrganizationAdministratorTests(TestCase):
             reverse("organization-new"),
             {"name": "Acme", "administrators": [self.alice.pk, self.bob.pk]},
         )
-        self.assertRedirects(response, reverse("platform-console"))
+        self.assertRedirects(response, reverse("platform-organizations"))
         org = Organization.objects.get(name="Acme")
         self.assertEqual(self.admins(org), {"alice", "bob"})
         self.assertFalse(OrganizationMember.objects.filter(user=self.site).exists())
@@ -53,7 +53,7 @@ class OrganizationAdministratorTests(TestCase):
         url = reverse("organization-administrators", args=[org.pk])
         self.assertContains(self.client.get(url), "alice")
         response = self.client.post(url, {"administrators": [self.bob.pk, self.carol.pk]})
-        self.assertRedirects(response, reverse("platform-console"))
+        self.assertRedirects(response, reverse("platform-organizations"))
         self.assertEqual(self.admins(org), {"bob", "carol"})
         # Demoted, not removed: membership is a separate decision.
         self.assertTrue(

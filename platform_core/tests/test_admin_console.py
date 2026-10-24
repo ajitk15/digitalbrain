@@ -48,7 +48,7 @@ class DisableConfirmationTests(ConsoleTestCase):
         self.assertFalse(self.org.active)
 
     def test_the_console_and_structure_open_the_question_instead_of_disabling(self):
-        console = self.client.get(reverse("platform-console"))
+        console = self.client.get(reverse("platform-organizations"))
         self.assertContains(
             console, f'href="{reverse("organization-status", args=[self.org.pk])}" data-modal'
         )
@@ -65,7 +65,7 @@ class DisableConfirmationTests(ConsoleTestCase):
     def test_enabling_is_still_one_click(self):
         self.org.active = False
         self.org.save()
-        console = self.client.get(reverse("platform-console"))
+        console = self.client.get(reverse("platform-organizations"))
         self.assertContains(console, 'value="enable"')
 
     def test_only_a_platform_administrator_is_asked(self):

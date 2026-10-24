@@ -327,6 +327,14 @@ urlpatterns = [
     path("favicon.ico", views.favicon, name="favicon"),
     path("platform/", views.platform_console, name="platform-console"),
     path(
+        "platform/organizations/",
+        views.platform_organizations,
+        name="platform-organizations",
+    ),
+    path("platform/security/", views.platform_security, name="platform-security"),
+    path("platform/operations/", views.platform_operations, name="platform-operations"),
+    path("platform/settings/", views.platform_settings, name="platform-settings"),
+    path(
         "platform/organizations/<uuid:pk>/reset/",
         administration.reset_organization,
         name="organization-reset",

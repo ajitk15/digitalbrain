@@ -422,14 +422,17 @@ def organization_status(request, pk):
     org = get_object_or_404(Organization, pk=pk)
     if request.method == "GET":
         return confirm_disable(
-            request, org, reverse("organization-status", args=[pk]), reverse("platform-console")
+            request,
+            org,
+            reverse("organization-status", args=[pk]),
+            reverse("platform-organizations"),
         )
     state = request.POST.get("state")
     if state not in {"enable", "disable"}:
         return HttpResponse("Invalid status.", status=400)
     stopped = hierarchy.set_active(request.user, org, state == "enable")
     messages.success(request, "Organization status updated." + stopped_note(stopped))
-    return redirect("platform-console")
+    return redirect("platform-organizations")
 
 
 @login_required
@@ -474,11 +477,11 @@ def organization_administrators(request, pk):
                 for user_id in removed:
                     audit(request.user, "organization.admin_removed", user_id, org)
         messages.success(request, f"Administrators of {org.name} updated.")
-        return redirect("platform-console")
+        return redirect("platform-organizations")
     return render(
         request,
         "organization_admins.html",
-        {"form": form, "organization": org, "cancel_url": reverse("platform-console")},
+        {"form": form, "organization": org, "cancel_url": reverse("platform-organizations")},
     )
 
 
@@ -599,7 +602,7 @@ def level_delete(request, level, pk):
         )
     messages.success(request, note)
     if level == "organization":
-        return redirect("platform-console")
+        return redirect("platform-organizations")
     return redirect("organization-structure", pk=organization.pk)
 
 
@@ -620,7 +623,7 @@ def reset_organization(request, pk):
         removed = demo_reset.reset(request.user, organization, request.POST.get("confirm"))
     except ValidationError as error:
         messages.error(request, " ".join(error.messages))
-        return redirect("platform-console")
+        return redirect("platform-organizations")
     runs = removed.get("FactoryRun", 0)
     repositories = removed.get("CodeRepository", 0)
     versions = removed.get("GraphRevision", 0)
@@ -635,4 +638,4 @@ def reset_organization(request, pk):
         f"with {documents} document(s) removed. Applications, connectors, "
         "credentials, uploaded documents, settings and people are untouched.",
     )
-    return redirect("platform-console")
+    return redirect("platform-organizations")

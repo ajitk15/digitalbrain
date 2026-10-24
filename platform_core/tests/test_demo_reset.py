@@ -330,11 +330,11 @@ class DemoResetTests(TestCase):
 
     @override_settings(ALLOW_DEMO_RESET=False)
     def test_the_console_does_not_offer_it_where_it_is_not_enabled(self):
-        page = self.client.get(reverse("platform-console"))
+        page = self.client.get(reverse("platform-organizations"))
         self.assertNotContains(page, "Reset for a demonstration")
 
     def test_the_console_says_what_would_go_before_it_goes(self):
-        page = self.client.get(reverse("platform-console"))
+        page = self.client.get(reverse("platform-organizations"))
         self.assertContains(page, "Reset for a demonstration")
         self.assertContains(page, "There is no undo")
         self.assertContains(page, "1 runs")

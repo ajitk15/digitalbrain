@@ -148,7 +148,7 @@ class HierarchyTests(TestCase):
         self.assertEqual(list(applications_for(self.admin)), [])
 
     def test_the_console_links_each_organization_to_its_structure(self):
-        response = self.client.get(reverse("platform-console"))
+        response = self.client.get(reverse("platform-organizations"))
         self.assertContains(response, reverse("organization-structure", args=[self.org.pk]))
 
     def test_the_organization_page_links_there_for_a_platform_administrator_only(self):
@@ -365,7 +365,7 @@ class HierarchyTests(TestCase):
         self.receipt()
         self.status("organization", self.org, "disable")
         response = self.delete("organization", self.org, "Example")
-        self.assertRedirects(response, reverse("platform-console"))
+        self.assertRedirects(response, reverse("platform-organizations"))
         self.assertFalse(Organization.objects.filter(pk=self.org.pk).exists())
         for model, pk in (
             (Organization, self.org.pk),
@@ -381,7 +381,7 @@ class HierarchyTests(TestCase):
         self.assertEqual(event.organization.name, "Example")
         self.assertEqual(len(event.details["applications"]), 2)
         self.assertEqual(AIUsage.objects.filter(application_id=self.app.pk).count(), 1)
-        self.assertNotContains(self.client.get(reverse("platform-console")), "Example")
+        self.assertNotContains(self.client.get(reverse("platform-organizations")), "Example")
         self.assertTrue(Application.objects.filter(pk=self.far.pk, active=True).exists())
         self.assertEqual(
             self.client.get(reverse("organization-structure", args=[self.org.pk])).status_code, 404

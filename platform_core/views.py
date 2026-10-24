@@ -16,7 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
-from . import invitations, sorting
+from . import console, invitations, sorting
 from .ai import seed_application_ai
 from .forms import (
     AcceptInvitationForm,
@@ -378,10 +378,28 @@ def my_access(request):
 @login_required
 @require_GET
 def platform_console(request):
+    """The administration Overview: what needs attention first, then the totals."""
     require_platform_admin(request.user)
     totals = AIUsage.objects.values("currency", "estimated").annotate(
         amount=Sum("amount"), calls=Count("id")
     )
+    return render(
+        request,
+        "platform.html",
+        {
+            "attention": console.attention(),
+            "organization_count": Organization.objects.count(),
+            "user_count": User.objects.filter(is_active=True).count(),
+            "application_count": Application.objects.count(),
+            "totals": totals,
+        },
+    )
+
+
+@login_required
+@require_GET
+def platform_organizations(request):
+    require_platform_admin(request.user)
     from . import demo_reset
 
     organizations = list(
@@ -393,16 +411,15 @@ def platform_console(request):
                 .order_by("user__username"),
                 to_attr="admin_members",
             )
-        )
+        ).order_by("name")
     )
     return render(
         request,
-        "platform.html",
+        "platform_organizations.html",
         {
             "organizations": organizations,
-            "user_count": User.objects.filter(is_active=True).count(),
-            "application_count": Application.objects.count(),
-            "totals": totals,
+            "unadministered": {org.pk for org in console.unadministered_organizations()},
+            "ownerless": console.ownerless_applications(),
             # Off unless a demonstration instance has asked for it, and already
             # refused by load_config under production.
             "reset_allowed": demo_reset.allowed(),
@@ -414,6 +431,27 @@ def platform_console(request):
             else [],
         },
     )
+
+
+@login_required
+@require_GET
+def platform_security(request):
+    require_platform_admin(request.user)
+    return render(request, "platform_security.html", console.security())
+
+
+@login_required
+@require_GET
+def platform_operations(request):
+    require_platform_admin(request.user)
+    return render(request, "platform_operations.html", console.operations())
+
+
+@login_required
+@require_GET
+def platform_settings(request):
+    require_platform_admin(request.user)
+    return render(request, "platform_settings.html")
 
 
 @login_required
@@ -453,7 +491,7 @@ def create_organization(request):
             f"Organization created with {len(administrators)} administrator"
             f"{'' if len(administrators) == 1 else 's'}.",
         )
-        return redirect("platform-console")
+        return redirect("platform-organizations")
     return render(
         request,
         "organization_admins.html",
@@ -461,7 +499,7 @@ def create_organization(request):
             "form": form,
             "title": "New organization",
             "eyebrow": "Platform administration",
-            "cancel_url": reverse("platform-console"),
+            "cancel_url": reverse("platform-organizations"),
         },
     )
 
