@@ -99,8 +99,12 @@ def is_live(app):
 # ── disable and enable ────────────────────────────────────────────────────────
 
 
-def stop_queued(ids):
-    """Fail work still waiting for a lane under these applications. {label: count}."""
+def queued(ids):
+    """(label, queryset, change) for each kind of work waiting for a lane under these applications.
+
+    One list, so what a disable will stop (`waiting`) and what it stops
+    (`stop_queued`) cannot disagree.
+    """
     from .models import (
         AutomationRun,
         CodeDocumentation,
@@ -113,33 +117,67 @@ def stop_queued(ids):
 
     now = timezone.now()
     ids = list(ids)
-    stopped = {
-        "Code Factory runs": FactoryRun.objects.filter(
-            application_id__in=ids, status__in=["pending", "prepare_queued"]
-        ).update(status="failed", error=STOPPED, finished_at=now),
-        "triage runs": TriageRun.objects.filter(application_id__in=ids, status="queued").update(
-            status="failed", error=STOPPED[:300]
+    return [
+        (
+            "Code Factory runs",
+            FactoryRun.objects.filter(
+                application_id__in=ids, status__in=["pending", "prepare_queued"]
+            ),
+            {"status": "failed", "error": STOPPED, "finished_at": now},
         ),
-        "ServiceOps test runs": ServiceOpsTestRun.objects.filter(
-            application_id__in=ids, status="queued"
-        ).update(status="failed", finished_at=now),
-        "automation runs": AutomationRun.objects.filter(
-            application_id__in=ids, mode="real", status="queued"
-        ).update(status="failed", finished_at=now),
-        "repository indexes": CodeRepository.objects.filter(
-            application_id__in=ids, status="queued"
-        ).update(status="failed", error=STOPPED[:500]),
-        "code reviews": CodeReview.objects.filter(application_id__in=ids, status="queued").update(
-            status="failed", error=STOPPED[:500]
-        )
-        + CodeReview.objects.filter(application_id__in=ids, ai_status="queued").update(
-            ai_status="failed", ai_error=STOPPED[:500]
+        (
+            "triage runs",
+            TriageRun.objects.filter(application_id__in=ids, status="queued"),
+            {"status": "failed", "error": STOPPED[:300]},
         ),
-        "code documentation": CodeDocumentation.objects.filter(
-            application_id__in=ids, ai_status="queued"
-        ).update(ai_status="failed", ai_error=STOPPED[:500]),
-    }
-    return {label: count for label, count in stopped.items() if count}
+        (
+            "ServiceOps test runs",
+            ServiceOpsTestRun.objects.filter(application_id__in=ids, status="queued"),
+            {"status": "failed", "finished_at": now},
+        ),
+        (
+            "automation runs",
+            AutomationRun.objects.filter(application_id__in=ids, mode="real", status="queued"),
+            {"status": "failed", "finished_at": now},
+        ),
+        (
+            "repository indexes",
+            CodeRepository.objects.filter(application_id__in=ids, status="queued"),
+            {"status": "failed", "error": STOPPED[:500]},
+        ),
+        (
+            "code reviews",
+            CodeReview.objects.filter(application_id__in=ids, status="queued"),
+            {"status": "failed", "error": STOPPED[:500]},
+        ),
+        (
+            "code reviews",
+            CodeReview.objects.filter(application_id__in=ids, ai_status="queued"),
+            {"ai_status": "failed", "ai_error": STOPPED[:500]},
+        ),
+        (
+            "code documentation",
+            CodeDocumentation.objects.filter(application_id__in=ids, ai_status="queued"),
+            {"ai_status": "failed", "ai_error": STOPPED[:500]},
+        ),
+    ]
+
+
+def _totals(counted):
+    totals = {}
+    for label, count in counted:
+        totals[label] = totals.get(label, 0) + count
+    return {label: count for label, count in totals.items() if count}
+
+
+def waiting(ids):
+    """What a disable of these applications would stop now. {label: count}."""
+    return _totals((label, found.count()) for label, found, _ in queued(ids))
+
+
+def stop_queued(ids):
+    """Fail work still waiting for a lane under these applications. {label: count}."""
+    return _totals((label, found.update(**change)) for label, found, change in queued(ids))
 
 
 @transaction.atomic

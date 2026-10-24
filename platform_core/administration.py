@@ -119,11 +119,37 @@ def user_status(request, pk):
     return redirect("users")
 
 
+def confirm_disable(request, obj, action, cancel_url):
+    """What a disable turns off and stops, asked before it is done.
+
+    Disabling was one click on the console and on Structure, though it fails
+    every job still queued under the level. Enabling restores exactly what was
+    on and stops nothing, so it is still one click.
+    """
+    ids = list(hierarchy.applications_under(obj).values_list("pk", flat=True))
+    return render(
+        request,
+        "disable_confirm.html",
+        {
+            "item": obj,
+            "level": hierarchy.level_of(obj),
+            "applications": len(ids),
+            "waiting": hierarchy.waiting(ids),
+            "action": action,
+            "cancel_url": cancel_url,
+        },
+    )
+
+
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def organization_status(request, pk):
     require_platform_admin(request.user)
     org = get_object_or_404(Organization, pk=pk)
+    if request.method == "GET":
+        return confirm_disable(
+            request, org, reverse("organization-status", args=[pk]), reverse("platform-console")
+        )
     state = request.POST.get("state")
     if state not in {"enable", "disable"}:
         return HttpResponse("Invalid status.", status=400)
@@ -254,10 +280,17 @@ def organization_structure(request, pk):
 
 
 @login_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def level_status(request, level, pk):
     platform_admin_or_404(request.user)
     obj = level_or_404(level, pk)
+    if request.method == "GET":
+        return confirm_disable(
+            request,
+            obj,
+            reverse("level-status", args=[level, pk]),
+            reverse("organization-structure", args=[hierarchy.organization_of(obj).pk]),
+        )
     state = request.POST.get("state")
     if state not in {"enable", "disable"}:
         return HttpResponse("Invalid status.", status=400)
