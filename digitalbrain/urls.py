@@ -249,6 +249,13 @@ urlpatterns = [
     path("applications/<uuid:pk>/connectors/", connectors.connectors, name="connectors"),
     path("platform/users/", administration.users, name="users"),
     path("platform/users/<uuid:pk>/status/", administration.user_status, name="user-status"),
+    path("platform/users/<uuid:pk>/", administration.person, name="person"),
+    path("platform/users/<uuid:pk>/unlock/", administration.person_unlock, name="person-unlock"),
+    path(
+        "platform/users/<uuid:pk>/reset-link/",
+        administration.person_reset_link,
+        name="person-reset-link",
+    ),
     path(
         "platform/organizations/<uuid:pk>/administrators/",
         administration.organization_administrators,
@@ -285,6 +292,11 @@ urlpatterns = [
     path("accounts/sso/start/", sso.start, name="sso-start"),
     path("accounts/sso/callback/", sso.callback, name="sso-callback"),
     path("accounts/logout/", auth.LogoutView.as_view(), name="logout"),
+    path(
+        "accounts/reset/<uidb64>/<token>/",
+        administration.ResetPasswordView.as_view(),
+        name="password-reset",
+    ),
     path(
         "accounts/password/",
         administration.RequiredPasswordChangeView.as_view(),
