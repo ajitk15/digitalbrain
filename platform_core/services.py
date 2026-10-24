@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 
 from .models import (
     AIUsage,
@@ -250,6 +251,38 @@ def available_features():
     because all_features would refuse them anyway.
     """
     return [(key, label) for key, (label, _) in FEATURES.items() if feature_available(key)]
+
+
+#: What a platform administrator's audit log shows from inside an organization:
+#: the accounts, people and tree platform administration manages, never what an
+#: application did. An entry ending in "." is a prefix. Events with no
+#: organization - accounts, branding, platform features - are control-plane
+#: already. The log used to show platform administrators only those, so their
+#: own organization disables, deletions and administrator changes, recorded with
+#: the organization, never reached them. Who holds which grant is included -
+#: names and roles, which open no application - because offboarding someone
+#: needs it.
+CONTROL_PLANE = (
+    "account.",
+    "organization.",
+    "portfolio.",
+    "product.",
+    "application.access_changed",
+    "application.access_revoked",
+    "application.created",
+    "application.enabled",
+    "application.disabled",
+    "application.deleted",
+    "application.files_left",
+)
+
+
+def control_plane():
+    """The audit events a platform administrator sees, as a filter."""
+    found = Q(organization__isnull=True)
+    for action in CONTROL_PLANE:
+        found |= Q(action__startswith=action) if action.endswith(".") else Q(action=action)
+    return found
 
 
 def audit(user, action, resource, organization=None, details=None):

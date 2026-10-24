@@ -9,7 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db import connection, transaction
-from django.db.models import Count, Prefetch, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -59,6 +59,7 @@ from .services import (
     area_of,
     audit,
     change_grant,
+    control_plane,
     feature_enabled,
     knowledge_labels,
     purposes,
@@ -682,6 +683,7 @@ def application_access(request, pk):
 AUDIT_COLUMNS = {
     "time": sorting.Column("Time", "desc", field="created_at"),
     "actor": sorting.Column("Actor", field="actor__username"),
+    "organization": sorting.Column("Organization", field="organization__name"),
     "action": sorting.Column("Action", field="action"),
     "resource": sorting.Column("Resource", field="resource_id"),
 }
@@ -710,18 +712,20 @@ def sorted_page(request, queryset, columns, default, per_page):
 @login_required
 @require_GET
 def audit_log(request):
+    org_ids = OrganizationMember.objects.filter(
+        user=request.user, is_admin=True, organization__active=True
+    ).values("organization_id")
+    scope = Q(organization_id__in=org_ids)
     if request.user.is_platform_admin:
-        # Platform admins see control-plane events only; no application event stream.
-        events = AuditEvent.objects.filter(organization__isnull=True)
-    else:
-        org_ids = OrganizationMember.objects.filter(
-            user=request.user, is_admin=True, organization__active=True
-        ).values("organization_id")
-        events = AuditEvent.objects.filter(organization_id__in=org_ids)
+        # Every control-plane event, in every organization, and no application
+        # event stream - unless they also administer that organization, which
+        # being a platform administrator neither grants nor takes away.
+        scope |= control_plane()
+    events = AuditEvent.objects.filter(scope).select_related("actor", "organization")
     return render(
         request,
         "audit.html",
-        sorted_page(request, events.select_related("actor"), AUDIT_COLUMNS, "time", 30),
+        sorted_page(request, events, AUDIT_COLUMNS, "time", 30),
     )
 
 
