@@ -252,6 +252,11 @@ urlpatterns = [
     path("platform/users/<uuid:pk>/status/", administration.user_status, name="user-status"),
     path("platform/users/<uuid:pk>/", administration.person, name="person"),
     path(
+        "platform/users/<uuid:pk>/offboard/",
+        administration.person_offboard,
+        name="person-offboard",
+    ),
+    path(
         "platform/users/<uuid:pk>/authenticator/",
         administration.person_authenticator,
         name="person-authenticator",

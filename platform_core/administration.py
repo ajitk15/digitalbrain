@@ -23,7 +23,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from . import authenticator, hierarchy
+from . import authenticator, hierarchy, offboarding
 from .api_auth import revoke_all
 from .forms import OrganizationAdministratorsForm
 from .models import (
@@ -282,6 +282,41 @@ def person_reset_link(request, pk):
         request,
         "person.html",
         person_context(account, reset_link=request.build_absolute_uri(path), reset_hours=hours),
+    )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def person_offboard(request, pk):
+    """Name a successor, hand them what this person held, and disable the account."""
+    require_platform_admin(request.user)
+    account = get_object_or_404(User, pk=pk, is_active=True)
+    if account.is_platform_admin:
+        raise PermissionDenied("A platform administrator is offboarded on the host.")
+    error = ""
+    if request.method == "POST":
+        try:
+            done = offboarding.offboard(request.user, account.pk, request.POST.get("successor", ""))
+        except ValidationError as refusal:
+            error = " ".join(refusal.messages)
+        else:
+            messages.success(
+                request,
+                f"{account.username} is offboarded. {done['successor'].username} now owns "
+                f"{done['applications']} application{'' if done['applications'] == 1 else 's'}"
+                f" and administers {done['organizations']} organization"
+                f"{'' if done['organizations'] == 1 else 's'}.",
+            )
+            return redirect("person", pk=pk)
+    return render(
+        request,
+        "offboard.html",
+        {
+            "account": account,
+            "error": error,
+            "successor": request.POST.get("successor", ""),
+            **offboarding.holdings(account),
+        },
     )
 
 
