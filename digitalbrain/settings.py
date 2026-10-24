@@ -130,6 +130,10 @@ ENTRA_CLIENT_ID = CONFIG.get("entra_client_id", "").lower()
 #: access at all on their first sign-in. Off unless written down: by default an
 #: administrator creates the account first and the first sign-in links to it.
 ENTRA_CREATE_USERS = bool(CONFIG.get("entra_create_users", False))
+#: Let the directory create, update and deactivate accounts over SCIM 2.0
+#: (platform_core/scim.py), with the bearer token mounted as `scim_token`. Off
+#: unless written down. It creates accounts and grants nothing.
+SCIM_PROVISIONING = bool(CONFIG.get("scim_provisioning", False))
 DEBUG = False
 SECRET_DIRECTORY = CONFIG["secret_directory"]
 #: Where a credential set in the browser is written. Empty means an operator has

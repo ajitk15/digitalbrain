@@ -23,17 +23,40 @@ def unique_slug(model, name, field="slug"):
     """
     base = slugify(name)[:120] or "application"
     candidate, index = base, 2
-    while model.objects.filter(**{field: candidate}).exists():
+    # Deleted rows included: a tombstone keeps its slug column, and the
+    # constraint is on every row.
+    while model._base_manager.filter(**{field: candidate}).exists():
         suffix = f"-{index}"
         candidate = f"{base[: 120 - len(suffix)]}{suffix}"
         index += 1
     return candidate
 
 
+class LiveManager(models.Manager):
+    """Every row but a deleted one.
+
+    Deleting a level of the organization tree removes what it holds and keeps
+    the row as a tombstone (`hierarchy.py`): audit events name the organization
+    and receipts the application, and both are kept for years. So `objects`
+    reads a deleted level as gone - a lookup, a list or a related manager finds
+    nothing - while a foreign key from a kept record still reaches it, through
+    the base manager. `everything` is for the code that removes it.
+    """
+
+    def get_queryset(self):
+        return super().get_queryset().filter(deleted_at__isnull=True)
+
+
 class NamedResource(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
     created_at = models.DateTimeField(auto_now_add=True)
+    #: When a platform administrator deleted it. Never cleared: there is no
+    #: undelete, because what it held is gone.
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = LiveManager()
+    everything = models.Manager()
 
     class Meta:
         abstract = True
@@ -62,10 +85,14 @@ class Portfolio(NamedResource):
     organization = models.ForeignKey(
         Organization, on_delete=models.PROTECT, related_name="portfolios"
     )
+    #: Off hides everything under it, as an organization's does; each level
+    #: keeps its own flag, so turning it back on restores exactly what was on.
+    active = models.BooleanField(default=True, db_default=True)
 
 
 class Product(NamedResource):
     portfolio = models.ForeignKey(Portfolio, on_delete=models.PROTECT, related_name="products")
+    active = models.BooleanField(default=True, db_default=True)
 
 
 class Application(NamedResource):
@@ -319,3 +346,21 @@ class SignInIdentity(models.Model):
             models.UniqueConstraint(fields=["tenant", "subject"], name="unique_sign_in_subject"),
             models.UniqueConstraint(fields=["user", "tenant"], name="unique_sign_in_user"),
         ]
+
+
+class ProvisionedUser(models.Model):
+    """A platform user the directory manages through SCIM (`scim.py`).
+
+    Only users with a row here can be read, changed or deactivated by the
+    directory: ones it created, and ones it matched by sign-in name, which is
+    audited when it happens. A platform administrator never has one. The row
+    says nothing about access - provisioning creates accounts, never grants.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="provisioning"
+    )
+    #: The directory's own id for the person, as it sent it; shown back to it.
+    external_id = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)

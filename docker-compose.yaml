@@ -262,6 +262,14 @@ services:
       # files originals_access_key_id and originals_secret_access_key.
       DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
       DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
+      # Sign in with Microsoft Entra ID (docs/single-sign-on.md): the directory
+      # (tenant) id and the application (client) id, both or neither. The client
+      # secret is the mounted file entra_client_secret. Empty: no Microsoft button.
+      DIGITAL_BRAIN_ENTRA_TENANT: ${DIGITAL_BRAIN_ENTRA_TENANT:-}
+      DIGITAL_BRAIN_ENTRA_CLIENT_ID: ${DIGITAL_BRAIN_ENTRA_CLIENT_ID:-}
+      # 1 lets Entra create and deactivate accounts over SCIM at
+      # https://<host>/api/scim/v2 - never grants. Its token is the mounted scim_token.
+      DIGITAL_BRAIN_SCIM: ${DIGITAL_BRAIN_SCIM:-0}
       # The one non-secret .env value the platform accepts. Set it for the
       # first sign-in, then remove it.
       SITE_ADMIN_USER_ID: ${SITE_ADMIN_USER_ID:-}

@@ -1,49 +1,24 @@
 """Delete one application and everything in it. Operator-only, and irreversible.
 
-There is deliberately no screen for this. Demo reset clears an organization's
-work and keeps its applications; this removes an application outright, which is
-a decision an operator makes on the host, naming it exactly.
+The platform console's Structure page does the same for a platform
+administrator, once the application is disabled (`hierarchy.py`). This is the
+host's version: it does not ask for the disable first, and an organization
+administrator may name themselves with `--as`. Demo reset clears an
+organization's work and keeps its applications; this removes an application
+outright, naming it exactly.
 
-Order matters: most of what an application holds PROTECTs it, so everything is
-removed deepest first, the same discipline `demo_reset.ORDER` follows - which is
-reused for the runs, plans, graphs and triage it already knows about.
+What it removes and what it keeps - the audit trail and the AI receipts, under a
+tombstone of the application row - is `hierarchy.delete`'s, so the two cannot
+disagree.
 """
 
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
 
-from platform_core import originals
-from platform_core.demo_reset import ORDER
-from platform_core.documents import document_folder, document_path
-from platform_core.models import (
-    AIConfiguration,
-    AIUsage,
-    Application,
-    ChatConversation,
-    ChatMessage,
-    Connector,
-    Document,
-    FactoryRun,
-    KnowledgeEntry,
-    OrganizationMember,
-    TriageRun,
-    User,
-)
-from platform_core.secrets import managed_directory
-from platform_core.services import audit
-
-#: What `ORDER` does not cover, still deepest first. Entries go after every run
-#: that PROTECTs one; documents after the entries converted from them.
-REMAINING = (
-    ChatMessage,
-    ChatConversation,
-    AIUsage,
-    Connector,
-    AIConfiguration,
-    KnowledgeEntry,
-)
+from platform_core import hierarchy
+from platform_core.models import Application, OrganizationMember, User
 
 
 class Command(BaseCommand):
@@ -89,57 +64,17 @@ class Command(BaseCommand):
             ).exists()
         ):
             raise CommandError("--as must name an active platform or organization admin.")
-        busy = (
-            FactoryRun.objects.filter(application=app, status__in=["queued", "running"]).exists()
-            or TriageRun.objects.filter(application=app, status__in=["queued", "running"]).exists()
-        )
-        if busy:
-            raise CommandError("A run is queued or running here. Wait for it to finish.")
-
-        removed = {}
-        # Paths first: once deleted, the instance no longer has its id.
-        documents = list(Document.objects.filter(application=app).values_list("pk", flat=True))
-        folder = document_folder(app)
-        def tally(deleted):
-            # Each model's own rows, cascades included under their own name, so
-            # a source's passages are never counted as sources.
-            for label, count in deleted[1].items():
-                if count:
-                    name = label.rsplit(".", 1)[-1]
-                    removed[name] = removed.get(name, 0) + count
-
-        with transaction.atomic():
-            for model, lookup in ORDER:
-                tally(model.objects.filter(**{lookup: [app.pk]}).delete())
-            for model in REMAINING:
-                tally(model.objects.filter(application=app).delete())
-            tally(Document.objects.filter(application=app).delete())
-            name = app.name
-            app.delete()
-            audit(
-                actor,
-                "application.deleted",
-                app_id,
-                organization,
-                details={"name": name, "removed": removed},
-            )
-        # Files after the commit: a rolled-back delete must not have lost them.
-        store = originals.store()
-        for pk in documents:
-            store.delete(app, pk)
-            # And from disk, where it was before a bucket was configured.
-            document_path(app, pk).unlink(missing_ok=True)
-        if folder.is_dir() and not any(folder.iterdir()):
-            folder.rmdir()
-        # Only credentials this platform wrote. An operator's mount is theirs.
-        cleared = []
-        directory = managed_directory()
-        if directory is not None and directory.is_dir():
-            for path in directory.glob(f"*_{app_id}"):
-                path.unlink()
-                cleared.append(path.name.removesuffix(f"_{app_id}"))
+        name = app.name
+        try:
+            result = hierarchy.delete(actor, app, options["confirm_name"], require_disabled=False)
+        except ValidationError as error:
+            raise CommandError(" ".join(error.messages)) from None
         self.stdout.write(f"Deleted {name} ({app_id}).")
-        for model, count in sorted(removed.items()):
+        for model, count in sorted(result["removed"].items()):
             self.stdout.write(f"  {model}: {count}")
-        if cleared:
-            self.stdout.write(f"  credentials removed: {', '.join(sorted(cleared))}")
+        if result["credentials"]:
+            self.stdout.write(f"  credentials removed: {', '.join(result['credentials'])}")
+        if result["files_left"]:
+            self.stdout.write(
+                f"  {result['files_left']} original file(s) left: the document store did not answer"
+            )

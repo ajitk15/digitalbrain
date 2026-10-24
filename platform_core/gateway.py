@@ -161,11 +161,21 @@ def try_admit(app, config, purpose, user, amount):
     """An admission row, or None when no slot is free. Raises BudgetExceeded."""
     from .budget import BudgetExceeded, month_start, spent
     from .models import AIAdmission, AIBudget, Application
+    from .policy import LIVE
 
     now = timezone.now()
     bound = limits()
     with transaction.atomic():
-        list(Application.objects.select_for_update().filter(pk=app.pk).values_list("pk"))
+        # The application row is the lock a delete takes too (`hierarchy.delete`),
+        # so a call is either admitted before it or refused after it; and an
+        # application disabled since `authorize` read it is refused here.
+        locked = list(
+            Application.objects.select_for_update(of=("self",))
+            .filter(pk=app.pk, **LIVE)
+            .values_list("pk")
+        )
+        if not locked:
+            raise PermissionDenied("This application is disabled. Nothing was sent.")
         provider_lock(config.provider)
         live = AIAdmission.objects.filter(expires_at__gt=now)
         mine = live.filter(application_id=app.pk)

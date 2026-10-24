@@ -5,6 +5,16 @@ from django.shortcuts import get_object_or_404
 
 from .models import Application, ApplicationGrant, Organization, OrganizationMember, User
 
+#: An application is live while it and every level above it are on
+#: (`hierarchy.py`). Each level keeps its own flag, so turning a parent back on
+#: restores exactly what was on.
+LIVE = {
+    "active": True,
+    "product__active": True,
+    "product__portfolio__active": True,
+    "product__portfolio__organization__active": True,
+}
+
 
 def require_platform_admin(user):
     if not User.objects.filter(pk=user.pk, is_active=True, is_platform_admin=True).exists():
@@ -28,9 +38,10 @@ def applications_for(user):
     org_ids = OrganizationMember.objects.filter(user=user).values("organization_id")
     return (
         Application.objects.filter(
-            active=True,
+            # Every level up the tree on (`hierarchy.LIVE`): a disabled
+            # portfolio or product hides what is under it, as an organization does.
+            **LIVE,
             grants__user=user,
-            product__portfolio__organization__active=True,
             product__portfolio__organization_id__in=org_ids,
         )
         .select_related("product__portfolio__organization")

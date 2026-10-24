@@ -242,6 +242,19 @@ with no password, no membership and no grant. Entra groups and roles are never
 read: mapping them to grants would let the directory widen access without an
 audited grant here.
 
+**Provisioning creates and deactivates accounts, and grants nothing** (`scim.py`,
+SCIM 2.0 at `/api/scim/v2/Users`, `scim_provisioning`, refused without the Entra
+ids; bearer token the mounted `scim_token`, at least 32 characters). Entra's
+provisioning service creates an account - no password, no membership, no grant -
+updates its name and email, and deactivates it when the person is unassigned or
+deleted, so access ends with the directory. It may touch only `ProvisionedUser`
+rows: accounts it created, and one existing account matched by sign-in name
+(audited `account.directory_linked`). **Never a platform administrator.** Groups
+are refused, so the directory still cannot widen access; a user is never deleted,
+because the audit trail and receipts name them. Each change is audited by the
+non-login `entra-provisioning` account, field names only. Off by default, and a
+404 while off.
+
 **API tokens are users, not a second permission model.** `api_auth.authenticate`
 returns (user, application); `api.authorize` then runs the same `access()` checks a
 session request runs. Never add a token role or a token-specific permission table -
@@ -641,9 +654,39 @@ off is not offered, 404s on add and edit, and `sync` refuses it - which stops it
 with no code that knows about schedules. The Credentials screen lists only what the
 application uses, and always lists a credential that is set so it can be cleared.
 
-Deleting an application has no screen: `manage.py delete_application <id> --confirm-name
-<name> --as <admin>` is the operator's tool, refuses while a run is in flight, and removes
-only credential files this platform wrote.
+**Every level of the tree can be disabled and deleted by a platform administrator**
+(`hierarchy.py`, the console's Structure page per organization). Deleting an
+application used to have no screen - `manage.py delete_application` was the only way.
+**That was traded, deliberately, for an operator who runs the platform from the browser**,
+and three things hold it in place of "no screen". First, only a platform administrator,
+and everyone else gets a 404 rather than a 403. Second, deleting is the second of two
+steps: it is offered only for a level that is already disabled, and the name must be
+typed exactly. Third, it is refused while anything under it is in flight - runs, indexes,
+reviews, conversions, a streaming answer, an admitted paid call, a running job. That
+check is made under a lock on the application rows, the lock `gateway.try_admit` takes.
+It is allowed in production too.
+
+**Disabling is reversible.** Organization, portfolio, product and application each have
+their own `active` flag. An application is live only while all four are on
+(`policy.LIVE`, read by `applications_for`, the gateway, connector scheduling and the
+graph lane), so turning a parent back on restores exactly what was on. A disable fails
+the work still *queued* under it, which has cost nothing, with `hierarchy.STOPPED`. A
+step already running finishes, and its next paid call is refused. A schedule just waits.
+
+**Deleting is not reversible, and it leaves a tombstone.** What the applications hold is
+removed deepest first. Every level's row stays, with `deleted_at` set and hidden by
+`LiveManager` (`objects`; `everything` sees it), because two kinds of record outlive it:
+audit events name the organization (a real foreign key, kept six years) and `AIUsage`
+receipts name the application. **Neither is ever deleted with what it describes** - the
+command used to delete receipts, and no longer does. The slug is freed. Files go after
+the commit: originals (a bucket that does not answer is counted in a `.files_left` audit
+event) and credential files in the managed directory only. Each act is audited as
+`<level>.disabled`, `.enabled` or `.deleted`.
+
+Administering the tree still grants nothing: the Structure page shows names, states and
+counts, and links no application. `manage.py delete_application <id> --confirm-name
+<name> --as <admin>` remains the host's tool. It runs `hierarchy.delete` without the
+disable step and also accepts an organization administrator.
 
 Both the create form and the Features screen post a hidden `features_declared` marker.
 An unticked checkbox is simply absent from a POST, so without the marker "every box off"

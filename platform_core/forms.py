@@ -139,9 +139,13 @@ class ApplicationForm(ResourceForm):
         self.fields["owner"].queryset = User.objects.filter(
             is_active=True, organizationmember__organization=organization
         )
-        self.fields["portfolio"].queryset = Portfolio.objects.filter(organization=organization)
+        # A disabled level is not offered: what was made under it would start
+        # disabled, which nobody choosing it would mean.
+        self.fields["portfolio"].queryset = Portfolio.objects.filter(
+            organization=organization, active=True
+        )
         self.fields["product"].queryset = Product.objects.filter(
-            portfolio__organization=organization
+            portfolio__organization=organization, active=True, portfolio__active=True
         )
         if product is not None:
             # Reached from a specific product's "+", so both levels are decided.

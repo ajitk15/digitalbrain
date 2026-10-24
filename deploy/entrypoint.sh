@@ -189,6 +189,18 @@ else
         if [ "${DIGITAL_BRAIN_OCR:-1}" = "1" ]; then
             echo 'ocr = true'
         fi
+        # Sign in with Microsoft Entra ID, pinned to one tenant (sso.py): both
+        # ids or neither, which load_config checks; the client secret is the
+        # mounted entra_client_secret. DIGITAL_BRAIN_SCIM=1 also lets the
+        # directory provision accounts (scim.py) - creates and deactivates,
+        # never grants - with its bearer token the mounted scim_token.
+        if [ -n "${DIGITAL_BRAIN_ENTRA_TENANT:-}" ]; then
+            echo "entra_tenant = \"$DIGITAL_BRAIN_ENTRA_TENANT\""
+            echo "entra_client_id = \"${DIGITAL_BRAIN_ENTRA_CLIENT_ID:-}\""
+            if [ "${DIGITAL_BRAIN_SCIM:-0}" = "1" ]; then
+                echo 'scim_provisioning = true'
+            fi
+        fi
         echo ''
         echo '[database]'
         echo 'name = "digital_brain"'
@@ -247,6 +259,12 @@ if grep -q '^store = "s3"$' "$CONFIG"; then
     for name in originals_access_key_id originals_secret_access_key; do
         [ -f "/run/secrets/$name" ] || echo "entrypoint: originals are in S3 but /run/secrets/$name is not mounted; uploads will fail until it is." >&2
     done
+fi
+if grep -q '^entra_tenant = ' "$CONFIG"; then
+    [ -f /run/secrets/entra_client_secret ] || echo "entrypoint: Microsoft sign-in is configured but /run/secrets/entra_client_secret is not mounted; every Microsoft sign-in will fail until it is." >&2
+fi
+if grep -q '^scim_provisioning = true$' "$CONFIG"; then
+    [ -f /run/secrets/scim_token ] || echo "entrypoint: SCIM provisioning is on but /run/secrets/scim_token is not mounted; the directory's calls are refused until it is." >&2
 fi
 
 # ------------------------------------------------------------- what is mounted

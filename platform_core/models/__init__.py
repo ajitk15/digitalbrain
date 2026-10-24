@@ -22,6 +22,7 @@ from .accounts import (  # noqa: F401
     OrganizationMember,
     Portfolio,
     Product,
+    ProvisionedUser,
     SignInIdentity,
     User,
     unique_slug,

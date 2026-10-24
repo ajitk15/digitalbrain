@@ -106,10 +106,95 @@ A refused sign-in logs `{"event": "sso.refused", "failure_kind": "<label>"}`
 with a fixed label (`state`, `nonce`, `claims`, `unknown`, `admin_by_name`...)
 and nothing from the request or the token.
 
+## 5. Provisioning accounts from Entra (SCIM)
+
+Sign-in links an account that already exists. Provisioning makes Entra create
+it, keep its name and email current, and **deactivate it the moment someone is
+unassigned or leaves** - so access ends with the directory, not whenever
+somebody remembers. Code: `platform_core/scim.py`; tests:
+`platform_core/tests/test_scim.py`.
+
+**It creates accounts and grants nothing.** A provisioned account has no
+password, no organization and no application grant; it signs in with Microsoft
+and sees nothing until someone grants it access on the Access screens. Groups
+are refused. A **platform administrator is never matched, created over or
+changed** - an operator manages those, as with `link_sso`. Nothing is ever
+deleted: removal is deactivation, which signs the person out at once and stops
+their API tokens and connector schedules.
+
+**Entra must reach the server over the internet**, so this is set up on the
+hosted deployment (or behind a tunnel), never against `localhost`.
+
+### Turn it on
+
+The deployment's environment (compose):
+
+```yaml
+DIGITAL_BRAIN_ENTRA_TENANT: "<Directory (tenant) ID>"
+DIGITAL_BRAIN_ENTRA_CLIENT_ID: "<Application (client) ID>"
+DIGITAL_BRAIN_SCIM: "1"
+```
+
+or, in a configuration file, `scim_provisioning = true` beside the two Entra
+ids (`load_config` refuses it without them - an account with no password and no
+Microsoft sign-in could never be used). Then mount two secret files, mode 0600:
+
+| File | Value |
+| --- | --- |
+| `entra_client_secret` | The client secret from step 1 |
+| `scim_token` | A random token of at least 32 characters, e.g. `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+
+Restart. The entrypoint warns at start while either file is missing.
+
+### Set up provisioning in Entra
+
+1. **Enterprise applications** → **New application** → **Create your own
+   application** → *Integrate any other application you don't find in the
+   gallery (Non-gallery)*. (The app registration from step 1 handles sign-in;
+   provisioning is configured on an enterprise application.)
+2. **Provisioning** → **Get started** → *Provisioning Mode* **Automatic**:
+   - *Tenant URL* `https://<your host>/api/scim/v2`
+   - *Secret Token* the contents of `scim_token`
+   - **Test Connection** - it asks for a user that does not exist and must be
+     told "none"; nothing is written.
+3. **Mappings**:
+   - *Provision Microsoft Entra ID Groups* → **Enabled: No**. Groups are
+     refused here by design.
+   - *Provision Microsoft Entra ID Users*: keep `userPrincipalName → userName`
+     (the sign-in name, which is how Microsoft sign-in links the account),
+     `Switch([IsSoftDeleted]...) → active`, `givenName → name.givenName`,
+     `surname → name.familyName`, `mail → emails[type eq "work"].value`.
+     Everything else may stay or go - attributes this platform does not keep
+     are ignored.
+4. **Users and groups** → assign the people (or a group, whose members are
+   provisioned one by one - the group itself is not sent).
+5. *Scope* **Sync only assigned users and groups**, then **Start provisioning**.
+   Entra runs a cycle about every 40 minutes; **Provision on demand** pushes one
+   person at once, which is the quickest test.
+
+### What happens to whom
+
+| In Entra | Here |
+| --- | --- |
+| Assigned, no account here | Account created, audited `account.provisioned` |
+| Assigned, one account here whose username or email is the UPN | Linked, audited `account.directory_linked`; a password it had is kept |
+| Assigned, and it is a platform administrator | Refused (409) - never managed by the directory |
+| Name, email or UPN changed | Copied over, audited `account.updated` (field names, never values) |
+| Unassigned or blocked | Deactivated, audited `account.deprovisioned`, which names any organization or application left with no active administrator or owner |
+| Re-assigned | Reactivated, `account.reprovisioned` |
+| Deleted | Deactivated and no longer the directory's, `account.directory_unlinked`; never deleted |
+
+Every event is recorded as the non-login account `entra-provisioning`. Test it:
+provision one person on demand, sign in as them with Microsoft (they see nothing),
+grant them an application, then unassign them and watch their next page load go
+to the sign-in screen.
+
 ## What is deliberately not here
 
 - **Mapping Entra groups or app roles to grants.** That would let the directory
   widen access without an audited grant here; it needs its own decision.
+  Provisioning (section 5) creates and deactivates accounts and refuses groups
+  for the same reason.
 - **Single sign-out.** Signing out ends this session only, not the Microsoft one.
 - **Requiring SSO / disabling passwords.** Password sign-in stays on.
 - **Multi-tenant sign-in.** Refused by configuration.

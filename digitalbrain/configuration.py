@@ -77,6 +77,7 @@ def load_config():
         "entra_tenant",
         "entra_client_id",
         "entra_create_users",
+        "scim_provisioning",
     }
     if set(config) - allowed:
         raise ImproperlyConfigured("Unknown configuration fields; secrets belong in mounted files.")
@@ -214,6 +215,12 @@ def load_config():
         )
     if type(config.get("entra_create_users", False)) is not bool:
         raise ImproperlyConfigured("entra_create_users must be a boolean.")
+    if type(config.get("scim_provisioning", False)) is not bool:
+        raise ImproperlyConfigured("scim_provisioning must be a boolean.")
+    if config.get("scim_provisioning") and not any(entra):
+        # Provisioning makes accounts with no password: without Microsoft
+        # sign-in nobody could ever use one.
+        raise ImproperlyConfigured("scim_provisioning needs entra_tenant and entra_client_id.")
     hosts = config.get("fetch_allow_hosts", [])
     if not isinstance(hosts, list) or any(not isinstance(h, str) or not h.strip() for h in hosts):
         raise ImproperlyConfigured("fetch_allow_hosts must be a list of hostnames.")

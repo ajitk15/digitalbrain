@@ -179,6 +179,15 @@ keep originals on the `app-runtime` volume. `manage.py move_originals --check`
 says whether any disk originals are left to move. OCR is rendered on too
 (`DIGITAL_BRAIN_OCR=0` turns it off); the image installs Tesseract.
 
+**Microsoft sign-in and provisioning are off until named.** Set
+`DIGITAL_BRAIN_ENTRA_TENANT` and `DIGITAL_BRAIN_ENTRA_CLIENT_ID` (both GUIDs) and
+mount `entra_client_secret` for the Sign in with Microsoft button;
+`DIGITAL_BRAIN_SCIM=1` and a mounted `scim_token` (32+ random characters) let
+Entra create and deactivate accounts at `https://<host>/api/scim/v2`. Both secret
+files go in `platform-secrets`, mode 0600, owned by uid 10001, and the entrypoint
+warns at start while either is missing. Neither grants access to anything.
+Setup, Entra side included: `docs/single-sign-on.md`.
+
 ## 5. Watching it
 
 Without any of this, `queue_status` says what every lane has waiting:

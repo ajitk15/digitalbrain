@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .graph_ai import EXTRACTION_TIMEOUT, rubric
+from .hierarchy import is_live
 from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
 from .ontology import CORE, PACKS, for_application
@@ -573,8 +574,7 @@ def refresh_graph(app_id):
     )
     if (
         app is None
-        or not app.active
-        or not app.product.portfolio.organization.active
+        or not is_live(app)
         or not feature_enabled("knowledge", app)
     ):
         return "current"

@@ -31,8 +31,9 @@ from django.views.decorators.http import require_http_methods
 
 from .connector_kinds import KINDS, MAX_BODY_CHARACTERS, complete, kind_for
 from .masking import stored_content
-from .models import Connector, KnowledgeEntry
+from .models import Application, Connector, KnowledgeEntry
 from .permissions import SUPPORTED, enforce
+from .policy import LIVE
 from .services import audit, feature_enabled
 from .workbench import access, add_knowledge
 
@@ -532,7 +533,13 @@ def due_connectors():
     starve every other connector behind it.
     """
     now = timezone.now()
-    candidates = Connector.objects.filter(enabled=True, sync_interval_minutes__gt=0).order_by(
+    # Only where the application is live: a disabled one's schedule waits,
+    # unchanged, for it to be turned back on, rather than failing every tick.
+    candidates = Connector.objects.filter(
+        enabled=True,
+        sync_interval_minutes__gt=0,
+        application__in=Application.objects.filter(**LIVE),
+    ).order_by(
         models.F("last_attempt_at").asc(nulls_first=True)
     )
     return [connector for connector in candidates if is_due(connector, now)]
