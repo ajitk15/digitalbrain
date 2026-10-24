@@ -5,6 +5,7 @@ from platform_core import (
     administration,
     ai,
     api,
+    authenticator,
     automation_execution,
     benchmark,
     chat_views,
@@ -250,6 +251,11 @@ urlpatterns = [
     path("platform/users/", administration.users, name="users"),
     path("platform/users/<uuid:pk>/status/", administration.user_status, name="user-status"),
     path("platform/users/<uuid:pk>/", administration.person, name="person"),
+    path(
+        "platform/users/<uuid:pk>/authenticator/",
+        administration.person_authenticator,
+        name="person-authenticator",
+    ),
     path("platform/users/<uuid:pk>/unlock/", administration.person_unlock, name="person-unlock"),
     path(
         "platform/users/<uuid:pk>/reset-link/",
@@ -289,6 +295,8 @@ urlpatterns = [
     path("health/live", views.live, name="live"),
     path("health/ready", views.ready, name="ready"),
     path("accounts/login/", sso.LoginView.as_view(), name="login"),
+    path("accounts/code/", authenticator.sign_in_code, name="sign-in-code"),
+    path("accounts/authenticator/", authenticator.manage, name="authenticator"),
     path("accounts/sso/start/", sso.start, name="sso-start"),
     path("accounts/sso/callback/", sso.callback, name="sso-callback"),
     path("accounts/logout/", auth.LogoutView.as_view(), name="logout"),

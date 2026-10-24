@@ -57,6 +57,7 @@ from django.views.decorators.http import require_GET
 
 from digitalbrain.configuration import GUID, read_secret
 
+from . import authenticator
 from .fetching import FetchError, fetch
 from .models import SignInIdentity, User
 from .services import audit
@@ -120,6 +121,15 @@ class LoginView(PasswordLoginView):
         context = super().get_context_data(**kwargs)
         context["sso_enabled"] = enabled()
         return context
+
+    def form_valid(self, form):
+        # A person who added an authenticator app is not signed in by the
+        # password alone: the code page finishes it (`authenticator.py`).
+        user = form.get_user()
+        if authenticator.enrolled(user):
+            authenticator.hold_for_code(self.request, user, self.get_success_url())
+            return redirect("sign-in-code")
+        return super().form_valid(form)
 
 
 def _safe_next(request, target):

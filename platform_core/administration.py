@@ -23,7 +23,7 @@ from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from . import hierarchy
+from . import authenticator, hierarchy
 from .api_auth import revoke_all
 from .forms import OrganizationAdministratorsForm
 from .models import (
@@ -243,6 +243,7 @@ def person_context(account, **extra):
         .order_by("application__name", "name"),
         "identities": account.sign_in_identities.order_by("created_at"),
         "resettable": account.is_active and not account.is_platform_admin,
+        "authenticator": authenticator.enrolled(account),
         **extra,
     }
 
@@ -282,6 +283,23 @@ def person_reset_link(request, pk):
         "person.html",
         person_context(account, reset_link=request.build_absolute_uri(path), reset_hours=hours),
     )
+
+
+@login_required
+@require_POST
+def person_authenticator(request, pk):
+    """Remove someone's authenticator app, for a lost phone and no recovery code.
+
+    Refused for a platform administrator, as a reset link is: the host does
+    that (`manage.py remove_authenticator`).
+    """
+    require_platform_admin(request.user)
+    account = get_object_or_404(User, pk=pk)
+    if account.is_platform_admin:
+        raise PermissionDenied("A platform administrator's app is removed on the host.")
+    if authenticator.remove(account, request.user, "removed by a platform administrator"):
+        messages.success(request, f"{account.username} signs in with their password alone now.")
+    return redirect("person", pk=pk)
 
 
 @login_required

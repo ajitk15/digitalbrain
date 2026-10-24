@@ -426,3 +426,38 @@ class ProvisionedUser(models.Model):
     external_id = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class Authenticator(models.Model):
+    """A person's authenticator app, the optional second step after a password.
+
+    The shared seed is a secret, kept encrypted (`authenticator.seal`) under a
+    key derived from the mounted Django secret key, so a copy of the database
+    alone cannot produce a code. `last_step` is the newest 30-second step a
+    code was accepted for: a code is accepted once, never replayed.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="authenticator"
+    )
+    sealed_seed = models.TextField()
+    #: Empty until the person proves the app works by entering a code from it.
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    last_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class RecoveryCode(models.Model):
+    """A one-time code for signing in without the app. Only its digest is kept."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes"
+    )
+    digest = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "digest"], name="unique_recovery_code")
+        ]
