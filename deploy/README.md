@@ -136,6 +136,34 @@ hidden — it never reaches a file, an argument, or a shell history:
 docker compose exec app python manage.py bootstrap_admin
 ```
 
+### People, after the first administrator
+
+Everything else is done in the browser; the platform sends no email, so every
+link below is shown once and handed over by whoever issued it:
+
+- **Administration → Organizations** makes an organization and names its
+  administrators. They add members on **Members**.
+- An application owner invites by user ID or email on **Access**. Someone
+  outside the organization waits for its administrator, who approves on
+  **Members**; a person with no account then gets a one-time link (72 hours)
+  to choose their own user ID and password.
+- **Administration → People** finds a person, unlocks them after too many
+  failed sign-ins, issues a one-time password reset link (24 hours), removes a
+  lost authenticator app, or offboards them to a named successor.
+- Anyone may add an authenticator app under **Account → Authenticator app**.
+  It is optional; the user ID and password sign-in keeps working without
+  Microsoft. For a platform administrator's own lost phone, or their password:
+
+```bash
+docker compose exec app python manage.py remove_authenticator <user ID>
+docker compose exec app python manage.py changepassword <user ID>
+```
+
+Authenticator seeds are sealed under the signing key (`django_secret_key`). To
+rotate it, mount the old value beside it as `django_secret_key_previous` (mode
+0600, uid 10001) until everyone has signed in again; replaced outright, every
+person with an app signs in with a recovery code until they add it again.
+
 ## 4. Configuration and secrets
 
 The **non-secret** configuration is rendered by the entrypoint from environment

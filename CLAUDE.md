@@ -731,6 +731,56 @@ the org admin who creates it still gets no access to it: `policy.applications_fo
 requires an explicit grant, and `test_security` pins the 404. The create form's
 "Also grant me owner access" checkbox records a real grant rather than implying one.
 
+## People and access
+
+**The user ID and password sign-in is the way in that always works**, with or without
+Microsoft. Nothing here may make it depend on SSO, and there is deliberately no
+"fallback only" switch and no guard on the last password account. Everything below is
+added to it.
+
+**An authenticator app is optional per person, never forced** (`authenticator.py`).
+RFC 6238 by hand (SHA-1, 30 s, six digits, one step of drift), each code accepted once
+(`last_step`). The seed is sealed with Fernet under an HKDF key from the mounted Django
+secret key, opened with `SECRET_KEY_FALLBACKS` too, so rotate by keeping the old key as a
+fallback (the mounted `django_secret_key_previous`): replacing it outright makes every seed unreadable. Ten recovery codes, stored as
+digests, shown once. A correct password for an enrolled person is held in the session
+(`PENDING_SECONDS`) until `sign_in_code` accepts a code; a wrong code is an axes failure,
+and `MAX_TRIES` (3) is under axes' five so the person is sent back to the password before
+the lockout page. Microsoft sign-in skips the step. A lost phone: a recovery code, the
+person page's removal (never for a platform administrator), or `manage.py
+remove_authenticator` on the host.
+
+**Owners invite; organization administrators decide who joins** (`invitations.py`). A
+member of the organization is granted at once; anyone else is an `Invitation` waiting on
+Members. Approved, an account is admitted, and someone with no account gets a one-time
+link (`LINK_HOURS`, digest stored) to make their own - the password is theirs. The
+inviter's owner and approval rights are checked again at approval and when the link is
+used. An owner who administers the organization approves by inviting.
+
+**Offboarding names a successor** (`offboarding.py`, the person page). The successor -
+already a member of each organization, never the acting administrator - becomes owner
+of everything the leaver owned (approval carried, never lowered) and administrator of
+what they administered; the leaver's connectors in those applications import as the
+successor; automatic AI refresh is stopped, not moved, because it spends as whoever
+switched it on; then disable and token revocation as a disable does.
+
+**Access can end on a date, and owners review it** (`access_review.py`). A viewer's or
+contributor's grant may carry `expires_at`; `policy.applications_for` stops reading it the
+moment it passes (in the same filter as the user, so the same join), and the maintenance
+lane's `expire_due` revokes it, audited as the non-login `access-expiry` account - paused,
+never misattributed, if a person holds that name. An owner's grant never expires. Owners
+confirm their Access list every `REVIEW_DAYS`; confirming changes no grant.
+`policy.CAPABILITIES` is what the screens say each role can do; `test_access_review`
+holds it to `workbench.access` and `application_for(owner=True)`.
+
+**Administration is seven pages and opens no application** (`console.py`): Overview
+(what needs attention - no administrator, nobody owns, stale lanes, dead jobs, service
+levels below target, lockouts, reviews due - as counts and links, then spend by
+organization), People, Organizations, Sign-in and security, Operations (`queue_status`
+and `slo` in the browser), Settings and Audit, as `platform_tabs.html` on each.
+Platform administrators see every control-plane event in the audit log
+(`services.control_plane`) and who holds which grant, names and roles only.
+
 ## Graph lifecycle
 
 Generate → draft → publish. The background worker keeps the **structural** graph current for

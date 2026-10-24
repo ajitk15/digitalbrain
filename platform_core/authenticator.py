@@ -12,11 +12,11 @@ newest step used, and a code for that step or an earlier one is refused.
 
 **The seed** is the shared secret both sides compute codes from, so it is
 sealed (`seal`) before it is stored: Fernet, under a key derived with HKDF
-from the mounted Django secret key (and `SECRET_KEY_FALLBACKS` to open, so a
-rotation keeps working seeds). A copy of the database alone yields no codes.
-Replacing the secret key without keeping the old one as a fallback makes every
-seed unreadable; those people sign in with a recovery code, or an
-administrator removes the app.
+from the mounted Django secret key (and `SECRET_KEY_FALLBACKS` - the mounted
+`django_secret_key_previous` - to open, so a rotation keeps working seeds). A
+copy of the database alone yields no codes. Replacing the secret key without
+mounting the old one beside it makes every seed unreadable; those people sign
+in with a recovery code, or an administrator removes the app.
 
 **Recovery codes** are ten one-time codes shown once when the app is added or
 when the person asks for new ones; only a SHA-256 digest of each is stored,

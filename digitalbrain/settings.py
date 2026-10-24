@@ -1,4 +1,5 @@
 from datetime import timedelta
+from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -148,6 +149,15 @@ CONNECTOR_SECRET_DIRECTORY = CONFIG.get("connector_secret_directory", "")
 SECRET_KEY = read_secret(SECRET_DIRECTORY, "django_secret_key")
 if len(SECRET_KEY) < 50:
     raise ImproperlyConfigured("The signing key must contain at least 50 random characters.")
+#: The signing key before the current one, while sessions, reset links and
+#: authenticator seeds (`platform_core/authenticator.py`) sealed under it are
+#: still in use: mount it as `django_secret_key_previous` when rotating, and
+#: remove it once they have been replaced. Absent, the usual case, means none.
+SECRET_KEY_FALLBACKS = (
+    [read_secret(SECRET_DIRECTORY, "django_secret_key_previous")]
+    if (Path(SECRET_DIRECTORY) / "django_secret_key_previous").exists()
+    else []
+)
 SITE_ADMIN_USER_ID = admin_identity()
 ALLOWED_HOSTS = CONFIG["hosts"]
 CSRF_TRUSTED_ORIGINS = CONFIG.get("csrf_origins", [])
