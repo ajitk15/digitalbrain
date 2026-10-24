@@ -1568,3 +1568,54 @@ class AISettingsTests(BrowserTestCase):
         self.config.refresh_from_db()
         self.assertFalse(self.config.enabled)
         self.assertNoScriptErrors()
+
+
+class PlatformAdministrationTests(BrowserTestCase):
+    """The platform administrator's screens, and the questions they ask in popups."""
+
+    def setUp(self):
+        super().setUp()
+        self.sign_in(self.admin)
+
+    def test_every_administration_screen_loads_without_script_or_csp_errors(self):
+        organization = self.app.product.portfolio.organization
+        for name, args in (
+            ("platform-console", ()),
+            ("users", ()),
+            ("person", (self.owner.pk,)),
+            ("organization-structure", (organization.pk,)),
+            ("audit", ()),
+            ("my-access", ()),
+        ):
+            with self.subTest(screen=name):
+                self.script_errors.clear()
+                self.open(name, *args)
+                self.page.wait_for_load_state("networkidle")
+                self.assertNoScriptErrors()
+
+    def test_disabling_an_organization_asks_in_a_popup_and_cancel_changes_nothing(self):
+        organization = self.app.product.portfolio.organization
+        self.open("platform-console")
+        self.page.locator(
+            f"a[data-modal][href='{reverse('organization-status', args=[organization.pk])}']"
+        ).click()
+        # The dialog says "Loading" until the page arrives; its button means it has.
+        self.page.wait_for_selector("dialog[open] button[value='disable']")
+        self.assertIn("Disable Example?", self.page.locator("dialog[open] h1").inner_text())
+        self.page.locator("dialog[open] [data-modal-close]").click()
+        self.page.wait_for_selector("dialog[open]", state="detached")
+        organization.refresh_from_db()
+        self.assertTrue(organization.active)
+        self.assertNoScriptErrors()
+
+    def test_disabling_from_the_popup_disables(self):
+        organization = self.app.product.portfolio.organization
+        self.open("platform-console")
+        self.page.locator(
+            f"a[data-modal][href='{reverse('organization-status', args=[organization.pk])}']"
+        ).click()
+        self.page.locator("dialog[open] button[value='disable']").click()
+        self.page.wait_for_selector("form button[value='enable']")
+        organization.refresh_from_db()
+        self.assertFalse(organization.active)
+        self.assertNoScriptErrors()

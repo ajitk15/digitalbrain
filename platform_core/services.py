@@ -382,7 +382,8 @@ def change_grant(actor, application_id, target, role, can_approve=False, revoke=
     ).exists():
         raise ValidationError("User must be an active member of this organization.")
     existing = ApplicationGrant.objects.filter(application=app, user=target).first()
-    if can_approve and not actor_grant.can_approve:
+    # Keeping approval someone already holds is not delegating it.
+    if can_approve and not actor_grant.can_approve and not (existing and existing.can_approve):
         raise PermissionDenied("You cannot delegate approval rights you do not hold.")
     if existing and existing.role == "owner" and (revoke or role != "owner"):
         owners = ApplicationGrant.objects.filter(

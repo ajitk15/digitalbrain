@@ -346,6 +346,34 @@ def dashboard(request):
 
 @login_required
 @require_GET
+def my_access(request):
+    """What the signed-in person can open, and as what - their own grants only."""
+    applications = applications_for(request.user).select_related(
+        "product__portfolio__organization"
+    )
+    grants = {
+        grant.application_id: grant
+        for grant in ApplicationGrant.objects.filter(
+            user=request.user, application__in=applications
+        )
+    }
+    rows = [(app, grants[app.pk]) for app in applications.order_by("name") if app.pk in grants]
+    return render(
+        request,
+        "my_access.html",
+        {
+            "memberships": OrganizationMember.objects.filter(
+                user=request.user, organization__active=True
+            )
+            .select_related("organization")
+            .order_by("organization__name"),
+            "rows": rows,
+        },
+    )
+
+
+@login_required
+@require_GET
 def platform_console(request):
     require_platform_admin(request.user)
     totals = AIUsage.objects.values("currency", "estimated").annotate(
@@ -674,28 +702,36 @@ def application_access(request, pk):
         if request.POST.get("action") not in {"save", "revoke"}:
             form.add_error(None, "Choose a valid action.")
         else:
+            target = form.cleaned_data["user"]
+            can_approve = form.cleaned_data["can_approve"]
+            if not grant.can_approve:
+                # Their checkbox is disabled, so it posts nothing: keep what the
+                # person already holds rather than read the silence as "no".
+                existing = ApplicationGrant.objects.filter(application=app, user=target).first()
+                can_approve = bool(existing and existing.can_approve)
             try:
                 change_grant(
                     request.user,
                     pk,
-                    form.cleaned_data["user"],
+                    target,
                     form.cleaned_data["role"],
-                    form.cleaned_data["can_approve"],
+                    can_approve,
                     revoke=request.POST["action"] == "revoke",
                 )
             except ValidationError as error:
                 form.add_error(None, error)
             else:
-                messages.success(request, "Application access updated.")
-                return redirect("dashboard")
+                messages.success(request, f"Access for {target.username} updated.")
+                return redirect("application-access", pk=pk)
     return render(
         request,
         "access.html",
         {
             "application": app,
             "form": form,
-            "grants": app.grants.select_related("user"),
+            "grants": app.grants.select_related("user").order_by("user__username"),
             "grant": grant,
+            "roles": ApplicationGrant.Role.choices,
         },
     )
 
