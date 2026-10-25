@@ -934,7 +934,8 @@ class ReportAnswerTests(BrowserTestCase):
         candidate = LearningCandidate.objects.get(message=answer)
         self.assertEqual((candidate.kind, candidate.expected), ("wrong", "refund-policy"))
         self.open("learned", self.app.pk)
-        self.page.get_by_text("Marked wrong: How long do refunds take?").wait_for()
+        self.page.get_by_role("heading", name="“How long do refunds take?”").wait_for()
+        self.page.get_by_text("Answer marked wrong").first.wait_for()
         self.assertNoScriptErrors()
 
 
