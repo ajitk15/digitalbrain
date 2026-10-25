@@ -277,3 +277,111 @@ class ReleaseCheckTests(TestCase):
             publish_revision(self.owner, self.app.pk, 2)
         publish_revision(self.owner, self.app.pk, 2, reason="Retired on purpose")
         self.assertIsNotNone(GraphRevision.objects.get(number=2).published_at)
+
+
+@override_settings(
+    STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
+    PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
+)
+class AutoPublishTests(TestCase):
+    """A version publishes itself only if an owner said so, only when it passed
+    everything against a published version and was scored, and only as an owner."""
+
+    entry = ReleaseCheckTests.entry
+    version = ReleaseCheckTests.version
+    scored = ReleaseCheckTests.scored
+
+    def setUp(self):
+        DocumentTests.setUp(self)
+        self.runbook = self.entry("Runbook", "Restart the export worker when it stalls.")
+        self.published = self.version(1, published=True)
+        self.scored(self.published, 3)
+
+    def switch_on(self):
+        from platform_core.release import set_auto_publish
+
+        set_auto_publish(self.owner, self.app, True)
+
+    def saved(self, found=3):
+        from platform_core.release import check_after_save
+
+        draft = self.version(2)
+        if found is not None:
+            self.scored(draft, found)
+        check_after_save(draft.pk)
+        draft.refresh_from_db()
+        return draft
+
+    def note(self):
+        from platform_core.models import KnowledgeGraph
+
+        return KnowledgeGraph.objects.get(application=self.app).auto_publish_note
+
+    def test_off_by_default_a_passing_version_waits_for_a_person(self):
+        self.assertIsNone(self.saved().published_at)
+
+    def test_on_a_version_that_passes_everything_publishes_itself_as_the_owner(self):
+        self.switch_on()
+        draft = self.saved()
+        self.assertIsNotNone(draft.published_at)
+        self.assertEqual(draft.published_by, self.owner)
+        event = AuditEvent.objects.get(action="graph.published")
+        self.assertEqual(event.details, {"version": 2, "against": 1, "automatic": True})
+        self.assertIn("published itself", self.note())
+        self.assertTrue(AuditEvent.objects.filter(action="graph.auto_publish_on").exists())
+
+    def test_a_warning_keeps_it_a_draft_and_says_which(self):
+        self.switch_on()
+        draft = self.saved(found=2)
+        self.assertIsNone(draft.published_at)
+        self.assertIn("answers the benchmark as well", self.note())
+
+    def test_an_unscored_version_waits(self):
+        from platform_core.models import BenchmarkRun
+
+        self.switch_on()
+        BenchmarkRun.objects.all().delete()
+        draft = self.saved(found=None)
+        self.assertIsNone(draft.published_at)
+        self.assertIn("no benchmark score", self.note())
+
+    def test_the_first_version_is_always_published_by_a_person(self):
+        from platform_core.release import auto_publish, check
+
+        GraphRevision.objects.all().delete()
+        self.switch_on()
+        first = self.version(1)
+        self.scored(first, 3)
+        self.assertIsNone(auto_publish(first, check(self.app, first)))
+        self.assertIn("a person publishes the first version", self.note())
+
+    def test_it_stops_when_the_owner_no_longer_owns_the_application(self):
+        from platform_core.models import ApplicationGrant, KnowledgeGraph
+
+        self.switch_on()
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(
+            role="contributor"
+        )
+        draft = self.saved()
+        self.assertIsNone(draft.published_at)
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertIsNone(graph.auto_publish_by)
+        self.assertIn("stopped", graph.auto_publish_note)
+        self.assertTrue(AuditEvent.objects.filter(action="graph.auto_publish_stopped").exists())
+
+    def test_only_an_owner_switches_it_and_the_versions_tab_says_how_it_publishes(self):
+        from platform_core.models import ApplicationGrant, KnowledgeGraph
+
+        url = reverse("graph-auto-publish", args=[self.app.pk])
+        versions = f"{reverse('graph', args=[self.app.pk])}?tab=versions"
+        self.assertContains(self.client.get(versions), "Let passing versions publish themselves")
+        self.assertRedirects(self.client.post(url, {"enabled": "on"}), versions)
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertEqual(graph.auto_publish_by, self.owner)
+        self.assertContains(self.client.get(versions), "automatic, as owner")
+        self.client.post(url, {})
+        self.assertIsNone(KnowledgeGraph.objects.get(application=self.app).auto_publish_by)
+        ApplicationGrant.objects.filter(user=self.viewer).update(role="contributor")
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.client.post(url, {"enabled": "on"}).status_code, 403)
+        self.assertNotContains(self.client.get(versions), "Let passing versions publish")

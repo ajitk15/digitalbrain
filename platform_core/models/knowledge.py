@@ -425,6 +425,19 @@ class KnowledgeGraph(models.Model):
     #: An owner switched automatic AI enrichment off. Kept apart from an empty
     #: payer because on is the default.
     auto_refresh_declined = models.BooleanField(default=False, db_default=False)
+    #: The owner who let a version publish itself (`release.auto_publish`): one
+    #: that passes every release check, hard and soft, against a published
+    #: version, and was scored on the benchmark. Empty, the default, means a
+    #: person publishes every version. Revoking their ownership stops it.
+    auto_publish_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    #: Why the last version did not publish itself, or that it did.
+    auto_publish_note = models.CharField(max_length=300, blank=True, default="", db_default="")
     updated_at = models.DateTimeField(auto_now=True)
 
 

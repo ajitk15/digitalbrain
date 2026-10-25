@@ -27,13 +27,21 @@ override it.
 The result is stored on the version (`GraphRevision.release`) when it is saved
 and whenever it is checked again, for the strip and the Versions table. It is a
 report: publishing always checks again.
+
+**A version may publish itself, only if an owner said so** (`auto_publish`, off
+by default). When the owner who switched it on still owns the application, the
+newest version publishes itself - as them, audited as automatic - only when
+every check passed, hard and soft, against a version that answers now, and it
+was scored on the benchmark. Anything less stays a draft and says why. The first
+version is always published by a person: with nothing to compare against, the
+soft checks never ran. Without the release check this must not exist.
 """
 
 from dataclasses import asdict, dataclass
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -374,11 +382,142 @@ def check_after_save(revision_pk):
     if revision is None:
         return
     try:
-        check(revision.application, revision)
+        report = check(revision.application, revision)
+        auto_publish(revision, report)
     except Exception:
         logging.getLogger(__name__).exception(
             "release_check_failed", extra={"event": "release_check_failed"}
         )
+
+
+def auto_publisher(app, graph):
+    """The owner automatic publishing acts as, or None once they no longer own it."""
+    from django.http import Http404
+
+    from .workbench import access
+
+    user = graph.auto_publish_by
+    if user is None or not user.is_active:
+        return None
+    try:
+        _, grant = access(user, app.pk, "knowledge", write=True)
+    except (Http404, PermissionDenied):
+        return None
+    return user if grant.role == "owner" else None
+
+
+def auto_publish(revision, report):
+    """Publish a version that passed everything, if an owner let it. Returns it or None.
+
+    Never on a judgement call: a version with any warning, no benchmark score,
+    nothing to compare against or a newer version beside it stays a draft, and
+    the reason is noted for the owner. Publishing runs the same `publish` a
+    person's button does, so it checks again rather than trusting `report`.
+    """
+    from .benchmark import latest_runs
+    from .lifecycle import listed
+    from .models import GraphRevision, KnowledgeGraph
+    from .services import audit
+
+    app = revision.application
+    graph = (
+        KnowledgeGraph.objects.filter(application=app).select_related("auto_publish_by").first()
+    )
+    if graph is None or not graph.auto_publish_by_id:
+        return None
+
+    def note(text):
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(auto_publish_note=text[:300])
+
+    owner = auto_publisher(app, graph)
+    if owner is None:
+        # Like a connector's schedule: the authority it ran on is gone, so it
+        # stops, says why, and waits for an owner to switch it on again.
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(
+            auto_publish_by=None,
+            auto_publish_note=f"Automatic publishing stopped: {graph.auto_publish_by} no "
+            "longer owns this application.",
+        )
+        # Named after the owner it acted as, the way a stopped schedule is.
+        audit(
+            graph.auto_publish_by,
+            "graph.auto_publish_stopped",
+            app.pk,
+            app.product.portfolio.organization,
+            details={"reason": "not an owner"},
+        )
+        return None
+    newest = GraphRevision.objects.filter(application=app).order_by("-number").first()
+    waiting = f"Version {revision.number} was not published automatically"
+    if newest is None or newest.pk != revision.pk or revision.published_at:
+        return None
+    if report.against is None:
+        note(f"{waiting}: nothing answers yet, so a person publishes the first version.")
+        return None
+    if not report.passed:
+        failed = [check.label.lower() for check in report.checks if not check.ok]
+        note(f"{waiting}: it did not pass {listed(failed)}.")
+        return None
+    scored = latest_runs(app, [revision]).get(revision.pk)
+    if scored is None or not scored.questions:
+        note(f"{waiting}: it has no benchmark score to show it answers as well.")
+        return None
+    try:
+        revision, report = publish(owner, app, revision.number)
+    except ValidationError as refused:
+        note(f"{waiting}: {' '.join(refused.messages)}")
+        return None
+    if report.soft_failures:  # pragma: no cover - publish refuses these without a reason
+        return None
+    audit(
+        owner,
+        "graph.published",
+        app.pk,
+        app.product.portfolio.organization,
+        details={"version": revision.number, "against": report.against, "automatic": True},
+    )
+    note(f"Version {revision.number} published itself after passing every release check.")
+    return revision
+
+
+def set_auto_publish(user, app, enabled):
+    """The owner's switch. On names them as the one it publishes as."""
+    from .models import KnowledgeGraph
+    from .services import audit
+    from .workbench import access
+
+    _, grant = access(user, app.pk, "knowledge", write=True)
+    if grant.role != "owner":
+        raise PermissionDenied("Only an owner may let versions publish themselves.")
+    graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
+    KnowledgeGraph.objects.filter(pk=graph.pk).update(
+        auto_publish_by=user if enabled else None, auto_publish_note=""
+    )
+    audit(
+        user,
+        "graph.auto_publish_on" if enabled else "graph.auto_publish_off",
+        app.pk,
+        app.product.portfolio.organization,
+    )
+
+
+@login_required
+@require_http_methods(["POST"])
+def auto_publish_view(request, pk):
+    """The switch on Versions: a plain POST, owner-only."""
+    from .workbench import access
+
+    app, _ = access(request.user, pk, "knowledge")
+    enabled = request.POST.get("enabled") == "on"
+    set_auto_publish(request.user, app, enabled)
+    messages.success(
+        request,
+        "A version that passes every release check and is scored on the benchmark will "
+        "publish itself, as you. Anything else stays a draft for a person."
+        if enabled
+        else "Automatic publishing is off. A person publishes every version.",
+    )
+    return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
 
 
 def clean_reason(reason):

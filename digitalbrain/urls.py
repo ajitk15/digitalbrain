@@ -44,6 +44,11 @@ urlpatterns = [
         name="graph-release",
     ),
     path(
+        "applications/<uuid:pk>/graph/auto-publish/",
+        release.auto_publish_view,
+        name="graph-auto-publish",
+    ),
+    path(
         "applications/<uuid:pk>/graph/benchmark/",
         benchmark.benchmark_view,
         name="graph-benchmark",

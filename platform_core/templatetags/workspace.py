@@ -565,6 +565,22 @@ def knowledge_status(application):
 
 
 @register.simple_tag
+def auto_publish_state(application):
+    """Who a version publishes itself as, if anyone, and the last thing it noted."""
+    from platform_core.models import KnowledgeGraph
+
+    graph = (
+        KnowledgeGraph.objects.filter(application=application)
+        .select_related("auto_publish_by")
+        .only("auto_publish_by", "auto_publish_note")
+        .first()
+    )
+    if graph is None:
+        return {"by": None, "note": ""}
+    return {"by": graph.auto_publish_by, "note": graph.auto_publish_note}
+
+
+@register.simple_tag
 def ticket_tab(application):
     """The Tickets tab's count, or None when the application imports no tickets."""
     from platform_core.ticket_library import tab_count

@@ -223,7 +223,7 @@ walks it once, and the status strip keeps it visible afterwards.
 | 3 ✓ | Release check before publish (`release.py`); reason recorded on override | 4-5 d | Medium (changes a habit) | Scorecard probe: a regressed draft is refused or warned, as designed |
 | 4 ✓ | Source kind registry (`source_kinds.py`): Documents, Code, Tickets behind one contract; tabs and Feed drawn from it (rows, freshness and quality stay on each kind's page) | 5-8 d | Medium (refactor) | Same pages byte-for-byte where nothing changed; query counts held flat |
 | 5 ✓ | Learning loop (`learning.py`): Learned inbox, change records, incident learnings, gaps, answer feedback, benchmark promotion | 8-10 d | Medium-high (new trust path) | Benchmark grows; derived-prefix exclusion tested; scorecard evidence recall unchanged |
-| 6 | Optional auto-publish policy | 1-2 d | Medium | Only on all-green release checks; audited |
+| 6 ✓ | Optional auto-publish policy (`release.auto_publish`) | 1-2 d | Medium | Only on all-green release checks; audited |
 | 7 | Application rules (later, with its own benchmark) | measured first | High | Its own pack, like `typing_pack` |
 
 Phases 1 and 2 can be built in either order, and together they make the cycle

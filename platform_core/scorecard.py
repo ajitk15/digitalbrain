@@ -1128,6 +1128,23 @@ def release_check(ws, revision):
             published.published_at is not None
             and published.publish_reason == "Retired on purpose"
         )
+
+        # Automatic publishing: never unless an owner said so, then only a
+        # version that passes everything and is scored.
+        from .release import auto_publish, set_auto_publish
+
+        whole = version(entries)
+        BenchmarkRun.objects.create(
+            application=ws.app, revision=whole, questions=16, found=16, top_three=16,
+            reciprocal_rank=1.0,
+        )
+        probes["a passing version waits for a person by default"] = (
+            auto_publish(whole, check(ws.app, whole)) is None
+        )
+        set_auto_publish(ws.people["owner"], ws.app, True)
+        probes["once allowed, a passing scored version publishes itself"] = (
+            auto_publish(whole, check(ws.app, whole)) is not None
+        )
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"release_probes_passed": round(100 * passed / len(probes), 1)}, probes

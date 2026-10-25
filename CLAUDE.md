@@ -453,6 +453,20 @@ stored on `GraphRevision.release` under `RULES_VERSION` - a report the strip, Ve
 Attention read, never a verdict: publishing always checks again. The scorecard's "Release
 check probes passing" stages each outcome in a rolled-back savepoint and must stay 100%.
 
+**A version publishes itself only if an owner said so** (`release.auto_publish`,
+`KnowledgeGraph.auto_publish_by`, migration 0105, the bar on Versions). Off by default;
+only an owner switches it (`graph-auto-publish`, audited `graph.auto_publish_on`/`_off`).
+After each saved version's check (`check_after_save`), the newest version publishes
+itself - through the same `publish` a button runs, as that owner, audited as
+`graph.published` with `automatic` - only when every check passed, hard **and** soft,
+against a version that answers now, and the version was scored on the benchmark.
+Anything less stays a draft, and `auto_publish_note` says why on Versions. The first
+version is always a person's: with nothing published the soft checks never ran. The
+authority is the owner's grant, re-read each time, like a connector's schedule: an owner
+demoted, removed or deactivated (offboarding included) stops it, audited
+`graph.auto_publish_stopped`, and it stays off until an owner switches it on again.
+Without the release check it must not exist.
+
 **What use teaches comes back as candidates, never as knowledge** (`learning.py`,
 `LearningCandidate`, migration 0104, Knowledge → Learned). Rules - never a model - build a
 candidate from four records already kept: a Code Factory run delivered after an approved

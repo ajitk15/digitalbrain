@@ -3232,6 +3232,11 @@
 .cycle-warn { border-top: 3px solid var(--c-warn); }
 .cycle-todo { border-top: 3px solid var(--c-line-strong); }
 
+/* Versions: whether a passing version publishes itself (`release.auto_publish`). */
+.auto-publish { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); margin: var(--s-3) 0; padding: var(--s-3) var(--s-4); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-surface); font-size: var(--t-13); }
+.auto-publish small { display: block; margin-top: var(--s-1); }
+.auto-publish form { flex: none; }
+
 /* Knowledge → Learned (`learning.py`): each candidate a card, what was learned on
    the left and the decision beside it, so a desktop screen shows several at once. */
 .learned-list { display: flex; flex-direction: column; gap: var(--s-3); }
