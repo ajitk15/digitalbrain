@@ -43,6 +43,9 @@ class Kind:
     count: object = field(default=None, compare=False)
     #: Whether its tab shows, beyond the feature: None means always.
     shown: object = field(default=None, compare=False)
+    #: Only for the people who decide what the application knows - owners and
+    #: contributors - because its page is where they decide it.
+    writers: bool = False
 
     def visible(self, app):
         from .services import feature_enabled
@@ -77,6 +80,12 @@ def _tickets(app):
     from .ticket_library import tab_count
 
     return tab_count(app)
+
+
+def _learned(app):
+    from .learning import learned_entries
+
+    return learned_entries(app)
 
 
 def _has_tickets(app):
@@ -119,18 +128,40 @@ KINDS = {
         count=_tickets,
         shown=_has_tickets,
     ),
+    # What using the knowledge taught, waiting for a person (`learning.py`). Its
+    # count is the sources accepted from it, which feed the graph like any other.
+    "learned": Kind(
+        "learned",
+        "Learned",
+        ("learned source", "learned sources"),
+        "knowledge",
+        "pulse",
+        "learned",
+        ("learned",),
+        count=_learned,
+        writers=True,
+    ),
 }
 
 
-def visible(app):
-    """The kinds this application's Knowledge shows, in tab order."""
-    return [kind for kind in KINDS.values() if kind.visible(app)]
+def visible(app, grant=None):
+    """The kinds this application's Knowledge shows this person, in tab order.
+
+    A kind for `writers` shows only to an owner or contributor; with no grant
+    to go by, it does not show.
+    """
+    writer = grant is not None and grant.role in {"owner", "contributor"}
+    return [
+        kind for kind in KINDS.values() if kind.visible(app) and (writer or not kind.writers)
+    ]
 
 
 def fed(app):
     """[(kind, count)] for the cycle's Feed stage: every visible kind holding something."""
     found = []
-    for kind in visible(app):
+    for kind in KINDS.values():
+        if not kind.visible(app):
+            continue
         count = kind.count(app) if kind.count else None
         if count:
             found.append((kind, count))

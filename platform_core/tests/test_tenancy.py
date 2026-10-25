@@ -30,6 +30,24 @@ from platform_core.workbench import add_knowledge
 MIGRATION = importlib.import_module("platform_core.migrations.0091_row_security")
 
 
+def secured_tables():
+    """0091's tables and every later migration's `SECURED`: a table added after
+    0091 is secured by its own migration, through 0091's `secure`."""
+    import pkgutil
+
+    import platform_core.migrations as migrations
+
+    tables = list(MIGRATION.TABLES)
+    for module in pkgutil.iter_modules(migrations.__path__):
+        if module.name[:4].isdigit() and module.name[:4] > "0091":
+            loaded = importlib.import_module(f"platform_core.migrations.{module.name}")
+            tables += getattr(loaded, "SECURED", [])
+    return tables
+
+
+TABLES = secured_tables()
+
+
 def required_application(model):
     for name in ("application", "application_id"):
         try:
@@ -53,7 +71,7 @@ class CoverageTests(TestCase):
             model._meta.db_table for model in models if model.__name__ not in tenancy.UNSCOPED
         }
         self.assertEqual(
-            set(MIGRATION.TABLES),
+            set(TABLES),
             narrowed,
             "a new table with a required application needs a policy in its migration, "
             "or a place in tenancy.UNSCOPED with the reason",
@@ -66,15 +84,15 @@ class CoverageTests(TestCase):
             cursor.execute(
                 "SELECT relname FROM pg_class WHERE relname = ANY(%s) "
                 "AND relrowsecurity AND relforcerowsecurity",
-                [MIGRATION.TABLES],
+                [TABLES],
             )
             secured = {row[0] for row in cursor.fetchall()}
             cursor.execute(
                 "SELECT tablename FROM pg_policies WHERE policyname = %s", [MIGRATION.POLICY]
             )
             policies = {row[0] for row in cursor.fetchall()}
-        self.assertEqual(secured, set(MIGRATION.TABLES))
-        self.assertEqual(policies, set(MIGRATION.TABLES))
+        self.assertEqual(secured, set(TABLES))
+        self.assertEqual(policies, set(TABLES))
 
 
 class Fixture(TestCase):

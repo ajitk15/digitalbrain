@@ -1,0 +1,24 @@
+{% extends 'base.html' %}{% load icons workspace %}{% block title %}Learned · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+<h1 class="sr-only">{{ application|knowledge_name }}</h1>
+<div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='learned' %}</div>
+{% comment %}`learning.learned_view`: what using the knowledge taught, as candidates a person accepts or declines. Built by rules from stored records, never by a model; what a model wrote is quoted as what it said. Accepting a change record or an incident learning adds a source under `learned://`, which is never requirement evidence; accepting a question needs the source it should cite and adds it to the benchmark. Every decision is a plain POST form and is audited. Owners and contributors only.{% endcomment %}
+<h2 class="view-title">Learned</h2>
+<p class="view-note">What using this application taught, waiting for you to decide: changes Code Factory delivered after an approved plan, incident causes someone confirmed, questions nothing answered, and answers someone marked wrong. Each is written by rules from the platform's own records. Nothing here is knowledge until you accept it, and an accepted source is never evidence that code meets a requirement. Questions are shown to owners and contributors without who asked them, and leave this list when their conversation is removed.</p>
+{% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
+<section class="section learned-list" aria-labelledby="learned-waiting"><h3 id="learned-waiting">Waiting <span class="tab-count">{{ waiting|length }}</span></h3>
+{% for candidate in waiting %}{% with question=candidate.is_question %}<article class="card learned-item{% if failed == candidate.pk|stringformat:'s' %} is-failed{% endif %}" id="learned-{{ candidate.pk }}">
+<div class="learned-what"><p class="learned-meta"><span class="pill learned-{{ candidate.kind }}">{{ candidate.get_kind_display }}</span><time datetime="{{ candidate.signal_at|date:'c' }}">{{ candidate.signal_at|date:"M d, Y" }}</time></p>
+{% if question %}<h4 class="learned-question">“{{ candidate.question }}”</h4>{% if candidate.note %}<p><span class="muted">Reported:</span> {{ candidate.note }}</p>{% endif %}{% if candidate.body %}<p class="muted">{{ candidate.body }}</p>{% endif %}
+{% else %}<h4>{{ candidate.title }}</h4><details><summary>What would be added as a source</summary><pre class="learned-body">{{ candidate.body }}</pre></details>{% endif %}</div>
+<form method="post" class="learned-decision">{% csrf_token %}<input type="hidden" name="candidate" value="{{ candidate.pk }}">
+{% if question %}<div class="field"><label for="expected-{{ candidate.pk }}">Should cite</label><input id="expected-{{ candidate.pk }}" name="expected" maxlength="200" value="{{ candidate.expected }}" placeholder="Text in its title or link, such as KAN-4"></div>{% endif %}
+<div class="field"><label for="note-{{ candidate.pk }}">Note <span class="muted">(optional)</span></label><input id="note-{{ candidate.pk }}" name="note" maxlength="1000"></div>
+<div class="actions"><button type="submit" class="button" name="action" value="accept">{% icon "check" 13 %}{% if question %}Add to the benchmark{% else %}Add as a source{% endif %}</button><button type="submit" class="button secondary" name="action" value="reject">Decline</button></div>
+{% if question %}<p class="muted learned-hint">Or fill the gap with a source on <a href="{% url 'documents' application.pk %}">Documents</a>.</p>{% endif %}
+</form></article>{% endwith %}
+{% empty %}<p class="empty-state">Nothing waiting. Delivered changes, confirmed causes and unanswered questions appear here as the application is used.</p>{% endfor %}
+</section>
+{% if decided %}<section class="section learned-list" aria-labelledby="learned-decided"><h3 id="learned-decided">Decided</h3><div class="table-wrap"><table><thead><tr><th>What</th><th>Decision</th><th>By</th><th>Made</th></tr></thead><tbody>
+{% for candidate in decided %}<tr><td><span class="pill learned-{{ candidate.kind }}">{{ candidate.get_kind_display }}</span> {{ candidate.title }}</td><td>{{ candidate.get_state_display }}{% if candidate.decision_note %}<small class="muted">{{ candidate.decision_note }}</small>{% endif %}</td><td>{% if candidate.decided_by %}{{ candidate.decided_by.get_full_name|default:candidate.decided_by.get_username }}{% else %}<span class="muted">—</span>{% endif %}</td><td>{% if candidate.entry and candidate.entry.active %}<a href="{% url 'knowledge-detail' application.pk candidate.entry.pk %}">The source</a>{% elif candidate.benchmark %}<a href="{% url 'graph-benchmark' application.pk %}" data-modal>A benchmark question</a>{% else %}<span class="muted">Nothing</span>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></section>{% endif %}
+{% endblock %}

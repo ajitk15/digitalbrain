@@ -524,13 +524,27 @@ def knowledge_features(application):
     }
 
 
-@register.simple_tag
-def source_tabs(application):
-    """The kinds of source this application's Knowledge shows, in tab order
-    (`source_kinds.visible`)."""
-    from platform_core.source_kinds import visible
+@register.simple_tag(takes_context=True)
+def source_tabs(context, application):
+    """The kinds of source this application's Knowledge shows the person viewing
+    it, in tab order (`source_kinds.visible`, with the page's `grant`).
 
-    return visible(application)
+    A page that names no grant has it read once, only to choose tabs: the page
+    Learned opens checks the role itself.
+    """
+    from platform_core.source_kinds import KINDS, visible
+
+    grant = context.get("grant")
+    request = context.get("request")
+    if grant is None and request is not None and any(k.writers for k in KINDS.values()):
+        if "_tab_grant" not in application.__dict__:
+            from platform_core.models import ApplicationGrant
+
+            application.__dict__["_tab_grant"] = ApplicationGrant.objects.filter(
+                application=application, user_id=request.user.pk
+            ).first()
+        grant = application.__dict__["_tab_grant"]
+    return visible(application, grant)
 
 
 @register.inclusion_tag("_knowledge_status.html")

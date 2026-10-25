@@ -724,3 +724,91 @@ class DocumentAIResult(models.Model):
                 name="unique_document_ai_result",
             )
         ]
+
+
+class LearningCandidate(models.Model):
+    """Something using the knowledge taught, waiting for a person (`learning.py`).
+
+    Built by rules from records the platform already keeps - a delivered Code
+    Factory change, a confirmed incident cause, a question nothing answered, an
+    answer someone marked wrong - and never by a model. Nothing here is
+    knowledge: a change record or an incident learning becomes a source only
+    when an owner or contributor accepts it, and a question becomes a benchmark
+    question only when one names the source it should cite.
+
+    The row that produced it is held by a nullable one-to-one, which is both
+    "offered once" (a rejected candidate is remembered, so it is not offered
+    again) and how a withdrawn signal is noticed: a retracted verdict or a
+    removed conversation leaves the link empty.
+    """
+
+    KINDS = [
+        ("change", "Change record"),
+        ("incident", "Incident learning"),
+        ("gap", "Unanswered question"),
+        ("wrong", "Answer marked wrong"),
+    ]
+    STATES = [
+        ("open", "Waiting"),
+        ("accepted", "Accepted"),
+        ("rejected", "Rejected"),
+        ("withdrawn", "Withdrawn"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    kind = models.CharField(max_length=10, choices=KINDS)
+    state = models.CharField(max_length=10, choices=STATES, default="open", db_default="open")
+    title = models.CharField(max_length=300)
+    #: What accepting it would store, put together from stored fields.
+    body = models.TextField(blank=True)
+    #: The question, for a gap or a wrong answer.
+    question = models.CharField(max_length=500, blank=True)
+    #: What the person who marked an answer wrong said, in their words.
+    note = models.CharField(max_length=1000, blank=True)
+    #: The source they said it should have cited, if they named one.
+    expected = models.CharField(max_length=200, blank=True)
+    run = models.OneToOneField(
+        "FactoryRun", null=True, blank=True, on_delete=models.SET_NULL, related_name="learning"
+    )
+    verdict = models.OneToOneField(
+        "TriageVerdict", null=True, blank=True, on_delete=models.SET_NULL, related_name="learning"
+    )
+    message = models.OneToOneField(
+        "ChatMessage", null=True, blank=True, on_delete=models.SET_NULL, related_name="learning"
+    )
+    reported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="answer_reports",
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="learning_decisions",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.CharField(max_length=1000, blank=True)
+    #: What accepting it made.
+    entry = models.ForeignKey(
+        KnowledgeEntry, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    benchmark = models.ForeignKey(
+        BenchmarkQuestion, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    #: When the record it was built from happened, which is how the inbox sorts.
+    signal_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-signal_at", "-id"]
+        indexes = [models.Index(fields=["application", "state", "signal_at"])]
+
+    @property
+    def is_question(self):
+        """A gap or a wrong answer: decided by naming a source, not by adding one."""
+        return self.kind in {"gap", "wrong"}

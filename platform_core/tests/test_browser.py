@@ -902,6 +902,42 @@ class ReleaseCheckTests(BrowserTestCase):
         self.assertNoScriptErrors()
 
 
+class ReportAnswerTests(BrowserTestCase):
+    """"Wrong answer?" opens the report form over chat; sending it closes the popup,
+    lands back on the conversation and puts the question in Knowledge → Learned."""
+
+    def test_a_report_is_sent_from_the_popup_and_waits_in_learned(self):
+        from platform_core.models import ChatConversation, ChatMessage, LearningCandidate
+
+        conversation = ChatConversation.objects.create(
+            application=self.app, user=self.owner, title="Refunds", mode="search"
+        )
+        ChatMessage.objects.create(
+            application=self.app, user=self.owner, conversation=conversation, role="user",
+            body="How long do refunds take?", sequence=1, mode="search",
+        )
+        answer = ChatMessage.objects.create(
+            application=self.app, user=self.owner, conversation=conversation,
+            role="assistant", body="Nothing matched.", sequence=2, mode="search",
+        )
+        self.open("chat", self.app.pk, query=f"?conversation={conversation.pk}")
+        self.page.get_by_role("link", name="Wrong answer?").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Report this answer").wait_for()
+        dialog.get_by_role("textbox", name="What was wrong?").fill("It missed the refund policy")
+        dialog.get_by_role("textbox", name="Should cite").fill("refund-policy")
+        dialog.get_by_role("button", name="Send for review").click()
+        # The popup follows the redirect, which consumes its message, and the
+        # page reloads on the conversation with the popup gone.
+        self.page.locator("dialog[open]").wait_for(state="hidden")
+        self.page.get_by_role("link", name="Wrong answer?").wait_for()
+        candidate = LearningCandidate.objects.get(message=answer)
+        self.assertEqual((candidate.kind, candidate.expected), ("wrong", "refund-policy"))
+        self.open("learned", self.app.pk)
+        self.page.get_by_text("Marked wrong: How long do refunds take?").wait_for()
+        self.assertNoScriptErrors()
+
+
 class ChatTests(BrowserTestCase):
     def setUp(self):
         super().setUp()

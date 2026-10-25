@@ -210,6 +210,14 @@ METRICS = {
         "exact",
         0,
     ),
+    # The learning loop (`learning.py`): what use teaches, and what it may not.
+    "learning_probes_passed": (
+        "Learning loop",
+        "Learning loop probes passing",
+        "%",
+        "exact",
+        0,
+    ),
     # Speed - machine dependent, so a generous tolerance.
     "graph_p50_ms": ("Speed", "Graph answer, median", "ms", "lower", 15.0),
     "keyword_p50_ms": ("Speed", "Keyword answer, median", "ms", "lower", 15.0),
@@ -1125,6 +1133,116 @@ def release_check(ws, revision):
     return {"release_probes_passed": round(100 * passed / len(probes), 1)}, probes
 
 
+def learning_loop(ws, revision):
+    """Whether the learning loop offers, refuses and withdraws as designed. Inside
+    a savepoint that is rolled back, so nothing it learns reaches the aspects
+    after it - and none of it changes what the scorecard measures before it."""
+    from django.core.exceptions import PermissionDenied
+    from django.db import transaction
+    from django.utils import timezone
+
+    from . import learning
+    from .code_knowledge import LEARNED_PREFIX, references
+    from .models import (
+        ChangePlan,
+        ChatConversation,
+        ChatMessage,
+        FactoryRun,
+        GraphRevision,
+        KnowledgeEntry,
+        LearningCandidate,
+        ProposedChange,
+        TriageHypothesis,
+        TriageRun,
+        TriageVerdict,
+    )
+
+    owner, viewer = ws.people["owner"], ws.people["viewer"]
+    probes = {}
+    with transaction.atomic():
+        plan = ChangePlan.objects.create(
+            application=ws.app, author=owner, title="Fix", proposal="p", validation="v",
+            digest="d", status="approved", reviewed_by=owner, reviewed_at=timezone.now(),
+        )
+        run = FactoryRun.objects.create(
+            application=ws.app, requested_by=owner, number=900, ticket_external_id="CARE-401",
+            ticket_title="Scorecard change", plan=plan, status="delivered",
+            pull_request_url="https://github.com/example/carepath/pull/1",
+            checks=[{"name": "tests", "conclusion": "success"}],
+        )
+        ProposedChange.objects.create(run=run, path="carepath/export.py", content="x")
+        failing = FactoryRun.objects.create(
+            application=ws.app, requested_by=owner, number=901, plan=plan, status="delivered",
+            pull_request_url="https://github.com/example/carepath/pull/2",
+            checks=[{"name": "tests", "conclusion": "failure"}],
+        )
+        incident, cause = list(KnowledgeEntry.objects.filter(application=ws.app, active=True)[:2])
+        triage = TriageRun.objects.create(
+            application=ws.app, incident=incident, requested_by=owner,
+            incident_digest=incident.digest, pack_digest="p",
+        )
+        verdict = TriageVerdict.objects.create(
+            hypothesis=TriageHypothesis.objects.create(
+                run=triage, rank=1, statement="s", next_step="n",
+                citations=[{"id": str(cause.pk), "quote": "q"}],
+            ),
+            user=owner, verdict="accepted", actual_cause=cause, confirmed_at=timezone.now(),
+        )
+        conversation = ChatConversation.objects.create(application=ws.app, user=viewer, title="t")
+        for number, question in enumerate(
+            ("Which colour is the scorecard's lobby?", "Where is MRN: 4471234 treated?")
+        ):
+            ChatMessage.objects.create(
+                application=ws.app, user=viewer, conversation=conversation, role="user",
+                body=question, sequence=2 * number + 1,
+            )
+            ChatMessage.objects.create(
+                application=ws.app, user=viewer, conversation=conversation, role="assistant",
+                body="Nothing found.", sequence=2 * number + 2,
+            )
+
+        sources = KnowledgeEntry.objects.count()
+        learning.collect(ws.app)
+        offered = LearningCandidate.objects.filter(application=ws.app)
+        probes["it offers each signal and makes no knowledge"] = (
+            offered.filter(state="open").count() == 3 and KnowledgeEntry.objects.count() == sources
+        )
+        probes["a failing delivery is not offered"] = not offered.filter(run=failing).exists()
+        probes["a question with personal data is not copied"] = not offered.filter(
+            question__contains="4471234"
+        ).exists() and not offered.filter(title__contains="4471234").exists()
+
+        change = offered.get(run=run)
+        try:
+            learning.accept(viewer, ws.app.pk, change.pk)
+            probes["a viewer cannot accept"] = False
+        except PermissionDenied:
+            probes["a viewer cannot accept"] = True
+        entry = learning.accept(owner, ws.app.pk, change.pk).entry
+        derived = GraphRevision(
+            application=ws.app, number=0, data={"edges": [{
+                "knowledge_id": str(entry.pk), "digest": entry.digest, "line": 1,
+                "evidence": entry.content.splitlines()[0], "source": "a", "target": "b",
+            }]},
+        )
+        probes["an accepted change record is never requirement evidence"] = (
+            entry.source.startswith(LEARNED_PREFIX) and not list(references(derived))
+        )
+
+        gap = offered.get(kind="gap", state="open")
+        learning.reject(owner, ws.app.pk, gap.pk)
+        probes["a rejection is not offered again"] = learning.collect(ws.app) == 0
+
+        learned = learning.accept(owner, ws.app.pk, offered.get(verdict=verdict).pk).entry
+        verdict.delete()
+        learning.withdraw(ws.app)
+        learned.refresh_from_db()
+        probes["a retracted verdict retires its learning"] = not learned.active
+        transaction.set_rollback(True)
+    passed = sum(bool(ok) for ok in probes.values())
+    return {"learning_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
 def speed(ws, revision, questions):
     from .graph_ai import citations_from, prepare
     from .workbench import retrieve
@@ -1210,6 +1328,8 @@ def measure():
         found, details["hipaa"] = hipaa(ws, revision, values, data)
         values.update(found)
         found, details["release_check"] = release_check(ws, revision)
+        values.update(found)
+        found, details["learning_loop"] = learning_loop(ws, revision)
         values.update(found)
         # Timed before cost control, which edits a source and adds versions.
         found, _ = speed(ws, revision, questions)

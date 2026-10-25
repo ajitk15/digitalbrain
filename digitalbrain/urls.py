@@ -18,6 +18,7 @@ from platform_core import (
     factory_views,
     graphs,
     knowledge_views,
+    learning,
     release,
     scim,
     secrets,
@@ -203,6 +204,11 @@ urlpatterns = [
         name="chat-regenerate",
     ),
     path(
+        "applications/<uuid:pk>/chat/messages/<uuid:message_id>/report/",
+        learning.report_view,
+        name="chat-report",
+    ),
+    path(
         "applications/<uuid:pk>/chat/messages/<uuid:message_id>/edit/",
         chat_views.chat_edit,
         name="chat-edit",
@@ -386,6 +392,7 @@ urlpatterns = [
     path("applications/<uuid:pk>/documents/", documents.documents, name="documents"),
     path("applications/<uuid:pk>/documents/add/", documents.source_add, name="source-add"),
     path("applications/<uuid:pk>/tickets/", documents.tickets, name="tickets"),
+    path("applications/<uuid:pk>/learned/", learning.learned_view, name="learned"),
     path(
         "applications/<uuid:pk>/documents/<uuid:document_id>/",
         documents.document_detail,

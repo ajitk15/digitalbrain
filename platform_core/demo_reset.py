@@ -88,6 +88,7 @@ from .models import (
     KnowledgeEntry,
     KnowledgeGraph,
     KnowledgeSource,
+    LearningCandidate,
     OperationsGraph,
     OpsEdge,
     OpsNode,
@@ -108,6 +109,8 @@ from .services import audit
 #: at anything in it except `FactoryRun.code_snapshot`, which is SET_NULL and
 #: goes with its run first anyway.
 ORDER = (
+    # What use taught: built from the runs, verdicts and answers below.
+    (LearningCandidate, "application_id__in"),
     # Runs, and the plans they produced.
     (ProposedChange, "run__application_id__in"),
     (RunEvent, "run__application_id__in"),
@@ -161,11 +164,13 @@ def imported(ids):
     record URL under its connector's namespace - the same test `connectors.prune`
     uses to decide what a connector owns. Documentation reverse-engineered from
     the code graph is counted with them: it was made from the graph a reset
-    removes, and Code Graph is its connector.
+    removes, and Code Graph is its connector. So are sources accepted from
+    Knowledge → Learned, made from the runs and verdicts it removes.
     """
-    from .code_knowledge import DERIVED_PREFIX
+    from .code_knowledge import derived
 
-    owned = Q(application_id__in=ids, source__startswith=DERIVED_PREFIX)
+    # Learned sources too: written from the runs and verdicts a reset removes.
+    owned = Q(application_id__in=ids) & derived()
     for connector in Connector.objects.filter(application_id__in=ids):
         try:
             namespace = kind_for(connector.kind).namespace(connector.config)

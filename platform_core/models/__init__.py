@@ -85,6 +85,7 @@ from .knowledge import (  # noqa: F401
     KnowledgeEntryQuerySet,
     KnowledgeGraph,
     KnowledgeSource,
+    LearningCandidate,
     PersonalDataPolicy,
 )
 from .operations import (  # noqa: F401

@@ -31,7 +31,7 @@ class SourceKindTests(TestCase):
         return body.split('aria-label="Knowledge views"')[1].split("</nav>")[0]
 
     def test_the_kinds_come_in_tab_order_and_each_has_a_page(self):
-        self.assertEqual(list(KINDS), ["documents", "code", "tickets"])
+        self.assertEqual(list(KINDS), ["documents", "code", "tickets", "learned"])
         for kind in KINDS.values():
             with self.subTest(kind=kind.key):
                 reverse(kind.route, args=[self.app.pk])

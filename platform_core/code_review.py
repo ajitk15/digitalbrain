@@ -57,7 +57,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from .code_graph_analysis import facts, language_for
-from .code_knowledge import DERIVED_PREFIX, identifiers
+from .code_knowledge import DERIVED_PREFIX, derived, identifiers
 from .models import (
     CodeFile,
     CodeRepository,
@@ -801,7 +801,7 @@ def live_texts(review, citations):
             texts[f"code:{code.pk}"] = code.content
     for entry in KnowledgeEntry.objects.answerable().filter(
         application_id=review.application_id, pk__in=knowledge_ids
-    ).exclude(source__startswith=DERIVED_PREFIX):
+    ).exclude(derived()):
         texts[str(entry.pk)] = entry.content
     return texts
 

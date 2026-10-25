@@ -30,6 +30,19 @@ MAX_LINKS = 100
 #: be the evidence that the code meets a requirement: it is left out here, and
 #: with it out of every code-to-requirement link Code Factory and Code review use.
 DERIVED_PREFIX = "code-graph://"
+#: Where a source accepted from Knowledge → Learned is recorded (`learning.py`):
+#: a change record or an incident learning the platform wrote from its own use.
+#: Excluded beside `DERIVED_PREFIX`, for the same reason - the platform's own
+#: output is never proof of itself.
+LEARNED_PREFIX = "learned://"
+DERIVED_PREFIXES = (DERIVED_PREFIX, LEARNED_PREFIX)
+
+
+def derived():
+    """Sources that describe the platform's own work, as a Q to exclude."""
+    from django.db.models import Q
+
+    return Q(source__startswith=DERIVED_PREFIX) | Q(source__startswith=LEARNED_PREFIX)
 
 
 def identifiers(text):
@@ -43,7 +56,7 @@ def references(revision):
     entries = {
         str(e.pk): e for e in KnowledgeEntry.objects.filter(
             application_id=revision.application_id, active=True, pk__in=source_ids
-        ).exclude(source__startswith=DERIVED_PREFIX)
+        ).exclude(derived())
     }
     checked, seen = {}, set()
     source_lines = {key: entry.content.splitlines() for key, entry in entries.items()}

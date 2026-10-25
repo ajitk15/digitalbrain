@@ -453,6 +453,34 @@ stored on `GraphRevision.release` under `RULES_VERSION` - a report the strip, Ve
 Attention read, never a verdict: publishing always checks again. The scorecard's "Release
 check probes passing" stages each outcome in a rolled-back savepoint and must stay 100%.
 
+**What use teaches comes back as candidates, never as knowledge** (`learning.py`,
+`LearningCandidate`, migration 0104, Knowledge → Learned). Rules - never a model - build a
+candidate from four records already kept: a Code Factory run delivered after an approved
+plan with every check concluded and passing (a change record), a verdict that confirmed a
+cause from triage's own citations (an incident learning), a complete answer that cited
+nothing (a gap), and an answer its asker marked wrong ("Wrong answer?" on a chat answer, a
+`data-modal` page of its own, `chat-report`). What a model wrote is quoted as what the plan
+or triage said. A rejected plan item is deliberately not a signal: a judgement, not a fact.
+Nothing is knowledge until an owner or contributor accepts it, audited
+(`learning.accepted`/`.rejected`): a change record or incident learning goes through
+`add_knowledge` - masking, the scan, restriction - under `LEARNED_PREFIX`
+(`learned://<kind>/<id>`), which `code_knowledge.derived()` excludes from requirement
+evidence beside `DERIVED_PREFIX`, so the platform never cites its own output as proof of
+itself; a question becomes a `BenchmarkQuestion` only with the source it should cite, so
+the release check gets harder to pass as the application is used. Each signal is a
+nullable one-to-one, which is "offered once" (a rejection is remembered) and how a
+withdrawn signal shows: a retracted verdict retires its accepted learning
+(`serviceops` calls `withdraw`), and a conversation removed by its owner or chat retention
+blanks its question whatever was decided, so the inbox never keeps what retention removed.
+**Questions people asked are shown to owners and contributors, without who asked** - a
+deliberate trade, said on the page and the report form; the inbox and its tab are theirs
+only (`Kind.writers`), and a question the personal-data scan flags is never copied (a
+report with one is refused). `collect` reads at most `BATCH` signals a kind from
+`WINDOW_DAYS`, when the inbox is drawn and from the maintenance lane every
+`COLLECT_SECONDS`, which keeps the Attention item true. New tables after 0091 secure
+themselves through 0091's `secure` under a `SECURED` list `test_tenancy` reads. The
+scorecard's "Learning loop probes passing" must stay 100%.
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

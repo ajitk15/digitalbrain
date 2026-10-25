@@ -1,0 +1,10 @@
+{% extends 'base.html' %}{% load icons workspace %}{% block title %}Report an answer · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+{% comment %}`learning.report_view`: "this answer is wrong". Opened as a popup over chat, a page of its own with JavaScript off. It changes no answer, source or benchmark question: it puts the question in Knowledge → Learned, where an owner or contributor decides what to do with it.{% endcomment %}
+<div class="page-heading"><div><p class="eyebrow"><a href="{{ back }}">CHAT</a></p><h1>Report this answer</h1>
+<p class="muted">Your question, what you say here and the sources the answer cited go to this application's owners and contributors to review, without your name. Nothing changes until one of them decides. A question that holds personal data is not sent.</p></div></div>
+{% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
+<section class="card section"><form method="post" action="{% url 'chat-report' application.pk message.pk %}">{% csrf_token %}
+<div class="field"><label for="report-note">What was wrong?</label><textarea id="report-note" name="note" rows="3" maxlength="1000" placeholder="It cited the old runbook; the current one says otherwise.">{{ form.note.value|default:"" }}</textarea>{% for e in form.note.errors %}<p class="field-error">{{ e }}</p>{% endfor %}</div>
+<div class="field"><label for="report-expected">Should cite <span class="muted">(optional)</span></label><input id="report-expected" name="expected" maxlength="200" placeholder="deployment-runbook" value="{{ form.expected.value|default:"" }}"><small class="muted">Text in the right source's title or link, if you know it.</small>{% for e in form.expected.errors %}<p class="field-error">{{ e }}</p>{% endfor %}</div>
+<div class="actions"><button type="submit" class="button">{% icon "send" 13 %}Send for review</button> <a class="button secondary" href="{{ back }}" data-modal-close>Cancel</a></div>
+</form></section>{% endblock %}

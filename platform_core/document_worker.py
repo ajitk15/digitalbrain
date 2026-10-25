@@ -224,6 +224,7 @@ def maintenance_steps():
     from .graph_store import record_step, slim_step
     from .jobs import maintain
     from .knowledge_sources import process_next_source
+    from .learning import collect_if_due
     from .metrics import observe
     from .partitions import warn_if_due
     from .queue_status import log_if_due
@@ -248,6 +249,8 @@ def maintenance_steps():
     # when the audit table runs short of months, which only the owner can make.
     # Revoking grants past the date an owner gave them, which already open
     # nothing (`policy.applications_for`), so every other reader agrees.
+    # Offering what use taught (`learning`): rules over stored records, every ten
+    # minutes, so the Attention count is true without anyone opening the inbox.
     return (
         purge_chat_if_due,
         expire_due,
@@ -262,6 +265,7 @@ def maintenance_steps():
         slim_step,
         purge_if_due,
         warn_if_due,
+        collect_if_due,
     )
 
 

@@ -58,11 +58,14 @@ $$
 POLICY = "digitalbrain_tenant"
 
 
-def forwards(apps, schema_editor):
+def secure(schema_editor, tables):
+    """Put the tenant policy on these tables. A later migration that adds a table
+    with a required application calls this for it, under a `SECURED` list that
+    `test_tenancy` reads with `TABLES`."""
     if schema_editor.connection.vendor != "postgresql":
         return
     schema_editor.execute(FUNCTION)
-    for table in TABLES:
+    for table in tables:
         schema_editor.execute(f"DROP POLICY IF EXISTS {POLICY} ON {table}")
         # USING narrows what is read, and - with no WITH CHECK of its own -
         # what may be written: a row for another application is refused.
@@ -76,13 +79,23 @@ def forwards(apps, schema_editor):
         schema_editor.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
 
 
-def backwards(apps, schema_editor):
+def unsecure(schema_editor, tables):
     if schema_editor.connection.vendor != "postgresql":
         return
-    for table in TABLES:
+    for table in tables:
         schema_editor.execute(f"ALTER TABLE {table} NO FORCE ROW LEVEL SECURITY")
         schema_editor.execute(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY")
         schema_editor.execute(f"DROP POLICY IF EXISTS {POLICY} ON {table}")
+
+
+def forwards(apps, schema_editor):
+    secure(schema_editor, TABLES)
+
+
+def backwards(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    unsecure(schema_editor, TABLES)
     schema_editor.execute("DROP FUNCTION IF EXISTS digitalbrain_tenant()")
 
 

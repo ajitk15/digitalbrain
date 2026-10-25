@@ -11,9 +11,9 @@ So this answers, from records the platform already keeps and with no model:
 * `stages` - the six stages, each done, waiting or not started, for onboarding;
 * `summary` - one line for every Knowledge page: what answers, what is waiting,
   what is behind;
-* `attention` - the three things that wait on a person: a draft ready to
-  publish, a published version behind its sources, sources that moved at their
-  origin.
+* `attention` - what waits on a person: a draft ready to publish, a published
+  version behind its sources, sources that moved at their origin, and what use
+  taught that nobody has decided on yet (`learning`).
 
 Read-only. Every stage links to the screen that acts on it, which keeps its own
 permission check and audit event: this page never becomes a second way to do
@@ -401,6 +401,21 @@ def attention(app, grant):
                 reverse("documents", args=[app.pk]),
                 "refresh",
                 "Resync",
+                kind="knowledge",
+            )
+        )
+    from .learning import open_count
+
+    waiting = open_count(app)
+    if waiting:
+        found.append(
+            Item(
+                app,
+                f"{waiting} thing{'s' if waiting != 1 else ''} learned from use "
+                f"wait{'' if waiting != 1 else 's'} for a decision",
+                reverse("learned", args=[app.pk]),
+                "pulse",
+                "Review",
                 kind="knowledge",
             )
         )

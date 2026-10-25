@@ -3232,6 +3232,27 @@
 .cycle-warn { border-top: 3px solid var(--c-warn); }
 .cycle-todo { border-top: 3px solid var(--c-line-strong); }
 
+/* Knowledge → Learned (`learning.py`): each candidate a card, what was learned on
+   the left and the decision beside it, so a desktop screen shows several at once. */
+.learned-list { display: flex; flex-direction: column; gap: var(--s-3); }
+.learned-list h3 { margin: var(--s-4) 0 0; font-size: var(--t-15); }
+.learned-item { padding: var(--s-3) var(--s-4); display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--s-2) var(--s-5); align-items: start; }
+.learned-item.is-failed { border-color: var(--c-warn); }
+.learned-what { display: flex; flex-direction: column; gap: var(--s-1); min-width: 0; }
+.learned-what h4 { margin: 0; font-size: var(--t-15); }
+.learned-what p { margin: 0; }
+.learned-meta { display: flex; align-items: center; gap: var(--s-2); font-size: var(--t-12); color: var(--c-ink-2); }
+.learned-body { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 22rem; overflow: auto; margin: var(--s-2) 0 0; padding: var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); font-size: var(--t-12); }
+.learned-decision { display: flex; flex-direction: column; gap: var(--s-2); padding-left: var(--s-4); border-left: 1px solid var(--c-line); }
+.learned-decision .field { margin: 0; }
+.learned-decision .actions { margin: 0; }
+.learned-hint { margin: 0; font-size: var(--t-12); }
+.learned-list td small { display: block; }
+@media (max-width: 760px) {
+  .learned-item { grid-template-columns: 1fr; }
+  .learned-decision { padding-left: 0; border-left: 0; }
+}
+
 /* The line under the tabs saying what this view is for. One per view: the
    sentence it replaces described the whole section, so it read identically on
    the graph, the quality report and the version list. */

@@ -1158,6 +1158,11 @@ def triage_verdict(request, pk, hypothesis_id):
                 details={"verdict": mine.verdict, "had_cause": bool(mine.actual_cause_id)},
             )
             mine.delete()
+            # An incident learning accepted from it is retired with it: the cause
+            # is no longer confirmed, so neither is what was learned from it.
+            from .learning import withdraw
+
+            withdraw(app)
         return redirect(incident_url(app, run.incident_id, run.pk))
 
     if not run_still_verified(run, request.user):
