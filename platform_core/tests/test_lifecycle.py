@@ -19,6 +19,7 @@ from platform_core.models import (
     ApplicationGrant,
     BenchmarkRun,
     CodeRepository,
+    Connector,
     GraphRevision,
     KnowledgeEntry,
     KnowledgeSource,
@@ -100,9 +101,16 @@ class LifecycleTests(TestCase):
         )
         feed = self.state("feed")
         self.assertEqual(feed.state, DONE)
-        self.assertIn("1 imported record", feed.detail)
-        self.assertIn("1 note", feed.detail)
-        self.assertIn("1 repository", feed.detail)
+        # No ticket connector, so no Tickets kind: both records are "other".
+        self.assertEqual(feed.detail, "1 repository, 2 other records")
+        Connector.objects.create(
+            application=self.app,
+            kind="jira",
+            name="Jira",
+            config={"base_url": "https://jira.example", "auth": "cloud"},
+        )
+        self.app = type(self.app).objects.get(pk=self.app.pk)
+        self.assertEqual(self.state("feed").detail, "1 repository, 1 ticket, 1 other record")
         # A repository whose documents alone were imported has no code to read.
         repository.status = "documentation"
         repository.save(update_fields=["status"])

@@ -524,6 +524,15 @@ def knowledge_features(application):
     }
 
 
+@register.simple_tag
+def source_tabs(application):
+    """The kinds of source this application's Knowledge shows, in tab order
+    (`source_kinds.visible`)."""
+    from platform_core.source_kinds import visible
+
+    return visible(application)
+
+
 @register.inclusion_tag("_knowledge_status.html")
 def knowledge_status(application):
     """One line on every Knowledge page: what answers, what waits, what is behind.

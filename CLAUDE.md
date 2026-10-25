@@ -423,6 +423,15 @@ fingerprint is today's. Every stage links to the screen that acts, with its own
 permission check and audit event - nothing here writes. The strip costs four queries on
 every Knowledge page whatever the library's size (`test_feature_cache` holds the budget).
 
+**The kinds of source are a registry** (`source_kinds.KINDS`: Documents, Code Repos,
+Tickets, like `services.FEATURES`). Each `Kind` names its feature, page, icon, the
+`knowledge_view`s its tab is current on, how to count it and when its tab shows; the
+Knowledge tabs (`workspace.source_tabs` in `knowledge_nav.html`) and the cycle's Feed stage
+are drawn from it, so a new kind is one entry and its own page - no navigation code. It
+is a way of reading, never of storing, and each kind's page keeps its own queries and
+checks. Code is the one kind with `feeds_graph=False`: the knowledge graph never reads it.
+The refactor was held to the tabs rendering byte for byte as before.
+
 **A version is checked before it answers** (`release.py`, migration 0103). Publishing
 used to refuse only a version whose evidence changed; now every publish - the Versions
 table's "Check and publish" popup (`graph-release`), the old `action=publish` form,

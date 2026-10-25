@@ -221,7 +221,7 @@ walks it once, and the status strip keeps it visible afterwards.
 | 1 ✓ | Code Repos under Knowledge, Code Graph folded in (`knowledge-code-repos-plan.md`) | 4.5-5 d | Low-medium | Gates unchanged; tests for gating and onboarding routes |
 | 2 ✓ | Lifecycle tracker (`lifecycle.py`): the cycle on onboarding, Knowledge status strip, Attention items (draft ready, published behind, origins and repositories moved) | 3-4 d | Low | Every step reachable and correct on Engineering, Operations, Both |
 | 3 ✓ | Release check before publish (`release.py`); reason recorded on override | 4-5 d | Medium (changes a habit) | Scorecard probe: a regressed draft is refused or warned, as designed |
-| 4 | Source kind registry: Documents, Code, Tickets behind one contract | 5-8 d | Medium (refactor) | Same pages byte-for-byte where nothing changed; query counts held flat |
+| 4 ✓ | Source kind registry (`source_kinds.py`): Documents, Code, Tickets behind one contract; tabs and Feed drawn from it (rows, freshness and quality stay on each kind's page) | 5-8 d | Medium (refactor) | Same pages byte-for-byte where nothing changed; query counts held flat |
 | 5 | Learning loop: Learned inbox, change records, incident learnings, gaps, answer feedback, benchmark promotion | 8-10 d | Medium-high (new trust path) | Benchmark grows; derived-prefix exclusion tested; scorecard evidence recall unchanged |
 | 6 | Optional auto-publish policy | 1-2 d | Medium | Only on all-green release checks; audited |
 | 7 | Application rules (later, with its own benchmark) | measured first | High | Its own pack, like `typing_pack` |

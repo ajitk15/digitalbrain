@@ -69,26 +69,11 @@ class Summary:
     moved_code: int
 
 
-def sources(app):
-    """What feeds the graph, by kind, in two queries. Code is counted apart: it is
-    read by Code Graph, never by the knowledge graph."""
-    from .models import CodeRepository, KnowledgeEntry
-    from .services import feature_enabled
+def knowledge_count(app):
+    """How many active sources feed the graph, of every kind."""
+    from .models import KnowledgeEntry
 
-    counts = KnowledgeEntry.objects.filter(application=app, active=True).aggregate(
-        documents=Count("pk", filter=Q(document__isnull=False)),
-        imported=Count("pk", filter=Q(document__isnull=True) & ~Q(source="")),
-        notes=Count("pk", filter=Q(document__isnull=True, source="")),
-    )
-    counts["code"] = (
-        CodeRepository.objects.filter(application=app, retired_at__isnull=True)
-        .exclude(status="documentation")
-        .count()
-        if feature_enabled("code_graph", app)
-        else 0
-    )
-    counts["knowledge"] = counts["documents"] + counts["imported"] + counts["notes"]
-    return counts
+    return KnowledgeEntry.objects.filter(application=app, active=True).count()
 
 
 def moved(app):
@@ -183,7 +168,7 @@ def stages(app, state=None):
     from .services import feature_enabled, knowledge_label, purposes
 
     state = state or summary(app)
-    fed = sources(app)
+    total = knowledge_count(app)
     label = knowledge_label(app)
     found = []
 
@@ -203,22 +188,21 @@ def stages(app, state=None):
         )
     )
 
-    kinds = [
-        (fed["documents"], "document"),
-        (fed["imported"], "imported record"),
-        (fed["notes"], "note"),
-        (fed["code"], "repository" if fed["code"] == 1 else "repositories"),
-    ]
-    named = [
-        f"{count} {noun if noun.startswith('repositor') else noun + ('s' if count != 1 else '')}"
-        for count, noun in kinds
-        if count
-    ]
+    # Each kind of source from the registry (`source_kinds`), then whatever
+    # feeds the graph that no kind lists: notes, articles and other imports.
+    from .source_kinds import fed as by_kind
+
+    counted = by_kind(app)
+    in_kinds = sum(count for kind, count in counted if kind.feeds_graph)
+    named = [kind.counted(count) for kind, count in counted]
+    other = total - in_kinds
+    if other > 0:
+        named.append(f"{other} other record{'s' if other != 1 else ''}")
     found.append(
         Stage(
             "feed",
             "Feed",
-            DONE if fed["knowledge"] else TODO,
+            DONE if total else TODO,
             ", ".join(named) if named else "No sources yet.",
             "documents",
         )
