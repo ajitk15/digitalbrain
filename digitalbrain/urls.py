@@ -51,6 +51,11 @@ urlpatterns = [
         graphs.graph_generate,
         name="graph-generate",
     ),
+    path(
+        "applications/<uuid:pk>/knowledge/repositories/",
+        code_graph.code_repositories,
+        name="code-repositories",
+    ),
     path("applications/<uuid:pk>/code-graph/", code_graph.code_graph, name="code-graph"),
     path(
         "applications/<uuid:pk>/code-graph/add/",

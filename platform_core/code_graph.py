@@ -7,6 +7,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -214,13 +215,20 @@ def language_mix(languages):
     return rows
 
 
-def tabs(app, active):
-    """The Code Graph tabs this application has, in order."""
-    found = [("graph", "Graph", reverse("code-graph", args=[app.pk]))]
+def tabs(app, active, repository=None):
+    """The Code Graph tabs this application has, in order.
+
+    They sit under Knowledge → Code Repos, so the first is "Structure" rather
+    than "Graph": Knowledge already has a Graph tab, versioned by revision, and
+    this one is versioned by snapshot. Each carries the repository being read,
+    so moving between them stays on it.
+    """
+    query = f"?repository={repository.pk}" if repository else ""
+    found = [("graph", "Structure", reverse("code-graph", args=[app.pk]) + query)]
     if feature_enabled("code_review", app):
         found.append(("reviews", "Reviews", reverse("code-reviews", args=[app.pk])))
     if feature_enabled("code_docs", app):
-        found.append(("docs", "Documentation", reverse("code-docs", args=[app.pk])))
+        found.append(("docs", "Documentation", reverse("code-docs", args=[app.pk]) + query))
     return [
         {"key": key, "label": label, "url": url, "active": key == active}
         for key, label, url in found
@@ -254,8 +262,9 @@ def selected_repository(app, raw):
 def repository_add(request, pk):
     """Register a GitHub repository or a server folder, on a page of its own.
 
-    Opened as a popup from Code Graph by `modal.js`, which fetches this URL and
-    lifts its `<main>`; with JavaScript off the button navigates here instead.
+    Opened as a popup from Knowledge → Code Repos by `modal.js`, which fetches
+    this URL and lifts its `<main>`; with JavaScript off the button navigates
+    here instead. Success lands on Code Repos, where indexing shows its progress.
     """
     app, grant = access(request.user, pk, "code_graph")
     if not can_manage(grant):
@@ -274,28 +283,24 @@ def repository_add(request, pk):
             raise PermissionDenied
         if folder_form.is_valid():
             try:
-                repository = register_local(request.user, pk, folder_form.cleaned_data["folder"])
+                register_local(request.user, pk, folder_form.cleaned_data["folder"])
             except ValidationError as failure:
                 folder_form.add_error("folder", " ".join(failure.messages))
             else:
                 messages.success(request, "Folder queued for indexing.")
-                return redirect(
-                    f"{reverse('code-graph', args=[pk])}?repository={repository.pk}"
-                )
+                return redirect("code-repositories", pk=pk)
     elif request.method == "POST":
         access(request.user, pk, "code_graph", write=True)
         if form.is_valid():
             try:
-                repository = register(
+                register(
                     request.user, pk, form.cleaned_data["repository"], form.cleaned_data["ref"]
                 )
             except ValidationError as failure:
                 form.add_error("repository", " ".join(failure.messages))
             else:
                 messages.success(request, "Repository queued for indexing.")
-                return redirect(
-                    f"{reverse('code-graph', args=[pk])}?repository={repository.pk}"
-                )
+                return redirect("code-repositories", pk=pk)
     return render(
         request,
         "repository_add.html",
@@ -358,6 +363,86 @@ def repository_browse(request, pk):
     )
 
 
+def manage_repository(request, app, action):
+    """Check the branch, refresh the index or retire one repository.
+
+    The buttons on Knowledge → Code Repos, also answered on the Structure page
+    where they used to be. The caller has checked write access and the role.
+    Returns the repository acted on, or None when the action is not one of
+    these, and leaves the redirect to the caller.
+    """
+    if action == "refresh":
+        repository = get_object_or_404(
+            CodeRepository, pk=request.POST.get("repository"), application=app
+        )
+        repository.status = "queued"
+        repository.error = ""
+        repository.added_by = request.user
+        repository.job_id = uuid.uuid4()
+        repository.save(
+            update_fields=["status", "error", "added_by", "job_id", "updated_at"]
+        )
+        messages.success(
+            request, "Repository queued for refresh. The last snapshot remains available."
+        )
+        return repository
+    if action == "check":
+        # Ask where the branch points, and nothing else. Separate from
+        # Refresh index on purpose: this costs one API call and changes
+        # nothing, while re-indexing costs a clone and supersedes the
+        # snapshot every past run reasoned about. Noticing and acting are
+        # two decisions, and only one of them is safe to make for somebody.
+        repository = get_object_or_404(
+            CodeRepository,
+            pk=request.POST.get("repository"),
+            application=app,
+            retired_at__isnull=True,
+        )
+        refresh_head(repository)
+        repository.refresh_from_db()
+        if repository.drifted:
+            messages.warning(
+                request,
+                f"{repository.default_ref} has moved on since this snapshot was "
+                f"indexed. Refresh the index to reason about the current code.",
+            )
+        elif repository.drifted is False:
+            messages.success(
+                request, f"Still in sync with {repository.default_ref}."
+            )
+        else:
+            messages.warning(
+                request,
+                f"{repository.name} did not report a head commit for "
+                f"{repository.default_ref}. The last known commit is unchanged.",
+            )
+        return repository
+    if action == "retire":
+        repository = get_object_or_404(
+            CodeRepository,
+            pk=request.POST.get("repository"),
+            application=app,
+            retired_at__isnull=True,
+        )
+        repository.retired_at = timezone.now()
+        repository.save(update_fields=["retired_at", "updated_at"])
+        audit(
+            request.user,
+            "code_repository.retired",
+            repository.pk,
+            app.product.portfolio.organization,
+            {"repository": repository.name},
+        )
+        messages.success(
+            request,
+            f"{repository.name} was removed from this application. Runs no longer "
+            "read it, and every past run keeps the snapshot it reasoned about. "
+            "Registering the same repository again brings it back.",
+        )
+        return repository
+    return None
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def code_graph(request, pk):
@@ -371,75 +456,13 @@ def code_graph(request, pk):
         if action in {"register", "register_folder"}:
             # The form lives on its own page; a failed submission is shown there.
             return repository_add(request, pk)
-        elif action == "refresh":
-            repository = get_object_or_404(
-                CodeRepository, pk=request.POST.get("repository"), application=app
-            )
-            repository.status = "queued"
-            repository.error = ""
-            repository.added_by = request.user
-            repository.job_id = uuid.uuid4()
-            repository.save(
-                update_fields=["status", "error", "added_by", "job_id", "updated_at"]
-            )
-            messages.success(
-                request, "Repository queued for refresh. The last snapshot remains available."
-            )
+        # Check, Refresh and Retire live on Code Repos now. The same POST still
+        # works here, so a page left open from before the move keeps working.
+        repository = manage_repository(request, app, action)
+        if repository is not None:
+            if action == "retire":
+                return redirect(request.path)
             return redirect(f"{request.path}?repository={repository.pk}")
-        elif action == "check":
-            # Ask where the branch points, and nothing else. Separate from
-            # Refresh index on purpose: this costs one API call and changes
-            # nothing, while re-indexing costs a clone and supersedes the
-            # snapshot every past run reasoned about. Noticing and acting are
-            # two decisions, and only one of them is safe to make for somebody.
-            repository = get_object_or_404(
-                CodeRepository,
-                pk=request.POST.get("repository"),
-                application=app,
-                retired_at__isnull=True,
-            )
-            refresh_head(repository)
-            repository.refresh_from_db()
-            if repository.drifted:
-                messages.warning(
-                    request,
-                    f"{repository.default_ref} has moved on since this snapshot was "
-                    f"indexed. Refresh the index to reason about the current code.",
-                )
-            elif repository.drifted is False:
-                messages.success(
-                    request, f"Still in sync with {repository.default_ref}."
-                )
-            else:
-                messages.warning(
-                    request,
-                    f"{repository.name} did not report a head commit for "
-                    f"{repository.default_ref}. The last known commit is unchanged.",
-                )
-            return redirect(f"{request.path}?repository={repository.pk}")
-        elif action == "retire":
-            repository = get_object_or_404(
-                CodeRepository,
-                pk=request.POST.get("repository"),
-                application=app,
-                retired_at__isnull=True,
-            )
-            repository.retired_at = timezone.now()
-            repository.save(update_fields=["retired_at", "updated_at"])
-            audit(
-                request.user,
-                "code_repository.retired",
-                repository.pk,
-                app.product.portfolio.organization,
-                {"repository": repository.name},
-            )
-            messages.success(
-                request,
-                f"{repository.name} was removed from this application. Runs no longer "
-                "read it, and every past run keeps the snapshot it reasoned about. "
-                "Registering the same repository again brings it back.",
-            )
-            return redirect(request.path)
 
     repositories = CodeRepository.objects.filter(
         application=app, retired_at__isnull=True
@@ -533,7 +556,7 @@ def code_graph(request, pk):
             # before anyone thinks to look at a connector screen, so the answer
             # belongs on this page too.
             "github_credential": credential_location(app, "github"),
-            "tabs": tabs(app, "graph"),
+            "tabs": tabs(app, "graph", repository),
             "folders_enabled": code_graph_local.enabled(),
             "repository_folder": (
                 code_graph_local.path_of(repository)
@@ -543,6 +566,119 @@ def code_graph(request, pk):
             "connector_url": reverse("connectors", args=[app.pk]),
             "file_count": snapshot.files.count() if snapshot else 0,
             "relationship_count": snapshot.relationships.count() if snapshot else 0,
+        },
+    )
+
+
+#: How a repository's status reads as a pill, in the classes Documents uses.
+STATUS_PILLS = {
+    "queued": "status-queued",
+    "indexing": "status-converting",
+    "ready": "status-ready",
+    "failed": "status-failed",
+}
+
+
+def repository_rows(app):
+    """One row per active repository for Code Repos, in a fixed number of queries.
+
+    Drift is read from the prefetched snapshots rather than `drifted`, which
+    asks for the latest snapshot again and would cost a query a row. Documents
+    imported from a GitHub repository are counted by their path, the way the
+    Documents table links them the other way (`source_library.repository_of`).
+    """
+    from collections import Counter
+
+    from .models import Document
+    from .source_library import repository_of
+
+    documents = Counter(
+        repository_of(url)
+        for url in Document.objects.filter(application=app, origin="github")
+        .exclude(status="deleted")
+        .values_list("source_url", flat=True)
+    )
+    rows = []
+    for repository in CodeRepository.objects.filter(
+        application=app, retired_at__isnull=True
+    ).prefetch_related("snapshots"):
+        snapshot = next(iter(repository.snapshots.all()), None)
+        drifted = (
+            None
+            if not repository.head_sha or snapshot is None or not snapshot.commit_sha
+            else repository.head_sha != snapshot.commit_sha
+        )
+        rows.append(
+            {
+                "repository": repository,
+                "snapshot": snapshot,
+                "drifted": drifted,
+                "pill": STATUS_PILLS.get(repository.status, ""),
+                "documents_only": repository.status == "documentation",
+                "pending": repository.status in {"queued", "indexing"},
+                "languages": [row.get("name") for row in snapshot.languages][:3]
+                if snapshot
+                else [],
+                "documents": documents.get(repository.external_id.lower(), 0)
+                if repository.provider == "github"
+                else 0,
+                "folder": code_graph_local.path_of(repository)
+                if repository.provider == "local"
+                else "",
+            }
+        )
+    return rows
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def code_repositories(request, pk):
+    """Knowledge → Code Repos: the repositories this application reads.
+
+    The one place a repository is added, checked, re-indexed or retired; Code
+    Graph's Structure, Reviews and Documentation read from this list. Gated on
+    Code Graph, not on Knowledge - repositories exist for Code Graph and Code
+    Factory, and an application with Knowledge off must still be able to add
+    one. Code is not a knowledge source: chat and the knowledge graph do not
+    read it, and the page says so.
+    """
+    app, grant = access(request.user, pk, "code_graph")
+    if request.method == "POST":
+        access(request.user, pk, "code_graph", write=True)
+        if not can_manage(grant):
+            raise PermissionDenied
+        action = request.POST.get("action")
+        if action == "index_code":
+            # A repository whose documents were imported but whose code never
+            # was. Registering it is the ordinary path, which queues an index.
+            repository = get_object_or_404(
+                CodeRepository,
+                pk=request.POST.get("repository"),
+                application=app,
+                retired_at__isnull=True,
+                status="documentation",
+            )
+            try:
+                register(request.user, pk, repository.name, repository.default_ref)
+            except ValidationError as failure:
+                messages.error(request, " ".join(failure.messages))
+            else:
+                messages.success(request, f"{repository.name} queued for indexing.")
+        elif manage_repository(request, app, action) is None:
+            return HttpResponse("Unknown action.", status=400)
+        return redirect("code-repositories", pk=pk)
+    rows = repository_rows(app)
+    return render(
+        request,
+        "code_repositories.html",
+        {
+            "application": app,
+            "grant": grant,
+            "can_manage": can_manage(grant),
+            "rows": rows,
+            # Reloads the page while something is indexing, as Documents does.
+            "pending": any(row["pending"] for row in rows),
+            "folders_enabled": code_graph_local.enabled(),
         },
     )
 

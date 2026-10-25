@@ -620,7 +620,7 @@ def refresh_after(user, app_id, run_id, scope):
         if not feature_enabled("code_graph", app):
             notes.append("Code Graph is switched off for this application.")
         elif repository is None:
-            notes.append("No repository is registered in Code Graph.")
+            notes.append("No repository is registered on Code Repos.")
         else:
             if repository.provider == "github":
                 valid_name(repository.name)

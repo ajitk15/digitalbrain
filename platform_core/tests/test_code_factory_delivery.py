@@ -1025,7 +1025,7 @@ class OfflineChangeTests(DeliveryGateTests):
             with self.assertRaises(ValidationError) as raised:
                 prepare(self.owner, self.app.pk, self.run.pk)
         message = " ".join(raised.exception.messages)
-        self.assertIn("Index the repository in Code Graph", message)
+        self.assertIn("Index the repository on Code Repos", message)
         self.assertIn("mount a write-scoped credential", message)
 
 

@@ -1,7 +1,9 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
-<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Code Graph</h1><p class="muted">Documentation written from an indexed repository: what it is made of, how the parts depend on each other, its data model and endpoints, and which requirements its code names. Each statement names the file and line it was read from.</p></div></div>
+<h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
+<h2 class="view-title">Code Graph</h2>
+<p class="view-note">Documentation written from an indexed repository: what it is made of, how the parts depend on each other, its data model and endpoints, and which requirements its code names. Each statement names the file and line it was read from.</p>
 {% include '_code_graph_tabs.html' %}
-{% if not repositories %}<section class="empty"><h2>Index a repository first</h2><p>Documentation is read from a repository's snapshot. Add one on the <a href="{% url 'code-graph' application.pk %}">Graph</a> tab.</p></section>{% else %}
+{% if not repositories %}<section class="empty"><h2>Index a repository first</h2><p>Documentation is read from a repository's snapshot. Add one on <a href="{% url 'code-repositories' application.pk %}">Code Repos</a>.</p></section>{% else %}
 <section class="code-repository-bar section"><form method="get" class="inline-form"><label for="docs-repository">Repository</label><select id="docs-repository" name="repository" data-auto-submit>{% for item in repositories %}<option value="{{ item.pk }}" {% if item.pk == repository.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select><button class="button secondary" data-auto-submit-hide>View</button></form>
 {% if can_write and snapshot %}<form method="post" class="inline-form">{% csrf_token %}<input type="hidden" name="action" value="generate"><input type="hidden" name="repository" value="{{ repository.pk }}"><button class="button{% if doc and not stale %} secondary{% endif %}">{% icon "refresh" 13 %}{% if doc %}Generate again{% else %}Generate documentation{% endif %}</button></form>{% endif %}</section>
 <div{% if pending %} data-document-pending{% endif %}>

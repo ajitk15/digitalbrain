@@ -395,6 +395,21 @@ variables, and a five-minute limit. The verdict is stored in `FactoryRun.checks`
 where a pull request's CI verdict goes, so the Tests stage reads the same. Do not
 run anything automatically, and do not use this server's interpreter.
 
+**Code Graph is read under Knowledge → Code Repos** (`code_graph.code_repositories`,
+`docs/knowledge-code-repos-plan.md`). Knowledge's tabs are Documents · Code Repos ·
+Tickets · Graph · Quality · Versions, and there is no Code Graph menu item. Code Repos is
+the one place a repository is added, branch-checked, re-indexed, retired or (a
+"Documents only" repository a GitHub link import made) indexed for the first time;
+Structure, Reviews, Documentation and a file's page open one of its repositories and
+show Code Repos as the current tab. Code Repos is gated on `code_graph`, not on
+`knowledge`, and each Knowledge tab on its own feature, so an application with Knowledge
+off still reaches its repositories and the menu shows Knowledge when either is on. Only
+navigation moved: every `code-graph*` URL, route name and the feature key are unchanged,
+a Check/Refresh/Retire POST to `code-graph` still works, and the worker lane named
+`code-graph` is a lane, not a screen. Code is not a knowledge source - chat and the
+knowledge graph do not read it, and the page says so. Onboarding's two repository steps
+route to `code-repositories`, because Remove lives there.
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

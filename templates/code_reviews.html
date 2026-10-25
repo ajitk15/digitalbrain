@@ -1,9 +1,11 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
-<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Code Graph</h1><p class="muted">Review a change against the indexed snapshot it starts from: what it touches, how far that reaches, and the requirements those files name.</p></div></div>
+<h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
+<h2 class="view-title">Code Graph</h2>
+<p class="view-note">Review a change against the indexed snapshot it starts from: what it touches, how far that reaches, and the requirements those files name.</p>
 {% include '_code_graph_tabs.html' %}
 <div class="split code-review-start"{% if pending %} data-document-pending{% endif %}>
 <section class="card"><div class="card-heading"><h2>Review changes</h2></div>
-{% if not repositories %}<p class="muted">Add a repository on the <a href="{% url 'code-graph' application.pk %}">Graph</a> tab first. A review compares a change with its indexed snapshot.</p>
+{% if not repositories %}<p class="muted">Add a repository on <a href="{% url 'code-repositories' application.pk %}">Code Repos</a> first. A review compares a change with its indexed snapshot.</p>
 {% elif can_start %}<form method="post">{% csrf_token %}{{ form.non_field_errors }}
 <p>{{ form.repository.label_tag }}{{ form.repository }}</p>
 <fieldset class="purpose-cards"><legend>{{ form.kind.label }}</legend>{{ form.kind.errors }}{% for radio in form.kind %}<label class="purpose-card">{{ radio.tag }}<span><strong>{{ radio.choice_label }}</strong></span></label>{% endfor %}</fieldset>

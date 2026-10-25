@@ -47,9 +47,12 @@ class CodeGraphTests(TestCase):
 
     def test_add_repository_is_a_popup_onto_a_page_of_its_own(self):
         add = reverse("code-graph-add", args=[self.app.pk])
-        body = self.client.get(reverse("code-graph", args=[self.app.pk])).content.decode()
+        body = self.client.get(reverse("code-repositories", args=[self.app.pk])).content.decode()
         self.assertIn(f'href="{add}" data-modal', body)
         self.assertNotIn('value="register"', body)
+        # Code Graph reads repositories; it no longer adds them.
+        structure = self.client.get(reverse("code-graph", args=[self.app.pk])).content.decode()
+        self.assertNotIn(f'href="{add}"', structure)
         self.assertContains(self.client.get(add), 'value="register"')
         # A refusal is shown on the form page rather than lost on the list.
         response = self.client.post(add, {"action": "register", "repository": "not a name"})

@@ -102,11 +102,15 @@ def application_menu(context):
     request = context["request"]
     grant = ApplicationGrant.objects.filter(application=app, user=request.user).first()
     current = request.resolver_match.url_name
+    # Code Graph is read under Knowledge → Code Repos, so Knowledge is shown when
+    # either half is on and opens on the first tab this application has.
+    knows = feature_enabled("knowledge", app)
+    codes = feature_enabled("code_graph", app)
     definitions = [
         (
             knowledge_label(app),
-            "graph",
-            "knowledge",
+            "graph" if knows else "code-repositories",
+            "knowledge" if knows else "code_graph",
             "knowledge",
             {
                 "knowledge",
@@ -117,20 +121,27 @@ def application_menu(context):
                 "tickets",
                 "document-detail",
                 "document-delete",
+                *(
+                    {
+                        "code-repositories",
+                        "code-graph",
+                        "code-graph-add",
+                        "code-graph-browse",
+                        "code-file",
+                        "code-reviews",
+                        "code-review",
+                        "code-docs",
+                    }
+                    if codes
+                    else ()
+                ),
             },
         ),
-        (
-            "Code Graph",
-            "code-graph",
-            "code_graph",
-            "code-graph",
-            {"code-graph", "code-file", "code-reviews", "code-review", "code-docs"},
-        ),
-        # Knowledge, Code Graph, Code Factory: what an application knows, what
-        # its code is, and the pipeline that reads both. Chat sits after them
-        # because it asks questions of that knowledge rather than building it,
-        # and putting it between the two graphs and the thing that consumes
-        # them broke the order somebody sets an application up in.
+        # Knowledge, Code Factory: what an application knows - its documents,
+        # code and tickets - and the pipeline that reads it. Chat sits after
+        # them because it asks questions of that knowledge rather than building
+        # it, and putting it between them broke the order somebody sets an
+        # application up in.
         (
             "Code Factory",
             "plans",
@@ -501,6 +512,16 @@ def quality_rule():
     from platform_core.source_quality import VERDICT_RULE
 
     return VERDICT_RULE
+
+
+@register.simple_tag
+def knowledge_features(application):
+    """Which halves of Knowledge this application has: its sources and graph
+    (the `knowledge` feature) and its code repositories (`code_graph`)."""
+    return {
+        "knowledge": feature_enabled("knowledge", application),
+        "code": feature_enabled("code_graph", application),
+    }
 
 
 @register.simple_tag

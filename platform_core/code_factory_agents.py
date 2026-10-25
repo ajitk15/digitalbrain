@@ -206,8 +206,8 @@ def snapshot_targets(run, wanted):
     if not run.code_snapshot_id:
         raise ValidationError(
             "This run has no code snapshot and no write credential, so there is "
-            "nothing to read the named files from. Index the repository in Code "
-            "Graph, or mount a write-scoped credential."
+            "nothing to read the named files from. Index the repository on Code "
+            "Repos, or mount a write-scoped credential."
         )
     if run.code_snapshot.repository.provider == "local":
         message = (

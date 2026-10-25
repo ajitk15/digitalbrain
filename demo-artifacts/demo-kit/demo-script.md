@@ -88,7 +88,7 @@ inspector asked it.
 
 *Phase: 2–3. Feature: Code Graph.*
 
-Open Code Graph. The CarePath repository is indexed at one commit: files,
+Open Knowledge › Code Repos and the CarePath repository. It is indexed at one commit: files,
 symbols, import relationships.
 
 **Say:** this is not a second knowledge base. It never joins the knowledge graph

@@ -183,11 +183,33 @@ class ReadinessTests(TestCase):
                 self.assertContains(response, "<main")
 
     def test_the_places_you_go_and_work_are_not_dialogs(self):
-        """Knowledge, Connectors and Code Graph are screens, not fields."""
+        """Knowledge, Connectors and Code Repos are screens, not fields."""
         by_key = self.by_key()
         for key in ("graph", "tickets", "code_graph"):
             with self.subTest(key=key):
                 self.assertFalse(by_key[key].modal)
+
+    def test_the_repository_steps_open_code_repos_where_their_fix_is(self):
+        """Repositories are added and removed on Knowledge → Code Repos, so both
+        repository steps go there - "remove the ones that are not this
+        application's code" pointed at a page with no Remove button otherwise."""
+        step = self.by_key()["code_graph"]
+        self.assertEqual(step.route, "code-repositories")
+        self.assertEqual(step.button, "Open Code Repos")
+        self.assertIn("Code Repos", step.action)
+        self.index("acme/one")
+        self.index("acme/two")
+        step = self.by_key()["one_repository"]
+        self.assertEqual(step.route, "code-repositories")
+        page = self.client.get(reverse(step.route, args=[self.app.pk]))
+        self.assertContains(page, 'value="retire"', count=2)
+
+    def test_with_code_graph_off_the_step_opens_features_instead(self):
+        ApplicationFeature.objects.create(application=self.app, key="code_graph", enabled=False)
+        step = self.by_key()["code_graph"]
+        self.assertEqual(step.route, "application-features")
+        self.assertEqual(self.client.get(reverse("code-repositories", args=[self.app.pk]))
+                         .status_code, 403)
 
     def test_every_step_says_what_is_the_case_even_when_it_is_fine(self):
         for step in steps(self.app):

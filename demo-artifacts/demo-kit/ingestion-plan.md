@@ -108,7 +108,7 @@ Publishing refuses a revision whose sources have moved since it was built — it
 compares stored digests against current ones and declines. If it refuses,
 regenerate rather than forcing it.
 
-## 5. Register the repository in Code Graph
+## 5. Register the repository on Knowledge › Code Repos
 
 Push `demo-artifacts/carepath/` to a GitHub repository — its own repository, not
 a subdirectory of a larger one, because Code Graph takes `owner/name` and indexes

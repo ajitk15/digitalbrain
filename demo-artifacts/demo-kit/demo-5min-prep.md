@@ -107,7 +107,7 @@ Part 6's runbook evidence would be silently skipped.
 - [ ] **Open these tabs in order:**
   1. CarePathDev › Knowledge › Graph (the graph view, published version)
   2. CarePathDev › Chat (new conversation)
-  3. CarePathDev › Code Graph › `security/phi.py`
+  3. CarePathDev › Knowledge › Code Repos › carepath › `security/phi.py`
   4. CarePathDev › Code Factory › the CARE-450 run
   5. Jira › the CARE-450 ticket
   6. CarePathDev › Connectors

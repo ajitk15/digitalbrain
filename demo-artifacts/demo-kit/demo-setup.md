@@ -155,7 +155,7 @@ Then **Generate graph → Structural only → Publish**.
 
 ## 5 · Code Graph: index the service
 
-**Code Graph → Add repository:**
+**Knowledge → Code Repos → Add repository:**
 
 ```
 ajitk15/carepath

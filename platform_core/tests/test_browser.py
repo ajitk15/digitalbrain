@@ -161,6 +161,7 @@ class PagesTests(BrowserTestCase):
             "onboarding",
             "plans",
             "code-graph",
+            "code-repositories",
             "connectors",
             "credentials",
             "application-features",
@@ -399,6 +400,7 @@ AUDITED = (
     "application-identity",
     "plans",
     "code-graph",
+    "code-repositories",
     "connectors",
     "credentials",
     "application-features",
@@ -1439,7 +1441,7 @@ class BrowseButtonTests(BrowserTestCase):
     def test_a_server_folder_is_chosen_by_browsing_inside_the_popup(self):
         from platform_core.models import CodeRepository
 
-        self.open("code-graph", self.app.pk)
+        self.open("code-repositories", self.app.pk)
         self.page.locator(
             f'a[data-modal][href="{reverse("code-graph-add", args=[self.app.pk])}"]'
         ).first.click()
@@ -1449,9 +1451,26 @@ class BrowseButtonTests(BrowserTestCase):
         dialog.get_by_role("link", name="service").click()
         dialog.get_by_role("link", name="app").wait_for()
         dialog.get_by_role("button", name="Index this folder").click()
-        self.page.locator("h2", has_text="service").first.wait_for()
+        # Accepted, so the popup follows the redirect to Code Repos and the new
+        # repository is a row there.
+        self.page.locator("td strong", has_text="service").first.wait_for()
         repository = CodeRepository.objects.get()
         self.assertEqual((repository.provider, repository.name), ("local", "service"))
+        self.assertIn(reverse("code-repositories", args=[self.app.pk]), self.page.url)
+        self.assertNoScriptErrors()
+
+    def test_a_refused_repository_stays_in_the_popup_with_its_error(self):
+        from platform_core.models import CodeRepository
+
+        self.open("code-repositories", self.app.pk)
+        self.page.locator(
+            f'a[data-modal][href="{reverse("code-graph-add", args=[self.app.pk])}"]'
+        ).first.click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.locator("input[name='repository']").fill("not a name")
+        dialog.get_by_role("button", name="Index repository").click()
+        dialog.locator(".errorlist").wait_for()
+        self.assertFalse(CodeRepository.objects.exists())
         self.assertNoScriptErrors()
 
     def test_knowledge_file_fields_have_browse_on_the_right(self):

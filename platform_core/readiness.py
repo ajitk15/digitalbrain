@@ -97,7 +97,7 @@ class Step:
     #: True for the form-shaped screens, where the whole interaction is "type
     #: this, press save" and leaving the list to do it is what made onboarding
     #: feel like being bounced around. False for Knowledge, Connectors and Code
-    #: Graph, which are places you go and work rather than a field you fill -
+    #: Repos, which are places you go and work rather than a field you fill -
     #: lifting one of those into a dialog would be a worse version of itself.
     #:
     #: modal.js fetches the href and lifts its <main>, so the target must be a
@@ -123,7 +123,7 @@ PLACES = {
     "ai-settings": "AI settings",
     "credentials": "Credentials",
     "connectors": "Connectors",
-    "code-graph": "Code Graph",
+    "code-repositories": "Code Repos",
     "application-access": "People & access",
 }
 
@@ -457,7 +457,9 @@ def steps(app):
         else CodeRepository.objects.none()
     )
     names = list(indexed.values_list("name", flat=True)[:5])
-    with_snapshot = [repo for repo in indexed if repo.snapshots.exists()]
+    # One query, not one per repository: the setup strip draws this on every
+    # page of an application still being set up, Code Repos included.
+    with_snapshot = list(indexed.filter(snapshots__isnull=False).distinct())
     found.append(
         Step(
             "code_graph",
@@ -471,12 +473,12 @@ def steps(app):
             else "Code Graph is switched off for this application.",
             ""
             if with_snapshot
-            else "Register the repository on the Code Graph screen. Without a "
+            else "Add the repository under Knowledge, on Code Repos. Without a "
             "snapshot the design names components rather than files, and "
             "implementation has nothing to open."
             if code_graph
             else "Tick Code Graph on the Features screen, then register the repository.",
-            "code-graph" if code_graph else "application-features",
+            "code-repositories" if code_graph else "application-features",
             "code",
         )
     )
@@ -507,7 +509,7 @@ def steps(app):
                 "code, or expect every ticket to name the one it means. A run "
                 "that cannot choose reads no code at all, and its design names "
                 "components instead of files.",
-                "code-graph",
+                "code-repositories",
                 "github",
             )
         )

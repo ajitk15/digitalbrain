@@ -1011,6 +1011,6 @@ def code_docs(request, pk):
             "knowledge_writable": knowledge_writable,
             "in_knowledge": bool(doc and doc.knowledge_entry_id and doc.knowledge_entry.active),
             "pending": bool(doc and doc.ai_status in {"queued", "running"}),
-            "tabs": tabs(app, "docs"),
+            "tabs": tabs(app, "docs", repository),
         },
     )

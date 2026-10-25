@@ -1,4 +1,5 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
+<div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
 <p><a href="{% url 'code-reviews' application.pk %}">← All reviews</a></p>
 <div class="page-heading"><div><p class="eyebrow">{{ review.repository.name }} · against snapshot v{{ review.snapshot.number }} <code>{{ review.snapshot.commit_sha|slice:':8' }}</code></p><h1>{% if review.kind == 'local' %}Working changes{% elif review.kind == 'branch' %}Branch {{ review.ref }}{% else %}Pull request {{ review.number }}{% endif %}</h1><p class="muted">{{ review.get_kind_display }}{% if review.head_repository %} · read from {{ review.head_repository }}{% if review.ref %} {{ review.ref }}{% endif %}{% endif %}{% if review.head_commit %} at <code>{{ review.head_commit|slice:':8' }}</code>{% endif %} · requested by {{ review.requested_by.username }} {{ review.created_at|timesince }} ago</p></div></div>
 {% include '_code_graph_tabs.html' %}
