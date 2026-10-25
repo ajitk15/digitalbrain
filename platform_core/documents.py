@@ -353,9 +353,18 @@ def documents(request, pk):
             "can_upload": can_upload,
             "intake_enabled": intake_enabled(),
             "uploads_enabled": feature_enabled("document_uploads", app),
+            "ai_plan": graph_ai_plan(app) if can_upload else None,
             **library_context(app, request),
         },
     )
+
+
+def graph_ai_plan(app):
+    """What the next graph version is built with, said before anything is uploaded."""
+    from .graphs import automatic_ai
+    from .models import KnowledgeGraph
+
+    return automatic_ai(app, KnowledgeGraph.objects.filter(application=app).first())
 
 
 def can_add_sources(app, grant):
@@ -404,6 +413,9 @@ def render_source_add(request, app, grant, form, link_form, folder_form=None):
             "folder_form": folder_form or FolderForm(),
             "next": wanted if wanted in RETURN_ROUTES else "",
             "sharepoint_ready": sharepoint_available(app),
+            # Said before the upload, not after: whether the version these sources
+            # start is built with AI, and if not, why.
+            "ai_plan": graph_ai_plan(app),
             # Which way of adding is shown: the one just posted, so a form that
             # comes back with an error is the one on screen.
             "chosen": {"folder": "folder", "link": "link"}.get(

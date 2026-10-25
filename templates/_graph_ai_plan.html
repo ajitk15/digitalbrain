@@ -1,0 +1,5 @@
+{% load icons %}{% comment %}
+Said before anything is uploaded or generated: what the next graph version will be built
+with. `graphs.automatic_ai` decides, and the worker reads the same answer, so the page
+cannot promise AI that the rebuild then leaves out.
+{% endcomment %}{% if ai_plan.on %}<p class="notice" role="note" id="graph-ai-plan">{% icon "graph" %}<span><strong>AI enrichment is on.</strong> The next graph version is built with <strong>{{ ai_plan.label }}</strong>, charged to <strong>{{ ai_plan.payer.username }}</strong>, as soon as sources finish converting. Only new or changed sources are sent to the model; the monthly budget applies.</span></p>{% elif ai_plan %}<p class="notice notice-warning" role="note" id="graph-ai-plan">{% icon "warning" %}<span><strong>The next graph version will be built without AI.</strong> {{ ai_plan.reason }}</span></p>{% endif %}

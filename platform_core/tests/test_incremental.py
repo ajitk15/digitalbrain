@@ -1,4 +1,4 @@
-"""AI runs reuse unchanged sources; auto-refresh is opt-in, owner-only and self-stopping."""
+"""AI runs reuse unchanged sources; every version is AI-enriched unless an owner says not."""
 
 import hashlib
 import json
@@ -10,7 +10,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from platform_core import graph_ai
-from platform_core.graphs import process_next_graph, rebuild, revision_added
+from platform_core.graphs import automatic_ai, process_next_graph, rebuild, revision_added
 from platform_core.models import (
     AIConfiguration,
     ApplicationGrant,
@@ -342,21 +342,20 @@ class AutoRefreshTests(TestCase):
                 self.fail("The graph worker never settled.")
         return invoke
 
-    def test_off_by_default_a_source_change_spends_nothing(self):
-        self.settle()
-        add_knowledge(self.owner, self.app.pk, "Gamma", "Gamma depends on Alpha.")
-        self.assertEqual(self.settle().call_count, 0)
+    def latest(self):
+        return GraphRevision.objects.filter(application=self.app).order_by("-number").first()
 
-    def test_on_a_change_runs_an_incremental_ai_generation_as_its_owner(self):
-        self.settle()
-        self.assertEqual(self.switch().status_code, 302)
-        add_knowledge(self.owner, self.app.pk, "Gamma", "Gamma depends on Alpha.")
+    def test_on_by_default_the_first_version_uses_ai_as_the_first_owner(self):
         invoke = self.settle()
         self.assertGreaterEqual(invoke.call_count, 1)
         self.assertTrue(all(call.args[0] == self.owner for call in invoke.call_args_list))
-        latest = GraphRevision.objects.order_by("-number").first()
-        self.assertEqual(latest.model, "claude-sonnet-5")
-        self.assertIsNone(latest.published_at)
+        first = self.latest()
+        self.assertEqual((first.number, first.model), (1, "claude-sonnet-5"))
+        self.assertFalse(any("Built without AI" in note for note in first.quality["warnings"]))
+        # Every change after it is AI-enriched too, paying only for what changed.
+        add_knowledge(self.owner, self.app.pk, "Gamma", "Gamma depends on Alpha.")
+        self.assertEqual(self.settle().call_count, 1)
+        self.assertEqual(self.latest().model, "claude-sonnet-5")
         self.assertTrue(
             AuditEvent.objects.filter(
                 action="graph.generation_requested", details__automatic=True
@@ -365,11 +364,70 @@ class AutoRefreshTests(TestCase):
         # Nothing changed since: the worker is quiet and spends nothing.
         self.assertEqual(self.settle().call_count, 0)
 
+    def test_a_reset_graph_waiting_idle_builds_its_next_version_with_ai(self):
+        KnowledgeGraph.objects.create(application=self.app, status="idle", fingerprint="old")
+        self.assertGreaterEqual(self.settle().call_count, 1)
+        self.assertEqual(self.latest().model, "claude-sonnet-5")
+
+    def test_switched_off_a_change_spends_nothing_and_the_version_says_why(self):
+        self.assertEqual(self.switch(enabled=False).status_code, 302)
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertTrue(graph.auto_refresh_declined)
+        self.assertEqual(self.settle().call_count, 0)
+        add_knowledge(self.owner, self.app.pk, "Gamma", "Gamma depends on Alpha.")
+        self.assertEqual(self.settle().call_count, 0)
+        latest = self.latest()
+        self.assertEqual(latest.model, "")
+        self.assertIn(
+            "Built without AI: An owner switched automatic AI enrichment off.",
+            latest.quality["warnings"],
+        )
+
+    def test_switching_it_on_again_charges_whoever_switched(self):
+        self.switch(enabled=False)
+        self.switch()
+        graph = KnowledgeGraph.objects.get(application=self.app)
+        self.assertEqual((graph.auto_refresh_declined, graph.auto_refresh_by), (False, self.owner))
+        self.assertGreaterEqual(self.settle().call_count, 1)
+
+    def test_without_a_credential_nothing_is_called_and_the_version_says_why(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        with patch("platform_core.ai.provider_credential", side_effect=ImproperlyConfigured):
+            self.assertEqual(self.settle().call_count, 0)
+        self.assertTrue(
+            any("has no Claude credential" in note for note in self.latest().quality["warnings"])
+        )
+
+    def test_with_graph_generation_off_the_version_says_why(self):
+        AIConfiguration.objects.filter(application=self.app).update(enabled=False)
+        self.assertEqual(self.settle().call_count, 0)
+        self.assertIn(
+            "Built without AI: Graph generation is switched off in AI settings.",
+            self.latest().quality["warnings"],
+        )
+
+    def test_the_pages_say_before_an_upload_what_the_next_version_is_built_with(self):
+        self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
+        for name in ("source-add", "knowledge", "graph", "graph-generate"):
+            page = self.client.get(reverse(name, args=[self.app.pk]))
+            self.assertContains(page, "AI enrichment is on.")
+            self.assertContains(page, "Claude Sonnet 5")
+        AIConfiguration.objects.filter(application=self.app).update(enabled=False)
+        page = self.client.get(reverse("source-add", args=[self.app.pk]))
+        self.assertContains(page, "The next graph version will be built without AI.")
+        self.assertContains(page, "Graph generation is switched off in AI settings.")
+
+    def test_the_generate_form_selects_the_saved_model(self):
+        self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
+        page = self.client.get(reverse("graph-generate", args=[self.app.pk]))
+        self.assertContains(page, '<option value="claude:claude-sonnet-5" selected>')
+
     def test_only_an_owner_switches_it(self):
         self.assertEqual(self.switch(user=self.viewer).status_code, 403)
         self.assertIsNone(KnowledgeGraph.objects.filter(application=self.app).first())
 
-    def test_losing_access_stops_it_and_says_why(self):
+    def test_losing_access_stops_charging_them_and_says_why(self):
         self.settle()
         self.switch()
         ApplicationGrant.objects.filter(application=self.app, user=self.owner).update(role="viewer")
@@ -378,6 +436,12 @@ class AutoRefreshTests(TestCase):
         graph = KnowledgeGraph.objects.get(application=self.app)
         self.assertIsNone(graph.auto_refresh_by)
         self.assertIn("may no longer change", graph.auto_refresh_note)
+        # Nobody else owns it, so nobody is charged; what was extracted is kept.
+        self.assertEqual(
+            automatic_ai(self.app, graph).reason,
+            "No owner of this application can be charged for it.",
+        )
+        self.assertEqual(self.latest().model, "claude-sonnet-5")
 
     def test_switching_off_clears_who_pays(self):
         self.switch()

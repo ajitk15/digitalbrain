@@ -409,10 +409,10 @@ class KnowledgeGraph(models.Model):
     # Why the last run failed, in the sanitized wording the user may see. Kept so
     # the page can say what to do instead of only that something went wrong.
     failure_reason = models.TextField(blank=True)
-    #: Who asked for AI relationships to be kept current, and pays for it. When
-    #: set, a change to the sources queues an incremental AI run as this person,
-    #: re-checking their grant first - revoking it stops the refresh, with no
-    #: code that knows about refreshes. Empty means off, the default.
+    #: Who asked to be charged for keeping AI relationships current. A change to
+    #: the sources queues an incremental AI run as this person, re-checking their
+    #: grant first. Empty means the application's first owner
+    #: (`graphs.automatic_ai`): automatic enrichment is on unless declined.
     auto_refresh_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -422,6 +422,9 @@ class KnowledgeGraph(models.Model):
     )
     #: Why automatic refresh last stopped by itself, for the owner to read.
     auto_refresh_note = models.CharField(max_length=300, blank=True)
+    #: An owner switched automatic AI enrichment off. Kept apart from an empty
+    #: payer because on is the default.
+    auto_refresh_declined = models.BooleanField(default=False, db_default=False)
     updated_at = models.DateTimeField(auto_now=True)
 
 

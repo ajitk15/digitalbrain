@@ -453,6 +453,17 @@ def rebuild(app_id):
         # as the latest version and the AI one unpublishable once any of its
         # sources moved - so getting them back meant paying again.
         data, quality = enrich_graph(app_id, None, entries, data, quality)
+        # A version with no AI says why on its own Quality notes, so nobody has to
+        # guess whether it was a choice, a missing credential or the budget. One
+        # that carried earlier answers forward names their model and has AI.
+        if not quality.get("model"):
+            reason = (
+                "Structural only was chosen for this run."
+                if requested and not graph.requested_model
+                else automatic_ai(entries[0].application, graph).reason
+                or "No AI run was requested for this version."
+            )
+            quality.setdefault("warnings", []).append(f"Built without AI: {reason}")
     set_stage(app_id, "Saving version")
     with transaction.atomic():
         locked = KnowledgeGraph.objects.select_for_update().get(pk=graph.pk)
@@ -596,11 +607,16 @@ def refresh_graph(app_id):
         return "current"
     if graph is not None and graph.fingerprint == current_fingerprint and graph.status == "ready":
         return "current"
-    if (
-        graph
-        and graph.auto_refresh_by_id
-        and graph.fingerprint != current_fingerprint
-        and graph.status in {"ready", "failed"}
+    # Every version is built with AI unless an owner said otherwise - the first
+    # one too, which is why a missing row is made here rather than in rebuild:
+    # an upload into a new application used to become a structural v1 nobody
+    # had chosen. A placeholder row ("building", never started) and a reset's
+    # "idle" row are a first version waiting in the same way.
+    if graph is None:
+        graph, _ = KnowledgeGraph.objects.get_or_create(application_id=app_id)
+    if graph.fingerprint != current_fingerprint and (
+        graph.status in {"ready", "failed", "idle"}
+        or (graph.status == "building" and graph.started_at is None)
     ):
         arm_auto_refresh(app, graph)
     try:
@@ -672,55 +688,162 @@ def reconcile_if_due():
     return False
 
 
-def arm_auto_refresh(app, graph):
-    """Turn a source change into an incremental AI run, as whoever switched it on.
+#: How a refusal names a provider: the company, not the SDK `AI_PROVIDERS` labels.
+PROVIDER_NAMES = {"claude": "Claude", "openai": "OpenAI"}
 
-    A deliberate trade, like a connector's schedule: an owner's standing
-    request replaces a button press. What keeps it bounded: it runs only when
-    the sources changed, extraction is incremental so only changed sources are
-    paid for, the monthly budget applies, and the person is re-checked here -
-    someone who can no longer change this application's knowledge stops it,
-    and the reason is recorded. The result is still a draft: nothing reaches
-    an answer until somebody publishes it.
+
+@dataclass
+class AutomaticAI:
+    """What the next version will be built with when nobody presses Generate."""
+
+    on: bool
+    provider: str = ""
+    model: str = ""
+    payer: object = None
+    reason: str = ""
+    #: The person named on the row lost access and is no longer charged.
+    lost: str = ""
+
+    @property
+    def label(self):
+        wanted = f"{self.provider}:{self.model}"
+        for _, group in MODEL_CHOICES:
+            for value, text in group:
+                if value == wanted:
+                    return text
+        return self.model
+
+    @property
+    def choice(self):
+        """The Generate form's value for this model, so it is the one selected."""
+        return f"{self.provider}:{self.model}" if self.on else ""
+
+
+def default_payer(app):
+    """The application's first owner still able to open it, or None.
+
+    Who a version is charged to when no owner has named themselves. A receipt
+    names a person (`AIUsage.actor`) while the bill is the application's own
+    credential and budget, so this decides attribution, never whose money.
     """
+    from django.db.models import Q
+
+    from .models import ApplicationGrant
+
+    grant = (
+        ApplicationGrant.objects.filter(application=app, role="owner", user__is_active=True)
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+        .select_related("user")
+        .order_by("pk")
+        .first()
+    )
+    return grant.user if grant else None
+
+
+def may_be_charged(user, app):
     from django.http import Http404
 
-    user = graph.auto_refresh_by
+    try:
+        if user is None or not user.is_active:
+            raise PermissionDenied
+        access(user, app.pk, "knowledge", write=True)
+    except (PermissionDenied, Http404):
+        return False
+    return True
+
+
+def automatic_ai(app, graph=None):
+    """Whether the next version is built with AI, by which model and as whom - or why not.
+
+    **On unless an owner switched it off.** It used to be off unless an owner
+    switched it on, so every version a source change made was structure alone
+    and Quality had nothing to compare it with: the owner of the demonstration
+    had asked for AI on every version many times, and got it only from the
+    Generate button. Traded deliberately, like "Every AI task starts on": the
+    spend is bounded the same ways - only new or changed sources go to the
+    model, the monthly budget and the gateway apply, every call has a receipt,
+    and the result is a draft until someone publishes it.
+
+    The worker reads this before a rebuild and the pages read it before anyone
+    uploads, so what a page says will happen is what happens. Each refusal is a
+    sentence a person can act on, and is written on the structural version it
+    leaves, so a version without AI always says why.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+
+    from . import budget
+    from .ai import provider_credential
+
+    if graph is not None and graph.auto_refresh_declined:
+        return AutomaticAI(False, reason="An owner switched automatic AI enrichment off.")
     config = AIConfiguration.objects.filter(
         application=app, purpose="graph_generation", enabled=True
     ).first()
-    reason = ""
     if config is None or not config.model:
-        reason = "Graph generation is switched off in AI settings."
-    else:
-        try:
-            if not user.is_active:
-                raise PermissionDenied
-            access(user, app.pk, "knowledge", write=True)
-        except (PermissionDenied, Http404):
-            reason = f"{user.username} may no longer change this application's knowledge."
-    if reason:
-        KnowledgeGraph.objects.filter(pk=graph.pk).update(
-            auto_refresh_by=None, auto_refresh_note=f"Automatic refresh stopped: {reason}"
+        return AutomaticAI(False, reason="Graph generation is switched off in AI settings.")
+    named = graph.auto_refresh_by if graph is not None and graph.auto_refresh_by_id else None
+    lost = ""
+    payer = named
+    if named is not None and not may_be_charged(named, app):
+        lost = f"{named.username} may no longer change this application's knowledge."
+        payer = None
+    if payer is None:
+        # Its query is the check: an active owner whose grant has not expired. The
+        # rest of `access` - a live tree and Knowledge switched on - is what
+        # `refresh_graph` asked before it got here, and what the page needed to draw.
+        payer = default_payer(app)
+    if payer is None:
+        return AutomaticAI(
+            False, reason="No owner of this application can be charged for it.", lost=lost
         )
+    try:
+        provider_credential(config, app)
+    except ImproperlyConfigured:
+        name = PROVIDER_NAMES.get(config.provider, config.provider)
+        return AutomaticAI(
+            False,
+            reason=f"This application has no {name} credential, so the model cannot be "
+            "reached. An owner can set one on Credentials.",
+            lost=lost,
+        )
+    try:
+        budget.check(app.pk)
+    except ValidationError as refusal:
+        return AutomaticAI(False, reason=" ".join(refusal.messages), lost=lost)
+    return AutomaticAI(True, config.provider, config.model, payer, lost=lost)
+
+
+def arm_auto_refresh(app, graph):
+    """Turn a source change into an incremental AI run, or record why it cannot.
+
+    As the owner `automatic_ai` names, re-checked here, like a connector's
+    schedule: someone who can no longer change this application's knowledge is
+    no longer charged, and the reason is kept on the row for the page.
+    """
+    plan = automatic_ai(app, graph)
+    if plan.lost:
+        KnowledgeGraph.objects.filter(pk=graph.pk).update(
+            auto_refresh_by=None, auto_refresh_note=f"Automatic refresh stopped: {plan.lost}"
+        )
+    if not plan.on:
         return False
     armed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
         status="queued",
         fingerprint="",
-        stage="Queued (automatic refresh)",
+        stage="Queued (automatic AI enrichment)",
         started_at=timezone.now(),
         failure_reason="",
-        requested_provider=config.provider,
-        requested_model=config.model,
-        requested_by=user,
+        requested_provider=plan.provider,
+        requested_model=plan.model,
+        requested_by=plan.payer,
     )
     if armed:
         audit(
-            user,
+            plan.payer,
             "graph.generation_requested",
             app.pk,
             app.product.portfolio.organization,
-            details={"provider": config.provider, "model": config.model, "automatic": True},
+            details={"provider": plan.provider, "model": plan.model, "automatic": True},
         )
     return bool(armed)
 
@@ -737,8 +860,12 @@ def set_auto_refresh(request, app, pk):
     ):
         messages.error(request, "Enable Graph generation in AI settings first.")
         return redirect("graph-generate", pk=pk)
+    # Off is remembered as a choice, because on is the default: an empty payer
+    # alone would read as "nobody chose", and the next change would build with AI.
     KnowledgeGraph.objects.filter(pk=graph.pk).update(
-        auto_refresh_by=request.user if enabled else None, auto_refresh_note=""
+        auto_refresh_by=request.user if enabled else None,
+        auto_refresh_declined=not enabled,
+        auto_refresh_note="",
     )
     audit(
         request.user,
@@ -751,7 +878,8 @@ def set_auto_refresh(request, app, pk):
         "AI relationships will be kept current as sources change, charged to you. "
         "New versions are still drafts until published."
         if enabled
-        else "Automatic AI refresh is off.",
+        else "Automatic AI enrichment is off. New versions are built from structure alone "
+        "until it is switched on again or someone generates with a model.",
     )
     return redirect("graph", pk=pk)
 
@@ -975,6 +1103,9 @@ def graph_generate(request, pk):
             return set_ontology(request, app, pk)
         return queue_generation(request, app, pk)
     graph = KnowledgeGraph.objects.filter(application=app).select_related("auto_refresh_by").first()
+    saved = AIConfiguration.objects.filter(
+        application=app, purpose="graph_generation", enabled=True
+    ).first()
     return render(
         request,
         "graph_generate.html",
@@ -982,6 +1113,10 @@ def graph_generate(request, pk):
             "application": app,
             "grant": grant,
             "graph": graph,
+            "ai_plan": automatic_ai(app, graph),
+            # The saved model is selected: AI is the default here too, and
+            # structural only is something a person picks on purpose.
+            "default_choice": f"{saved.provider}:{saved.model}" if saved else "structural",
             "model_choices": MODEL_CHOICES,
             "has_versions": GraphRevision.objects.filter(application=app).exists(),
             # Said, never enforced: a source that needs work still goes in.
@@ -1196,6 +1331,7 @@ def graph_view(request, pk):
             "published_added": published_added,
             "published_total": published_total,
             "is_published": bool(selected and selected.published_at),
+            "ai_plan": automatic_ai(app, KnowledgeGraph.objects.filter(application=app).first()),
             "model_choices": MODEL_CHOICES,
             "graph_ai_configured": AIConfiguration.objects.filter(
                 application=app, purpose="graph_generation", enabled=True

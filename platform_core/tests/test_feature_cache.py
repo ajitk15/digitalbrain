@@ -99,8 +99,10 @@ class FeatureCacheTests(TestCase):
         # tab costs one more: the connectors that import them, read once a
         # request (`ticket_library.ticket_connectors`) however often it asks.
         # On PostgreSQL, binding the request to its application for row
-        # security and clearing it again are two more (tenancy.py).
-        limit = 22 + (2 if connection.vendor == "postgresql" else 0)
+        # security and clearing it again are two more (tenancy.py). Saying
+        # before an upload whether the next graph version is built with AI is
+        # two more: the graph row and its AI setting (`graphs.automatic_ai`).
+        limit = 24 + (2 if connection.vendor == "postgresql" else 0)
         self.assertLess(len(captured), limit, "documents used to take 28 queries")
 
     def test_a_finished_application_pays_nothing_for_the_setup_strip(self):

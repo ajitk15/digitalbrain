@@ -786,7 +786,9 @@ Platform administrators see every control-plane event in the audit log
 Generate → draft → publish. The background worker keeps the **structural** graph current for
 free; **AI enrichment calls a model only for a requested run**, carried on
 `KnowledgeGraph.requested_model/_provider/_by` and cleared once consumed, so a rebuild can
-never repeat a paid call. A rebuild does reuse cached answers, which costs nothing. Every run saves a `GraphRevision` as a draft.
+never repeat a paid call - and automatic enrichment, on by default (see "Every version is
+built with AI" below), is what requests one when sources change. A rebuild does reuse
+cached answers, which costs nothing. Every run saves a `GraphRevision` as a draft.
 
 `graph_snapshot(app_id, version=None)` resolves to the **latest published** revision, never
 the working graph. Chat and Code Factory both go through it. No published revision is an
@@ -1114,11 +1116,24 @@ model on the version, instead of dropping to structure. `graph_ai.reusable` is o
 fallback for one-window sources extracted before the cache existed. A demonstration reset
 deletes the cached answers (typing and review answers stay with the sources it keeps), so
 the first rebuild after it is structure alone.
-`data["ai_sources"]` records which sources have a complete extraction. **Automatic refresh is the one standing request**
-(`graphs.arm_auto_refresh`): owner-only and off by default, it turns a source change into
-an incremental AI run charged to whoever switched it on, re-checking their grant first -
-losing it stops the refresh and says why - like a connector schedule. It produces drafts;
-the publish gate is untouched.
+`data["ai_sources"]` records which sources have a complete extraction. **Every version is
+built with AI unless an owner switched that off** (`graphs.automatic_ai`,
+`arm_auto_refresh`). It used to be off until an owner switched it on, so every version a
+source change made - the first upload's v1 included - was structure alone and Quality had
+nothing to compare; **that was traded, deliberately**, as "Every AI task starts on" was.
+A source change, the first upload, or a reset's idle row with new sources queues an
+incremental AI run with the saved graph model, charged to the owner who switched it on or
+else the application's first owner still able to open it (the bill is the application's
+credential and budget either way; this is the receipt's name). Off is
+`auto_refresh_declined`, remembered because an empty payer now means "the first owner";
+migration 0102 kept it for any application whose last switch was off, and a demonstration
+reset carries both. It is refused - and the version built from structure says why in its
+Quality notes ("Built without AI: ...") - when graph generation is off in AI settings, no
+owner can be charged, the provider credential is missing or the budget is spent. The
+upload popup, the Knowledge page and Generate graph all show the same answer **before**
+anything is uploaded or generated (`_graph_ai_plan.html`), and the Generate form selects
+the saved model rather than Structural only. It produces drafts; the publish gate is
+untouched.
 
 **Answer reranking can only reorder** (`rerank.py`, purpose `reranking`, seeded on with
 every other task since `SEEDED_DISABLED` was emptied). It sees verified citations and returns their numbers; anything else is

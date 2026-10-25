@@ -225,6 +225,12 @@ def reset(user, organization, typed_name):
         KnowledgeGraph.objects.filter(application_id__in=ids, auto_refresh_by__isnull=False)
         .values_list("application_id", "auto_refresh_by_id")
     )
+    # So is an owner's "off": on is the default, so dropping it would switch it on.
+    declined = set(
+        KnowledgeGraph.objects.filter(
+            application_id__in=ids, auto_refresh_declined=True
+        ).values_list("application_id", flat=True)
+    )
     removed = {}
     for model, lookup in ORDER:
         count, _ = model.objects.filter(**{lookup: ids}).delete()
@@ -278,7 +284,8 @@ def reset(user, organization, typed_name):
     # and only until the sources actually change.
     KnowledgeGraph.objects.bulk_create(
         KnowledgeGraph(application_id=pk, status="idle", fingerprint=fingerprint(pk),
-                       auto_refresh_by_id=refreshing.get(pk))
+                       auto_refresh_by_id=refreshing.get(pk),
+                       auto_refresh_declined=pk in declined)
         for pk in ids
     )
     # A conversation can pin a graph version for its graph answers. The version
