@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import tempfile
 from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
@@ -321,7 +323,18 @@ class IncrementalTests(TestCase):
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
 class AutoRefreshTests(TestCase):
-    setUp = IncrementalTests.setUp
+    def setUp(self):
+        IncrementalTests.setUp(self)
+        # Automatic AI needs the application's own Claude credential: without
+        # one the version is built from structure and says why.
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        credential = Path(directory.name) / f"claude_{self.app.pk}"
+        credential.write_text("sk-ant-api-test", encoding="utf-8")
+        credential.chmod(0o600)
+        mounted = override_settings(SECRET_DIRECTORY=directory.name)
+        mounted.enable()
+        self.addCleanup(mounted.disable)
 
     def switch(self, user=None, enabled=True):
         self.client.force_login(

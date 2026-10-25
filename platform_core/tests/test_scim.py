@@ -47,7 +47,10 @@ class ProvisioningTests(TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.secrets = Path(directory.name)
-        (self.secrets / scim.SECRET_NAME).write_text(TOKEN)
+        token = self.secrets / scim.SECRET_NAME
+        token.write_text(TOKEN)
+        # A mounted secret must be owner-only on POSIX, or read_secret refuses it.
+        token.chmod(0o600)
         mounted = override_settings(SECRET_DIRECTORY=directory.name)
         mounted.enable()
         self.addCleanup(mounted.disable)
