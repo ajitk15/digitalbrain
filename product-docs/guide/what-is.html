@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Digital Brain Is</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="guide/what-is.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › For everyone</div>
+<span class="tag everyone">For everyone</span>
+<h1>What Digital Brain is</h1>
+<p class="lede">Digital Brain turns what your organization already wrote down - requirements, designs, runbooks, tickets, incidents, code - into answers, plans and incident briefs that always show their evidence. It never asks you to take an AI's word for anything.</p>
+
+<h2 id="problem">The problem it solves</h2>
+<div class="cards two">
+  <div class="card"><div class="icon i-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h7"/></svg></div><h4>Knowledge is scattered</h4><p>The answer to "what must this API do?" sits in a requirements document, a design decision, a coding standard and three tickets. People spend their day finding it, and new people cannot find it at all.</p></div>
+  <div class="card"><div class="icon i-rose"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16v1"/></svg></div><h4>AI answers cannot be checked</h4><p>A fluent answer with no evidence is a liability in healthcare, finance or operations. If you cannot see the sentence an answer came from, you cannot rely on it - and you cannot audit it later.</p></div>
+</div>
+<p>Digital Brain brings those sources into one place per team, keeps them current, and makes every answer point at the exact words that support it. When a source changes, answers built on its old wording stop citing it - automatically.</p>
+
+<h2 id="four-jobs">Four jobs it does</h2>
+<div class="cards two">
+  <a class="card" href="features.html#chat"><div class="icon i-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4z"/></svg></div><h4>Answer questions</h4><p><b>Chat</b> answers from your published knowledge with numbered citations. Click a number to see the quoted sentence and its document.</p></a>
+  <a class="card" href="features.html#code-factory"><div class="icon i-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/></svg></div><h4>Turn a ticket into a reviewed fix</h4><p><b>Code Factory</b> reads a ticket, gathers evidence, drafts a plan a person approves, then prepares the change and a pull request.</p></a>
+  <a class="card" href="features.html#serviceops"><div class="icon i-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg></div><h4>Triage incidents</h4><p><b>ServiceOps</b> lines up similar past incidents, recent changes and runbooks for a new incident, and proposes likely causes with their evidence.</p></a>
+  <a class="card" href="features.html#code-graph"><div class="icon i-teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="10" cy="18" r="2.5"/><path d="M8 7l8 1M7 8l2 8M16 10l-5 6"/></svg></div><h4>Understand code</h4><p><b>Code Graph</b>, <b>Code review</b> and <b>Reverse engineering</b> map a repository, check a change against it, and document what the code does.</p></a>
+</div>
+
+<h2 id="promise">The promise: evidence you can check</h2>
+<p>Every answer, plan item and incident hypothesis carries citations. Before a citation is stored or shown, Digital Brain checks three things against the source <i>as it is right now</i>:</p>
+<figure class="figure">
+  <svg viewBox="0 0 860 200" role="img" aria-labelledby="chk-t" data-cycle="9">
+    <title id="chk-t">Three checks on every citation: the source is still active, its fingerprint is unchanged, and the quoted words still appear in it. Only a citation that passes all three is shown.</title>
+    <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="60" width="150" height="80" rx="12" class="box-blue"/>
+    <text x="85" y="94" text-anchor="middle" class="t">A citation</text>
+    <text x="85" y="114" text-anchor="middle" class="t-xs">source + quote</text>
+    <path d="M160 100H200" class="edge flow" marker-end="url(#a1)"/>
+    <g data-at="0.08"><rect x="205" y="40" width="160" height="120" rx="12" class="box"/>
+      <text x="285" y="78" text-anchor="middle" class="t">1. Still active?</text>
+      <text x="285" y="100" text-anchor="middle" class="t-xs">not retired or replaced</text>
+      <text x="285" y="118" text-anchor="middle" class="t-xs">not restricted from AI</text>
+      <text x="285" y="146" text-anchor="middle" class="t t-teal">✓</text></g>
+    <path d="M365 100H400" class="edge flow" marker-end="url(#a1)"/>
+    <g data-at="0.25"><rect x="405" y="40" width="160" height="120" rx="12" class="box"/>
+      <text x="485" y="78" text-anchor="middle" class="t">2. Unchanged?</text>
+      <text x="485" y="100" text-anchor="middle" class="t-xs">its fingerprint (digest)</text>
+      <text x="485" y="118" text-anchor="middle" class="t-xs">matches the one cited</text>
+      <text x="485" y="146" text-anchor="middle" class="t t-teal">✓</text></g>
+    <path d="M565 100H600" class="edge flow" marker-end="url(#a1)"/>
+    <g data-at="0.42"><rect x="605" y="40" width="160" height="120" rx="12" class="box"/>
+      <text x="685" y="78" text-anchor="middle" class="t">3. Quote present?</text>
+      <text x="685" y="100" text-anchor="middle" class="t-xs">the exact words still</text>
+      <text x="685" y="118" text-anchor="middle" class="t-xs">appear in the text</text>
+      <text x="685" y="146" text-anchor="middle" class="t t-teal">✓</text></g>
+    <path d="M765 100H800" class="edge-teal flow" marker-end="url(#a1)"/>
+    <g data-at="0.6"><circle cx="828" cy="100" r="24" class="box-teal"/><text x="828" y="105" text-anchor="middle" class="t t-teal">show</text></g>
+    <g data-at="0.7"><text x="430" y="190" text-anchor="middle" class="t-sm">Fail any one → the citation is dropped. What a model <tspan class="t t-rose">claims</tspan> is never evidence on its own.</text></g>
+  </svg>
+</figure>
+<div class="why"><span class="label-why">Why</span> A model can quote something that is not there, or a document can change after an answer was written. Checking at read time - not once, when the answer was made - means a citation you see today is true today.</div>
+
+<h2 id="organized">How it is organized</h2>
+<p>One installation can serve a whole company. Work is arranged in a tree; access is granted only at the bottom, on an <b>application</b>.</p>
+<figure class="figure">
+  <svg viewBox="0 0 860 250" role="img" aria-labelledby="tree-t">
+    <title id="tree-t">Organization contains portfolios, which contain products, which contain applications. People are granted access per application.</title>
+    <rect x="330" y="10" width="200" height="50" rx="10" class="box-blue"/><text x="430" y="32" text-anchor="middle" class="t">Organization</text><text x="430" y="49" text-anchor="middle" class="t-xs">ACME · members and administrators</text>
+    <path d="M430 60V78M230 78H630M230 78V92M630 78V92" class="edge"/>
+    <rect x="140" y="92" width="180" height="44" rx="10" class="box"/><text x="230" y="119" text-anchor="middle" class="t">Portfolio</text>
+    <rect x="540" y="92" width="180" height="44" rx="10" class="box"/><text x="630" y="119" text-anchor="middle" class="t">Portfolio</text>
+    <path d="M230 136V150M630 136V150" class="edge"/>
+    <rect x="140" y="150" width="180" height="40" rx="10" class="box"/><text x="230" y="175" text-anchor="middle" class="t">Product</text>
+    <rect x="540" y="150" width="180" height="40" rx="10" class="box"/><text x="630" y="175" text-anchor="middle" class="t">Product</text>
+    <path d="M230 190V200M150 200H310M150 200V208M310 200V208M630 190V208" class="edge"/>
+    <rect x="70" y="208" width="160" height="36" rx="10" class="box-teal"/><text x="150" y="231" text-anchor="middle" class="t">CarePathDev</text>
+    <rect x="240" y="208" width="160" height="36" rx="10" class="box-teal"/><text x="320" y="231" text-anchor="middle" class="t">CarePathOps</text>
+    <rect x="550" y="208" width="160" height="36" rx="10" class="box-teal"/><text x="630" y="231" text-anchor="middle" class="t">Another application</text>
+    <text x="760" y="226" class="t-xs">← grants live here</text>
+  </svg>
+</figure>
+<ul>
+  <li><b>Organization</b> - a company or division. Its administrators add members and approve outside invitations.</li>
+  <li><b>Portfolio → Product</b> - groupings that mirror how your company already thinks about its systems.</li>
+  <li><b>Application</b> - one team's workspace: its knowledge, connectors, AI settings, budget and people. The demo has <i>CarePathDev</i> (engineering) and <i>CarePathOps</i> (operations).</li>
+</ul>
+<div class="why"><span class="label-why">Why</span> Each application is sealed from the others, so one installation can host teams that must not see each other's data. Being an organization administrator, or even a platform administrator, does <b>not</b> grant access to an application's content - only an explicit grant does.</div>
+
+<h3 id="purpose">What an application is for</h3>
+<p>When an application is created you choose what it is for. That choice simply switches features on:</p>
+<div class="table-wrap"><table>
+  <tr><th>Purpose</th><th>Switches on</th><th>Good for</th></tr>
+  <tr><td><b>Engineering</b></td><td>Code Graph, Code Factory</td><td>Turning tickets into reviewed fixes and pull requests</td></tr>
+  <tr><td><b>Operations</b></td><td>ServiceOps</td><td>Triaging incidents with evidence from past incidents, changes and runbooks</td></tr>
+  <tr><td><b>Both</b></td><td>Everything above</td><td>A team that builds and runs the same system</td></tr>
+</table></div>
+<p>Knowledge, Chat and the connectors are shared by both. In an Operations-only application the Knowledge area is called <b>Runbooks</b>. You can change sides later by ticking features on the Features screen.</p>
+
+<h2 id="cycle">The knowledge cycle</h2>
+<p>Everything you add follows the same path. Digital Brain shows where you are in it at the top of every Knowledge page and on Onboarding.</p>
+<div class="table-wrap"><table>
+  <tr><th>Stage</th><th>What happens</th><th>Who acts</th></tr>
+  <tr><td><b>Set up</b></td><td>People, AI provider, features and connectors are chosen.</td><td>Owner</td></tr>
+  <tr><td><b>Feed</b></td><td>Documents are uploaded or imported; tickets and incidents come in through connectors.</td><td>Owner, contributor, or a schedule</td></tr>
+  <tr><td><b>Build</b></td><td>A new <b>draft</b> version of the knowledge graph is built - by rules, and with AI unless an owner turned that off.</td><td>Automatic</td></tr>
+  <tr><td><b>Check</b></td><td>Each source gets a quality score; each version is scored on benchmark questions and compared with the one in use.</td><td>Automatic</td></tr>
+  <tr><td><b>Publish</b></td><td>A person publishes the version - or, if an owner allowed it, it publishes itself when every check passes.</td><td>Owner or contributor</td></tr>
+  <tr><td><b>Use</b></td><td>Graph answers in Chat, Code Factory's evidence and ServiceOps' runbook evidence read the <b>published</b> version only. Chat's other two modes search the current sources directly.</td><td>Everyone with access</td></tr>
+  <tr><td><b>Learn</b></td><td>Delivered fixes, confirmed incident causes, unanswered and wrong answers come back as <b>candidates</b> a person accepts or rejects.</td><td>Owner or contributor</td></tr>
+</table></div>
+<div class="why"><span class="label-why">Why</span> A draft graph never answers questions. Publishing is a deliberate step so that a bad import, a half-finished upload or a weaker AI run never quietly changes the answers people rely on.</div>
+
+<h2 id="guardrails">What AI is never allowed to do alone</h2>
+<div class="cards three">
+  <div class="card"><h4>Approve its own plan</h4><p>A Code Factory plan waits for a person with approval rights.</p></div>
+  <div class="card"><h4>Publish knowledge</h4><p>A version is checked by rules; a person or an owner's rule publishes it.</p></div>
+  <div class="card"><h4>Add to knowledge</h4><p>What use teaches is a candidate until someone accepts it.</p></div>
+  <div class="card"><h4>Read restricted sources</h4><p>A source marked restricted is never sent to a model or cited.</p></div>
+  <div class="card"><h4>Spend past the budget</h4><p>Every paid call is checked against the month's cap first.</p></div>
+  <div class="card"><h4>Run an automation unasked</h4><p>Real automation runs only on an owner's request, from an allow-list, with approval if required.</p></div>
+</div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

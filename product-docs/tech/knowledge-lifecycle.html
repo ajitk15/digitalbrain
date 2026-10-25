@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge Lifecycle</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/knowledge-lifecycle.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Knowledge lifecycle</h1>
+<p class="lede">Generate → draft → check → publish → use → learn. How an uploaded file becomes a published, verifiable graph, what each step guarantees, and what it costs.</p>
+
+<figure class="figure">
+  <div class="fig-title">An upload becomes a published graph <span style="font-weight:500;color:var(--ink-3);font-size:.8rem">animated · loops every 16 s</span></div>
+  <svg viewBox="0 0 940 420" role="img" aria-labelledby="lc-t" data-cycle="16">
+    <title id="lc-t">Upload, scan, convert offline, mask, store as an entry with passages, score quality, queue a graph refresh, build fragments per source, enrich with AI using the cache and quote checks, save a draft version as rows, benchmark it with and without AI, run the release check, publish, use, and learn.</title>
+    <defs><marker id="l1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <text x="10" y="20" class="t-zone">Intake lane (sandbox)</text>
+    <g data-at="0"><rect x="10" y="30" width="130" height="70" rx="10" class="box-blue"/><text x="75" y="58" text-anchor="middle" class="t">Upload</text><text x="75" y="76" text-anchor="middle" class="t-xs">.quarantine file</text><text x="75" y="90" text-anchor="middle" class="t-xs">disk or S3</text></g>
+    <g data-at="0.05"><rect x="160" y="30" width="130" height="70" rx="10" class="box-rose"/><text x="225" y="58" text-anchor="middle" class="t">Scan</text><text x="225" y="76" text-anchor="middle" class="t-xs">ClamAV, fails closed</text><text x="225" y="90" text-anchor="middle" class="t-xs">signatures ≤ 7 days</text></g>
+    <g data-at="0.1"><rect x="310" y="30" width="150" height="70" rx="10" class="box"/><text x="385" y="58" text-anchor="middle" class="t">Convert</text><text x="385" y="76" text-anchor="middle" class="t-xs">subprocess, no sockets</text><text x="385" y="90" text-anchor="middle" class="t-xs">MarkItDown · OCR ≤ 50 pp</text></g>
+    <g data-at="0.15"><rect x="480" y="30" width="130" height="70" rx="10" class="box"/><text x="545" y="58" text-anchor="middle" class="t">Mask</text><text x="545" y="76" text-anchor="middle" class="t-xs">if on, before the</text><text x="545" y="90" text-anchor="middle" class="t-xs">digest is computed</text></g>
+    <g data-at="0.2"><rect x="630" y="30" width="150" height="70" rx="10" class="box-blue"/><text x="705" y="58" text-anchor="middle" class="t">Entry + passages</text><text x="705" y="76" text-anchor="middle" class="t-xs">content · SHA-256 digest</text><text x="705" y="90" text-anchor="middle" class="t-xs">chunks in same transaction</text></g>
+    <g data-at="0.25"><rect x="800" y="30" width="130" height="70" rx="10" class="box-amber"/><text x="865" y="58" text-anchor="middle" class="t">Quality</text><text x="865" y="76" text-anchor="middle" class="t-xs">source check · type</text><text x="865" y="90" text-anchor="middle" class="t-xs">content · PHI/PII scan</text></g>
+    <g data-at="0.05"><path d="M140 65H158M290 65H308M460 65H478M610 65H628M780 65H798" class="edge flow" marker-end="url(#l1)"/></g>
+
+    <text x="10" y="138" class="t-zone">Graph lane (worker)</text>
+    <g data-at="0.29"><path d="M865 100 C865 125 140 115 75 148" class="edge edge-dash" marker-end="url(#l1)"/></g>
+    <g data-at="0.31"><rect x="10" y="150" width="130" height="70" rx="10" class="box"/><text x="75" y="178" text-anchor="middle" class="t">Job queued</text><text x="75" y="196" text-anchor="middle" class="t-xs">graph_refresh, folds</text><text x="75" y="210" text-anchor="middle" class="t-xs">bursts for 5 s</text></g>
+    <g data-at="0.37"><rect x="160" y="150" width="150" height="70" rx="10" class="box-violet"/><text x="235" y="178" text-anchor="middle" class="t">Structure</text><text x="235" y="196" text-anchor="middle" class="t-xs">one fragment per source</text><text x="235" y="210" text-anchor="middle" class="t-xs">headings, tables, refs</text></g>
+    <g data-at="0.43"><rect x="330" y="150" width="170" height="70" rx="10" class="box-violet"/><text x="415" y="178" text-anchor="middle" class="t">AI enrichment</text><text x="415" y="196" text-anchor="middle" class="t-xs">cached answers first; new</text><text x="415" y="210" text-anchor="middle" class="t-xs">windows ≤ 25 calls a run</text></g>
+    <g data-at="0.49"><rect x="520" y="150" width="150" height="70" rx="10" class="box-rose"/><text x="595" y="178" text-anchor="middle" class="t">Judge</text><text x="595" y="196" text-anchor="middle" class="t-xs">quote exact? in the</text><text x="595" y="210" text-anchor="middle" class="t-xs">ontology? else refused</text></g>
+    <g data-at="0.55"><rect x="690" y="150" width="240" height="70" rx="10" class="box"/><text x="810" y="178" text-anchor="middle" class="t">Draft version saved</text><text x="810" y="196" text-anchor="middle" class="t-xs">GraphRevision + GraphElement rows</text><text x="810" y="210" text-anchor="middle" class="t-xs">only changed elements written</text></g>
+    <g data-at="0.37"><path d="M140 185H158M310 185H328M500 185H518M670 185H688" class="edge flow" marker-end="url(#l1)"/></g>
+
+    <text x="10" y="258" class="t-zone">Check, publish, use</text>
+    <g data-at="0.59"><path d="M810 220 C810 245 140 240 75 268" class="edge edge-dash" marker-end="url(#l1)"/></g>
+    <g data-at="0.61"><rect x="10" y="270" width="150" height="70" rx="10" class="box-amber"/><text x="85" y="298" text-anchor="middle" class="t">Benchmark</text><text x="85" y="316" text-anchor="middle" class="t-xs">with AI and without;</text><text x="85" y="330" text-anchor="middle" class="t-xs">no model called</text></g>
+    <g data-at="0.67"><rect x="180" y="270" width="170" height="70" rx="10" class="box-amber"/><text x="265" y="298" text-anchor="middle" class="t">Release check</text><text x="265" y="316" text-anchor="middle" class="t-xs">hard: refuse · soft: needs</text><text x="265" y="330" text-anchor="middle" class="t-xs">a typed reason</text></g>
+    <g data-at="0.73"><rect x="370" y="270" width="150" height="70" rx="10" class="box-teal"/><text x="445" y="298" text-anchor="middle" class="t">Publish</text><text x="445" y="316" text-anchor="middle" class="t-xs">a person, or automatic</text><text x="445" y="330" text-anchor="middle" class="t-xs">if every check passed</text></g>
+    <g data-at="0.79"><rect x="540" y="270" width="200" height="70" rx="10" class="box-teal"/><text x="640" y="298" text-anchor="middle" class="t">Use</text><text x="640" y="316" text-anchor="middle" class="t-xs">graph answers · Code Factory</text><text x="640" y="330" text-anchor="middle" class="t-xs">runbook evidence · MCP</text></g>
+    <g data-at="0.84"><rect x="760" y="270" width="170" height="70" rx="10" class="box-rose"/><text x="845" y="298" text-anchor="middle" class="t">Learn</text><text x="845" y="316" text-anchor="middle" class="t-xs">candidates → a person</text><text x="845" y="330" text-anchor="middle" class="t-xs">accepts or rejects</text></g>
+    <g data-at="0.67"><path d="M160 305H178M350 305H368M520 305H538M740 305H758" class="edge flow" marker-end="url(#l1)"/></g>
+    <g data-at="0.86"><path d="M845 340 V364 H3 V65 H8" class="edge edge-dash flow-slow" marker-end="url(#l1)"/></g>
+    <text x="470" y="412" text-anchor="middle" class="t-xs">an accepted change record or incident learning is a new source; an accepted question makes the next release check harder</text>
+  </svg>
+</figure>
+
+<h2 id="intake">1. Intake: from file to verified text</h2>
+<ul>
+  <li><b>Upload, folder or link.</b> A link import (<code>link_sources.py</code>) records a pending <code>Document</code>; the worker downloads it through <code>fetching.py</code>. Conversion never learns URLs exist.</li>
+  <li><b>Scan.</b> Every original is scanned before conversion; anything not clearly clean is refused. With no scanner configured in production, documents are refused rather than stored unscanned.</li>
+  <li><b>Convert.</b> <code>scripts/extract_text.py</code> runs as a subprocess whose <code>socket.connect</code> raises. OCR (when <code>ocr = true</code>) reads text-less PDF pages and images, at most <code>MAX_OCR_PAGES</code> (50) - over it the document fails rather than half-reads - and heads each page with its confidence.</li>
+  <li><b>Original kept or removed.</b> With <code>keep_original_documents = false</code> the original is deleted on commit of a successful conversion; name, size, SHA-256 and the page report remain. A failed conversion always keeps its file.</li>
+  <li><b>Store.</b> <code>workbench.add_knowledge</code> masks (if on), computes the digest of the stored text, writes the entry and its passages (<code>KnowledgeChunk</code>, 1,400-character windows every 1,200) in one transaction.</li>
+  <li><b>Judge.</b> Source check (six checks, Ready = 80 and none missing), document type from content (a closed registry, no model), content check for that type, personal-data scan. All advice: nothing here ever leaves a source out of a graph.</li>
+</ul>
+
+<h2 id="build">2. Build: a draft version</h2>
+<p>A change to anything in the fingerprint writes a <code>graph_refresh</code> job in the same transaction. The graph lane builds:</p>
+<ol class="steps">
+  <li><b>Structure, per source.</b> Each source's fragment is built from that source alone and cached per process by entry, title and digest, so a rebuild after one change reads one source (1.9 ms warm on CarePath). Fragments merge in source order to exactly what a single pass produced. Every answerable source is taken - there is no cap on the library.</li>
+  <li><b>AI enrichment</b> - on by default (<code>graphs.automatic_ai</code>), refused with a reason on the version when graph generation is off, no owner can be charged, the credential is missing or the budget is spent. Long sources are read in windows (24,000 characters, at most 8). Each answer is cached under the digest of exactly what the model read before the next call starts, so nothing paid for is lost and nothing unchanged is paid for again. A reply that cannot be read costs its source, never the run.</li>
+  <li><b>Judging proposals.</b> The quote must be found exactly; the relationship must fit the ontology's types at each end; the subject may be the source itself (a ticket never repeats its own key). Refused and outside-ontology counts are kept on the version.</li>
+  <li><b>Save.</b> A <code>GraphRevision</code> as a draft, recorded as <code>GraphElement</code> rows: an element unchanged since the last version stays open, so only what changed is written.</li>
+</ol>
+<div class="why"><span class="label-why">Why</span> A rebuild never repeats a paid call: a requested run is carried on <code>KnowledgeGraph.requested_*</code> and cleared once consumed, and a background rebuild carries cached answers forward with no model call. The scorecard holds "model calls re-running unchanged sources" at 0 and "after one source changes" at 1.</div>
+
+<h2 id="check">3. Check: benchmark and release check</h2>
+<div class="cards two">
+  <div class="card"><h4>Benchmark (free)</h4><p>After each save, the owner's benchmark questions are scored through the same ranking and verification an answer uses: found, top-3, rank (MRR). It is scored again on the version with its AI removed, so Quality shows what AI added. Shape figures - cross-document links, largest connected piece, orphans, quoted relationships - are taken both ways.</p></div>
+  <div class="card"><h4>Release check (rules, no model)</h4><p><b>Hard</b> - refuse whatever the reason: a source changed or retired since the build, a quote that no longer verifies, a source since restricted. <b>Soft</b> - compared with the published version, never an ideal: fewer questions found or lower MRR, AI that took answers away, a source dropped, more documents below Ready, more proposals refused. A soft failure publishes only with a typed reason, kept in the audit event.</p></div>
+</div>
+
+<h2 id="publish">4. Publish</h2>
+<ul>
+  <li>Every path that publishes goes through <code>release.publish</code>, which checks again: the Versions popup, the old form, <code>graphs.publish_revision</code>, the demo script.</li>
+  <li><b>Automatic publishing</b> is off by default and only an owner switches it on. The newest version then publishes itself as that owner only when every check, hard and soft, passed against the version that answers now, and it was benchmarked. The first version is always a person's. If the owner is demoted, removed or deactivated, it stops and says so.</li>
+  <li><code>graph_snapshot</code> resolves to the <b>latest published</b> revision, never a draft. No published revision is an error, not a fallback.</li>
+</ul>
+
+<h2 id="use">5. Use</h2>
+<p>Graph answers, Code Factory evidence, ServiceOps runbook passages, REST graph search and MCP read the published version, prepared once per process (an LRU of 8). Safety comes from per-edge verification at read time, not from re-checking the whole graph: active source, matching digest, exact quote. Restricting a source therefore takes it out of already-published versions at once. <a href="answering.html">How answers are ranked and verified</a>.</p>
+
+<h2 id="learn">6. Learn</h2>
+<p><code>learning.py</code> collects candidates by rules from four records already kept - a delivered Code Factory run with every check passing, a confirmed triage verdict, an answer with no citation, an answer marked wrong. Nothing is knowledge until an owner or contributor accepts it. Accepted sources go through <code>add_knowledge</code> under <code>learned://</code>, which is excluded from requirement evidence so the platform never cites its own output as proof of itself.</p>
+
+<h2 id="cycle-ui">How the cycle is shown</h2>
+<p><code>lifecycle.py</code> works out Set up → Feed → Build → Check → Publish → Use from records already kept, with no model, and draws it on Onboarding and as a status strip on every Knowledge page (four queries whatever the library's size). Each stage links to the screen that acts; nothing in it writes.</p>
+
+<h2 id="ops-layer">The exception: the operations graph</h2>
+<p>ServiceOps' graph of incidents, changes, knowledge articles and automations is <b>live, not publish-gated</b>. It is rebuilt by rules whenever the fingerprint over incident and change ids and digests (plus the published knowledge revision and the day) moves, and every edge is re-verified against its records when read. Nothing a model says is written to it. The only edge a person makes is <code>confirmed</code> - a verdict's actual cause.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

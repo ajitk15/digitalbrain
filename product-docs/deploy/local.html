@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Development</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="deploy/local.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › <a href="index.html">Deployment</a></div>
+<span class="tag ops">Deployment</span>
+<h1>Local development</h1>
+<p class="lede">A development machine can run the platform two ways: with the same services production uses, in Docker, or on its own with a SQLite file. The first is the normal way to work, because it is the only one where row security, the runtime role, Redis streaming and virus scanning behave exactly as deployed.</p>
+
+<div class="why"><b>Why development runs production's services.</b> A SQLite-only machine hides whole classes of bugs: PostgreSQL alone has the advisory locks the lanes use, <code>SKIP LOCKED</code> job claims, full-text indexes and row security. Two real defects were caught only there - a <code>select_for_update</code> beside an outer join, and a test that lost its connection - so CI runs on PostgreSQL too, and development does by default.</div>
+
+<h2 id="with-docker">With Docker (the normal way)</h2>
+<figure class="figure">
+  <div class="fig-title"><span>What <code>start-all.cmd</code> does, in order</span></div>
+  <svg viewBox="0 0 940 300" role="img" aria-labelledby="lc-t" data-cycle="12">
+    <title id="lc-t">start-all brings up PostgreSQL, Redis and ClamAV in Docker, writes two configuration files, applies migrations as the owner which also creates the runtime role, copies SQLite data in once, collects static files and starts the server connected as the runtime role.</title>
+    <defs><marker id="l1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="10" width="420" height="140" rx="14" class="zone"/>
+    <text x="24" y="32" class="t-zone">Docker · project digitalbrain-dev</text>
+    <g data-at="0"><rect x="24" y="46" width="124" height="88" rx="10" class="box-blue"/><text x="86" y="76" text-anchor="middle" class="t">PostgreSQL 16</text><text x="86" y="96" text-anchor="middle" class="t-xs">127.0.0.1:5442</text><text x="86" y="112" text-anchor="middle" class="t-xs">two roles</text></g>
+    <g data-at="0.04"><rect x="158" y="46" width="124" height="88" rx="10" class="box-rose"/><text x="220" y="76" text-anchor="middle" class="t">Redis 7.4</text><text x="220" y="96" text-anchor="middle" class="t-xs">TLS · 127.0.0.1:6390</text><text x="220" y="112" text-anchor="middle" class="t-xs">password file</text></g>
+    <g data-at="0.08"><rect x="292" y="46" width="124" height="88" rx="10" class="box-amber"/><text x="354" y="76" text-anchor="middle" class="t">ClamAV clamd</text><text x="354" y="96" text-anchor="middle" class="t-xs">127.0.0.1:3310</text><text x="354" y="112" text-anchor="middle" class="t-xs">own signatures</text></g>
+
+    <g data-at="0.16"><rect x="470" y="10" width="220" height="62" rx="10" class="box"/><text x="580" y="36" text-anchor="middle" class="t">config/local.toml</text><text x="580" y="56" text-anchor="middle" class="t-xs">the owner: migrations, manage.py, gates</text></g>
+    <g data-at="0.2"><rect x="470" y="88" width="220" height="62" rx="10" class="box-teal"/><text x="580" y="114" text-anchor="middle" class="t">config/local.runtime.toml</text><text x="580" y="134" text-anchor="middle" class="t-xs">the server: digital_brain_runtime</text></g>
+    <g data-at="0.12"><path d="M430 80H468M430 118H468" class="edge edge-dash" marker-end="url(#l1)"/><text x="449" y="72" text-anchor="middle" class="t-xs">init_local</text></g>
+
+    <g data-at="0.3"><rect x="10" y="190" width="140" height="90" rx="10" class="box"/><text x="80" y="220" text-anchor="middle" class="t-sm">assert_development</text><text x="80" y="240" text-anchor="middle" class="t-xs">+ check</text><text x="80" y="256" text-anchor="middle" class="t-xs">--fail-level WARNING</text></g>
+    <g data-at="0.4"><rect x="170" y="190" width="140" height="90" rx="10" class="box-blue"/><text x="240" y="220" text-anchor="middle" class="t-sm">apply_migrations</text><text x="240" y="240" text-anchor="middle" class="t-xs">as owner, under lock;</text><text x="240" y="256" text-anchor="middle" class="t-xs">makes runtime role</text></g>
+    <g data-at="0.5"><rect x="330" y="190" width="140" height="90" rx="10" class="box"/><text x="400" y="220" text-anchor="middle" class="t-sm">move_to_postgres</text><text x="400" y="240" text-anchor="middle" class="t-xs">SQLite copied in once;</text><text x="400" y="256" text-anchor="middle" class="t-xs">file kept as backup</text></g>
+    <g data-at="0.58"><rect x="490" y="190" width="140" height="90" rx="10" class="box"/><text x="560" y="220" text-anchor="middle" class="t-sm">first run only</text><text x="560" y="240" text-anchor="middle" class="t-xs">administrator,</text><text x="560" y="256" text-anchor="middle" class="t-xs">AI provider, -Demo</text></g>
+    <g data-at="0.66"><rect x="650" y="190" width="120" height="90" rx="10" class="box"/><text x="710" y="220" text-anchor="middle" class="t-sm">collectstatic</text><text x="710" y="240" text-anchor="middle" class="t-xs">hashed manifest</text></g>
+    <g data-at="0.76"><rect x="790" y="190" width="140" height="90" rx="10" class="box-teal"/><text x="860" y="220" text-anchor="middle" class="t-sm">serve.py</text><text x="860" y="240" text-anchor="middle" class="t-xs">uvicorn, runtime role,</text><text x="860" y="256" text-anchor="middle" class="t-xs">lanes in-process</text></g>
+    <path d="M150 235H168M310 235H328M470 235H488M630 235H648M770 235H788" class="edge flow" marker-end="url(#l1)"/>
+    <g data-at="0.84"><text x="860" y="176" text-anchor="middle" class="t-xs t-teal">ready: http://127.0.0.1:8000</text></g>
+  </svg>
+</figure>
+
+<ol class="steps">
+  <li><b>First run.</b> Install Docker Desktop and Git, clone the repository, double-click <code>start-all.cmd</code>. With no <code>.venv</code> it treats the run as <code>-Install</code>: installs <code>uv</code> and builds the environment with <code>uv sync --frozen</code> from <code>uv.lock</code> (a pip path exists only for machines that cannot reach astral.sh, and resolves fresh), prompts for an administrator (password read hidden) and asks once for an AI provider credential.</li>
+  <li><b>Every start.</b> <code>start-all.cmd</code> again. It keeps the environment up to date but never downloads a toolchain, so an ordinary start stays predictable. Stop with <code>stop-all.cmd</code>.</li>
+  <li><b>Options.</b> <code>-Port 8010</code>; <code>-ConfigureAI</code> to ask the provider question again; <code>-Demo</code> to build the CarePath demonstration before the server starts (safe to repeat; it reports what exists).</li>
+</ol>
+<h3 id="two-files">Two configuration files, on purpose</h3>
+<p><code>scripts/init_local.py --services</code> points <code>config/local.toml</code> at the Docker services once, and writes <code>config/local.runtime.toml</code> on every start. <b><code>local.toml</code> is the owner's</b> - migrations, <code>manage.py</code>, the five gates. The server is started with the runtime file, which connects as <code>digital_brain_runtime</code>: a role that can read and write rows and nothing else. That is the same split a deployment's entrypoint renders.</p>
+<div class="table-wrap"><table>
+  <tr><th>Thing</th><th>Where it lives locally</th></tr>
+  <tr><td>Passwords for PostgreSQL and Redis</td><td>files in <code>.runtime/secrets</code></td></tr>
+  <tr><td>TLS certificate authority</td><td>made inside a Docker volume; only <code>ca.crt</code> leaves, into <code>.runtime/dev-ca</code></td></tr>
+  <tr><td>Signing key, provider credentials</td><td>files in <code>secret_directory</code> (an absolute path; <code>init_local</code> repairs it if the folder moved)</td></tr>
+  <tr><td>Credentials typed on the Credentials screen</td><td><code>managed_secret_directory</code>, a different folder</td></tr>
+  <tr><td>Server logs</td><td><code>.runtime/server.log</code>, <code>.runtime/server-error.log</code></td></tr>
+  <tr><td>A former SQLite database</td><td><code>.runtime/local.sqlite3</code>, kept as the backup; <code>.runtime/moved-to-postgres</code> records the copy</td></tr>
+</table></div>
+
+<div class="warn"><b>Addresses, never <code>localhost</code>.</b> Windows tries IPv6 <code>::1</code> first, which Docker does not publish, and every connection waited ten seconds for it. The configuration names <code>127.0.0.1</code>.</div>
+<div class="note"><b>ClamAV on a first start</b> can keep serving its bundled signatures after freshclam replaced them; the platform then refuses every scan as stale - correctly. Restart the <code>clamd</code> service to load the new ones.</div>
+
+<h2 id="without-docker">Without Docker</h2>
+<p>The platform runs with no services at all when its configuration has no <code>[database]</code> and no <code>[redis]</code> table:</p>
+<div class="cards three">
+  <div class="card"><h4>Database</h4><p>SQLite at <code>.runtime/local.sqlite3</code>, with immediate transactions. No row security: the code's own scoping is the only layer.</p></div>
+  <div class="card"><h4>Server</h4><p>waitress (the default without Redis). Answers stream from process memory; a dropped connection does not resume.</p></div>
+  <div class="card"><h4>Scanning</h4><p>Uploads need a scanner: <code>clamscan</code> on the machine, named by <code>scanner</code>, or conversion fails closed.</p></div>
+</div>
+<p><code>start-all</code> skips the Docker services whenever <code>DIGITAL_BRAIN_CONFIG</code> is already set, so pointing it at a development configuration with no <code>[database]</code> table gives this shape. Whether a given version of the script also falls back on its own when Docker is not running, the result is the same: one process, SQLite, waitress, lanes in-process.</p>
+<div class="warn"><b>Never run <code>manage.py run_worker</code> beside a <code>serve.py</code> that runs its own lanes on the same SQLite file.</b> SQLite has no advisory locks, so every lane keeper believes it holds maintenance.</div>
+
+<h2 id="linux">On Linux or macOS</h2>
+<p>The start scripts are PowerShell. On another system, the same steps by hand:</p>
+<pre><code>uv sync --frozen                          # exact versions from uv.lock
+docker compose -f docker-compose.dev.yaml -p digitalbrain-dev up -d --wait postgres redis
+docker compose -f docker-compose.dev.yaml -p digitalbrain-dev up -d clamd
+.venv/bin/python scripts/init_local.py --services
+.venv/bin/python manage.py apply_migrations
+.venv/bin/python manage.py collectstatic --noinput
+DIGITAL_BRAIN_CONFIG=config/local.runtime.toml .venv/bin/python scripts/serve.py --instance dev</code></pre>
+<p>Skip the two <code>docker compose</code> lines and <code>--services</code> for the SQLite shape.</p>
+
+<h2 id="dev-only">Settings that exist only in development</h2>
+<div class="table-wrap"><table class="matrix">
+  <tr><th>Setting</th><th>Development</th><th>Production</th><th>Why</th></tr>
+  <tr><td><code>claude_use_host_login</code></td><td class="yes">allowed</td><td class="refused">refused</td><td>Lets the Claude CLI use this machine's own login when an application has no credential. In production it would spend the operator's account and break per-application billing.</td></tr>
+  <tr><td><code>allow_demo_reset</code></td><td class="yes">allowed</td><td class="refused">refused (except demonstration)</td><td>Empties an organization between demonstrations.</td></tr>
+  <tr><td><code>code_factory_local_write</code>, <code>code_factory_local_tests</code></td><td class="yes">allowed</td><td class="refused">refused (except demonstration)</td><td>Writes a change into a server folder and runs its tests - the one place the platform runs code it wrote.</td></tr>
+  <tr><td><code>connector_secret_directory</code></td><td class="yes">allowed</td><td class="yes">accepted, off by default</td><td>One set of connector credentials shared by every application - a demo convenience that gives up "one application cannot read another's connector credential". Not refused in production, but the entrypoint writes it only for a demonstration.</td></tr>
+</table></div>
+
+<h2 id="after-changes">After you change things</h2>
+<ul>
+  <li><b>Anything under <code>static/</code>:</b> run <code>manage.py collectstatic</code> <b>and restart the server</b>. Templates resolve hashed names through the manifest, which the running process caches at boot.</li>
+  <li><b>Before calling it done:</b> the <a href="../tech/testing.html">five gates</a>. <code>manage.py test</code> follows <code>local.toml</code>, so the suite runs on the local PostgreSQL too; the test runner blanks Redis, the scanner, telemetry, the bucket and the shared connector folder.</li>
+  <li><b>Telemetry locally:</b> <code>docker compose -f deploy/observability/compose.local.yaml -p digitalbrain-observe up -d</code>, then an <code>[otel]</code> table with <code>endpoint = "http://localhost:4318"</code>. Prometheus is on port 9090, bound to this machine only.</li>
+  <li><b>Before a restart,</b> check whether a Code Factory run is in flight: restarting the server can stop it part way.</li>
+</ul>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

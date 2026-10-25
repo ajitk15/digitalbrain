@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roles and Access</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="guide/roles-and-access.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › For everyone</div>
+<span class="tag everyone">For everyone</span>
+<h1>Roles, access and sign-in</h1>
+<p class="lede">Access is granted per application, to a named person, and checked again on every page and every action. If you have no grant, an application looks exactly like one that does not exist.</p>
+
+<h2 id="roles">The roles</h2>
+<figure class="figure">
+  <svg viewBox="0 0 900 210" role="img" aria-labelledby="roles-t">
+    <title id="roles-t">Viewer, contributor and owner each include everything the role before can do. Approval rights are a separate flag that any role can hold.</title>
+    <rect x="10" y="20" width="250" height="170" rx="14" class="box"/>
+    <text x="30" y="48" class="t">Viewer</text>
+    <text x="30" y="74" class="t-sm">Ask questions in Chat and read</text>
+    <text x="30" y="92" class="t-sm">every answer's sources</text>
+    <text x="30" y="116" class="t-sm">Read knowledge, the Code Graph,</text>
+    <text x="30" y="134" class="t-sm">Code Factory plans and ServiceOps</text>
+    <rect x="280" y="20" width="270" height="170" rx="14" class="box-blue"/>
+    <text x="300" y="48" class="t">Contributor</text>
+    <text x="300" y="74" class="t-sm">Everything a viewer can, and:</text>
+    <text x="300" y="98" class="t-sm">Add, import and change knowledge</text>
+    <text x="300" y="116" class="t-sm">and connectors' records</text>
+    <text x="300" y="140" class="t-sm">Start Code Factory runs, triage</text>
+    <text x="300" y="158" class="t-sm">incidents and request reviews</text>
+    <rect x="570" y="20" width="320" height="170" rx="14" class="box-teal"/>
+    <text x="590" y="48" class="t">Owner</text>
+    <text x="590" y="74" class="t-sm">Everything a contributor can, and:</text>
+    <text x="590" y="98" class="t-sm">Give, change and revoke access, and invite</text>
+    <text x="590" y="122" class="t-sm">Set AI providers, credentials, budgets,</text>
+    <text x="590" y="140" class="t-sm">features and connectors</text>
+    <rect x="590" y="154" width="280" height="26" rx="13" class="box-amber"/>
+    <text x="730" y="171" text-anchor="middle" class="t-sm">+ approval rights: approve Code Factory plans</text>
+    <path d="M260 105H280M550 105H570" class="edge-blue flow"/>
+  </svg>
+  <div class="caption">These are the exact words the Access and My access screens use. A test holds every claim to what the permission checks really allow, so a screen cannot promise what a check refuses.</div>
+</figure>
+<p><b>Approval rights</b> are a separate flag on a grant. They let a person approve Code Factory plans and give approval rights to others. When an application is created, the box that gives its first owner approval rights starts ticked - otherwise nobody could ever hand them out.</p>
+
+<h3 id="self-approval">Can I approve my own plan?</h3>
+<p>By default, yes: most installations are run by one person, and requiring a second reviewer would leave them stuck at the review step. A deployment where two people really do review every change sets <code>allow_self_approval = false</code>. Either way, the plan records who approved it, so a self-approved plan says so in the audit record.</p>
+
+<h2 id="deny">No grant, no access - and no hint</h2>
+<ul>
+  <li>Someone without a grant who opens an application's address gets <b>"not found"</b>, never "forbidden". The platform does not confirm that an application exists.</li>
+  <li><b>Organization administrators</b> manage members and approve invitations, but do not see an application's content unless they are granted access. The form that creates an application has an "Also grant me owner access" box that records a real grant.</li>
+  <li><b>Platform administrators</b> run the installation from the Administration pages. That gives them no application access either.</li>
+  <li><b>Revoking</b> a grant closes everything acting as that person in that application at once: their pages, their API tokens and the imports their connectors schedule.</li>
+</ul>
+<div class="why"><span class="label-why">Why</span> Access is checked on every request and on every step an AI agent takes, not once at sign-in. The database itself adds a second wall underneath: each application's rows are fenced off, so even a missed filter in the code reads another application's data as "not found". <a href="../tech/tenancy.html">How that works</a>.</div>
+
+<h2 id="joining">How people join</h2>
+<figure class="figure">
+  <svg viewBox="0 0 900 180" role="img" aria-labelledby="inv-t" data-cycle="10">
+    <title id="inv-t">An owner invites. A member of the organization is granted at once. Anyone else waits for an organization administrator to approve; a person with no account receives a one-time link valid for 72 hours to choose their own user ID and password.</title>
+    <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="60" width="150" height="56" rx="10" class="box-teal"/><text x="85" y="84" text-anchor="middle" class="t">Owner invites</text><text x="85" y="102" text-anchor="middle" class="t-xs">by user ID or email</text></g>
+    <path d="M160 88 C200 88 200 40 240 40" class="edge" marker-end="url(#a3)"/>
+    <path d="M160 88 C200 88 200 136 240 136" class="edge" marker-end="url(#a3)"/>
+    <g data-at="0.12"><rect x="242" y="14" width="200" height="52" rx="10" class="box"/><text x="342" y="36" text-anchor="middle" class="t">Already a member</text><text x="342" y="54" text-anchor="middle" class="t-xs">of the organization</text></g>
+    <g data-at="0.2"><rect x="470" y="14" width="160" height="52" rx="10" class="box-blue"/><text x="550" y="45" text-anchor="middle" class="t">Granted at once</text></g>
+    <path d="M442 40H468" class="edge" marker-end="url(#a3)"/>
+    <g data-at="0.3"><rect x="242" y="110" width="200" height="52" rx="10" class="box"/><text x="342" y="132" text-anchor="middle" class="t">Anyone else</text><text x="342" y="150" text-anchor="middle" class="t-xs">waits on Members</text></g>
+    <path d="M442 136H468" class="edge" marker-end="url(#a3)"/>
+    <g data-at="0.42"><rect x="470" y="110" width="160" height="52" rx="10" class="box-amber"/><text x="550" y="132" text-anchor="middle" class="t">Org admin</text><text x="550" y="150" text-anchor="middle" class="t-xs">approves</text></g>
+    <path d="M630 136H656" class="edge" marker-end="url(#a3)"/>
+    <g data-at="0.55"><rect x="658" y="110" width="232" height="52" rx="10" class="box-blue"/><text x="774" y="132" text-anchor="middle" class="t">Account admitted, or a</text><text x="774" y="150" text-anchor="middle" class="t-xs">one-time link (72 h) to create one</text></g>
+  </svg>
+</figure>
+<p>The platform sends no email. Every link - an invitation, a password reset (24 hours) - is shown once to whoever issued it, who hands it over. The inviter's own rights are checked again when the invitation is approved and when the link is used, so an owner who lost their role cannot still bring people in.</p>
+
+<h2 id="expiry">Access that ends, and access reviews</h2>
+<ul>
+  <li>A viewer's or contributor's grant can carry an <b>end date</b>. The moment it passes, the grant stops working; a background sweep then revokes it, recorded in the audit trail. An owner's grant never expires.</li>
+  <li>Owners are asked to <b>confirm their Access list every 90 days</b>. Confirming changes no grant; it records that someone looked.</li>
+  <li><b>Offboarding</b> (Administration → People) names a successor. They become owner of everything the leaver owned (approval rights carried over, never lowered) and administrator of what they administered; the leaver's connectors import as the successor; automatic AI refresh the leaver switched on is stopped rather than moved, because it spends as them; then the account is disabled and its tokens revoked.</li>
+</ul>
+
+<h2 id="sign-in">Sign-in</h2>
+<div class="cards three">
+  <div class="card"><div class="icon i-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div><h4>User ID and password</h4><p>Always available. Passwords need 14+ characters, are checked against common passwords, and are stored with Argon2. Five failures lock the account for 15 minutes.</p></div>
+  <div class="card"><div class="icon i-teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></div><h4>Authenticator app (optional)</h4><p>Any person may add one. Six-digit codes, each accepted once; ten recovery codes shown once. A lost phone: use a recovery code, or ask an administrator to remove it.</p></div>
+  <div class="card"><div class="icon i-violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg></div><h4>Sign in with Microsoft (optional)</h4><p>Microsoft Entra ID, pinned to your company's tenant. It proves who you are and <b>grants nothing</b>: Entra groups and roles are never read.</p></div>
+</div>
+<div class="why"><span class="label-why">Why</span> If the directory could grant access, anyone who can edit a group in Entra could widen access to sensitive data without an audited grant here. Keeping grants in one place keeps one audit trail.</div>
+<p><b>Automatic provisioning</b> (SCIM, optional) lets Entra create accounts and deactivate them when someone is unassigned or leaves, so access ends with the directory. It also grants nothing, never touches a platform administrator, and never deletes a person - their audit trail and receipts name them.</p>
+
+<h2 id="source-permissions">Answers that respect Jira's own permissions</h2>
+<p>A Jira connector can <b>enforce source permissions</b>. Each imported ticket then remembers which platform users Jira lets browse it, and every answer is filtered by who is asking. It fails closed: a record not yet checked, or a person whose Jira account is not matched, sees nothing restricted. (The Sources list and graph explorer still show titles to members; this governs answers.)</p>
+
+<h2 id="audit">What is recorded</h2>
+<p>Grants, invitations, sign-in changes, publishing, approvals, restrictions, credential changes, deletes and automation runs are written to an <b>audit trail</b> - names of fields and identifiers, never secrets or document text. It is kept indefinitely unless a deployment sets a window, and that window may not be shorter than six years.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

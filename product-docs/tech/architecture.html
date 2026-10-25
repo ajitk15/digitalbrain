@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/architecture.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Architecture</h1>
+<p class="lede">Digital Brain is one Django 5.2 / Python 3.12 codebase, server-rendered with no JavaScript build step, that runs as up to four roles - <b>web</b>, <b>worker</b>, <b>sandbox</b> (a locked-down worker) and a one-shot <b>migrate</b> - over PostgreSQL, Redis, a ClamAV daemon and an object store. Everything below is drawn from the code and the Compose files.</p>
+
+<h2 id="context">System context</h2>
+<p>Who and what the platform talks to. Every outbound arrow carries a credential that belongs to <b>one application</b>, read from a file, never from the database.</p>
+<figure class="figure">
+  <svg viewBox="0 0 940 440" role="img" aria-labelledby="ctx-t">
+    <title id="ctx-t">People and programs on the left reach Digital Brain over HTTPS. Digital Brain calls AI providers, source systems, an identity provider, an object store and a telemetry collector.</title>
+    <defs><marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <text x="20" y="28" class="t-zone">Who uses it</text>
+    <rect x="20" y="40" width="190" height="56" rx="10" class="box"/><text x="115" y="64" text-anchor="middle" class="t">People in a browser</text><text x="115" y="82" text-anchor="middle" class="t-xs">viewers · contributors · owners</text>
+    <rect x="20" y="110" width="190" height="56" rx="10" class="box"/><text x="115" y="134" text-anchor="middle" class="t">Administrators</text><text x="115" y="152" text-anchor="middle" class="t-xs">organization · platform</text>
+    <rect x="20" y="180" width="190" height="56" rx="10" class="box"/><text x="115" y="204" text-anchor="middle" class="t">Programs and assistants</text><text x="115" y="222" text-anchor="middle" class="t-xs">REST · MCP · Chat API (bearer token)</text>
+    <rect x="20" y="250" width="190" height="56" rx="10" class="box"/><text x="115" y="274" text-anchor="middle" class="t">Entra provisioning</text><text x="115" y="292" text-anchor="middle" class="t-xs">SCIM 2.0 (optional)</text>
+    <path d="M210 68H330M210 138H330M210 208H330M210 278H330" class="edge-blue flow" marker-end="url(#c1)"/>
+    <text x="270" y="60" text-anchor="middle" class="t-xs">HTTPS</text>
+
+    <rect x="332" y="40" width="270" height="330" rx="16" class="box-blue"/>
+    <text x="467" y="72" text-anchor="middle" class="t" style="font-size:16px">Digital Brain</text>
+    <text x="467" y="92" text-anchor="middle" class="t-xs">one codebase · four roles</text>
+    <rect x="352" y="108" width="230" height="36" rx="8" class="box"/><text x="467" y="131" text-anchor="middle" class="t-sm">Web: pages, API, MCP, streams</text>
+    <rect x="352" y="152" width="230" height="36" rx="8" class="box"/><text x="467" y="175" text-anchor="middle" class="t-sm">Worker: 6 background lanes</text>
+    <rect x="352" y="196" width="230" height="36" rx="8" class="box"/><text x="467" y="219" text-anchor="middle" class="t-sm">Sandbox: intake · code-graph · factory</text>
+    <rect x="352" y="240" width="230" height="36" rx="8" class="box"/><text x="467" y="263" text-anchor="middle" class="t-sm">Migrate: schema, roles, partitions</text>
+    <rect x="352" y="292" width="110" height="60" rx="8" class="box-teal"/><text x="407" y="318" text-anchor="middle" class="t-sm">PostgreSQL 16</text><text x="407" y="336" text-anchor="middle" class="t-xs">the record</text>
+    <rect x="472" y="292" width="54" height="60" rx="8" class="box-amber"/><text x="499" y="326" text-anchor="middle" class="t-xs">Redis</text>
+    <rect x="532" y="292" width="54" height="60" rx="8" class="box-rose"/><text x="559" y="326" text-anchor="middle" class="t-xs">ClamAV</text>
+
+    <text x="720" y="28" class="t-zone">What it calls</text>
+    <rect x="720" y="40" width="200" height="50" rx="10" class="box-violet"/><text x="820" y="62" text-anchor="middle" class="t">AI providers</text><text x="820" y="79" text-anchor="middle" class="t-xs">Anthropic Claude · OpenAI</text>
+    <rect x="720" y="100" width="200" height="50" rx="10" class="box"/><text x="820" y="122" text-anchor="middle" class="t">Source systems</text><text x="820" y="139" text-anchor="middle" class="t-xs">Jira · GitHub · ServiceNow · SharePoint</text>
+    <rect x="720" y="160" width="200" height="50" rx="10" class="box"/><text x="820" y="182" text-anchor="middle" class="t">Automation platforms</text><text x="820" y="199" text-anchor="middle" class="t-xs">AWX · Rundeck · Azure Automation</text>
+    <rect x="720" y="220" width="200" height="50" rx="10" class="box"/><text x="820" y="242" text-anchor="middle" class="t">Microsoft Entra ID</text><text x="820" y="259" text-anchor="middle" class="t-xs">sign-in (OIDC + PKCE)</text>
+    <rect x="720" y="280" width="200" height="50" rx="10" class="box"/><text x="820" y="302" text-anchor="middle" class="t">S3 bucket</text><text x="820" y="319" text-anchor="middle" class="t-xs">uploaded originals (optional)</text>
+    <rect x="720" y="340" width="200" height="50" rx="10" class="box"/><text x="820" y="362" text-anchor="middle" class="t">OTLP collector</text><text x="820" y="379" text-anchor="middle" class="t-xs">traces + metrics (optional)</text>
+    <path d="M602 120H718M602 150 C660 150 660 125 718 125M602 175 C660 175 660 185 718 185M602 200 C660 200 660 245 718 245M602 230 C660 230 660 305 718 305M602 260 C660 260 660 365 718 365" class="edge flow-slow" marker-end="url(#c1)"/>
+    <text x="467" y="404" text-anchor="middle" class="t-xs">Every user-supplied URL goes through one fetcher (fetching.py): address-checked, pinned, no redirects, 8 MB / 20 s caps.</text>
+    <text x="467" y="424" text-anchor="middle" class="t-xs">Code Graph's git clone is the one other outbound path - it takes owner/name, never a URL, and the host is hardcoded github.com.</text>
+  </svg>
+</figure>
+
+<h2 id="containers">Containers</h2>
+<p>The scaled deployment (<code>docker-compose.yaml</code> + <code>docker-compose.scale.yaml</code>). The single-container deployment collapses web, worker, sandbox and migrate into one <code>app</code> container with role <code>all</code>; everything else is the same.</p>
+<figure class="figure">
+  <svg viewBox="0 0 940 520" role="img" aria-labelledby="cnt-t">
+    <title id="cnt-t">A TLS proxy forwards to web replicas. A one-shot migrate job runs first. Worker and sandbox run background lanes. All share PostgreSQL, Redis and clamd, and read secrets from mounted volumes.</title>
+    <defs><marker id="c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="10" width="920" height="500" rx="16" class="zone"/>
+    <text x="28" y="34" class="t-zone">One host or cluster · compose network · no port published except through the proxy</text>
+    <rect x="30" y="56" width="180" height="60" rx="10" class="box"/><text x="120" y="82" text-anchor="middle" class="t">TLS proxy</text><text x="120" y="100" text-anchor="middle" class="t-xs">Coolify/Traefik · 80, 443</text>
+    <path d="M210 86H262" class="edge-blue flow" marker-end="url(#c2)"/>
+    <rect x="264" y="46" width="230" height="84" rx="12" class="box-blue"/>
+    <rect x="272" y="54" width="230" height="84" rx="12" class="box-blue" opacity=".55"/>
+    <text x="387" y="78" text-anchor="middle" class="t">web × N</text>
+    <text x="387" y="96" text-anchor="middle" class="t-xs">ROLE=web · serve.py --no-worker</text>
+    <text x="387" y="112" text-anchor="middle" class="t-xs">uvicorn (Redis set) or waitress · :8000</text>
+    <rect x="560" y="46" width="170" height="84" rx="12" class="box-amber"/>
+    <text x="645" y="76" text-anchor="middle" class="t">migrate</text>
+    <text x="645" y="94" text-anchor="middle" class="t-xs">one-shot, restart: "no"</text>
+    <text x="645" y="110" text-anchor="middle" class="t-xs">apply_migrations · check --deploy</text>
+    <rect x="760" y="46" width="150" height="84" rx="12" class="box"/>
+    <text x="835" y="76" text-anchor="middle" class="t">secrets-init</text>
+    <text x="835" y="94" text-anchor="middle" class="t-xs">postgres-certs</text>
+    <text x="835" y="110" text-anchor="middle" class="t-xs">one-shot generators</text>
+
+    <rect x="264" y="160" width="300" height="100" rx="12" class="box-violet"/>
+    <text x="414" y="186" text-anchor="middle" class="t">worker</text>
+    <text x="414" y="206" text-anchor="middle" class="t-xs">graph · connectors · serviceops · serviceops-tests</text>
+    <text x="414" y="222" text-anchor="middle" class="t-xs">automations · maintenance</text>
+    <text x="414" y="244" text-anchor="middle" class="t-xs">health: queue_status --check --lanes</text>
+    <rect x="590" y="160" width="320" height="100" rx="12" class="box-rose"/>
+    <text x="750" y="186" text-anchor="middle" class="t">sandbox</text>
+    <text x="750" y="206" text-anchor="middle" class="t-xs">intake (converters, OCR, scan) · code-graph (git)</text>
+    <text x="750" y="222" text-anchor="middle" class="t-xs">factory (Claude CLI) · read-only root, /tmp tmpfs</text>
+    <text x="750" y="244" text-anchor="middle" class="t-xs">cap_drop ALL · no-new-privileges · 512 pids · 6 GB</text>
+
+    <rect x="30" y="300" width="230" height="110" rx="12" class="box-teal"/>
+    <text x="145" y="328" text-anchor="middle" class="t">PostgreSQL 16</text>
+    <text x="145" y="348" text-anchor="middle" class="t-xs">TLS verify-full · scram-sha-256</text>
+    <text x="145" y="364" text-anchor="middle" class="t-xs">owner role migrates · runtime role</text>
+    <text x="145" y="380" text-anchor="middle" class="t-xs">touches rows only · FORCEd row security</text>
+    <text x="145" y="396" text-anchor="middle" class="t-xs">--data-checksums</text>
+    <rect x="290" y="300" width="200" height="110" rx="12" class="box-amber"/>
+    <text x="390" y="328" text-anchor="middle" class="t">Redis 7.4</text>
+    <text x="390" y="348" text-anchor="middle" class="t-xs">TLS only · password from file</text>
+    <text x="390" y="364" text-anchor="middle" class="t-xs">answer streams · Stop · rate limit</text>
+    <text x="390" y="380" text-anchor="middle" class="t-xs">noeviction · no persistence</text>
+    <rect x="520" y="300" width="170" height="110" rx="12" class="box"/>
+    <text x="605" y="328" text-anchor="middle" class="t">clamd</text>
+    <text x="605" y="348" text-anchor="middle" class="t-xs">ClamAV 1.4 daemon</text>
+    <text x="605" y="364" text-anchor="middle" class="t-xs">:3310 · signatures ≤ 7 days</text>
+    <rect x="720" y="300" width="190" height="110" rx="12" class="box"/>
+    <text x="815" y="328" text-anchor="middle" class="t">Volumes</text>
+    <text x="815" y="348" text-anchor="middle" class="t-xs">platform-secrets (ro in sandbox)</text>
+    <text x="815" y="364" text-anchor="middle" class="t-xs">managed-credentials · app-runtime</text>
+    <text x="815" y="380" text-anchor="middle" class="t-xs">postgres-data · postgres-certs</text>
+    <text x="815" y="396" text-anchor="middle" class="t-xs">clamd-db · demo-workspace</text>
+    <path d="M330 130V158M414 260V298M600 260 C600 280 420 280 400 298M250 260" class="edge"/>
+    <path d="M300 130 C250 200 160 220 150 298" class="edge flow-slow" marker-end="url(#c2)"/>
+    <path d="M700 260 C700 280 610 285 605 298" class="edge flow-slow" marker-end="url(#c2)"/>
+    <path d="M645 130 C645 150 200 140 150 298" class="edge edge-dash"/>
+    <text x="40" y="450" class="t-sm">Start order: secrets-init + postgres-certs → postgres, redis (healthy) → migrate (exits 0) → web, worker, sandbox.</text>
+    <text x="40" y="472" class="t-sm">Web replicas wait for migrations (DIGITAL_BRAIN_MIGRATIONS=wait); only migrate applies them, under an advisory lock.</text>
+    <text x="40" y="494" class="t-xs">External: S3 originals bucket, AI providers, source systems, Entra, collector - see System context.</text>
+  </svg>
+</figure>
+<div class="table-wrap"><table>
+  <tr><th>Container</th><th>Runs</th><th>Why it is separate</th></tr>
+  <tr><td><b>web</b></td><td><code>scripts/serve.py --no-worker</code>: pages, REST, MCP, SCIM, answer streams. Chat answers run on a thread the stream request starts, so they stay here.</td><td>Can be more than one replica once Redis carries streams and migrations run elsewhere.</td></tr>
+  <tr><td><b>worker</b></td><td><code>manage.py run_worker --lanes …</code> for the six lanes that only talk to the database and to APIs.</td><td>Background work never competes with requests for threads.</td></tr>
+  <tr><td><b>sandbox</b></td><td>The three lanes that hand <b>outside content to another program</b>: converters and OCR, git, the Claude CLI.</td><td>A parser bug, a runaway converter or a fork bomb is held to a read-only container with no capabilities and fixed process and memory limits.</td></tr>
+  <tr><td><b>migrate</b></td><td><code>apply_migrations</code> (as the database owner), writes the signing key if absent, <code>check --deploy</code>, exits.</td><td>Two containers starting together used to both apply migrations; now one job does, under a lock.</td></tr>
+</table></div>
+<div class="note">Still not sandboxed, and the code says so: chat on Claude starts the CLI on the web container's stream thread, and every container still mounts the whole secrets volume, the owner's database password included.</div>
+
+<h2 id="request">A page request</h2>
+<figure class="figure">
+  <svg viewBox="0 0 940 230" role="img" aria-labelledby="req-t" data-cycle="11">
+    <title id="req-t">A request passes the proxy, the server, the middleware stack - telemetry, request context, security, static files, session, CSRF, authentication, tenant binding, lockout, response policy - then the view's access check and the database under row security.</title>
+    <defs><marker id="c3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="80" width="100" height="56" rx="10" class="box"/><text x="60" y="104" text-anchor="middle" class="t">Browser</text><text x="60" y="122" text-anchor="middle" class="t-xs">form or link</text></g>
+    <g data-at="0.06"><rect x="130" y="80" width="110" height="56" rx="10" class="box"/><text x="185" y="104" text-anchor="middle" class="t">Server</text><text x="185" y="122" text-anchor="middle" class="t-xs">waitress / uvicorn</text></g>
+    <g data-at="0.14"><rect x="260" y="20" width="330" height="176" rx="12" class="box-blue"/>
+      <text x="425" y="42" text-anchor="middle" class="t">Middleware, in order</text>
+      <text x="276" y="64" class="t-xs">1 Telemetry - span, route pattern, request id</text>
+      <text x="276" y="80" class="t-xs">2 Request context - size limits, X-Request-ID, CSP</text>
+      <text x="276" y="96" class="t-xs">3 Security (HSTS, SSL redirect) · 4 WhiteNoise statics</text>
+      <text x="276" y="112" class="t-xs">5 Session · 6 Common · 7 CSRF · 8 Authentication</text>
+      <text x="276" y="128" class="t-xs t-teal">9 Tenant - binds applications/&lt;uuid&gt;/ to its pk</text>
+      <text x="276" y="144" class="t-xs">10 Messages · 11 X-Frame-Options</text>
+      <text x="276" y="160" class="t-xs">12 Axes lockout · 13 Response policy</text>
+      <text x="276" y="182" class="t-xs">cleared again after the view, whatever it did</text></g>
+    <g data-at="0.34"><rect x="610" y="60" width="140" height="96" rx="12" class="box-teal"/><text x="680" y="88" text-anchor="middle" class="t">View</text><text x="680" y="108" text-anchor="middle" class="t-xs">policy.application_for</text><text x="680" y="124" text-anchor="middle" class="t-xs">no grant → 404</text><text x="680" y="140" text-anchor="middle" class="t-xs">feature off → 404</text></g>
+    <g data-at="0.48"><rect x="770" y="60" width="160" height="96" rx="12" class="box-teal"/><text x="850" y="88" text-anchor="middle" class="t">PostgreSQL</text><text x="850" y="108" text-anchor="middle" class="t-xs">runtime role</text><text x="850" y="124" text-anchor="middle" class="t-xs">row security on</text><text x="850" y="140" text-anchor="middle" class="t-xs">digitalbrain.tenant</text></g>
+    <path d="M110 108H128M240 108H258M590 108H608M750 108H768" class="edge-blue flow" marker-end="url(#c3)"/>
+    <circle r="5" class="dot"><animateMotion dur="2.2s" repeatCount="indefinite" path="M60 108 H850"/></circle>
+    <g data-at="0.6"><text x="470" y="222" text-anchor="middle" class="t-sm">The HTML comes back server-rendered. JavaScript only intercepts forms and links that already work without it.</text></g>
+  </svg>
+</figure>
+
+<h2 id="answer">A streamed chat answer</h2>
+<figure class="figure">
+  <svg viewBox="0 0 940 300" role="img" aria-labelledby="ans-t" data-cycle="12">
+    <title id="ans-t">The browser posts a question; the server writes the question and a streaming placeholder. The browser opens an event stream. A worker thread owns the provider call and every database write, appending events to a Redis stream. Any web process reading the stream relays words to the browser. The finished message is replaced with a server-rendered fragment.</title>
+    <defs><marker id="c4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="20" width="130" height="260" rx="12" class="box"/><text x="75" y="44" text-anchor="middle" class="t">Browser</text>
+    <rect x="200" y="20" width="200" height="260" rx="12" class="box-blue"/><text x="300" y="44" text-anchor="middle" class="t">Web process</text>
+    <rect x="460" y="20" width="200" height="260" rx="12" class="box-violet"/><text x="560" y="44" text-anchor="middle" class="t">Answer thread</text><text x="560" y="62" text-anchor="middle" class="t-xs">single writer</text>
+    <rect x="720" y="20" width="210" height="120" rx="12" class="box-amber"/><text x="825" y="44" text-anchor="middle" class="t">Redis stream</text><text x="825" y="62" text-anchor="middle" class="t-xs">events · owner key · Stop list</text>
+    <rect x="720" y="160" width="210" height="120" rx="12" class="box"/><text x="825" y="184" text-anchor="middle" class="t">AI provider</text><text x="825" y="202" text-anchor="middle" class="t-xs">through the gateway</text>
+    <g data-at="0.02"><path d="M140 84H198" class="edge" marker-end="url(#c4)"/><text x="148" y="78" class="t-xs">1 POST</text><text x="210" y="90" class="t-xs">question + placeholder</text><text x="210" y="104" class="t-xs">status="streaming"</text></g>
+    <g data-at="0.12"><path d="M140 134H198" class="edge" marker-end="url(#c4)"/><text x="148" y="128" class="t-xs">2 GET</text><text x="210" y="140" class="t-xs">chat-stream (SSE)</text><path d="M400 140H458" class="edge" marker-end="url(#c4)"/><text x="408" y="134" class="t-xs">starts</text></g>
+    <g data-at="0.22"><path d="M660 200H718" class="edge-violet edge flow" marker-end="url(#c4)"/><text x="470" y="200" class="t-xs">3 admitted call, budget</text><text x="470" y="214" class="t-xs">checked, tool turns</text></g>
+    <g data-at="0.32"><path d="M660 96H718" class="edge-amber flow" marker-end="url(#c4)"/><text x="470" y="100" class="t-xs">4 append each event</text></g>
+    <g data-at="0.42"><path d="M720 120 C600 150 450 170 402 180" class="edge-amber flow" marker-end="url(#c4)"/><text x="210" y="184" class="t-xs">5 reader follows (any process,</text><text x="210" y="198" class="t-xs">replays from Last-Event-ID)</text>
+      <path d="M200 190H142" class="edge-blue flow" marker-end="url(#c4)"/><text x="18" y="184" class="t-xs">words via</text><text x="18" y="198" class="t-xs">textContent</text></g>
+    <g data-at="0.6"><text x="470" y="244" class="t-xs">6 guarded completion:</text><text x="470" y="258" class="t-xs">filter(status="streaming").update(...)</text>
+      <path d="M200 252H142" class="edge-teal" marker-end="url(#c4)"/><text x="210" y="248" class="t-xs">7 server-rendered</text><text x="210" y="262" class="t-xs">fragment replaces text</text></g>
+  </svg>
+</figure>
+<ul>
+  <li><b>The answer thread is the only writer.</b> The stream generator does no database work at all, so a Stop that races completion is safe: completion is a guarded update of a row still marked streaming.</li>
+  <li><b>With Redis an answer outlives its connection.</b> A dropped connection resumes from <code>Last-Event-ID</code> on any web process; a second tab follows the same answer. A reader that finds events but no live owner closes the answer out once as interrupted - it is never started again, so nothing is paid for twice.</li>
+  <li><b>Under uvicorn a reader holds no thread.</b> <code>digitalbrain/asgi.py</code> routes only the two stream routes to Django's ASGI handler (sharing 8 thread lanes); every other request goes to the same WSGI app in a bounded pool, so middleware and the CSP are unchanged. Measured on the development machine: waitress accepted 12 concurrent readers; uvicorn held 100 with every reader receiving, so 100 is the cap and reader 101 gets a 503 for another replica to serve.</li>
+  <li><b>The browser never renders model Markdown.</b> Streamed words are inserted as text; the finished message is replaced by HTML the server rendered through one escaping filter that produces no links.</li>
+</ul>
+
+<h2 id="background">Background work</h2>
+<figure class="figure">
+  <svg viewBox="0 0 940 210" role="img" aria-labelledby="bg-t" data-cycle="9">
+    <title id="bg-t">A change writes a Job row in its own transaction. A lane claims the job with SKIP LOCKED, binds row security to the job's application and runs the handler, renewing a lease. A dead worker's job returns after its lease expires.</title>
+    <defs><marker id="c5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="60" width="170" height="80" rx="12" class="box-blue"/><text x="95" y="90" text-anchor="middle" class="t">A change</text><text x="95" y="110" text-anchor="middle" class="t-xs">source saved, setting</text><text x="95" y="124" text-anchor="middle" class="t-xs">changed, button pressed</text></g>
+    <g data-at="0.12"><rect x="220" y="60" width="170" height="80" rx="12" class="box"/><text x="305" y="90" text-anchor="middle" class="t">Job row</text><text x="305" y="110" text-anchor="middle" class="t-xs">same transaction (outbox)</text><text x="305" y="124" text-anchor="middle" class="t-xs">one waiting row per key</text></g>
+    <g data-at="0.26"><rect x="430" y="60" width="170" height="80" rx="12" class="box-violet"/><text x="515" y="90" text-anchor="middle" class="t">Lane claims</text><text x="515" y="110" text-anchor="middle" class="t-xs">FOR UPDATE SKIP LOCKED</text><text x="515" y="124" text-anchor="middle" class="t-xs">≤ TENANT_CAP per app</text></g>
+    <g data-at="0.4"><rect x="640" y="60" width="170" height="80" rx="12" class="box-teal"/><text x="725" y="90" text-anchor="middle" class="t">Handler runs</text><text x="725" y="110" text-anchor="middle" class="t-xs">bound to its application</text><text x="725" y="124" text-anchor="middle" class="t-xs">lease renewed</text></g>
+    <g data-at="0.54"><rect x="840" y="72" width="90" height="56" rx="12" class="box-teal"/><text x="885" y="105" text-anchor="middle" class="t">done</text></g>
+    <path d="M180 100H218M390 100H428M600 100H638M810 100H838" class="edge flow" marker-end="url(#c5)"/>
+    <g data-at="0.66"><path d="M725 140 C725 190 515 190 515 142" class="edge-rose edge-dash" marker-end="url(#c5)"/><text x="620" y="200" text-anchor="middle" class="t-xs">lease expired → maintenance puts it back, or marks it dead past max attempts</text></g>
+  </svg>
+</figure>
+<p>Background work is asked for, never scanned for: the cost grows with work, not with the number of applications. A rolled-back change takes its job with it. Details in <a href="workers.html">Workers, lanes and jobs</a>.</p>
+
+<h2 id="layers">Layers of the code</h2>
+<div class="table-wrap"><table>
+  <tr><th>Layer</th><th>Where</th><th>Rule</th></tr>
+  <tr><td>Project settings and servers</td><td><code>digitalbrain/</code> - settings, configuration, ASGI router, server options, test runner</td><td>Configuration is a TOML file plus secret files; <code>load_config</code> refuses unsafe combinations.</td></tr>
+  <tr><td>The platform</td><td><code>platform_core/</code> - ~120 modules: policy, tenancy, gateway, knowledge, graphs, chat, Code Factory, ServiceOps…</td><td>Every view re-checks access; every paid call passes the gateway.</td></tr>
+  <tr><td>Agent runtime</td><td><code>platform_core/agent_runtime/</code> - Claude and OpenAI runtimes, tools, streaming, usage</td><td>Named so it does not shadow the OpenAI SDK's own <code>agents</code> package. Tools are bound to one application and user before a run.</td></tr>
+  <tr><td>Models</td><td><code>platform_core/models/</code> - accounts, ai, knowledge, operations, code_graph, chat, factory, runtime</td><td>Imported in that order; a later area refers to an earlier one, never back.</td></tr>
+  <tr><td>Utilities on top</td><td><code>platform_core/utility/</code> - Chat API, triage API</td><td>One-way dependency: nothing in the platform imports them, so they can be deleted.</td></tr>
+  <tr><td>Pages</td><td><code>templates/</code>, <code>static/</code> (plain JavaScript files, no build step: chat, modal, graph, documents…)</td><td>Progressive enhancement: every control is a real form.</td></tr>
+</table></div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

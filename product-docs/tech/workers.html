@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workers, Lanes and Jobs</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/workers.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Workers, lanes and jobs</h1>
+<p class="lede">Background work runs in nine <b>lanes</b> (<code>document_worker.LANES</code>) so that a slow kind of work never waits in front of a fast one. Lanes run inside the web process by default, or in worker processes of their own.</p>
+
+<figure class="figure">
+  <div class="fig-title">The nine lanes and where the scaled deployment runs them</div>
+  <svg viewBox="0 0 940 300" role="img" aria-labelledby="ln-t">
+    <title id="ln-t">Sandbox container: intake every second, code-graph and factory every two seconds. Worker container: graph and automations every two seconds, serviceops every second, serviceops-tests every three, connectors every ten, maintenance every thirty, held by one process.</title>
+    <rect x="10" y="10" width="330" height="280" rx="14" class="box-rose"/>
+    <text x="28" y="36" class="t-zone">sandbox - hands outside content to programs</text>
+    <rect x="30" y="52" width="290" height="66" rx="10" class="box"/><text x="46" y="76" class="t">intake <tspan class="t-xs">· every 1 s</tspan></text><text x="46" y="96" class="t-xs">scan · convert · OCR · type · fairly across apps</text><circle cx="300" cy="72" r="5" class="dot-rose blink"/>
+    <rect x="30" y="128" width="290" height="66" rx="10" class="box"/><text x="46" y="152" class="t">code-graph <tspan class="t-xs">· every 2 s</tspan></text><text x="46" y="172" class="t-xs">clone · index · Graphify · reviews · docs</text><circle cx="300" cy="148" r="5" class="dot-rose blink" style="animation-delay:.4s"/>
+    <rect x="30" y="204" width="290" height="66" rx="10" class="box"/><text x="46" y="228" class="t">factory <tspan class="t-xs">· every 2 s</tspan></text><text x="46" y="248" class="t-xs">Code Factory phases · Claude CLI · delivery</text><circle cx="300" cy="224" r="5" class="dot-rose blink" style="animation-delay:.8s"/>
+
+    <rect x="360" y="10" width="570" height="280" rx="14" class="box-violet"/>
+    <text x="378" y="36" class="t-zone">worker - database and APIs only</text>
+    <rect x="380" y="52" width="260" height="52" rx="10" class="box"/><text x="396" y="74" class="t">graph <tspan class="t-xs">· 2 s</tspan></text><text x="396" y="92" class="t-xs">graph_refresh jobs · AI runs · records</text>
+    <rect x="650" y="52" width="260" height="52" rx="10" class="box"/><text x="666" y="74" class="t">serviceops <tspan class="t-xs">· 1 s</tspan></text><text x="666" y="92" class="t-xs">triage steps, watched live</text>
+    <rect x="380" y="114" width="260" height="52" rx="10" class="box"/><text x="396" y="136" class="t">connectors <tspan class="t-xs">· 10 s</tspan></text><text x="396" y="154" class="t-xs">scheduled imports as their creator</text>
+    <rect x="650" y="114" width="260" height="52" rx="10" class="box"/><text x="666" y="136" class="t">serviceops-tests <tspan class="t-xs">· 3 s</tspan></text><text x="666" y="154" class="t-xs">the test workbench's suites</text>
+    <rect x="380" y="176" width="260" height="52" rx="10" class="box"/><text x="396" y="198" class="t">automations <tspan class="t-xs">· 2 s</tspan></text><text x="396" y="216" class="t-xs">queued real automation runs</text>
+    <rect x="650" y="176" width="260" height="104" rx="10" class="box-amber"/><text x="666" y="198" class="t">maintenance <tspan class="t-xs">· 30 s, one holder</tspan></text>
+    <text x="666" y="218" class="t-xs">job leases · admissions · retention</text><text x="666" y="234" class="t-xs">expiry · learning · gauges · SLO counts</text><text x="666" y="250" class="t-xs">chunk backfill · graph rows · slimming</text><text x="666" y="266" class="t-xs">reconcile · partitions warning</text>
+    <text x="396" y="258" class="t-xs">Every lane but maintenance claims row by row</text>
+    <text x="396" y="274" class="t-xs">and runs in every replica.</text>
+  </svg>
+</figure>
+
+<h2 id="lanes">The lanes</h2>
+<div class="table-wrap"><table>
+  <tr><th>Lane</th><th>Tick</th><th>Why its own lane</th></tr>
+  <tr><td><code>intake</code></td><td>1 s</td><td>Someone is waiting for their upload. Takes turns (<code>document_worker.fairly</code>): the oldest document from an application with nothing converting, else the oldest, so one large import cannot hold everyone's single upload.</td></tr>
+  <tr><td><code>graph</code></td><td>2 s</td><td>Rebuilds and AI runs are long; they must not sit in front of an upload.</td></tr>
+  <tr><td><code>code-graph</code></td><td>2 s</td><td>Clones and indexing are slow and run git.</td></tr>
+  <tr><td><code>factory</code></td><td>2 s</td><td>A Code Factory run makes several provider calls in sequence. Claims only <code>prepare_queued</code>.</td></tr>
+  <tr><td><code>serviceops</code></td><td>1 s</td><td>Somebody watches a triage's steps tick; it must not wait behind Code Factory.</td></tr>
+  <tr><td><code>serviceops-tests</code></td><td>3 s</td><td>The test workbench's fixed suites.</td></tr>
+  <tr><td><code>automations</code></td><td>2 s</td><td>Real automation runs, launched once each.</td></tr>
+  <tr><td><code>connectors</code></td><td>10 s</td><td>An import waits on somebody else's instance for tens of seconds; the shortest schedule an owner can choose is fifteen minutes.</td></tr>
+  <tr><td><code>maintenance</code></td><td>30 s</td><td>Cheap sweeps where one holder is enough.</td></tr>
+</table></div>
+
+<h2 id="jobs">Jobs: asked for, not scanned for</h2>
+<p>The graph lane used to compute every application's fingerprint every two seconds, and the connector lane read every connector every ten - a cost that grew with applications, not with work. Now (<code>jobs.py</code>, <code>models.Job</code>):</p>
+<ul>
+  <li><b>A change writes a Job in its own transaction.</b> That is the outbox: a rolled-back change takes its job with it, and there is no event table to drain. <code>triggers.py</code> asks for <code>graph_refresh</code> on anything in the fingerprint - a source saved or deleted, a queryset update on a graph field (querysets send no signal, so the queryset reports itself), graph settings, the Knowledge switch.</li>
+  <li><b>One waiting row per key</b> (a partial unique index). A burst folds into one job, earliest due wins; <code>graph_refresh</code> waits five seconds so it can. Folding is an UPDATE, never a read, so a request racing a claim gets its own row.</li>
+  <li><b>Claims</b> are <code>SELECT … FOR UPDATE SKIP LOCKED</code> on PostgreSQL, a conditional update on SQLite. An application holds at most <code>TENANT_CAP</code> (2) running jobs per lane. A running key is never started twice, so a change made mid-rebuild is rebuilt after it.</li>
+  <li><b>Leases</b> (2 minutes, renewed by a thread) bring back a dead worker's job: maintenance puts it back, or marks it <code>dead</code> past <code>max_attempts</code>. A failed rebuild or import is one attempt - the queue never repeats a paid call or half an import; <code>Later</code> means "not yet" and costs no attempt.</li>
+  <li><code>Job.application_id</code> is deliberately not a foreign key: deleting an application deletes its sources, each asks for a refresh, and a key to the row being deleted would fail the delete.</li>
+  <li><b>Reconcile</b> (<code>graphs.reconcile_if_due</code>, every 600 s and at lane start) enqueues every candidate application for changes that came without a trigger - a bulk feature update, an organization reactivated, a restore.</li>
+</ul>
+
+<h2 id="shared">Shared lanes and the one keeper</h2>
+<p>Every lane but maintenance is in <code>SHARED_LANES</code>: each step claims its own row first - a document by a conditional update, a job by a row lock, a run, triage, review or index by a guarded status change on its job token, a poll by moving its turn on. Work found by its age is kept fresh while it runs (<code>keepalive.KeepAlive</code>), so another process reads a stopped worker, never a slow one, and a paid review is never paid for twice. <code>test_shared_lanes</code> stages each race.</p>
+<p><b>Maintenance</b> is held by one process (<code>LaneKeeper</code>): a PostgreSQL session advisory lock on a connection of its own, so <code>close_old_connections</code> between steps never drops it, with a second holder standing by.</p>
+<div class="warn"><b>Two consequences.</b> SQLite has no advisory locks, so every keeper "holds" there - never run <code>run_worker</code> beside a <code>serve.py</code> that runs its own lanes on the same SQLite file. And a session lock does not survive a transaction-mode connection pooler, so a worker connects to PostgreSQL directly.</div>
+
+<h2 id="running">Running them</h2>
+<div class="table-wrap"><table>
+  <tr><th>How</th><th>Command</th></tr>
+  <tr><td>Everything in one process (default, and local development)</td><td><code>scripts/serve.py</code></td></tr>
+  <tr><td>Web only</td><td><code>scripts/serve.py --no-worker</code> (<code>DIGITAL_BRAIN_ROLE=web</code>)</td></tr>
+  <tr><td>Some lanes in a worker</td><td><code>manage.py run_worker --lanes graph,connectors --concurrency factory=2</code> (<code>DIGITAL_BRAIN_ROLE=worker</code>, <code>DIGITAL_BRAIN_LANES</code>, <code>DIGITAL_BRAIN_CONCURRENCY</code>)</td></tr>
+</table></div>
+<p>A test holds the scale overlay's two lane lists to <code>LANES</code> with no lane in both. A stop (<code>SIGTERM</code>) is honoured <b>between steps, never inside one</b>: a conversion or paid call that started is finished and recorded (<code>stop_grace_period: 70s</code>).</p>
+
+<h2 id="health">Health</h2>
+<p>Each holder writes a <code>LaneHeartbeat</code>. <code>manage.py queue_status [--json] [--check] [--lanes …]</code> reports each lane's waiting work, oldest age, heartbeat and <code>dead</code> jobs - counts and ages, never a record. Compose health checks name only the container's own lanes. The maintenance lane logs the same figures every five minutes as <code>queue_status</code> events.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

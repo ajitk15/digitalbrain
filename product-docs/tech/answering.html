@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Answering and Citations</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/answering.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Answering and citations</h1>
+<p class="lede">How a question finds candidates, how they are ranked, how every citation is verified, and how the model is kept to evidence. One ranking (<code>ranking.py</code>) and one verification serve every path - chat, Code Factory, triage, the API and the benchmark.</p>
+
+<figure class="figure">
+  <div class="fig-title">From question to verified citations</div>
+  <svg viewBox="0 0 940 300" role="img" aria-labelledby="ret-t" data-cycle="12">
+    <title id="ret-t">A question becomes terms and references. Candidates come from full text over sources or passages, or from graph edges. Optional vectors add starting points. Ranking orders by coverage, BM25 and spread. Each citation is verified. Permissions and restrictions filter. Optional reranking reorders. The model writes an answer from the verified citations.</title>
+    <defs><marker id="r1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="110" width="120" height="80" rx="10" class="box-blue"/><text x="70" y="140" text-anchor="middle" class="t">Question</text><text x="70" y="158" text-anchor="middle" class="t-xs">terms + references</text><text x="70" y="172" text-anchor="middle" class="t-xs">(BR-05, C-09 whole)</text></g>
+    <g data-at="0.08"><rect x="160" y="20" width="170" height="70" rx="10" class="box"/><text x="245" y="48" text-anchor="middle" class="t">Sources / passages</text><text x="245" y="66" text-anchor="middle" class="t-xs">PG full text (GIN) or</text><text x="245" y="80" text-anchor="middle" class="t-xs">substring on SQLite</text></g>
+    <g data-at="0.12"><rect x="160" y="115" width="170" height="70" rx="10" class="box-violet"/><text x="245" y="143" text-anchor="middle" class="t">Graph edges</text><text x="245" y="161" text-anchor="middle" class="t-xs">published version, as rows</text><text x="245" y="175" text-anchor="middle" class="t-xs">or prepared JSON</text></g>
+    <g data-at="0.16"><rect x="160" y="210" width="170" height="70" rx="10" class="box"/><text x="245" y="238" text-anchor="middle" class="t">Vectors (optional)</text><text x="245" y="256" text-anchor="middle" class="t-xs">starting points only,</text><text x="245" y="270" text-anchor="middle" class="t-xs">fused with word order</text></g>
+    <path d="M130 140 C145 140 145 55 158 55M130 150H158M130 160 C145 160 145 245 158 245" class="edge flow" marker-end="url(#r1)"/>
+    <g data-at="0.26"><rect x="360" y="100" width="150" height="100" rx="10" class="box-amber"/><text x="435" y="128" text-anchor="middle" class="t">Rank</text><text x="435" y="148" text-anchor="middle" class="t-xs">1 coverage of terms</text><text x="435" y="164" text-anchor="middle" class="t-xs">2 BM25</text><text x="435" y="180" text-anchor="middle" class="t-xs">3 spread across sources</text></g>
+    <path d="M330 55 C345 55 345 140 358 140M330 150H358M330 245 C345 245 345 160 358 160" class="edge flow" marker-end="url(#r1)"/>
+    <g data-at="0.38"><rect x="540" y="100" width="150" height="100" rx="10" class="box-teal"/><text x="615" y="128" text-anchor="middle" class="t">Verify each</text><text x="615" y="148" text-anchor="middle" class="t-xs">active · digest equal</text><text x="615" y="164" text-anchor="middle" class="t-xs">quote present</text><text x="615" y="180" text-anchor="middle" class="t-xs">permitted for asker</text></g>
+    <path d="M510 150H538" class="edge flow" marker-end="url(#r1)"/>
+    <g data-at="0.48"><rect x="720" y="40" width="210" height="60" rx="10" class="box"/><text x="825" y="66" text-anchor="middle" class="t">Rerank (optional)</text><text x="825" y="84" text-anchor="middle" class="t-xs">reorder only; failure keeps order</text></g>
+    <g data-at="0.58"><rect x="720" y="120" width="210" height="60" rx="10" class="box-violet"/><text x="825" y="146" text-anchor="middle" class="t">Model writes</text><text x="825" y="164" text-anchor="middle" class="t-xs">from verified citations only</text></g>
+    <g data-at="0.68"><rect x="720" y="200" width="210" height="60" rx="10" class="box-blue"/><text x="825" y="226" text-anchor="middle" class="t">Answer + [n] citations</text><text x="825" y="244" text-anchor="middle" class="t-xs">re-verified when drawn</text></g>
+    <path d="M690 140 C705 140 705 70 718 70M825 100V118M825 180V198" class="edge flow" marker-end="url(#r1)"/>
+  </svg>
+</figure>
+
+<h2 id="modes">Three answering paths</h2>
+<div class="table-wrap"><table>
+  <tr><th>Mode</th><th>Candidates</th><th>Model</th></tr>
+  <tr><td><b>Source excerpts</b> (<code>search</code>)</td><td><code>lexical_citations</code>: keyword retrieval over active, answerable sources or their passages</td><td>None - the answer is the readable evidence</td></tr>
+  <tr><td><b>AI answer</b> (<code>ai</code>)</td><td>The same keyword retrieval</td><td>Purpose <code>chat</code>. On Claude and OpenAI it is an agentic run whose only tools are <code>search_knowledge</code> and <code>fetch_source</code>, bound before the run to one application and one user</td></tr>
+  <tr><td><b>Graph answer</b> (<code>graph</code>)</td><td><code>graph_citations</code> on the latest published (or pinned) version</td><td>Purpose <code>graph_retrieval</code>; keyword retrieval is not run first (with reranking on it was a paid call for nothing)</td></tr>
+</table></div>
+<p>The mode belongs to the conversation; <code>ChatMessage.mode</code> records what produced each answer. Every chat control is a plain POST form that reaches the synchronous path in <code>workbench.answer_question</code> with JavaScript off; <code>static/chat.js</code> only intercepts it to stream.</p>
+
+<h2 id="candidates">Finding candidates</h2>
+<ul>
+  <li><b>Full text on PostgreSQL.</b> A stored generated <code>search_vector</code> column with a GIN index on sources and passages (migration 0088). The earlier expression indexes made <code>ts_rank</code> re-tokenize every matching row on every question: 51 ms a keyword answer, 10 ms after.</li>
+  <li><b>Passages or sources</b> (<code>retrieval_candidates</code>, default <code>auto</code>): passages are used only while every active source has current ones, because a source with none current would be missed rather than ranked lower.</li>
+  <li><b>Graph rows or memory</b> (<code>graph_candidates</code>, default <code>rows</code>): every edge holding a question term is a candidate, ranked with the whole version's statistics. The scorecard holds rows and memory to identical citations on every benchmark question; rows were chosen because they do not grow with the graph (21 ms vs a warm 10 ms on CarePath).</li>
+  <li><b>References are one term.</b> "C-09", "BR-05" and "NFR-06" are indexed whole beside the words and kept beyond the 20-word question cap - that alone took the graph benchmark to 16/16 at the time.</li>
+</ul>
+
+<h2 id="ranking">Ranking</h2>
+<ol class="steps">
+  <li><b>Coverage</b> - texts holding more of the question's terms first.</li>
+  <li><b>BM25</b> - then term weighting.</li>
+  <li><b>Spread</b> - each source's best citation before any source's second.</li>
+</ol>
+<p>Measured against an earlier commit on CarePath: graph answers 11/16 → 15/16 found (MRR 0.53 → 0.69); keyword 8/16 → 14/16 (MRR 0.26 → 0.67); no question worse on either path. Ranking references <i>ahead</i> of words was tried and measured worse (evidence recall 76% → 60%), so it was not kept.</p>
+<div class="why"><span class="label-why">Why</span> Every ranking change needs a before/after benchmark run. The scorecard's baseline today: graph 15/16 found, MRR 0.701; keyword 14/16, MRR 0.674; graph answer 8 ms and keyword 4.8 ms median.</div>
+
+<h3 id="walk">The two-hop walk and followed references</h3>
+<ul>
+  <li><code>graph_ai.walk</code> goes breadth-first from the best AI relationships along other AI relationships, at most 2 hops, stopping at hubs (fan-out 25), adding at most 6 finds - <b>after every direct match</b>, each labelled "Reached by:". Structural edges are never walked: a value node such as "Status: Done" joins hundreds of records.</li>
+  <li>For Code Factory only, <code>graph_ai.referenced</code> adds up to 4 passages naming the most of the ticket's references, after the eight direct matches. Planted-bug evidence recall is measured by the scorecard (baseline 96%).</li>
+</ul>
+
+<h3 id="vectors">Embeddings</h3>
+<p>Embeddings choose starting points, never citations. A vector's nearest relationships or passages are fused with the BM25 order; every one is then verified exactly as a word match is. Vectors are content-addressed per application, so nothing is embedded twice and one application never uses another's. A failed question embedding answers by words and logs <code>embedding_unavailable</code>.</p>
+
+<h2 id="verify">Verification</h2>
+<p>Before a citation is stored or rendered, it must still be active, have an unchanged digest, and its excerpt must still appear in the source. Walked and referenced citations are verified like any other. A passage found by meaning is re-read and re-hashed against the text that was embedded. Then:</p>
+<ul>
+  <li><b>Restricted sources</b> are excluded on every path by <code>KnowledgeEntry.objects.answerable()</code>.</li>
+  <li><b>Source-system permissions</b> (Jira, when the connector enforces them) filter by asker and fail closed.</li>
+  <li><b>Reranking</b> sees verified citations and returns their numbers; anything else is dropped, and any failure keeps the original order. Measure it with <code>manage.py benchmark --rerank --as &lt;user&gt;</code>, the one benchmark run that spends.</li>
+</ul>
+
+<h2 id="rendering">Rendering</h2>
+<p>Streamed text is inserted with <code>textContent</code>. A finished message is replaced by a fragment the server rendered with the <code>chat_text</code> filter, which escapes first and deliberately produces no links. There is one implementation, on the server; it is not reimplemented in JavaScript.</p>
+
+<h2 id="ai-in-graph">How AI extraction stays honest</h2>
+<div class="cards three">
+  <div class="card"><h4>Closed ontology</h4><p>8 types, 12 relations, each relation with allowed types at each end and phrasings it absorbs. The prompt is written from the registry; the validator enforces it.</p></div>
+  <div class="card"><h4>Exact quotes</h4><p>A proposal whose quote is not in the source the model was reading is refused - including one naming another source's id.</p></div>
+  <div class="card"><h4>Careful merges</h4><p>Entities merge only on the same type and the same words (stem- or long-typo-equal, numbers exact). Each edge keeps its own source, digest and quote.</p></div>
+</div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

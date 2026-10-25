@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APIs, MCP and SCIM</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/apis.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>APIs, MCP and SCIM</h1>
+<p class="lede">Machine surfaces live under <code>/api/</code>. They take a bearer token only - never a session cookie - and run exactly the access checks a browser request runs. There is no second permission model.</p>
+
+<h2 id="tokens">Tokens</h2>
+<ul>
+  <li>Any member issues their own on <b>Settings → API access</b>; a token can never do more than its person. It is shown once.</li>
+  <li>Format <code>dbk_&lt;prefix&gt;_&lt;secret&gt;</code>; stored as a SHA-256 digest and compared with <code>hmac.compare_digest</code>. The secret is hashed even when no row matches the prefix, so a missing token and a wrong one cost the same.</li>
+  <li>The application in the address is resolved <b>after</b> the token is checked, so an address that names nothing is answered exactly like an invalid token: 401, without saying which.</li>
+  <li><code>api_auth.authenticate</code> binds row security to the token's application. Revoking the person's grant closes the token with no extra code.</li>
+  <li><b>Rate limit:</b> 120 requests per token per 60 seconds - one Redis counter per token and window when Redis is configured (503 if Redis cannot count), in process otherwise.</li>
+</ul>
+<pre><code>curl -H "Authorization: Bearer dbk_…" \
+  https://&lt;host&gt;/api/v1/applications/&lt;application id&gt;/graph/search/?q=page+size</code></pre>
+
+<h2 id="endpoints">Endpoints</h2>
+<div class="table-wrap"><table>
+  <tr><th>Path (under <code>/api/v1/applications/&lt;id&gt;/</code>)</th><th>What</th><th>Calls a model?</th></tr>
+  <tr><td><code>graph/search/</code></td><td>Search the published graph; each result with its source and exact quote, verified at request time</td><td>No - <code>spend=False</code>: no question embedding, no rerank, whatever the application switched on</td></tr>
+  <tr><td><code>mcp/</code></td><td>Model Context Protocol server (protocol 2025-06-18)</td><td>No</td></tr>
+  <tr><td><code>chat/</code>, <code>chat/&lt;message&gt;/stream/</code></td><td>Ask a question (modes <code>search</code>, <code>ai</code>, <code>graph</code>; up to 4,000 characters); JSON, or server-sent events through the browser's own streaming worker</td><td>Yes - gated on the <code>chat_api</code> feature</td></tr>
+  <tr><td><code>triage/</code>, <code>triage/&lt;run&gt;/</code></td><td>Start a ServiceOps triage for an incident; read its brief with current verification</td><td>Starting one does</td></tr>
+  <tr><td><code>automations/catalog/</code>, <code>automations/invoke/</code>, <code>automations/runs/&lt;run&gt;/</code></td><td>List allowed automations; queue a real run with an idempotency key; read its receipt</td><td>No (it launches an automation - owner only)</td></tr>
+</table></div>
+<p>The Chat API answers through <code>workbench.answer_question</code> and the browser's streaming worker - no second answering path, and no way for a caller to choose a model or a credential. The conversation is looked up by the token's own user. <code>chat_api</code> starts ticked on a new application (a deliberate convenience trade), but migration 0036 wrote it disabled for every application that existed before it, and the endpoint is unreachable without a token.</p>
+
+<h2 id="mcp">MCP tools</h2>
+<div class="table-wrap"><table>
+  <tr><th>Tool</th><th>Input</th><th>Returns</th></tr>
+  <tr><td><code>search_knowledge_graph</code></td><td><code>question</code> (≤ 500 characters), optional <code>version</code> to pin</td><td>Relationships matching the question, each with its source document and exact quoted evidence, verified against the live source</td></tr>
+  <tr><td><code>triage_brief</code></td><td><code>run_id</code></td><td>A saved triage brief with current source verification; no model call</td></tr>
+</table></div>
+<p>Point an MCP-capable assistant at <code>https://&lt;host&gt;/api/v1/applications/&lt;id&gt;/mcp/</code> with the bearer token. The token's user is passed as the viewer, so source permissions apply.</p>
+
+<h2 id="scim">SCIM 2.0 provisioning</h2>
+<div class="kv">
+  <dt>Base</dt><dd><code>/api/scim/v2/Users</code> and <code>/api/scim/v2/Users/&lt;id&gt;</code>; anything else under <code>/api/scim/v2/</code> is refused</dd>
+  <dt>Switched on</dt><dd><code>scim_provisioning = true</code> (refused without the Entra tenant and client ids); a 404 while off</dd>
+  <dt>Token</dt><dd>The mounted file <code>scim_token</code>, at least 32 characters</dd>
+  <dt>Does</dt><dd>Creates accounts (no password, membership or grant), updates name and email, deactivates when unassigned or deleted</dd>
+  <dt>Never</dt><dd>Grants access, reads groups, touches a platform administrator, or deletes a user</dd>
+</div>
+
+<h2 id="internal">Browser routes worth knowing</h2>
+<p>Browser pages live under <code>/applications/&lt;uuid&gt;/…</code> (knowledge, chat, plans, runs, serviceops, settings) and <code>/platform/…</code> (administration). They take cookies only. Popups are plain pages: <code>static/modal.js</code> fetches the link and lifts its <code>&lt;main&gt;</code>, so every popup target also works as a full page with JavaScript off.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

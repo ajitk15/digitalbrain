@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration Reference</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/configuration.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Configuration reference</h1>
+<p class="lede">One TOML file, named by <code>DIGITAL_BRAIN_CONFIG</code> (or rendered by the container entrypoint), plus one file per secret. <code>digitalbrain/configuration.py:load_config</code> refuses any key it does not know, any credential inside the file, and every combination listed under "Refused".</p>
+
+<div class="why"><span class="label-why">Why</span> A configuration that names things but never holds a credential can be committed, reviewed, diffed and rendered from environment variables safely. Refusing unknown keys turns a typo into a startup error instead of a silently ignored setting.</div>
+
+<h2 id="core">Core</h2>
+<div class="table-wrap"><table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th><th>Refused</th></tr>
+  <tr><td><code>mode</code></td><td>required</td><td><code>"development"</code> or <code>"production"</code>. Production turns on secure cookies, HSTS, SSL redirect, required scanning and verified database TLS.</td><td>anything else</td></tr>
+  <tr><td><code>demonstration</code></td><td>false</td><td>A production deployment that is a hosted demo: allows reset and local Code Factory write/tests; every transport and database rule still holds.</td><td></td></tr>
+  <tr><td><code>hosts</code></td><td>-</td><td>Allowed Host headers; any other gets 400.</td><td></td></tr>
+  <tr><td><code>csrf_origins</code></td><td>-</td><td>Trusted origins for form posts behind a proxy.</td><td></td></tr>
+  <tr><td><code>trust_proxy</code></td><td>false</td><td>Believe <code>X-Forwarded-Proto</code> from the proxy. Sound only when nothing but the proxy can reach the listener.</td><td></td></tr>
+  <tr><td><code>web_server</code></td><td>uvicorn if <code>[redis]</code>, else waitress</td><td>Force one server.</td><td></td></tr>
+  <tr><td><code>secret_directory</code></td><td>required</td><td>Operator-mounted secret files, read first.</td><td></td></tr>
+  <tr><td><code>managed_secret_directory</code></td><td>unset</td><td>Where the Credentials screen writes. Unset: credentials are operator-only.</td><td>same as <code>secret_directory</code></td></tr>
+  <tr><td><code>connector_secret_directory</code></td><td>unset</td><td>Shared <code>jira</code>, <code>git_read</code>, <code>git_write</code>, <code>servicenow</code> for every application without its own. Never model providers.</td><td></td></tr>
+</table></div>
+
+<h2 id="documents">Documents</h2>
+<div class="table-wrap"><table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th><th>Refused</th></tr>
+  <tr><td><code>scanner</code></td><td>-</td><td>Absolute path to <code>clamscan</code>.</td><td>not an absolute path to a file</td></tr>
+  <tr><td><code>clamd</code></td><td>-</td><td><code>"host:port"</code> or a socket path of a ClamAV daemon (preferred).</td><td></td></tr>
+  <tr><td><code>scan_documents</code></td><td>false (always on in production)</td><td>Require a scan in development too.</td><td></td></tr>
+  <tr><td><code>keep_original_documents</code></td><td>true</td><td>False deletes each original on commit of a successful conversion.</td><td></td></tr>
+  <tr><td><code>ocr</code>, <code>tesseract_path</code></td><td>false (entrypoint writes true)</td><td>Read scans and images with Tesseract.</td><td></td></tr>
+  <tr><td><code>import_max_files</code></td><td>100</td><td>Files one GitHub tree or SharePoint folder import may take.</td><td></td></tr>
+  <tr><td><code>fetch_allow_hosts</code></td><td>[]</td><td>Hosts the fetcher may reach even on private addresses.</td><td>a wildcard</td></tr>
+  <tr><td><code>sharepoint_tenant</code>, <code>sharepoint_client_id</code></td><td>-</td><td>App-only SharePoint access; secret <code>sharepoint_&lt;app id&gt;</code>. Prefer <code>Sites.Selected</code> over <code>Sites.Read.All</code>.</td><td></td></tr>
+  <tr><td><code>[originals]</code></td><td><code>store = "disk"</code></td><td><code>store</code>, <code>bucket</code>, <code>region</code>, <code>endpoint</code>, <code>prefix</code>, <code>server_side_encryption</code> (<code>AES256</code> or <code>aws:kms</code>). Keys: <code>originals_access_key_id</code>, <code>originals_secret_access_key</code>.</td><td>http endpoint in production</td></tr>
+</table></div>
+
+<h2 id="code-keys">Code</h2>
+<div class="table-wrap"><table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th><th>Refused</th></tr>
+  <tr><td><code>code_graph_local_roots</code></td><td>unset</td><td>Server folders Code Graph may index.</td><td>a drive root</td></tr>
+  <tr><td><code>code_factory_local_write</code></td><td>false</td><td>Deliver an approved change into the indexed folder.</td><td>production unless demonstration</td></tr>
+  <tr><td><code>code_factory_local_tests</code></td><td>false</td><td>Let an approver run that folder's pytest suite.</td><td>production unless demonstration</td></tr>
+  <tr><td><code>allow_self_approval</code></td><td>true</td><td>Let a plan's author approve it; recorded either way.</td><td>never</td></tr>
+  <tr><td><code>allow_demo_reset</code></td><td>false</td><td>Let a platform admin empty an organization.</td><td>production unless demonstration</td></tr>
+</table></div>
+
+<h2 id="ai-keys">AI</h2>
+<div class="table-wrap"><table>
+  <tr><th>Key</th><th>Default</th><th>Meaning</th><th>Refused</th></tr>
+  <tr><td><code>claude_use_host_login</code></td><td>false</td><td>Let the CLI use the developer's own Claude login when an app has no credential.</td><td>production, always</td></tr>
+  <tr><td><code>claude_messages_api</code></td><td>true</td><td>One-shot API-key calls as one Messages request; false sends all to the CLI.</td><td></td></tr>
+  <tr><td><code>[ai_gateway]</code></td><td>4 / 16 / 30 / 15</td><td><code>max_calls_per_application</code>, <code>max_calls_per_provider</code>, <code>slot_wait_seconds</code>, <code>admission_minutes</code>.</td><td>non-positive (0 allowed for slot wait)</td></tr>
+  <tr><td><code>retrieval_candidates</code></td><td><code>"auto"</code></td><td><code>"sources"</code>, <code>"chunks"</code> or auto.</td><td>anything else</td></tr>
+  <tr><td><code>graph_candidates</code></td><td><code>"rows"</code></td><td>Graph answers from rows or prepared JSON (<code>"memory"</code>).</td><td>anything else</td></tr>
+</table></div>
+
+<h2 id="infra-keys">Database, streams, telemetry, retention</h2>
+<div class="table-wrap"><table>
+  <tr><th>Key</th><th>Meaning</th><th>Refused</th></tr>
+  <tr><td><code>[database]</code></td><td><code>name</code>, <code>user</code>, <code>host</code>, <code>port</code>, <code>sslrootcert</code>, <code>runtime_user</code>, <code>password_secret</code> (one of two names). Absent: SQLite at <code>.runtime/</code> in development. Production requires <code>sslrootcert</code> (verify-full).</td><td>any credential field</td></tr>
+  <tr><td><code>[redis]</code></td><td><code>host</code>, <code>port</code>, <code>db</code>, <code>tls</code>, <code>ca_certificate</code>, <code>username</code>; password is the file <code>redis_password</code>.</td><td>no verified TLS in production; together with <code>shared_streams</code></td></tr>
+  <tr><td><code>shared_streams</code></td><td>Several processes, no Redis: Stop and is-live through a database lease.</td><td>with <code>[redis]</code></td></tr>
+  <tr><td><code>[otel]</code></td><td><code>endpoint</code>, <code>service_name</code>, <code>sample_ratio</code>, <code>ca_certificate</code>, <code>authorization</code> (use the file <code>otel_authorization</code>), <code>metrics</code>, <code>metric_interval_seconds</code>.</td><td>http in production</td></tr>
+  <tr><td><code>[retention]</code></td><td><code>audit_days</code>, <code>usage_days</code>; 0 or absent keeps everything.</td><td>under 2,192 or 400 days</td></tr>
+  <tr><td><code>entra_tenant</code>, <code>entra_client_id</code>, <code>entra_create_users</code>, <code>scim_provisioning</code></td><td>Microsoft sign-in and provisioning; secrets <code>entra_client_secret</code>, <code>scim_token</code>.</td><td><code>common</code> / <code>organizations</code> tenants; SCIM without Entra ids</td></tr>
+</table></div>
+
+<h2 id="secrets-files">Secret files</h2>
+<div class="table-wrap"><table>
+  <tr><th>File</th><th>Holds</th></tr>
+  <tr><td><code>django_secret_key</code> (+ <code>django_secret_key_previous</code>)</td><td>Signing key; the previous one keeps sessions and authenticator seeds readable during rotation</td></tr>
+  <tr><td><code>database_password</code>, <code>database_runtime_password</code></td><td>Owner and runtime roles</td></tr>
+  <tr><td><code>redis_password</code></td><td>Redis</td></tr>
+  <tr><td><code>&lt;provider&gt;_&lt;application id&gt;</code></td><td><code>claude</code>, <code>openai</code>, Jira, GitHub read/write, ServiceNow, SharePoint… per application</td></tr>
+  <tr><td><code>&lt;provider&gt;_default</code></td><td>A template copied when an application is created; never read at request time</td></tr>
+  <tr><td><code>masking_key_&lt;application id&gt;</code></td><td>HMAC key for masked placeholders</td></tr>
+  <tr><td><code>originals_access_key_id</code>, <code>originals_secret_access_key</code></td><td>S3</td></tr>
+  <tr><td><code>entra_client_secret</code>, <code>scim_token</code>, <code>otel_authorization</code></td><td>Identity and telemetry</td></tr>
+</table></div>
+<p>On POSIX each must be mode 0600 and owned by the process user (uid 10001 in the image). <code>.env</code> accepts only <code>SITE_ADMIN_USER_ID</code>.</p>
+
+<h2 id="env">Container environment variables</h2>
+<p>When no file is mounted at <code>/etc/digitalbrain/production.toml</code>, <code>deploy/entrypoint.sh</code> renders the configuration from these (none holds a secret):</p>
+<div class="table-wrap"><table>
+  <tr><th>Variable</th><th>Renders</th></tr>
+  <tr><td><code>DIGITAL_BRAIN_ROLE</code></td><td><code>all</code> (default), <code>web</code>, <code>worker</code> or <code>migrate</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_MIGRATIONS</code></td><td><code>apply</code> or <code>wait</code> (workers always wait)</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_LANES</code>, <code>DIGITAL_BRAIN_CONCURRENCY</code></td><td>A worker's lanes and threads</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_HOSTS</code>, <code>DIGITAL_BRAIN_PORT</code>, <code>DIGITAL_BRAIN_HOST</code>, <code>DIGITAL_BRAIN_INSTANCE</code>, <code>DIGITAL_BRAIN_TRUSTED_PROXY</code></td><td>Listener and proxy</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_REDIS</code>, <code>DIGITAL_BRAIN_CLAMD</code>, <code>DIGITAL_BRAIN_OTEL</code></td><td><code>[redis]</code> (TLS against the shared CA), <code>clamd</code>, <code>[otel]</code> (https)</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_ORIGINALS_BUCKET</code>, <code>DIGITAL_BRAIN_ORIGINALS_REGION</code></td><td><code>[originals] store = "s3"</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_OCR</code>, <code>DIGITAL_BRAIN_FRESHCLAM</code>, <code>DIGITAL_BRAIN_IMPORT_MAX_FILES</code></td><td>OCR (on unless 0), daily signature refresh, import limit</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_SELF_APPROVAL</code>, <code>DIGITAL_BRAIN_DEMONSTRATION</code></td><td><code>allow_self_approval</code> (0 = false), demonstration mode</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_ENTRA_TENANT</code>, <code>DIGITAL_BRAIN_ENTRA_CLIENT_ID</code>, <code>DIGITAL_BRAIN_SCIM</code></td><td>Microsoft sign-in and provisioning</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE</code></td><td>0 connects as the owner again</td></tr>
+</table></div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

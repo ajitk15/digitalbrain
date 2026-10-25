@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security and HIPAA</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/security.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Security and HIPAA safeguards</h1>
+<p class="lede">The defences in depth, from the browser to the database, and how they map to the HIPAA technical safeguards (45 CFR §164.312) that the scorecard probes on every change.</p>
+
+<figure class="figure">
+  <div class="fig-title">Layers a request and its data pass through</div>
+  <svg viewBox="0 0 940 300" role="img" aria-labelledby="sec-t">
+    <title id="sec-t">Concentric layers: transport security, the web edge with CSP and cookies, authentication, per-request access checks, row-level security in the database, and secrets held in files outside the database.</title>
+    <rect x="10" y="10" width="920" height="280" rx="18" class="zone"/>
+    <text x="28" y="34" class="t-zone">Transport - TLS everywhere: proxy, PostgreSQL verify-full, Redis TLS, OTLP https, S3 https</text>
+    <rect x="40" y="48" width="860" height="230" rx="16" class="zone-solid"/>
+    <text x="58" y="72" class="t-zone">Web edge - CSP pinned by a test · HSTS 1 year · Secure, HttpOnly, SameSite=Lax cookies · 30-min sessions</text>
+    <rect x="70" y="86" width="800" height="180" rx="14" class="box"/>
+    <text x="88" y="110" class="t-zone">Authentication - Argon2 · lockout 5/15 min · optional TOTP · Entra OIDC (grants nothing) · bearer tokens</text>
+    <rect x="100" y="124" width="740" height="130" rx="12" class="box-blue"/>
+    <text x="118" y="148" class="t-zone">Authorization - deny by default · every request and every tool call · 404, never 403</text>
+    <rect x="130" y="162" width="440" height="80" rx="10" class="box-teal"/>
+    <text x="350" y="190" text-anchor="middle" class="t">Database - runtime role, rows only</text>
+    <text x="350" y="210" text-anchor="middle" class="t-xs">FORCEd row security keyed on digitalbrain.tenant</text>
+    <text x="350" y="226" text-anchor="middle" class="t-xs">a missing filter reads another app's row as not found</text>
+    <rect x="590" y="162" width="230" height="80" rx="10" class="box-rose"/>
+    <text x="705" y="190" text-anchor="middle" class="t">Secrets in files</text>
+    <text x="705" y="210" text-anchor="middle" class="t-xs">0600, one per provider per app</text>
+    <text x="705" y="226" text-anchor="middle" class="t-xs">never env, row, audit or browser</text>
+  </svg>
+</figure>
+
+<h2 id="hipaa">HIPAA technical safeguards (§164.312)</h2>
+<p>The scorecard's <b>HIPAA safeguards</b> aspect runs these probes against a real throwaway workspace and must stay at 100%. They cover the technical safeguards; administrative and physical safeguards, business associate agreements with AI providers, and backups are the deploying organization's.</p>
+<div class="table-wrap"><table>
+  <tr><th>Standard</th><th>What the platform does</th><th>Probed</th></tr>
+  <tr><td><b>(a)(1) Access control</b></td><td>Unique user accounts; per-application grants checked on every request and tool call; row security underneath; access that expires; automatic logoff after 30 minutes; restricted sources never reach AI.</td><td>No grant reads as not found · a viewer cannot add knowledge · another application's source reads as not found · restricted sources never reach AI</td></tr>
+  <tr><td><b>(b) Audit controls</b></td><td><code>AuditEvent</code> for every control-plane act, field names and ids only; kept six years minimum when a window is set; partitioned by month on PostgreSQL.</td><td>Every source added is audited</td></tr>
+  <tr><td><b>(c)(1) Integrity</b></td><td>Every source has a SHA-256 digest; every citation re-verifies digest and quote; a changed source is no longer cited; originals keep their SHA-256; PostgreSQL initialised with data checksums.</td><td>Citations re-verify · a changed source is no longer cited</td></tr>
+  <tr><td><b>(d) Person or entity authentication</b></td><td>Argon2 passwords (14+ characters, common and numeric refused); lockout after 5 failures for 15 minutes; optional TOTP; Entra pinned to one tenant; API tokens stored as digests.</td><td>Argon2 · repeated failures lock out · sessions expire within 30 minutes</td></tr>
+  <tr><td><b>(e)(1) Transmission security</b></td><td>HTTPS with HSTS and SSL redirect in production; PostgreSQL <code>verify-full</code>; Redis TLS required in production; OTLP and S3 endpoints https in production.</td><td>Session cookies HTTP-only · strict CSP</td></tr>
+</table></div>
+<p>Related, also measured: personal data found by the scan (100%), scan findings that are real (100%), restricted sources reaching any AI path (0), records shown to someone their source system denies (0).</p>
+
+<h2 id="secrets">Secrets</h2>
+<ul>
+  <li><b>Files, never environment variables or rows.</b> <code>configuration.read_secret</code> refuses a file with any group or other permission bit on POSIX, or an empty one. <code>.env</code> accepts only <code>SITE_ADMIN_USER_ID</code>. Configuration tables (<code>[database]</code>, <code>[redis]</code>) refuse a credential field outright.</li>
+  <li><b>Two directories, the operator's wins.</b> <code>secret_directory</code> is mounted read-only; <code>managed_secret_directory</code> (unset by default) is where the Credentials screen writes, and must differ. A credential projected from a secret manager is never overridden by one typed in a browser.</li>
+  <li><b>Self-service was a deliberate trade.</b> The old rule ended "never a form field". It now allows an owner to set credentials, written only by <code>secrets.py</code> as the same 0600 file; the value is never redisplayed, and <code>ManagedCredential</code> keeps who, when and a salted digest. <code>django_secret_key</code> and <code>database_password</code> are not manageable this way - the process could lock itself out.</li>
+  <li><b>Shared connector folder</b> (unset by default) gives up per-application isolation <i>for connectors only</i> (<code>jira</code>, <code>git_read</code>, <code>git_write</code>, <code>servicenow</code>) and is consulted last. Model providers are never read from it, because billing depends on per-application keys.</li>
+  <li><b>Database password</b> is sent as a SCRAM verifier computed in the process, so a server logging DDL logs no password.</li>
+</ul>
+
+<h2 id="web-edge">The web edge</h2>
+<p>The exact Content Security Policy, asserted by <code>test_security.py</code>:</p>
+<pre><code>default-src 'none'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self';
+form-action 'self'; base-uri 'none'; frame-ancestors 'none'</code></pre>
+<ul>
+  <li>No <code>unsafe-inline</code>, no external origins. <code>connect-src 'self'</code> exists for the chat EventSource. Because <code>style-src 'self'</code> forbids writing styles from script, popups use the native <code>&lt;dialog&gt;</code>.</li>
+  <li><code>Permissions-Policy: camera=(), microphone=(), geolocation=()</code>; <code>X-Content-Type-Options: nosniff</code>; <code>Referrer-Policy: same-origin</code>; <code>X-Frame-Options</code>.</li>
+  <li>Production: HSTS one year with subdomains and preload, SSL redirect, Secure cookies. <code>manage.py check --deploy --fail-level WARNING</code> runs on every container start, so a misconfiguration stops the deploy.</li>
+  <li>Cookies only on browser routes, bearer tokens only on <code>/api/v1/</code>: accepting both would make the API CSRF-able.</li>
+  <li>Requests over the body limit are refused before Django reads them (413; 411 with no length under uvicorn). <code>X-Forwarded-*</code> is believed only from the trusted proxy.</li>
+</ul>
+
+<h2 id="outbound">Outbound requests</h2>
+<p><code>fetching.py</code> is the only place a user-supplied URL is retrieved. It resolves first, refuses private, loopback, link-local, multicast and reserved addresses (unless an operator named the host in <code>fetch_allow_hosts</code>), pins the connection to a validated address so DNS cannot change underneath it, dials each validated address in turn and sends the request once. http/https only, no redirects, 8 MB and 20 s caps, no credentials attached. The Code Graph clone is the one exception, and takes no URL.</p>
+
+<h2 id="content-safety">Handling outside content</h2>
+<div class="cards two">
+  <div class="card"><h4>Scan before anything</h4><p>ClamAV, fail closed, signatures at most seven days old. A first-boot daemon serving stale bundled signatures is refused until restarted.</p></div>
+  <div class="card"><h4>Convert offline</h4><p>The extractor subprocess patches <code>socket.connect</code> to raise; OCR is handed a file. A bucket original is copied to a private 0700 directory for the scan and extraction, removed after.</p></div>
+  <div class="card"><h4>Sandbox container</h4><p>Intake, code-graph and factory lanes run read-only with <code>/tmp</code> as tmpfs, every capability dropped, no-new-privileges, 512 processes and 6 GB.</p></div>
+  <div class="card"><h4>Never run what it reads</h4><p>git hooks redirected, no submodules, no git at all in a server folder. Code Factory never runs code - except opt-in local tests on an approver's press, refused in production.</p></div>
+  <div class="card"><h4>Server folders inside operator roots</h4><p><code>code_graph_local_roots</code> unset by default; drive roots refused; paths resolved before judged; secret directories, symlinks, junctions and hidden folders never entered.</p></div>
+  <div class="card"><h4>Model output is data</h4><p>Never rendered as Markdown; every quote looked up; a model can choose no credential, model or tool beyond the two bound ones.</p></div>
+</div>
+
+<h2 id="identity">Identity providers</h2>
+<ul>
+  <li><b>Entra ID</b> (<code>sso.py</code>): code flow with PKCE, pinned to one tenant (<code>common</code> and <code>organizations</code> refused), RS256 by a tenant-published key, exact <code>iss</code>/<code>aud</code>/<code>tid</code>/<code>nonce</code>. First sign-in links by sign-in name only when exactly one user matches, is not linked elsewhere, and is <b>not a platform administrator</b> (an operator links those with <code>manage.py link_sso</code>). Groups and roles are never read.</li>
+  <li><b>SCIM</b> (<code>scim.py</code>): off by default and a 404 while off; bearer token of 32+ characters from a mounted file; touches only accounts it created or one matched by sign-in name; never a platform administrator; groups refused; users deactivated, never deleted; every change audited by the non-login <code>entra-provisioning</code> account.</li>
+</ul>
+
+<h2 id="refusals">What production refuses</h2>
+<div class="table-wrap"><table class="matrix">
+  <tr><th>Setting</th><th>Development</th><th>Production demonstration</th><th>Production</th></tr>
+  <tr><td><code>claude_use_host_login</code></td><td class="yes">allowed</td><td class="refused">refused</td><td class="refused">refused</td></tr>
+  <tr><td><code>allow_demo_reset</code></td><td class="yes">allowed</td><td class="yes">allowed</td><td class="refused">refused</td></tr>
+  <tr><td><code>code_factory_local_write</code>, <code>code_factory_local_tests</code></td><td class="yes">allowed</td><td class="yes">allowed</td><td class="refused">refused</td></tr>
+  <tr><td>Redis without verified TLS</td><td class="yes">allowed</td><td class="refused">refused</td><td class="refused">refused</td></tr>
+  <tr><td>http OTLP collector or S3 endpoint</td><td class="yes">allowed</td><td class="refused">refused</td><td class="refused">refused</td></tr>
+  <tr><td>Audit window under 2,192 days, receipts under 400</td><td class="refused">refused</td><td class="refused">refused</td><td class="refused">refused</td></tr>
+  <tr><td><code>allow_self_approval</code></td><td class="yes">on by default</td><td class="yes">on by default</td><td class="yes">accepted - recorded on the plan</td></tr>
+</table></div>
+<div class="why"><span class="label-why">Why</span> The refused settings spend somebody else's money or change somebody else's work; self-approval only records a weaker fact about a change, so it is the one that is accepted - and the approver is stored, so the audit record says so.</div>
+
+<h2 id="retention">Retention</h2>
+<p>Nothing removes audit events or receipts by default. <code>[retention] audit_days</code> and <code>usage_days</code> set windows, refused below six years (HIPAA documentation, §164.316(b)(2)) and 400 days. The maintenance lane deletes oldest first in batches and logs counts, never rows. On PostgreSQL a whole monthly audit partition is dropped only when every row in it is past the window.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

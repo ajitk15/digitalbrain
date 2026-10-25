@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment Strategies</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="deploy/index.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Deployment</div>
+<span class="tag ops">Deployment</span>
+<h1>Deployment strategies</h1>
+<p class="lede">One image and one codebase run in five shapes, from a laptop with no services to a managed cloud. They differ in where the services live and how many processes serve - never in what the platform checks. Production rules are the same everywhere production mode is on.</p>
+
+<h2 id="choose">Choose a shape</h2>
+<figure class="figure">
+  <svg viewBox="0 24 940 276" role="img" aria-labelledby="dp-t">
+    <title id="dp-t">Five deployment shapes from simplest to most scalable: local without Docker, local with Docker services, a single VPS with Docker Compose, the scaled split, and a managed cloud.</title>
+    <defs><marker id="d1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <path d="M30 270H910" class="edge" marker-end="url(#d1)"/>
+    <text x="30" y="290" class="t-xs">simplest</text><text x="910" y="290" text-anchor="end" class="t-xs">most scalable, most managed</text>
+    <g><rect x="20" y="40" width="168" height="210" rx="12" class="box"/>
+      <text x="104" y="66" text-anchor="middle" class="t">Local, no Docker</text>
+      <text x="34" y="92" class="t-xs">SQLite file</text><text x="34" y="108" class="t-xs">waitress, one process</text><text x="34" y="124" class="t-xs">lanes in-process</text><text x="34" y="140" class="t-xs">no scanner unless</text><text x="34" y="156" class="t-xs">clamscan installed</text>
+      <text x="34" y="196" class="t-xs t-teal">for: trying it,</text><text x="34" y="212" class="t-xs t-teal">UI work</text></g>
+    <g><rect x="200" y="40" width="168" height="210" rx="12" class="box-blue"/>
+      <text x="284" y="66" text-anchor="middle" class="t">Local + services</text>
+      <text x="214" y="92" class="t-xs">start-all.cmd</text><text x="214" y="108" class="t-xs">PostgreSQL 16, Redis</text><text x="214" y="124" class="t-xs">TLS, clamd in Docker</text><text x="214" y="140" class="t-xs">uvicorn, runtime role,</text><text x="214" y="156" class="t-xs">row security on</text>
+      <text x="214" y="196" class="t-xs t-teal">for: everyday</text><text x="214" y="212" class="t-xs t-teal">development</text></g>
+    <g><rect x="380" y="40" width="168" height="210" rx="12" class="box-teal"/>
+      <text x="464" y="66" text-anchor="middle" class="t">Single VPS</text>
+      <text x="394" y="92" class="t-xs">docker-compose.yaml</text><text x="394" y="108" class="t-xs">one app container</text><text x="394" y="124" class="t-xs">+ postgres + redis</text><text x="394" y="140" class="t-xs">proxy terminates TLS</text><text x="394" y="156" class="t-xs">named volumes only</text>
+      <text x="394" y="196" class="t-xs t-teal">for: a demo, a</text><text x="394" y="212" class="t-xs t-teal">small team</text></g>
+    <g><rect x="560" y="40" width="168" height="210" rx="12" class="box-violet"/>
+      <text x="644" y="66" text-anchor="middle" class="t">Scaled split</text>
+      <text x="574" y="92" class="t-xs">+ scale.yaml</text><text x="574" y="108" class="t-xs">migrate job, web × N</text><text x="574" y="124" class="t-xs">worker, sandbox, clamd</text><text x="574" y="140" class="t-xs">+ observability</text><text x="574" y="156" class="t-xs">overlay (optional)</text>
+      <text x="574" y="196" class="t-xs t-teal">for: more users,</text><text x="574" y="212" class="t-xs t-teal">isolation of parsers</text></g>
+    <g><rect x="740" y="40" width="180" height="210" rx="12" class="box-amber"/>
+      <text x="830" y="66" text-anchor="middle" class="t">Managed cloud</text>
+      <text x="754" y="92" class="t-xs">same four roles on</text><text x="754" y="108" class="t-xs">containers; managed</text><text x="754" y="124" class="t-xs">PostgreSQL, Redis,</text><text x="754" y="140" class="t-xs">S3-compatible store,</text><text x="754" y="156" class="t-xs">secrets as files</text>
+      <text x="754" y="196" class="t-xs t-teal">for: production,</text><text x="754" y="212" class="t-xs t-teal">HA and backups</text></g>
+  </svg>
+</figure>
+
+<div class="table-wrap"><table class="matrix">
+  <tr><th></th><th>Local, no Docker</th><th>Local + services</th><th>Single VPS</th><th>Scaled split</th><th>Managed cloud</th></tr>
+  <tr><td>Mode</td><td>development</td><td>development</td><td>production (demonstration)</td><td>production (demonstration)</td><td>production</td></tr>
+  <tr><td>Database</td><td>SQLite</td><td>PostgreSQL 16 (Docker)</td><td>PostgreSQL 16 container</td><td>PostgreSQL 16 container</td><td>Managed PostgreSQL 16</td></tr>
+  <tr><td>Row security</td><td class="no">no (code only)</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td><td class="yes">yes</td></tr>
+  <tr><td>Redis / server</td><td>none / waitress</td><td>TLS / uvicorn</td><td>TLS / uvicorn</td><td>TLS / uvicorn</td><td>Managed, TLS / uvicorn</td></tr>
+  <tr><td>Web replicas</td><td>1</td><td>1</td><td>1</td><td>N</td><td>N</td></tr>
+  <tr><td>Virus scan</td><td>clamscan if installed</td><td>clamd</td><td>clamscan in container</td><td>clamd</td><td>clamd</td></tr>
+  <tr><td>Parsers isolated</td><td class="no">no</td><td class="no">no</td><td class="no">no</td><td class="yes">sandbox</td><td class="yes">sandbox</td></tr>
+  <tr><td>Originals</td><td>disk</td><td>S3 dev bucket or disk</td><td>S3</td><td>S3</td><td>Object store</td></tr>
+  <tr><td>Claude host login</td><td class="yes">allowed</td><td class="yes">allowed</td><td class="refused">refused</td><td class="refused">refused</td><td class="refused">refused</td></tr>
+  <tr><td>Demo reset, local Code Factory</td><td class="yes">allowed</td><td class="yes">allowed</td><td class="yes">demonstration only</td><td class="yes">demonstration only</td><td class="refused">refused</td></tr>
+</table></div>
+
+<h2 id="same-everywhere">What is the same everywhere</h2>
+<div class="cards three">
+  <div class="card"><h4>One image</h4><p><code>Dockerfile</code> targets <code>runtime</code> (production) and <code>demo</code> (adds the CarePath source, a test environment, Playwright and Chromium). User <code>brain</code>, uid 10001; <code>tini</code> as PID 1; port 8000.</p></div>
+  <div class="card"><h4>Four roles</h4><p><code>DIGITAL_BRAIN_ROLE</code> = <code>all</code>, <code>web</code>, <code>worker</code> or <code>migrate</code>. Any shape is a choice of which containers run which role.</p></div>
+  <div class="card"><h4>Secrets are files</h4><p>Mounted read-only at <code>/run/secrets</code>, mode 0600 owned by uid 10001. Browser-managed credentials in a separate writable volume.</p></div>
+  <div class="card"><h4>Migrations under a lock</h4><p><code>apply_migrations</code> as the owner, creating the runtime role; everyone else waits. Each migration is safe for the previous release (expand, then contract).</p></div>
+  <div class="card"><h4>Checked at start</h4><p><code>manage.py check --deploy --fail-level WARNING</code> on every container start; <code>load_config</code> refuses unsafe settings.</p></div>
+  <div class="card"><h4>Health</h4><p>HTTP health check with an allowed Host header for web; <code>queue_status --check --lanes</code> for workers.</p></div>
+</div>
+
+<h2 id="pages">Where to go next</h2>
+<div class="cards two">
+  <a class="card" href="local.html"><h4>Local development</h4><p>With and without Docker; how the two configuration files work.</p></a>
+  <a class="card" href="compose.html"><h4>Docker Compose</h4><p>The single VPS, the scaled split, and the observability overlay.</p></a>
+  <a class="card" href="cloud.html"><h4>AWS, Azure and Google Cloud</h4><p>Mapping each component onto managed services, and the gaps to close.</p></a>
+  <a class="card" href="operations.html"><h4>Running it</h4><p>Secrets, TLS, migrations, upgrades, backups and restores.</p></a>
+</div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

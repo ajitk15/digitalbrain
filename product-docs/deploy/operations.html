@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Running It</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="deploy/operations.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › <a href="index.html">Deployment</a></div>
+<span class="tag ops">Deployment</span>
+<h1>Running it: secrets, TLS, upgrades, backups</h1>
+<p class="lede">What an operator does after the first deploy - and why each step is shaped the way it is. These hold on every deployment shape; the commands use Docker Compose, and the same <code>manage.py</code> commands run in any container.</p>
+
+<h2 id="secrets">Secrets</h2>
+<div class="table-wrap"><table>
+  <tr><th>File in <code>/run/secrets</code></th><th>What</th><th>Made by</th></tr>
+  <tr><td><code>django_secret_key</code></td><td>Signs sessions; seals authenticator seeds</td><td>secrets-init or the entrypoint, once, if missing</td></tr>
+  <tr><td><code>django_secret_key_previous</code></td><td>The old key, during a rotation</td><td>You</td></tr>
+  <tr><td><code>database_password</code></td><td>The owner's password (migrations)</td><td>secrets-init</td></tr>
+  <tr><td><code>database_runtime_password</code></td><td>The runtime role's password</td><td>secrets-init or the entrypoint</td></tr>
+  <tr><td><code>redis_password</code></td><td>Redis</td><td>secrets-init</td></tr>
+  <tr><td><code>originals_access_key_id</code>, <code>originals_secret_access_key</code></td><td>The bucket</td><td>You</td></tr>
+  <tr><td><code>entra_client_secret</code>, <code>scim_token</code></td><td>Microsoft sign-in, provisioning (32+ characters)</td><td>You</td></tr>
+  <tr><td><code>otel_authorization</code></td><td>A collector's credential, if it needs one</td><td>You</td></tr>
+  <tr><td><code>&lt;provider&gt;_&lt;application id&gt;</code>, <code>masking_key_&lt;application id&gt;</code></td><td>Per-application credentials and masking keys (or set in the browser, into the managed directory)</td><td>You or an owner</td></tr>
+</table></div>
+<p>Every file: mode 0600, readable by uid 10001. The platform refuses a secret with any group or other permission bit. An operator's file always wins over one typed into the Credentials screen, which is why moving a credential into a secret manager needs no change in the product.</p>
+
+<h3 id="rotate">Rotating</h3>
+<ul>
+  <li><b>Signing key:</b> put the old value in <code>django_secret_key_previous</code>, the new one in <code>django_secret_key</code>, restart. Sessions and authenticator seeds still open under the previous key. Replaced outright, everyone is signed out and every authenticator app needs a recovery code.</li>
+  <li><b>Database runtime role:</b> replace <code>database_runtime_password</code> and deploy. <code>apply_migrations</code> states the role's password again on every run, sent as a SCRAM verifier computed in the process, so a server that logs DDL logs no password.</li>
+  <li><b>Owner, Redis:</b> change them on the server and in the file together (in compose, the copies in <code>database-secret</code> and <code>redis-config</code> too).</li>
+  <li><b>Provider credentials:</b> an owner replaces them on <b>Settings → Credentials</b>; the value is never shown again. Or replace the file in <code>/run/secrets</code>.</li>
+</ul>
+
+<h2 id="tls">TLS</h2>
+<div class="cards two">
+  <div class="card"><h4>To the browser</h4><p>Terminated by the reverse proxy or load balancer, which sets <code>X-Forwarded-Proto</code>. The platform sends HSTS, secure cookies and its CSP; <code>check --deploy</code> fails a start whose cookie or proxy settings are wrong.</p></div>
+  <div class="card"><h4>Inside</h4><p>PostgreSQL with <code>verify-full</code> and <code>hostssl</code> only; Redis on its TLS port only; the collector over https. In compose one CA, made on first boot and valid ten years, issues all three certificates, each named for the host the platform dials.</p></div>
+</div>
+<p>To renew the internal certificates in compose, remove <code>server.key</code> <b>and</b> <code>redis.key</code> from the <code>postgres-certs</code> volume (and <code>otel-collector.key</code> from <code>otel-certs</code>, if you run the overlay) and redeploy. A missing <code>server.key</code> makes the init service issue a new CA with the PostgreSQL certificate, so every certificate must be issued again from it at the same time.</p>
+
+<h2 id="upgrades">Upgrades and migrations</h2>
+<figure class="figure">
+  <div class="fig-title">Expand, then contract: why an upgrade never needs downtime</div>
+  <svg viewBox="0 0 940 230" role="img" aria-labelledby="up-t" data-cycle="12">
+    <title id="up-t">Release N is serving. The migrate job applies release N+1's additive migrations while release N still serves against the new schema. Then web and worker roll to N+1. Removing an old column waits for a later release, after no code reads it.</title>
+    <defs><marker id="u1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <path d="M20 200H920" class="edge" marker-end="url(#u1)"/><text x="920" y="220" text-anchor="end" class="t-xs">time</text>
+    <g data-at="0"><rect x="20" y="30" width="200" height="70" rx="10" class="box-blue"/><text x="120" y="58" text-anchor="middle" class="t">Release N serves</text><text x="120" y="78" text-anchor="middle" class="t-xs">schema N</text></g>
+    <g data-at="0.16"><rect x="250" y="30" width="200" height="70" rx="10" class="box-amber"/><text x="350" y="58" text-anchor="middle" class="t">migrate job (N+1)</text><text x="350" y="78" text-anchor="middle" class="t-xs">additive only, under a lock</text>
+      <rect x="250" y="120" width="200" height="56" rx="10" class="box-blue"/><text x="350" y="146" text-anchor="middle" class="t-sm">N still serves on</text><text x="350" y="164" text-anchor="middle" class="t-xs">schema N+1 - safe</text></g>
+    <g data-at="0.36"><rect x="480" y="30" width="200" height="70" rx="10" class="box-teal"/><text x="580" y="58" text-anchor="middle" class="t">Roll web, then workers</text><text x="580" y="78" text-anchor="middle" class="t-xs">workers finish their step</text></g>
+    <g data-at="0.56"><rect x="710" y="30" width="210" height="70" rx="10" class="box"/><text x="815" y="58" text-anchor="middle" class="t">A later release</text><text x="815" y="78" text-anchor="middle" class="t-xs">removes what N stopped using</text></g>
+    <path d="M220 65H248M450 65H478M680 65H708" class="edge flow" marker-end="url(#u1)"/>
+    <g data-at="0.7"><text x="580" y="150" text-anchor="middle" class="t-xs t-teal">rollback = previous image;</text><text x="580" y="166" text-anchor="middle" class="t-xs t-teal">the schema stays, and it runs</text></g>
+  </svg>
+</figure>
+<ul>
+  <li><b>One applier.</b> <code>manage.py apply_migrations</code> holds a session advisory lock on a connection of its own; a second caller says it is waiting, then finds nothing to do. It lifts the 10 s statement timeout for itself (an index on a large table outlasts a request's limit), keeps the lock timeout, and retries a migration only on <code>lock_not_available</code> - each migration is one transaction on PostgreSQL, so a retry starts clean.</li>
+  <li><b>Expand, then contract.</b> A column is added nullable or with a database default - a Python default is dropped once the column is filled, so the old release's inserts would fail. Removing or renaming waits a release. <code>test_migration_job</code> refuses anything else unless it is named as the second half of such a pair.</li>
+  <li><b>Every run also</b> creates or corrects the runtime role (undoing any privilege added by hand) and makes the audit table's monthly partitions ahead.</li>
+  <li><b>Order:</b> build the image → run the migrate job to completion → roll the web replicas → roll worker and sandbox. A stop is honoured between steps, so a conversion or paid call in progress finishes and is recorded.</li>
+  <li><b>Before restarting the process that runs the factory lane,</b> look for a Code Factory run in flight on <b>Administration → Operations</b>: a restart can stop a run part way through its agent's work.</li>
+  <li><b>After a release:</b> <code>manage.py scorecard --record</code> on the release commit keeps the measured history in <code>benchmarks/history/</code>.</li>
+</ul>
+
+<h2 id="backups">Backups and restores</h2>
+<div class="table-wrap"><table>
+  <tr><th>What</th><th>Holds</th><th>Lose it and</th></tr>
+  <tr><td>PostgreSQL (<code>postgres-data</code>)</td><td>Every record: sources, graphs, chats, plans, audit, receipts</td><td>Everything is gone</td></tr>
+  <tr><td>Originals (bucket, or <code>app-runtime</code> on disk)</td><td>Uploaded files' bytes</td><td>Text and citations survive (the converted text is the record); "Convert again" and downloads do not</td></tr>
+  <tr><td><code>platform-secrets</code></td><td>Signing key, passwords, mounted credentials</td><td>Everyone is signed out, authenticator seeds are unreadable, credentials must be set again</td></tr>
+  <tr><td><code>managed-credentials</code></td><td>Credentials owners typed in</td><td>Owners set them again</td></tr>
+  <tr><td><code>demo-workspace</code></td><td>The demonstration's code folder and approved edits</td><td>Reseeded from the image; edits lost</td></tr>
+</table></div>
+<pre><code># database, in compose
+docker compose exec -T postgres pg_dump -U digital_brain_app -Fc digital_brain &gt; digital_brain.dump
+
+# a volume (repeat per volume; the name carries the compose project prefix)
+docker run --rm -v &lt;project&gt;_platform-secrets:/v:ro -v "$PWD":/b alpine tar czf /b/platform-secrets.tgz -C /v .</code></pre>
+<ul>
+  <li><b>Nothing in the repository backs anything up</b>, and the single-server compose file has one database container, no replica and no point-in-time recovery. A managed PostgreSQL with both is the production answer.</li>
+  <li><b>Restoring:</b> restore the database, then run <code>apply_migrations</code>. Roles belong to the server, not the database, so a fresh server lacks <code>digital_brain_runtime</code>; the run creates it and grants it every table.</li>
+  <li><b>Secrets with the data.</b> A database restored without its <code>django_secret_key</code> works, but every authenticator seed in it is sealed under the old key.</li>
+  <li><b>Rehearse it.</b> A restore nobody has run is a hope.</li>
+</ul>
+
+<h2 id="routine">Routine checks</h2>
+<div class="table-wrap"><table>
+  <tr><th>Command</th><th>Says</th><th>How often</th></tr>
+  <tr><td><code>queue_status --check</code></td><td>Each lane's waiting work, oldest age, heartbeat, dead jobs</td><td>As a health check</td></tr>
+  <tr><td><code>slo --check</code></td><td>Records-based service levels over 28 days</td><td>Daily</td></tr>
+  <tr><td><code>partitions --check</code></td><td>Fewer than the minimum months made ahead, or rows in the default partition</td><td>Monthly (<code>partitions</code> makes them)</td></tr>
+  <tr><td><code>chunk_sources --check</code>, <code>graph_store --check</code></td><td>Passages and graph rows fully backfilled</td><td>After an upgrade</td></tr>
+  <tr><td><code>move_originals --check</code></td><td>Disk originals not yet in the bucket</td><td>After switching to a bucket</td></tr>
+  <tr><td><code>check --deploy --fail-level WARNING</code></td><td>Django's production audit</td><td>Every start (automatic)</td></tr>
+</table></div>
+
+<h2 id="retention">Retention</h2>
+<p>Audit events and receipts are kept until a <code>[retention]</code> table says otherwise. <code>audit_days</code> may not be under 2,192 (six years, HIPAA §164.316(b)(2)) and <code>usage_days</code> not under 400; 0 keeps everything. The maintenance lane deletes oldest first in short batches, at most once an interval, and logs counts only. On PostgreSQL, a month's audit partition is dropped only when every row in it is past the window.</p>
+
+<h2 id="scanner">Virus signatures</h2>
+<p>Signatures older than a week are refused, so a scanner that stopped updating fails closed rather than letting files through. In the all-in-one container <code>freshclam</code> runs at start and daily; with <code>clamd</code> the daemon keeps its own and the platform asks it for their date. If every upload fails as "signatures stale" after a first start, restart <code>clamd</code> to load the signatures freshclam replaced.</p>
+
+<h2 id="removing">Disabling and deleting</h2>
+<p>A platform administrator disables any organization, portfolio, product or application on <b>Administration → Organizations → Structure</b> - reversible, and queued work under it is failed at no cost. Deleting is offered only for something already disabled, needs the exact name typed, and is refused while anything under it is in flight. Audit events and receipts outlive it. On the host: <code>manage.py delete_application &lt;id&gt; --confirm-name &lt;name&gt; --as &lt;admin&gt;</code>.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

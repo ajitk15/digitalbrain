@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Questions People Ask</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="guide/faq.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › For everyone</div>
+<span class="tag everyone">For everyone</span>
+<h1>Questions people ask</h1>
+<p class="lede">Short answers, each with a link to the full story. Can't see yours? Try <a href="../find.html">Where do I find…</a>.</p>
+
+<h2 id="answers">Answers and trust</h2>
+<details class="faq" id="trust" open><summary>Can I trust an answer?</summary><div>
+<p>Trust its citations, and check the ones that matter. Every citation was re-checked when the page was drawn: the source is still active, unchanged since it was cited, and contains the quoted words exactly. The sentences around the citations are written by a model and can still be wrong - which is exactly why the quotes are there. <a href="what-is.html#promise">How the check works</a>.</p></div></details>
+<details class="faq"><summary>Why did an answer say it found nothing?</summary><div>
+<p>Most often: the information is not in any active source yet; the source is <b>restricted</b> (never sent to AI); the document is still converting; or, in <b>Graph answer</b> mode, the newest version has not been published. An answer that cites nothing is offered to owners in <b>Learned</b> as a gap to fill.</p></div></details>
+<details class="faq"><summary>I uploaded a document - why isn't it in Graph answers?</summary><div>
+<p>Graph answers read the <b>published</b> version. Your upload built a new <b>draft</b>; an owner or contributor publishes it on Knowledge → Versions (or it publishes itself, if an owner switched automatic publishing on and every check passed). Source excerpts and AI answers search current sources and see it as soon as it is converted.</p></div></details>
+<details class="faq"><summary>What happens when a document changes?</summary><div>
+<p>The new text replaces the old as the active record (the old one is retired, not deleted). Any citation that pointed at the old wording stops verifying and disappears from answers and published versions immediately. A new draft graph version is built.</p></div></details>
+<details class="faq"><summary>Does it learn from my questions?</summary><div>
+<p>Not by itself. Questions that got no citation, and answers marked <b>Wrong answer?</b>, become candidates in Knowledge → Learned. Only when an owner or contributor accepts one does it become a benchmark question that future versions are measured against. Your name is not shown with your question.</p></div></details>
+
+<h2 id="access-faq">Access</h2>
+<details class="faq"><summary>Why can't I see an application my colleague uses?</summary><div>
+<p>You need a grant on that application. Without one it reads as "not found" - by design, the platform does not confirm that it exists. Ask one of its owners. <a href="roles-and-access.html#deny">Why</a>.</p></div></details>
+<details class="faq"><summary>I am an administrator - why can't I open an application?</summary><div>
+<p>Administering an organization or the platform grants nothing inside an application. An owner of that application, or the "Also grant me owner access" box when you create one, gives you a real, audited grant.</p></div></details>
+<details class="faq"><summary>Does Microsoft sign-in give me access?</summary><div>
+<p>No. It proves who you are. What you can open is decided only by grants here.</p></div></details>
+<details class="faq"><summary>I lost my phone with the authenticator app.</summary><div>
+<p>Use one of your recovery codes, or ask a platform administrator to remove the authenticator on your person page. (A platform administrator's own is removed by the operator on the server.)</p></div></details>
+
+<h2 id="ai-faq">AI and cost</h2>
+<details class="faq"><summary>Can I use Digital Brain without AI?</summary><div>
+<p>Yes. Source excerpts, the structural graph, source and content checks, code indexing, rule-based code review checks, the operations graph and every rule-based check call no model. Switch AI tasks off on AI settings.</p></div></details>
+<details class="faq"><summary>Who pays for the AI?</summary><div>
+<p>The application whose credential is set. Each application has its own key and its own budget, and every call writes a receipt naming who asked. <a href="ai-and-cost.html">More</a>.</p></div></details>
+<details class="faq"><summary>What if the AI provider is down or busy?</summary><div>
+<p>The call fails and says so; nothing is retried on your behalf, so nothing is paid for twice. If too many calls are already running, a new one waits briefly and is then told nothing was sent. Source excerpts keep working because they use no model.</p></div></details>
+<details class="faq"><summary>Where does my data go?</summary><div>
+<p>Only to the AI provider your application's owner configured, under that account. Restricted sources never go. Masking, when on, replaces chosen values before anything is stored. Digital Brain sends no email and attaches no tracking.</p></div></details>
+
+<h2 id="engineering-faq">Code Factory and code</h2>
+<details class="faq"><summary>Will Code Factory change our code without asking?</summary><div>
+<p>No. A person approves the plan first. Delivery opens a <b>pull request</b> - merging it is yours. On a development or demonstration server it can instead write into an allowed local folder, checking every file against the indexed snapshot first and committing nothing.</p></div></details>
+<details class="faq"><summary>Does Digital Brain run our code?</summary><div>
+<p>Normally never. The one exception is opt-in and refused in production: on a development or demonstration server, an approver can press a button to run a local folder's own test suite, with a five-minute limit.</p></div></details>
+<details class="faq"><summary>Why was my Code Factory run refused?</summary><div>
+<p>Usually there is no published knowledge graph. A plan whose items cite nothing is the one thing the pipeline must not produce, so the run is refused at the button, again before any spending, and the plans screen explains it. Other gates are listed on Onboarding.</p></div></details>
+
+<h2 id="operations-faq">Operations</h2>
+<details class="faq"><summary>Can an automation run by itself?</summary><div>
+<p>No. Importing an automation never runs it, and <b>Simulate run</b> sends nothing. Real execution needs an owner's request, a job on the connection's allow-list, records that still verify, and - where required - approval by a different owner.</p></div></details>
+<details class="faq"><summary>Why is a knowledge article from ServiceNow not in the operations graph?</summary><div>
+<p>It joins only while ServiceNow itself says it is Published and in date. That review, where the article is written, is the gate.</p></div></details>
+
+<h2 id="general-faq">General</h2>
+<details class="faq"><summary>Is it HIPAA compliant?</summary><div>
+<p>Digital Brain implements the HIPAA technical safeguards of §164.312 - access control, audit controls, integrity, authentication and transmission security - and probes each on every change. Compliance as a whole also depends on how it is deployed and run (agreements with providers, backups, policies), which is your organization's to decide. <a href="../tech/security.html#hipaa">The safeguards in detail</a>.</p></div></details>
+<details class="faq"><summary>Can I undo a delete?</summary><div>
+<p>Disabling is reversible; deleting is not. That is why deleting an organization, portfolio, product or application is offered only after it has been disabled, and needs its name typed exactly.</p></div></details>
+<details class="faq"><summary>Does it work without JavaScript?</summary><div>
+<p>Yes. Every control is a real form. JavaScript only adds streaming answers, popups and in-place progress.</p></div></details>
+<details class="faq"><summary>Which languages can it read from scans?</summary><div>
+<p>The container image installs English for OCR. Other languages are a deployment's choice of Tesseract language package.</p></div></details>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

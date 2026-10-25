@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Digital Brain Docs</title>
+<meta name="description" content="Product documentation for Digital Brain: what it does, how to use it, how it is built and how to deploy it.">
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body data-root="" data-page="index.html" data-no-pager>
+<main>
+
+<section class="hero">
+  <div>
+    <span class="tag everyone">Start here</span>
+    <h1>Digital Brain</h1>
+    <p class="lede">A knowledge platform that answers questions from your organization's own documents, tickets, incidents and code - and shows, for every answer, the exact sentence it came from, checked against the source at the moment you read it.</p>
+    <p>One installation serves many teams. Each team's <b>application</b> has its own sources, people, AI providers, budget and audit trail, and nothing in one application can be read from another.</p>
+    <div class="pill-row">
+      <span class="pill">Answers with checked quotes</span>
+      <span class="pill">Ticket → reviewed fix</span>
+      <span class="pill">Incident triage with evidence</span>
+      <span class="pill">Every AI call budgeted and receipted</span>
+    </div>
+  </div>
+
+  <figure class="figure" aria-label="Animation: a question becomes a cited answer">
+    <div class="fig-title">A question becomes a cited answer <span class="t-xs" style="color:var(--ink-3);font-weight:500">loops every 10 s</span></div>
+    <svg viewBox="0 0 520 330" role="img" aria-labelledby="hero-t" data-cycle="10">
+      <title id="hero-t">A person asks a question; the platform searches the published knowledge graph, checks each quote against the live source, and returns an answer with numbered citations.</title>
+      <!-- question -->
+      <g data-at="0">
+        <rect x="14" y="18" width="250" height="54" rx="12" class="box-blue"/>
+        <text x="28" y="40" class="t-sm">You ask</text>
+        <text x="28" y="58" class="t">"Must a list endpoint limit its size?"</text>
+      </g>
+      <!-- graph -->
+      <g data-at="0.14">
+        <rect x="300" y="14" width="206" height="126" rx="12" class="zone-solid"/>
+        <text x="314" y="34" class="t-zone">Published graph v12</text>
+        <path d="M340 70 L400 56 L460 84 L410 114 L340 70 M400 56 L410 114" class="edge"/>
+        <circle cx="340" cy="70" r="8" class="dot-violet"/>
+        <circle cx="400" cy="56" r="8" class="dot"/>
+        <circle cx="460" cy="84" r="8" class="dot-teal"/>
+        <circle cx="410" cy="114" r="9" class="dot-amber"><animate attributeName="r" values="9;12;9" dur="1.2s" repeatCount="indefinite"/></circle>
+        <text x="314" y="132" class="t-xs">matching relationships, ranked</text>
+      </g>
+      <path id="hp1" d="M264 46 C285 46 290 60 300 70" class="edge-blue flow"/>
+      <circle r="4" class="dot"><animateMotion dur="1.4s" repeatCount="indefinite" path="M264 46 C285 46 290 60 300 70"/></circle>
+      <!-- verification -->
+      <g data-at="0.30">
+        <rect x="300" y="160" width="206" height="96" rx="12" class="box-teal"/>
+        <text x="314" y="182" class="t t-teal">Checked right now</text>
+        <text x="314" y="202" class="t-sm">✓ source still active</text>
+        <text x="314" y="220" class="t-sm">✓ digest unchanged</text>
+        <text x="314" y="238" class="t-sm">✓ quote found, word for word</text>
+      </g>
+      <path d="M403 140 L403 160" class="edge-teal flow"/>
+      <!-- answer -->
+      <g data-at="0.46">
+        <rect x="14" y="110" width="262" height="146" rx="12" class="box"/>
+        <text x="28" y="134" class="t-sm">Answer</text>
+        <text x="28" y="156" class="t">Yes - every list endpoint clamps its</text>
+        <text x="28" y="174" class="t">limit to max_page_size. <tspan class="t-blue">[1]</tspan></text>
+        <rect x="28" y="190" width="234" height="50" rx="8" class="zone-solid"/>
+        <text x="40" y="208" class="t-xs">[1] Coding standards · 4. Collections are bounded</text>
+        <text x="40" y="226" class="t-sm">"Every endpoint returning a list takes a limit"</text>
+      </g>
+      <path d="M300 208 C288 208 290 190 276 186" class="edge-teal flow"/>
+      <!-- refused -->
+      <g data-at="0.62">
+        <rect x="14" y="272" width="492" height="44" rx="10" class="box-rose"/>
+        <text x="28" y="291" class="t-sm">A quote that no longer appears in its source is</text>
+        <text x="28" y="308" class="t-sm"><tspan class="t t-rose">dropped before you see it</tspan> - never shown as evidence.</text>
+      </g>
+    </svg>
+  </figure>
+</section>
+
+<h2 id="choose">Choose your way in</h2>
+<div class="route">
+  <a href="guide/what-is.html">
+    <span class="tag everyone">For everyone</span>
+    <h2>I use it, manage a team, or decide whether to buy it</h2>
+    <p>Plain language, no code. What the product is, what each feature does for you, how each screen works, who can see what, and what AI costs.</p>
+    <ul>
+      <li><b>What it is</b> and the problem it solves</li>
+      <li><b>Features</b>: Knowledge, Chat, Code Factory, ServiceOps…</li>
+      <li><b>Screens</b>: step-by-step for each</li>
+      <li><b>Roles and access</b>: viewer, contributor, owner, approver</li>
+      <li><b>Questions people ask</b></li>
+    </ul>
+  </a>
+  <a href="tech/architecture.html">
+    <span class="tag tech">Technical</span>
+    <h2>I build, run, secure or audit it</h2>
+    <p>How it is put together and why each piece was chosen - with the alternatives that were turned down - plus how to deploy it locally and in the cloud.</p>
+    <ul>
+      <li><b>Architecture</b> diagrams and the <b>technology</b> behind them</li>
+      <li><b>Knowledge lifecycle</b>, answering and citations</li>
+      <li><b>AI gateway</b>, budgets and receipts</li>
+      <li><b>Security, HIPAA, tenancy</b> and row security</li>
+      <li><b>Deployment</b>: local, VPS, scaled, AWS, Azure, Google Cloud</li>
+    </ul>
+  </a>
+</div>
+
+<h2 id="one-minute">The one-minute version</h2>
+<div class="stats">
+  <div class="stat"><b>3 + 1</b><span>roles - viewer, contributor, owner - plus approval rights</span></div>
+  <div class="stat"><b>12</b><span>kinds of AI task, each switchable, budgeted and receipted</span></div>
+  <div class="stat"><b>9</b><span>background lanes, so one slow job never blocks an upload</span></div>
+  <div class="stat"><b>5</b><span>gates every change must pass, the scorecard among them</span></div>
+</div>
+
+<figure class="figure">
+  <div class="fig-title">The knowledge cycle - what happens to everything you add</div>
+  <svg viewBox="0 0 900 190" role="img" aria-labelledby="cyc-t">
+    <title id="cyc-t">Set up, feed, build, check, publish, use, learn - and back to feed.</title>
+    <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g style="--cycle:8.4s">
+      <g class="pulse" style="--d:0s"><rect x="10" y="40" width="108" height="72" rx="12" class="box-blue"/><text x="64" y="70" text-anchor="middle" class="t">Set up</text><text x="64" y="90" text-anchor="middle" class="t-xs">people, AI, features</text></g>
+      <g class="pulse" style="--d:1.2s"><rect x="138" y="40" width="108" height="72" rx="12" class="box-blue"/><text x="192" y="70" text-anchor="middle" class="t">Feed</text><text x="192" y="90" text-anchor="middle" class="t-xs">documents, tickets</text></g>
+      <g class="pulse" style="--d:2.4s"><rect x="266" y="40" width="108" height="72" rx="12" class="box-violet"/><text x="320" y="70" text-anchor="middle" class="t">Build</text><text x="320" y="90" text-anchor="middle" class="t-xs">a draft graph</text></g>
+      <g class="pulse" style="--d:3.6s"><rect x="394" y="40" width="108" height="72" rx="12" class="box-amber"/><text x="448" y="70" text-anchor="middle" class="t">Check</text><text x="448" y="90" text-anchor="middle" class="t-xs">quality, benchmark</text></g>
+      <g class="pulse" style="--d:4.8s"><rect x="522" y="40" width="108" height="72" rx="12" class="box-teal"/><text x="576" y="70" text-anchor="middle" class="t">Publish</text><text x="576" y="90" text-anchor="middle" class="t-xs">a person, or a rule</text></g>
+      <g class="pulse" style="--d:6s"><rect x="650" y="40" width="108" height="72" rx="12" class="box-teal"/><text x="704" y="70" text-anchor="middle" class="t">Use</text><text x="704" y="90" text-anchor="middle" class="t-xs">chat, factory, ops</text></g>
+      <g class="pulse" style="--d:7.2s"><rect x="778" y="40" width="108" height="72" rx="12" class="box-rose"/><text x="832" y="70" text-anchor="middle" class="t">Learn</text><text x="832" y="90" text-anchor="middle" class="t-xs">candidates to accept</text></g>
+    </g>
+    <path d="M118 76H136M246 76H264M374 76H392M502 76H520M630 76H648M758 76H776" class="edge" marker-end="url(#ah)"/>
+    <path d="M832 112 C832 170 192 170 192 114" class="edge edge-dash flow-slow" marker-end="url(#ah)"/>
+    <text x="512" y="166" text-anchor="middle" class="t-xs">what use teaches comes back as candidates - never as knowledge until a person accepts it</text>
+  </svg>
+</figure>
+
+<h2 id="popular">Most-asked, one click away</h2>
+<div class="cards three">
+  <a class="card" href="guide/faq.html#trust"><h4>Can I trust an answer?</h4><p>Every citation is re-checked against the live source before you see it.</p></a>
+  <a class="card" href="guide/roles-and-access.html#roles"><h4>Who can see what?</h4><p>No grant, no access - not even confirmation that an application exists.</p></a>
+  <a class="card" href="guide/ai-and-cost.html#budget"><h4>What does the AI cost?</h4><p>A monthly cap per application, checked before every paid call.</p></a>
+  <a class="card" href="guide/screens.html#upload"><h4>How do I add documents?</h4><p>Upload, scan, convert, check - step by step.</p></a>
+  <a class="card" href="tech/architecture.html#containers"><h4>What runs where?</h4><p>Web, worker, sandbox, migrate, PostgreSQL, Redis, ClamAV.</p></a>
+  <a class="card" href="deploy/index.html#choose"><h4>How should I deploy it?</h4><p>From one laptop to a managed cloud, with what each refuses.</p></a>
+  <a class="card" href="tech/security.html#hipaa"><h4>Is it HIPAA-ready?</h4><p>The §164.312 technical safeguards, probed on every change.</p></a>
+  <a class="card" href="tech/technology.html"><h4>Why these technologies?</h4><p>Django, PostgreSQL, Redis, ClamAV, Tesseract… and what was rejected.</p></a>
+  <a class="card" href="find.html"><h4>Something else?</h4><p>Search every answer in these pages, for either audience.</p></a>
+</div>
+
+<h2 id="how-to-read">How these pages are written</h2>
+<ul>
+  <li><b>From the code.</b> Every statement was checked against the source on <code>main</code>. Module names appear in <code>code style</code> so a technical reader can go straight to it; a non-technical reader can skip them.</li>
+  <li><b>"Why" boxes</b> - <span class="label-why">Why</span> - say what a choice protects and, where the codebase records it, what was tried or rejected instead.</li>
+  <li><b>Motion</b> in diagrams shows flows. The <b>Motion</b> button at the top pauses it, and it stays still if your system asks for reduced motion.</li>
+  <li><b>Light and dark</b> follow your system; the sun button switches them.</li>
+</ul>
+
+</main>
+<script src="assets/docs.js"></script>
+</body>
+</html>

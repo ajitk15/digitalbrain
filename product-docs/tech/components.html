@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Components and Modules</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/components.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Components and modules</h1>
+<p class="lede">Where each responsibility lives in <code>platform_core/</code>, grouped by what it does. Use this page to find the file behind a behaviour; each other technical page goes deeper on one group.</p>
+
+<figure class="figure">
+  <div class="fig-title">Module groups and the direction of dependency</div>
+  <svg viewBox="0 0 940 360" role="img" aria-labelledby="mod-t">
+    <title id="mod-t">Access and tenancy at the base, used by everything. Above it the gateway and agent runtime, then knowledge and graphs, then the products: chat, Code Factory, ServiceOps, Code Graph. Utilities sit on top and nothing imports them.</title>
+    <defs><marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="300" width="920" height="50" rx="10" class="box-teal"/>
+    <text x="470" y="322" text-anchor="middle" class="t">Access · tenancy · audit</text>
+    <text x="470" y="340" text-anchor="middle" class="t-xs">policy · workbench.access · tenancy · services.audit · api_auth · database_roles · secrets</text>
+    <rect x="10" y="232" width="450" height="56" rx="10" class="box-violet"/>
+    <text x="235" y="255" text-anchor="middle" class="t">AI: gateway · ai · budget · agent_runtime</text>
+    <text x="235" y="273" text-anchor="middle" class="t-xs">claude_messages · claude_agents · llm_agents · embeddings · rerank</text>
+    <rect x="480" y="232" width="450" height="56" rx="10" class="box"/>
+    <text x="705" y="255" text-anchor="middle" class="t">Runtime: jobs · document_worker · triggers</text>
+    <text x="705" y="273" text-anchor="middle" class="t-xs">keepalive · queue_status · retention · partitions · telemetry · metrics · slo</text>
+    <rect x="10" y="164" width="920" height="56" rx="10" class="box-blue"/>
+    <text x="470" y="187" text-anchor="middle" class="t">Knowledge: workbench · documents · processing · chunks · graphs · graph_ai · graph_store · ranking</text>
+    <text x="470" y="205" text-anchor="middle" class="t-xs">source_quality · document_types · ontology · benchmark · release · learning · rules · lifecycle · masking · sensitivity · connectors</text>
+    <rect x="10" y="80" width="220" height="72" rx="10" class="box"/><text x="120" y="108" text-anchor="middle" class="t">Chat</text><text x="120" y="128" text-anchor="middle" class="t-xs">chat_views · streaming · broker</text>
+    <rect x="245" y="80" width="220" height="72" rx="10" class="box"/><text x="355" y="108" text-anchor="middle" class="t">Code Factory</text><text x="355" y="128" text-anchor="middle" class="t-xs">code_factory* (7 modules)</text>
+    <rect x="480" y="80" width="220" height="72" rx="10" class="box"/><text x="590" y="108" text-anchor="middle" class="t">ServiceOps</text><text x="590" y="128" text-anchor="middle" class="t-xs">serviceops* · ops_graph · automation_*</text>
+    <rect x="715" y="80" width="215" height="72" rx="10" class="box"/><text x="822" y="108" text-anchor="middle" class="t">Code Graph</text><text x="822" y="128" text-anchor="middle" class="t-xs">code_graph* · code_review · code_docs</text>
+    <rect x="10" y="10" width="920" height="56" rx="10" class="zone"/>
+    <text x="470" y="34" text-anchor="middle" class="t">utility/ - Chat API, triage API</text>
+    <text x="470" y="52" text-anchor="middle" class="t-xs">built on the platform; nothing in platform_core imports it</text>
+    <path d="M470 66V78M120 152V162M355 152V162M590 152V162M822 152V162M235 220V230M705 220V230M470 288V298" class="edge" marker-end="url(#m1)"/>
+  </svg>
+  <div class="caption">Arrows point from a user to what it uses. Lower layers never import upper ones.</div>
+</figure>
+
+<h2 id="access-mods">Access, tenancy and identity</h2>
+<div class="table-wrap"><table>
+  <tr><th>Module</th><th>Responsibility</th></tr>
+  <tr><td><code>policy.py</code></td><td><code>application_for</code> (no grant → <code>Http404</code>), <code>applications_for</code>, the <code>LIVE</code> filter (organization, portfolio, product and application all active), <code>CAPABILITIES</code></td></tr>
+  <tr><td><code>workbench.access</code></td><td>The per-feature, per-write check every view and tool calls</td></tr>
+  <tr><td><code>tenancy.py</code></td><td>Row-security session binding: <code>TenantMiddleware</code>, <code>scoped</code>, <code>UNSCOPED</code></td></tr>
+  <tr><td><code>database_roles.py</code></td><td>Creates and corrects the runtime role on every migrate</td></tr>
+  <tr><td><code>secrets.py</code></td><td>The only writer of browser-managed credentials; <code>MANAGEABLE</code> registry; shared connector names</td></tr>
+  <tr><td><code>api_auth.py</code>, <code>api.py</code></td><td>Bearer tokens (SHA-256 digest, constant-time compare), rate limit, REST graph search, MCP</td></tr>
+  <tr><td><code>sso.py</code>, <code>scim.py</code></td><td>Entra ID OpenID Connect; SCIM 2.0 provisioning</td></tr>
+  <tr><td><code>authenticator.py</code></td><td>RFC 6238 codes, sealed seeds, recovery codes</td></tr>
+  <tr><td><code>invitations.py</code>, <code>offboarding.py</code>, <code>access_review.py</code></td><td>Joining, leaving, expiring and reviewing access</td></tr>
+  <tr><td><code>hierarchy.py</code>, <code>console.py</code>, <code>administration.py</code></td><td>Disable/delete any level; the seven administration pages</td></tr>
+</table></div>
+
+<h2 id="knowledge-mods">Knowledge and graphs</h2>
+<div class="table-wrap"><table>
+  <tr><th>Module</th><th>Responsibility</th></tr>
+  <tr><td><code>workbench.py</code></td><td><code>add_knowledge</code>, retrieval, conversation storage, <code>answer_question</code> (the synchronous answering path)</td></tr>
+  <tr><td><code>documents.py</code>, <code>processing.py</code>, <code>originals.py</code></td><td>Upload, scan, convert in a subprocess, keep or remove originals, disk or S3 store</td></tr>
+  <tr><td><code>link_sources.py</code>, <code>sharepoint.py</code>, <code>github_sources.py</code></td><td>Imports from a link, SharePoint folder or GitHub tree, as pending documents</td></tr>
+  <tr><td><code>fetching.py</code></td><td>The only fetcher of a user-supplied URL</td></tr>
+  <tr><td><code>source_quality.py</code>, <code>document_types.py</code>, <code>document_ai.py</code>, <code>source_map.py</code></td><td>Source check, content check by type, AI typing and review, the cross-source map</td></tr>
+  <tr><td><code>sensitivity.py</code>, <code>masking.py</code>, <code>permissions.py</code></td><td>Personal-data scan, masking before storage, Jira source permissions</td></tr>
+  <tr><td><code>chunks.py</code></td><td>Passages as rows, kept in step with their source</td></tr>
+  <tr><td><code>graphs.py</code></td><td>Fingerprint, per-source fragments, build, rebuild, publish, automatic AI</td></tr>
+  <tr><td><code>graph_ai.py</code></td><td>AI extraction with quote checks, the cache, citations, the two-hop walk, followed references</td></tr>
+  <tr><td><code>graph_store.py</code></td><td>Graph versions as rows (<code>GraphElement</code>), reading back exactly, slimming old JSON</td></tr>
+  <tr><td><code>ontology.py</code></td><td>Eight types and twelve relations; entity merging</td></tr>
+  <tr><td><code>ranking.py</code>, <code>embeddings.py</code>, <code>rerank.py</code></td><td>Coverage + BM25 + spread; vectors as starting points; reorder-only reranking</td></tr>
+  <tr><td><code>benchmark.py</code>, <code>graph_trend.py</code>, <code>release.py</code></td><td>Scoring versions, with and without AI, and the check before publishing</td></tr>
+  <tr><td><code>learning.py</code>, <code>rules.py</code>, <code>lifecycle.py</code>, <code>source_kinds.py</code></td><td>Learned candidates, rule statements, the knowledge cycle, the registry of source kinds</td></tr>
+  <tr><td><code>connectors.py</code>, <code>connector_kinds.py</code></td><td>Sync, schedule, high-water mark, prune; each kind's paging</td></tr>
+</table></div>
+
+<h2 id="product-mods">Products</h2>
+<div class="table-wrap"><table>
+  <tr><th>Area</th><th>Modules</th><th>Notes</th></tr>
+  <tr><td>Chat</td><td><code>chat_views.py</code>, <code>agent_runtime/streaming.py</code>, <code>broker.py</code>, <code>digitalbrain/asgi.py</code></td><td>The streamed answer, the stream registry, Redis streams, the ASGI router</td></tr>
+  <tr><td>Code Factory before approval</td><td><code>code_factory</code>, <code>code_factory_evidence</code>, <code>code_factory_analysis</code></td><td>Gates, evidence, triage/analysis/design, <code>start_run</code>, <code>execute</code></td></tr>
+  <tr><td>Code Factory after approval</td><td><code>code_factory_build</code>, <code>code_factory_agents</code>, <code>code_factory_local</code>, <code>code_factory_picture</code></td><td>Preparation queue, agents and GitHub delivery, local delivery and tests</td></tr>
+  <tr><td>ServiceOps</td><td><code>serviceops</code>, <code>serviceops_triage</code>, <code>ops_graph</code>, <code>automation_execution</code>, <code>automation_adapters</code>, <code>serviceops_testing</code></td><td>Incidents, triage steps, the live operations graph, automation runs, the test workbench</td></tr>
+  <tr><td>Code Graph</td><td><code>code_graph</code>, <code>code_graph_ingest</code>, <code>code_graph_clone</code>, <code>code_graph_local</code>, <code>code_graph_graphify</code>, <code>code_knowledge</code>, <code>code_review</code>, <code>code_docs</code></td><td>Indexing from GitHub or a folder, links to requirements, review and reverse engineering</td></tr>
+</table></div>
+
+<h2 id="runtime-mods">Runtime and operations</h2>
+<div class="table-wrap"><table>
+  <tr><th>Module</th><th>Responsibility</th></tr>
+  <tr><td><code>jobs.py</code>, <code>triggers.py</code></td><td>The job outbox, claims, leases; what asks for a graph refresh</td></tr>
+  <tr><td><code>document_worker.py</code></td><td>The nine lanes, fair intake, the maintenance keeper</td></tr>
+  <tr><td><code>gateway.py</code>, <code>budget.py</code>, <code>ai.py</code></td><td>Purposes, admission, reservations, receipts, the monthly cap, AI settings</td></tr>
+  <tr><td><code>telemetry.py</code>, <code>metrics.py</code>, <code>slo.py</code>, <code>queue_status.py</code></td><td>Traces, metrics, service levels, lane health</td></tr>
+  <tr><td><code>retention.py</code>, <code>partitions.py</code></td><td>Retention windows with floors; monthly audit partitions</td></tr>
+  <tr><td><code>scorecard.py</code>, <code>drift.py</code>, <code>typing_pack.py</code>, <code>load_streams.py</code></td><td>The fifth gate, model drift, typing measurement, stream capacity</td></tr>
+</table></div>
+
+<h2 id="commands">Management commands</h2>
+<div class="pill-row">
+  <span class="pill">apply_migrations</span><span class="pill">bootstrap_admin</span><span class="pill">create_user</span><span class="pill">run_worker</span><span class="pill">queue_status</span><span class="pill">slo</span><span class="pill">scorecard</span><span class="pill">benchmark</span><span class="pill">llm_drift</span><span class="pill">typing_pack</span><span class="pill">load_streams</span><span class="pill">partitions</span><span class="pill">graph_store</span><span class="pill">chunk_sources</span><span class="pill">check_sources</span><span class="pill">embed</span><span class="pill">move_originals</span><span class="pill">process_documents</span><span class="pill">scan_personal_data</span><span class="pill">enable_features</span><span class="pill">delete_application</span><span class="pill">link_identity</span><span class="pill">link_sso</span><span class="pill">remove_authenticator</span><span class="pill">serviceops_rebuild</span><span class="pill">serviceops_replay</span>
+</div>
+<p>Each is <code>python manage.py &lt;name&gt; --help</code>. Scripts outside Django live in <code>scripts/</code>: <code>serve.py</code>, <code>init_local.py</code>, <code>ai_setup.py</code>, <code>rebuild_demo.py</code>, <code>init_vps_demo.py</code>, <code>move_to_postgres.py</code>, <code>production_preflight.py</code>, <code>extract_text.py</code>.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>
