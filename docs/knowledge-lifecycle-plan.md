@@ -1,6 +1,6 @@
 # The knowledge lifecycle: long-term plan
 
-Not implemented. This is the target the platform grows towards. It is ordered so
+Phases are marked as they land in the roadmap below. This is the target the platform grows towards. It is ordered so
 that each phase ships on its own and is measured before the next one starts.
 `docs/knowledge-code-repos-plan.md` is Phase 1 of it.
 
@@ -218,8 +218,8 @@ walks it once, and the status strip keeps it visible afterwards.
 
 | Phase | What | Effort | Risk | Measured by |
 |---|---|---|---|---|
-| 1 | Code Repos under Knowledge, Code Graph folded in (`knowledge-code-repos-plan.md`) | 4.5-5 d | Low-medium | Gates unchanged; tests for gating and onboarding routes |
-| 2 | Lifecycle tracker: onboarding regrouped by stage, Knowledge status strip, three Attention items | 3-4 d | Low | Every step reachable and correct on Engineering, Operations, Both |
+| 1 ✓ | Code Repos under Knowledge, Code Graph folded in (`knowledge-code-repos-plan.md`) | 4.5-5 d | Low-medium | Gates unchanged; tests for gating and onboarding routes |
+| 2 ✓ | Lifecycle tracker (`lifecycle.py`): the cycle on onboarding, Knowledge status strip, Attention items (draft ready, published behind, origins and repositories moved) | 3-4 d | Low | Every step reachable and correct on Engineering, Operations, Both |
 | 3 | Release check before publish; reason recorded on override | 4-5 d | Medium (changes a habit) | Scorecard probe: a regressed draft is refused or warned, as designed |
 | 4 | Source kind registry: Documents, Code, Tickets behind one contract | 5-8 d | Medium (refactor) | Same pages byte-for-byte where nothing changed; query counts held flat |
 | 5 | Learning loop: Learned inbox, change records, incident learnings, gaps, answer feedback, benchmark promotion | 8-10 d | Medium-high (new trust path) | Benchmark grows; derived-prefix exclusion tested; scorecard evidence recall unchanged |

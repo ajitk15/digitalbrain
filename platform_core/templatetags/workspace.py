@@ -524,6 +524,23 @@ def knowledge_features(application):
     }
 
 
+@register.inclusion_tag("_knowledge_status.html")
+def knowledge_status(application):
+    """One line on every Knowledge page: what answers, what waits, what is behind.
+
+    `lifecycle.summary`, kept on the application for the rest of the request so a
+    page that draws it twice reads it once. Nothing when Knowledge is off: Code
+    Repos alone has no version to speak of.
+    """
+    if not feature_enabled("knowledge", application):
+        return {"status": None}
+    if "_knowledge_status" not in application.__dict__:
+        from platform_core.lifecycle import summary
+
+        application.__dict__["_knowledge_status"] = summary(application)
+    return {"application": application, "status": application.__dict__["_knowledge_status"]}
+
+
 @register.simple_tag
 def ticket_tab(application):
     """The Tickets tab's count, or None when the application imports no tickets."""

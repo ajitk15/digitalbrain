@@ -6,7 +6,8 @@ questions instead, for the applications the person holds a grant on:
 
 * what can I do here - one action per enabled part of the product;
 * what is waiting on me - a plan to review, a run to carry on, a failed run or
-  import, ideas to assess, setup to finish.
+  import, ideas to assess, a version to publish or a source to resync, setup to
+  finish.
 
 Everything is scoped by the caller's own grants. An item only appears for
 someone who can act on it: plans for approvers, imports for owners, assessments
@@ -36,6 +37,7 @@ KINDS = {
     "delivery": "Runs to carry on",
     "failure": "Failures",
     "assessment": "Ideas to assess",
+    "knowledge": "Knowledge to publish or resync",
     "setup": "Setup to finish",
 }
 
@@ -233,6 +235,13 @@ def items(user, apps):
                 kind="assessment",
             )
         )
+
+    # The knowledge cycle's waiting work (`lifecycle.attention`): a draft ready
+    # to publish, a published version behind its sources, origins that moved.
+    from .lifecycle import attention as knowledge_waiting
+
+    for app in apps:
+        found.extend(knowledge_waiting(app, grants.get(app.pk)))
 
     for app in apps:
         if (

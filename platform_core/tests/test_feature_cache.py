@@ -102,7 +102,11 @@ class FeatureCacheTests(TestCase):
         # security and clearing it again are two more (tenancy.py). Saying
         # before an upload whether the next graph version is built with AI is
         # two more: the graph row and its AI setting (`graphs.automatic_ai`).
-        limit = 24 + (2 if connection.vendor == "postgresql" else 0)
+        # The Knowledge status strip is four more, on every Knowledge page and
+        # whatever the library's size (`lifecycle.summary`): the published and
+        # newest versions in one, the fingerprint's sources and AI setting, and
+        # what moved at its origin in one.
+        limit = 28 + (2 if connection.vendor == "postgresql" else 0)
         self.assertLess(len(captured), limit, "documents used to take 28 queries")
 
     def test_a_finished_application_pays_nothing_for_the_setup_strip(self):

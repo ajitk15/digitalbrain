@@ -3203,6 +3203,35 @@
   .view-bar > .button { margin-bottom: 0; }
 }
 
+/* The Knowledge status strip: a line of its own above the tabs, drawn by the
+   nav include so every Knowledge page has it. What answers first, then only
+   what waits on somebody, each separated by a dot. */
+.knowledge-status {
+  order: -1;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-1) var(--s-2);
+  margin: 0;
+  font-size: var(--t-13);
+  color: var(--c-ink-2);
+}
+.knowledge-status > svg { color: var(--c-ink-3); }
+.knowledge-status > a + a::before,
+.knowledge-status > span + a::before { content: "·"; margin-right: var(--s-2); color: var(--c-ink-3); }
+.knowledge-status-waiting { color: var(--c-warn); font-weight: 600; }
+
+/* The knowledge cycle on onboarding (`lifecycle.stages`): six stages in a row,
+   wrapping on a narrow screen, each saying what is true and opening where to act. */
+.cycle { list-style: none; margin: var(--s-3) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--s-2); }
+.cycle-stage { border: 1px solid var(--c-line); border-radius: var(--r-md); padding: var(--s-3); background: var(--c-surface); display: flex; flex-direction: column; gap: var(--s-1); }
+.cycle-stage a { font-weight: 600; }
+.cycle-stage small { color: var(--c-ink-2); }
+.cycle-done { border-top: 3px solid var(--c-ok); }
+.cycle-warn { border-top: 3px solid var(--c-warn); }
+.cycle-todo { border-top: 3px solid var(--c-line-strong); }
+
 /* The line under the tabs saying what this view is for. One per view: the
    sentence it replaces described the whole section, so it read identically on
    the graph, the quality report and the version list. */

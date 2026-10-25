@@ -410,6 +410,19 @@ a Check/Refresh/Retire POST to `code-graph` still works, and the worker lane nam
 knowledge graph do not read it, and the page says so. Onboarding's two repository steps
 route to `code-repositories`, because Remove lives there.
 
+**The knowledge cycle is shown, never driven** (`lifecycle.py`,
+`docs/knowledge-lifecycle-plan.md`). Set up → Feed → Build → Check → Publish → Use is
+worked out from records already kept, with no model: `stages` is the cycle at the top of
+onboarding, above each consumer's gates (which are what Use needs; `readiness.steps` keeps
+Code Factory's list because `prevalidate` narrates it); `summary` is the status strip
+every Knowledge page draws above its tabs (`_knowledge_status.html`, from the nav
+include): what answers, a draft ready to publish, a published version behind its sources,
+origins and repositories that moved; `attention` adds those to the Overview's list as the
+`knowledge` kind, for owners and contributors only. A draft is "ready" only while its
+fingerprint is today's. Every stage links to the screen that acts, with its own
+permission check and audit event - nothing here writes. The strip costs four queries on
+every Knowledge page whatever the library's size (`test_feature_cache` holds the budget).
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

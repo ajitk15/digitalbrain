@@ -22,6 +22,12 @@
 {% endif %}
 
 
+{% if cycle %}<section class="card section onboard-cycle" aria-labelledby="cycle-heading">
+<div class="card-heading"><h2 id="cycle-heading" class="gate-heading">{% icon "network" 16 %}The knowledge cycle</h2></div>
+<p class="muted">Set up, feed it sources, build a version, check it, publish it - then everything below answers from what is published. When sources change the cycle runs again.</p>
+{% comment %}`lifecycle.stages`: read-only, each opening the screen that acts on it. Done, waiting (worth a look, never a failure) or not started.{% endcomment %}<ol class="cycle">{% for stage in cycle %}<li class="cycle-stage cycle-{{ stage.state }}"><a href="{% url stage.route application.pk %}{{ stage.query }}">{{ forloop.counter }}. {{ stage.label }}</a><span class="sr-only"> — {% if stage.state == 'done' %}done{% elif stage.state == 'warn' %}worth a look{% else %}not started{% endif %}</span><small>{{ stage.detail }}</small></li>{% endfor %}</ol>
+</section>{% endif %}
+
 {% for gate in gates %}
 <section class="card section onboard-gate">
 <div class="card-heading"><h2 class="gate-heading">{% icon gate.icon 16 %}{{ gate.label }}</h2>

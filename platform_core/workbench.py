@@ -711,6 +711,7 @@ def onboarding(request, pk):
     permission check and its own audit event, and a setup page that wrote to all
     of them would be a second way to do everything with none of that.
     """
+    from .lifecycle import stages
     from .readiness import GATE_ICONS, GATES, gate_ready, outstanding, record_completion, setup
     from .services import purposes
 
@@ -758,5 +759,8 @@ def onboarding(request, pk):
                 if purpose is None or purpose in serving
             ],
             "serving": serving,
+            # The knowledge cycle, stage by stage, above each consumer's gates:
+            # the gates are what Use needs, the stages what everything needs.
+            "cycle": stages(app),
         },
     )

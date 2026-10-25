@@ -58,7 +58,10 @@ def sources_for(app_id):
     )
 
 
-def fingerprint(app_id):
+def fingerprint(app_id, domain=None):
+    """What a build would read now. `domain` is the application's ontology, for a
+    caller already holding the application (`lifecycle.summary`); otherwise it is
+    read here."""
     # Sorted by id, not in build order, so a change of order is not a change.
     records = sorted(sources_for(app_id).values_list("id", "digest"))
     config = AIConfiguration.objects.filter(
@@ -71,7 +74,7 @@ def fingerprint(app_id):
         "limits": ["per-source", MAX_NODES_PER_SOURCE, MAX_RECORDS_PER_SOURCE],
         "sources": [(str(pk), digest) for pk, digest in records],
     }
-    domain = for_application(app_id)
+    domain = domain or for_application(app_id)
     if domain is not CORE:
         # Only a pack is named, so choosing none leaves every graph's
         # fingerprint as it was and rebuilds nothing.
