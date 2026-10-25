@@ -76,7 +76,7 @@
    "unit": "%",
    "better": "higher",
    "tolerance": 0.5,
-   "value": 96.0
+   "value": 92.0
   },
   "seeded_tickets_self_cited": {
    "aspect": "Agentic evidence",
@@ -459,8 +459,7 @@
     "found": [
      "NFR-03",
      "T-04",
-     "C-03",
-     "R-02"
+     "C-03"
     ]
    },
    {

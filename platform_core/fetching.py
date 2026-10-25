@@ -89,9 +89,15 @@ class FetchError(Exception):
 
 
 def _blocked(address):
-    """True for any address a user must not be able to aim this server at."""
+    """True for any address a user must not be able to aim this server at.
+
+    Anything not globally routable, as well as the named ranges: `is_private`
+    leaves out shared address space (100.64.0.0/10), which carrier NAT, Tailscale
+    and Alibaba Cloud's metadata service at 100.100.100.200 all live in.
+    """
     return (
-        address.is_private
+        not address.is_global
+        or address.is_private
         or address.is_loopback
         or address.is_link_local
         or address.is_multicast

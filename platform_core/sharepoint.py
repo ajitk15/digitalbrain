@@ -24,6 +24,7 @@ address, redirect, size and timeout rules as any other host.
 """
 
 import base64
+import hashlib
 import json
 import time
 import urllib.parse
@@ -41,6 +42,11 @@ LOGIN = "https://login.microsoftonline.com"
 DOC_SUFFIXES = DOCUMENT_SUFFIXES
 
 #: Tokens last an hour; refreshing a minute early avoids racing the expiry.
+#: Keyed on the tenant, the client and a digest of the secret that obtained the
+#: token. The secret is per application, and the key used to be the client id
+#: alone: an application whose secret was wrong, or replaced after a revocation,
+#: was handed the token another application's secret had obtained for up to an
+#: hour.
 _token_cache = {}
 
 
@@ -63,7 +69,8 @@ def access_token(secret):
             "SharePoint is not configured for this deployment. An operator sets "
             "sharepoint_tenant and sharepoint_client_id, and mounts the client secret."
         )
-    cached = _token_cache.get(client)
+    key = (tenant, client, hashlib.sha256(secret.encode("utf-8")).hexdigest())
+    cached = _token_cache.get(key)
     if cached and cached[1] > time.time():
         return cached[0]
 
@@ -76,47 +83,40 @@ def access_token(secret):
         }
     ).encode()
     payload = _post(f"{LOGIN}/{tenant}/oauth2/v2.0/token", body)
-    token = payload.get("access_token")
+    token = payload.get("access_token") if isinstance(payload, dict) else None
     if not isinstance(token, str) or not token:
         raise FetchError("Microsoft did not return an access token. Check the client secret.")
     expires = payload.get("expires_in")
     lifetime = expires if isinstance(expires, int) and expires > 60 else 3600
-    _token_cache[client] = (token, time.time() + lifetime - 60)
+    _token_cache[key] = (token, time.time() + lifetime - 60)
     return token
 
 
 def _post(url, body):
-    """A form POST to the token endpoint, through the same hardened client."""
-    from .fetching import _connection, normalise, resolve
+    """A form POST to the token endpoint, through `fetch` like every other request.
 
-    parsed = normalise(url)
-    family, literal = resolve(parsed.hostname, 443)[0]
-    connection = _connection(parsed, family, literal)
+    It used to open its own connection to the first resolved address, which
+    skipped the fetcher's move to the next address when one does not answer.
+    """
     try:
-        connection.request(
-            "POST",
-            parsed.path,
+        data, _, _, _ = fetch(
+            url,
+            method="POST",
             body=body,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "User-Agent": "Digital-Brain",
-                "Content-Length": str(len(body)),
-            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
-        response = connection.getresponse()
-        data = response.read(1024 * 1024)
-        if response.status != 200:
+    except FetchError as failure:
+        if failure.status is not None:
             raise FetchError(
                 "Microsoft rejected the SharePoint credential. Check the tenant, "
-                "client id, client secret and that admin consent has been granted."
-            )
-        return json.loads(data)
-    except FetchError:
-        raise
-    except Exception:
+                "client id, client secret and that admin consent has been granted.",
+                status=failure.status,
+            ) from None
         raise FetchError("Microsoft could not be reached to authenticate.") from None
-    finally:
-        connection.close()
+    try:
+        return json.loads(data)
+    except ValueError:
+        raise FetchError("Microsoft returned an unexpected response.") from None
 
 
 def _graph(url, token):

@@ -81,6 +81,11 @@ class AddressPolicyTests(SimpleTestCase):
             "224.0.0.1",  # multicast
             "::1",  # IPv6 loopback
             "fd00::1",  # IPv6 unique local
+            "100.64.0.1",  # shared address space: carrier NAT, Tailscale
+            "100.100.100.200",  # Alibaba Cloud metadata
+            "198.18.0.1",  # benchmarking
+            "240.0.0.1",  # future use
+            "::ffff:127.0.0.1",  # loopback, IPv4-mapped
         ]
         for literal in blocked:
             with self.subTest(address=literal):

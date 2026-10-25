@@ -134,6 +134,59 @@ class ConfigurationTests(SimpleTestCase):
         self.assertIn("sharepoint_tenant", str(raised.exception))
 
 
+@override_settings(**TENANT)
+class TokenTests(SimpleTestCase):
+    def setUp(self):
+        _token_cache.clear()
+
+    def issuing(self, *tokens):
+        replies = [
+            (f'{{"access_token": "{token}", "expires_in": 3600}}'.encode(), "", "", "")
+            for token in tokens
+        ]
+        return patch("platform_core.sharepoint.fetch", side_effect=replies)
+
+    def test_a_token_is_never_handed_to_a_different_secret(self):
+        """The secret is per application; a cached token must not stand in for it."""
+        from platform_core.sharepoint import access_token
+
+        with self.issuing("for-a", "for-b") as fetched:
+            self.assertEqual(access_token("secret-a"), "for-a")
+            self.assertEqual(access_token("secret-a"), "for-a")
+            self.assertEqual(access_token("secret-b"), "for-b")
+        self.assertEqual(fetched.call_count, 2)
+
+    def test_the_token_exchange_goes_through_the_hardened_fetcher(self):
+        from platform_core.sharepoint import access_token
+
+        with self.issuing("tok") as fetched:
+            access_token("secret")
+        url = fetched.call_args.args[0]
+        self.assertEqual(
+            url, "https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token"
+        )
+        self.assertEqual(fetched.call_args.kwargs["method"], "POST")
+        self.assertIn(b"client_secret=secret", fetched.call_args.kwargs["body"])
+
+    def test_a_refusal_says_the_credential_was_rejected(self):
+        from platform_core.sharepoint import access_token
+
+        refused = FetchError("login.microsoftonline.com returned HTTP 401.", status=401)
+        with patch("platform_core.sharepoint.fetch", side_effect=refused):
+            with self.assertRaises(FetchError) as raised:
+                access_token("wrong")
+        self.assertIn("rejected the SharePoint credential", str(raised.exception))
+        self.assertEqual(_token_cache, {})
+
+    def test_an_unreachable_endpoint_is_not_called_a_rejection(self):
+        from platform_core.sharepoint import access_token
+
+        with patch("platform_core.sharepoint.fetch", side_effect=FetchError("down")):
+            with self.assertRaises(FetchError) as raised:
+                access_token("secret")
+        self.assertIn("could not be reached", str(raised.exception))
+
+
 @override_settings(
     DOCUMENT_AUTO_CONVERT=False,
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},

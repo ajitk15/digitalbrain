@@ -8,6 +8,7 @@ message, and the SSE generator does no ORM work (CLAUDE.md, Chat shape).
 Split out of `workbench`, which keeps conversation storage and answering.
 """
 
+import logging
 import threading
 import uuid
 from datetime import timedelta
@@ -49,6 +50,8 @@ from .workbench import (
     unavailable_reason,
     wants_stream,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @login_required
@@ -536,7 +539,11 @@ def run_answer(user_id, app_id, message_id, question, history, session, mode, gr
     except (PermissionDenied, Http404):
         error = "Access to this application changed while the answer was in progress."
         session.emit("error", {"message": error})
-    except Exception:
+    except Exception as failure:
+        logger.warning(
+            "streamed answer failed",
+            extra={"event": "chat_answer_failed", "exception_type": type(failure).__name__},
+        )
         error = "AI response unavailable."
         session.emit("error", {"message": error})
     finally:

@@ -222,6 +222,11 @@ def digest_of(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, default=str).encode()).hexdigest()
 
 
+def ticket_key(entry):
+    """The id a run gives an imported ticket: the last part of its address."""
+    return (entry.source or "").rsplit("/", 1)[-1][:120]
+
+
 def repository_from(value):
     """An owner/name a ticket mentioned, or "".
 
@@ -612,7 +617,7 @@ def start_run(user, app_id, entry=None, connector=None, *, title="", body=""):
         connector=None if manual else connector,
         ticket_external_id=f"manual-{highest + 1}"
         if manual
-        else (entry.source or "").rsplit("/", 1)[-1][:120],
+        else ticket_key(entry),
         ticket_title=(title if manual else entry.title)[:300],
         ticket_url="" if manual else (entry.source or "")[:1000],
         ticket_body=body[:MANUAL_TICKET_LIMIT] if manual else "",

@@ -834,6 +834,33 @@ class KnowledgeQualityTests(BrowserTestCase):
         self.assertEqual(self.page.evaluate(CONTRAST), [])
         self.assertNoScriptErrors()
 
+    def test_it_is_drawn_with_the_portals_own_boxes_and_bars(self):
+        """The tab grew 14px corners, shadows and ring gauges no other page had."""
+        self.page.set_viewport_size({"width": 1366, "height": 900})
+        self.open("graph", self.app.pk, query="?tab=quality")
+        self.page.locator(".glance-card").first.wait_for()
+        boxes = self.page.evaluate(
+            """() => [...document.querySelectorAll(
+                 '.quality-overview, .glance-card, .quality-columns > section, .quality-metrics')]
+              .map((el) => { const s = getComputedStyle(el);
+                return [el.className, parseFloat(s.borderTopLeftRadius), s.boxShadow]; })"""
+        )
+        self.assertGreaterEqual(len(boxes), 7)
+        self.assertEqual({radius for _, radius, _ in boxes}, {7.0}, boxes)
+        self.assertEqual({shadow for _, _, shadow in boxes}, {"none"}, boxes)
+        self.assertEqual(self.page.locator(".glance-card svg circle").count(), 0)
+        measured = self.page.locator(".glance-card:not(.glance-none)")
+        self.assertEqual(
+            self.page.locator(".glance-card:not(.glance-none) progress.glance-bar").count(),
+            measured.count(),
+        )
+        title = self.page.locator(".view-title").evaluate("(el) => getComputedStyle(el).fontSize")
+        headline = self.page.locator(".quality-overview h3").first.evaluate(
+            "(el) => getComputedStyle(el).fontSize"
+        )
+        self.assertLess(float(headline[:-2]), float(title[:-2]), "a headline above the page title")
+        self.assertNoScriptErrors()
+
     def test_priority_insights_come_first_and_details_are_available_on_demand(self):
         from platform_core.models import BenchmarkRun
 

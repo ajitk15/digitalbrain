@@ -198,6 +198,25 @@ def ticket_question(run, extra=""):
     ]
 
 
+def evidence_question(run, triage, body):
+    """What gap analysis asks the knowledge graph: the ticket, triage's reading of
+    it, and its text. The scorecard asks this too, with an empty triage, so the
+    evidence it measures is the evidence a run is given.
+
+    An imported ticket is asked without its title and connector header: their
+    labels and dates outranked what the ticket says, and on the scorecard's
+    planted bugs the header cost a fifth of the evidence (76% found with it,
+    92% without). Triage still reads the whole record - its status and type
+    are what it is asked about. Text typed by hand has no header.
+    """
+    from .connector_kinds import record_text
+
+    if not run.ticket_body:
+        body = record_text(body)
+    asked = "\n".join(triage["requirements"])
+    return ticket_question(run, f"{triage['summary']}\n\nAsked for:\n{asked}\n\n{body}")
+
+
 def run_triage(run, body):
     started = time.monotonic()
     phase = start_phase(run, "triage")
@@ -311,8 +330,7 @@ def collect_items(run, payload, citations):
 def run_analysis(run, triage, body):
     started = time.monotonic()
     phase = start_phase(run, "analysis")
-    asked = "\n".join(triage["requirements"])
-    question = ticket_question(run, f"{triage['summary']}\n\nAsked for:\n{asked}\n\n{body}")
+    question = evidence_question(run, triage, body)
     if run.code_snapshot_id:
         note(run, "Gap analysis: reading the pinned code snapshot.", phase="analysis")
     code_context = code_context_for(run, question)

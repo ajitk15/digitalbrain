@@ -1,6 +1,6 @@
 {% load icons %}{% comment %}graph_trend.trend: every version measured as built and as structure alone. Drawn on the server - points and classes, no script, no style attribute - so it works with JavaScript off and under the CSP.{% endcomment %}
 <section class="card quality-trend" aria-labelledby="quality-trend-title">
-<div class="quality-trend-heading"><div><h2 id="quality-trend-title">{% icon 'history' 18 %}Quality by version</h2><p class="muted">Each version measured twice by the same code: as built, with its AI relationships, and as structure alone with them removed. No model is called.</p></div></div>
+<div class="quality-trend-heading"><div><h2 id="quality-trend-title">Quality by version</h2><p class="muted">Each version measured twice by the same code: as built, with its AI relationships, and as structure alone with them removed. No model is called.</p></div></div>
 {% for line in trend.verdict %}<p class="trend-verdict trend-{{ line.tone }}">{% if line.tone == 'good' %}{% icon 'arrow-up' 14 %}{% elif line.tone == 'poor' %}{% icon 'warning' 14 %}{% else %}{% icon 'info' 14 %}{% endif %}<span>{{ line.text }}</span></p>{% endfor %}
 {% if trend.chart %}
 <figure class="trend-chart">

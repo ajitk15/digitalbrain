@@ -30,6 +30,80 @@ def card(**values):
     }
 
 
+class TicketQuestionTests(SimpleTestCase):
+    """The agentic evidence figure is only worth anything if it is a run's question."""
+
+    def entry(self, content):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            source="https://carepath.atlassian.net/browse/CARE-401",
+            title="Refund window off by one",
+            content=content,
+        )
+
+    def test_it_is_built_by_code_factory_itself(self):
+        with patch(
+            "platform_core.code_factory_analysis.evidence_question", return_value="asked"
+        ) as asked:
+            self.assertEqual(scorecard.ticket_question(self.entry("text")), "asked")
+        run, triage, body = asked.call_args.args
+        self.assertEqual(run.ticket_external_id, "CARE-401")
+        self.assertEqual(run.ticket_title, "Refund window off by one")
+        self.assertEqual(run.ticket_body, "")
+        self.assertEqual(triage, {"summary": "", "requirements": []})
+        self.assertEqual(body, "text")
+
+    def test_it_carries_the_ticket_id_and_its_own_text_as_a_run_does(self):
+        question = scorecard.ticket_question(
+            self.entry(
+                "Refund window off by one\n\nType: Bug\nKey: CARE-401\n\nRefunds close a day early."
+                + " x" * 5000
+            )
+        )
+        self.assertTrue(question.startswith("Ticket CARE-401: Refund window off by one"))
+        self.assertIn("Refunds close a day early.", question)
+        self.assertNotIn("Type: Bug", question)
+        self.assertEqual(len(question), 8000)
+
+
+class EvidenceQuestionTests(SimpleTestCase):
+    """Gap analysis asks with what a ticket says, not the header a connector wrote."""
+
+    def run_for(self, body=""):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(ticket_external_id="KAN-4", ticket_title="Consent", ticket_body=body)
+
+    def ask(self, run, body):
+        from platform_core.code_factory_analysis import evidence_question
+
+        triage = {"summary": "Export skips consent", "requirements": ["BR-05"]}
+        return evidence_question(run, triage, body)
+
+    def test_an_imported_ticket_is_asked_without_its_title_and_header(self):
+        content = (
+            "Consent\n\nKey: KAN-4\nType: Bug\nPriority: Highest\nUpdated: 2026-09-14\n\n"
+            "BR-05 requires consent before export.\n\nSee C-09."
+        )
+        question = self.ask(self.run_for(), content)
+        self.assertEqual(
+            question,
+            "Ticket KAN-4: Consent\n\nExport skips consent\n\nAsked for:\nBR-05\n\n"
+            "BR-05 requires consent before export.\n\nSee C-09.",
+        )
+
+    def test_text_typed_by_hand_is_asked_whole(self):
+        typed = "Status: we think it is broken\n\nThe export skips consent."
+        self.assertIn(typed, self.ask(self.run_for(typed), typed))
+
+    def test_a_record_with_no_header_is_asked_whole(self):
+        from platform_core.connector_kinds import record_text
+
+        self.assertEqual(record_text("Plain prose.\n\nMore prose."), "Plain prose.\n\nMore prose.")
+        self.assertEqual(record_text("Key: KAN-9\n\nBody"), "Body")
+
+
 class RegressionTests(SimpleTestCase):
     def test_each_direction_is_judged_its_own_way(self):
         base = card(graph_found=15, graph_p50_ms=8.0, restricted_leaks=0)
@@ -120,6 +194,25 @@ class DriftScoringTests(SimpleTestCase):
         pack = json.loads(drift.PACK.read_text(encoding="utf-8"))
         self.assertEqual([t["id"] for t in pack["extraction"]], list(drift.EXTRACTION_TICKETS))
         self.assertTrue(all("source" in e for a in pack["answers"] for e in a["evidence"]))
+
+    def test_a_missing_pack_is_refused_never_rebuilt(self):
+        """A rebuilt pack is a new reference; comparing it with old records is not drift."""
+        import tempfile
+        from pathlib import Path
+
+        from django.core.exceptions import ImproperlyConfigured
+
+        with tempfile.TemporaryDirectory() as scratch:
+            missing = Path(scratch) / "drift-pack.json"
+            with (
+                patch.object(drift, "PACK", missing),
+                patch.object(drift, "build_pack") as build,
+                self.assertRaises(ImproperlyConfigured) as raised,
+            ):
+                drift.load_pack()
+            build.assert_not_called()
+            self.assertFalse(missing.exists())
+        self.assertIn("--build-pack", str(raised.exception))
 
 
 class JudgeTests(SimpleTestCase):

@@ -612,6 +612,32 @@ class ChatStreamViewTests(TestCase):
         self.assertIn("Provider unavailable", message.error)
         self.assertEqual(ChatMessage.objects.get(role="user").body, "Refund deadline?")
 
+    def test_an_unexpected_failure_is_logged_by_class_never_by_message(self):
+        """A failure the worker cannot name used to leave nothing in the log."""
+        from platform_core.chat_views import answer_worker
+
+        payload = self.start().json()
+        session = streaming.open_session(payload["message"])
+        try:
+            with (
+                self.configured(),
+                patch(
+                    "platform_core.ai.stream_chat_answer",
+                    side_effect=RuntimeError("Refund deadline? leaked"),
+                ),
+                self.assertLogs("platform_core.chat_views", "WARNING") as logged,
+            ):
+                answer_worker(
+                    self.owner.pk, self.app.pk, payload["message"], "Refund deadline?", [], session
+                )
+        finally:
+            streaming.close_session(payload["message"])
+        self.assertEqual(ChatMessage.objects.get(pk=payload["message"]).status, "failed")
+        record = logged.records[0]
+        self.assertEqual(record.event, "chat_answer_failed")
+        self.assertEqual(record.exception_type, "RuntimeError")
+        self.assertNotIn("leaked", " ".join(logged.output))
+
     def test_citation_frames_never_expose_the_source_digest(self):
         from platform_core.chat_views import public_citations
 

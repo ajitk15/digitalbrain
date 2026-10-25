@@ -106,7 +106,21 @@ def build_pack():
 
 
 def load_pack():
-    return json.loads(PACK.read_text(encoding="utf-8")) if PACK.is_file() else build_pack()
+    """The frozen pack. Missing is an error, never a reason to build one.
+
+    It used to build a fresh pack when the file was absent, so a checkout or an
+    image without it compared new runs against records of different inputs.
+    A new pack starts a new reference; that is `llm_drift --build-pack`, asked
+    for by name.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+
+    if not PACK.is_file():
+        raise ImproperlyConfigured(
+            f"{PACK.name} is missing. Restore it from the repository; "
+            "`manage.py llm_drift --build-pack` makes a new one, which starts a new reference."
+        )
+    return json.loads(PACK.read_text(encoding="utf-8"))
 
 
 def proposal(task_id, item, reason):

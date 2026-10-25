@@ -511,11 +511,21 @@ def integrity(ws, revision, cited_all):
 
 
 def ticket_question(ticket):
-    """A ticket asked as Code Factory asks it: its title and description, not its header."""
-    from .serviceops import fields_and_description
+    """A ticket asked as Code Factory's gap analysis asks it (`evidence_question`).
 
-    _, description = fields_and_description(ticket)
-    return (ticket.title + "\n" + description)[:4000]
+    Triage's summary and requirements are a model's reading of the ticket, and
+    the scorecard calls no model, so they are empty: everything else - the id,
+    the title, the imported text and the cut - is what a run sends. It used to
+    be the title and description cut at 4,000 characters, which no run asked.
+    """
+    from .code_factory import MANUAL_TICKET_LIMIT, ticket_key
+    from .code_factory_analysis import evidence_question
+
+    run = SimpleNamespace(
+        ticket_external_id=ticket_key(ticket), ticket_title=ticket.title[:300], ticket_body=""
+    )
+    triage = {"summary": "", "requirements": []}
+    return evidence_question(run, triage, ticket.content[:MANUAL_TICKET_LIMIT])
 
 
 def agentic(ws, revision):

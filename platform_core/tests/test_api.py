@@ -1,6 +1,6 @@
 import json
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -349,6 +349,64 @@ class GraphApiTests(TestCase):
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
     PASSWORD_HASHERS=["django.contrib.auth.hashers.MD5PasswordHasher"],
 )
+class ThrottleThreadingTests(SimpleTestCase):
+    """Without Redis the limit lives in process memory, which waitress reads on threads."""
+
+    def setUp(self):
+        reset_throttle()
+        self.addCleanup(reset_throttle)
+
+    def hammer(self, tokens, calls):
+        import sys
+        import threading
+        from types import SimpleNamespace
+
+        from platform_core import api_auth
+        from platform_core.api_auth import ApiError
+
+        interval = sys.getswitchinterval()
+        sys.setswitchinterval(1e-6)
+        self.addCleanup(sys.setswitchinterval, interval)
+        allowed, failures, lock = [0], [], threading.Lock()
+
+        def work(offset):
+            for index in range(calls):
+                token = SimpleNamespace(pk=tokens[(index + offset) % len(tokens)])
+                try:
+                    api_auth.throttle(token)
+                except ApiError:
+                    continue
+                except Exception as failure:
+                    failures.append(failure)
+                    return
+                with lock:
+                    allowed[0] += 1
+
+        threads = [threading.Thread(target=work, args=(n,)) for n in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        return allowed[0], failures
+
+    def test_concurrent_requests_never_pass_more_than_the_limit(self):
+        from platform_core import api_auth
+
+        allowed, failures = self.hammer(["one"], 400)
+        self.assertEqual(failures, [])
+        self.assertEqual(allowed, api_auth.RATE_LIMIT)
+
+    def test_the_sweep_survives_other_threads_adding_tokens(self):
+        from platform_core import api_auth
+
+        # Past the sweep size, every call walks the map while others write to it.
+        stale = timezone.now().timestamp() - 2 * api_auth.RATE_WINDOW
+        with api_auth._recent_lock:
+            api_auth._recent.update({f"old-{n}": (stale, 1) for n in range(api_auth.SWEEP_AT)})
+        _, failures = self.hammer([f"new-{n}" for n in range(2000)], 300)
+        self.assertEqual(failures, [])
+
+
 class TokenManagementTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)

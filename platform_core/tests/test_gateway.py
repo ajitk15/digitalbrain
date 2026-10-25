@@ -224,6 +224,31 @@ class GatewayTests(TestCase):
             stream_chat_answer(self.owner, self.app, config, "key", "Q?", [], [], session)
         run.assert_not_called()
 
+    def test_a_provider_failure_in_a_streamed_answer_is_logged_by_class(self):
+        from types import SimpleNamespace
+
+        from django.core.exceptions import ValidationError
+
+        from platform_core.ai import stream_chat_answer
+
+        config = AIConfiguration.objects.get(application=self.app, purpose="chat")
+        session = SimpleNamespace(emit=lambda *a: None, cancel=None, stopped=False)
+        with (
+            patch(
+                "platform_core.agent_runtime.claude_runtime.run",
+                side_effect=RuntimeError("rate limited for Q? and its sources"),
+            ),
+            self.assertLogs("platform_core.ai", "WARNING") as logged,
+            self.assertRaises(ValidationError),
+        ):
+            stream_chat_answer(self.owner, self.app, config, "key", "Q?", [], [], session)
+        record = logged.records[0]
+        self.assertEqual(record.event, "chat_answer_failed")
+        self.assertEqual(record.exception_type, "RuntimeError")
+        self.assertEqual(record.provider, config.provider)
+        self.assertNotIn("sources", " ".join(logged.output))
+        self.assertFalse(AIAdmission.objects.exists())
+
     def test_an_embedding_request_holds_a_slot_and_leaves_a_receipt(self):
         import numpy
 

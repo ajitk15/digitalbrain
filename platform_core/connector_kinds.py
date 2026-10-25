@@ -168,13 +168,31 @@ def read_header(content):
     to look like a field is not one. For display only - ServiceOps and the
     ticket score keep their own readers, which incident matching depends on.
     """
+    _, _, matches = _header_paragraph(content)
+    return {match.group(1): match.group(2).strip()[:HEADER_VALUE] for match in matches}
+
+
+def record_text(content):
+    """A record's own text: what follows its title and the header `header` wrote.
+
+    For asking about a record, where the header's labels and dates are noise
+    (Code Factory's gap analysis). Content with no header is returned whole.
+    """
+    paragraphs, index, _ = _header_paragraph(content)
+    if index is None:
+        return (content or "").strip()
+    return "\n\n".join(paragraphs[index + 1 :]).strip()
+
+
+def _header_paragraph(content):
+    """(paragraphs, which one is the header or None, its line matches)."""
     paragraphs = (content or "").replace("\r\n", "\n").split("\n\n")
-    for paragraph in paragraphs[:2]:
+    for index, paragraph in enumerate(paragraphs[:2]):
         lines = [line for line in paragraph.split("\n") if line.strip()]
         matches = [HEADER_LINE.match(line.strip()) for line in lines]
         if lines and all(matches):
-            return {match.group(1): match.group(2).strip()[:HEADER_VALUE] for match in matches}
-    return {}
+            return paragraphs, index, matches
+    return paragraphs, None, []
 
 
 def incident_header(pairs):

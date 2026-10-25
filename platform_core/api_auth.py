@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import threading
 import uuid
 
 from django.utils import timezone
@@ -181,6 +182,10 @@ def authenticate(request, reference):
 
 
 _recent = {}
+#: Waitress serves requests on threads: without this, two of them counted the
+#: same window over each other, and the sweep could iterate the map while
+#: another added to it.
+_recent_lock = threading.Lock()
 
 
 def throttle(token):
@@ -211,18 +216,19 @@ def throttle(token):
                 code="rate_limited",
             )
         return
-    window_start, count = _recent.get(token.pk, (now, 0))
-    if now - window_start >= RATE_WINDOW:
-        window_start, count = now, 0
-    count += 1
-    _recent[token.pk] = (window_start, count)
-    if len(_recent) > SWEEP_AT:
-        # Tokens get created, revoked and deleted; their windows were not. The
-        # map only ever grew, so the sweep is what keeps "process memory" an
-        # honest description of the cost.
-        stale = [pk for pk, (start, _) in _recent.items() if now - start >= RATE_WINDOW]
-        for pk in stale:
-            del _recent[pk]
+    with _recent_lock:
+        window_start, count = _recent.get(token.pk, (now, 0))
+        if now - window_start >= RATE_WINDOW:
+            window_start, count = now, 0
+        count += 1
+        _recent[token.pk] = (window_start, count)
+        if len(_recent) > SWEEP_AT:
+            # Tokens get created, revoked and deleted; their windows were not. The
+            # map only ever grew, so the sweep is what keeps "process memory" an
+            # honest description of the cost.
+            stale = [pk for pk, (start, _) in _recent.items() if now - start >= RATE_WINDOW]
+            for pk in stale:
+                del _recent[pk]
     if count > RATE_LIMIT:
         raise ApiError(
             f"Rate limit exceeded: {RATE_LIMIT} requests per {RATE_WINDOW} seconds.",
@@ -232,4 +238,5 @@ def throttle(token):
 
 
 def reset_throttle():
-    _recent.clear()
+    with _recent_lock:
+        _recent.clear()

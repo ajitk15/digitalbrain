@@ -1116,9 +1116,14 @@ question's references, read from the whole passage rather than its label (a tabl
 label stops at its first cell), a source not yet cited breaking ties. A source naming its
 own key is not a reference to it. Each is verified like any other citation and says
 "Reached by: names C-09". A question naming no reference gets nothing extra, so chat and
-the benchmark are untouched. Planted-bug evidence recall went 76% -> 96%; the one miss,
-F-03, is named only by evidence (C-08), not by the ticket - following references from
-the evidence is the next step, and would need measuring for noise first.
+the benchmark are untouched. Planted-bug evidence recall is 92%. The 96% once recorded
+was measured with a question no run sends; the scorecard now asks with Code Factory's
+own `evidence_question`, which asks an imported ticket **without its title and connector
+header** (`connector_kinds.record_text`) - with them a run found 76%, because the
+header's labels and dates outranked what the ticket says. Triage still reads the whole
+record. The misses: F-03 is named only by evidence (C-08), not by the ticket - following
+references from the evidence is the next step, and would need measuring for noise
+first - and R-02 for CARE-425.
 
 **Published graphs are prepared once per process** (`graph_ai.prepared`, LRU of
 `CACHE_SIZE`): parsed data, relationship texts and the BM25 index. Safe because a

@@ -1,5 +1,6 @@
 """Optional OpenAI synthesis with explicit application credentials and estimated costs."""
 
+import logging
 import os
 from decimal import Decimal
 from pathlib import Path
@@ -28,6 +29,8 @@ from .model_catalog import (
 from .models import AI_PURPOSES, AIConfiguration
 from .policy import application_for
 from .services import audit, record_ai_usage
+
+logger = logging.getLogger(__name__)
 
 #: What each changeable reply cap is, said once on its task's form.
 LIMIT_HELP = {
@@ -749,7 +752,16 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
             )
         except (PermissionDenied, Http404):
             raise
-        except Exception:
+        except Exception as failure:
+            # The class name only: a provider's message can carry the prompt.
+            logger.warning(
+                "streamed answer failed",
+                extra={
+                    "event": "chat_answer_failed",
+                    "provider": config.provider,
+                    "exception_type": type(failure).__name__,
+                },
+            )
             raise ValidationError(
                 "AI response unavailable. Check the model, credential and provider limits. "
                 "The request may have been billed by the provider; it is not retried "
