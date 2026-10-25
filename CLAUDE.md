@@ -1108,7 +1108,13 @@ cached answer go to the model, up to `MAX_EXTRACTION_SOURCES` calls a run. A sou
 longer than `MAX_SOURCE_CHARACTERS` is read in `windows`, cut at line ends and before a
 heading, at most `MAX_WINDOWS`; text past them is counted on the version, never silently
 dropped. An answer is kept whole even past `MAX_RELATIONSHIPS` (it stops new calls, not
-answers). Proposals are judged on every build against the source the model was reading,
+answers). **A reply that cannot be read costs its source, never the run**
+(`graph_ai.UnusableAnswer`): it is not cached, so the next run asks it again, it counts
+against the run's calls, and the version names it; only every reply unreadable fails the
+run. It used to stop the run, and on CarePathDev the same first source failed every time,
+so 39 of 43 sources were never asked and versions carried two relationships. A JSON
+object with a sentence around it is cut out whole (`answer_object`) and must still parse.
+Proposals are judged on every build against the source the model was reading,
 so an answer naming another source's id is refused. **Every rebuild carries cached answers
 forward with no model call** (`enrich_graph(app_id, None, ...)`): a background rebuild
 after a source change keeps the AI relationships of everything unchanged and names their

@@ -93,6 +93,22 @@ def instructions(domain=None):
 EXTRACTION_INSTRUCTIONS = instructions()
 
 
+class UnusableAnswer(ValidationError):
+    """One source's reply could not be read. It costs that source, never the run."""
+
+
+def answer_object(answer):
+    """The JSON object in a reply, with a fence or a sentence around it removed.
+
+    Nothing is repaired: the object is cut out whole, from its first brace to
+    its last, and must still parse. A reply with a sentence before or after the
+    object used to be refused whole.
+    """
+    text = answer.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    start, end = text.find("{"), text.rfind("}")
+    return text[start : end + 1] if 0 <= start < end else text
+
+
 def extract_relationships(app_id, config, citation, receipt=None, domain=None):
     """Relationships the model finds in ONE source.
 
@@ -122,14 +138,12 @@ def extract_relationships(app_id, config, citation, receipt=None, domain=None):
         receipt=receipt,
     )
     try:
-        payload = json.loads(
-            answer.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        )
+        payload = json.loads(answer_object(answer))
         found = payload["relationships"]
         if not isinstance(found, list) or len(found) > RELATIONSHIPS_PER_SOURCE:
             raise ValueError
     except (ValueError, KeyError, TypeError):
-        raise ValidationError("Graph model returned an invalid relationship structure.") from None
+        raise UnusableAnswer("Graph model returned an invalid relationship structure.") from None
     return found
 
 
@@ -420,7 +434,7 @@ def enrich_graph(app_id, config, entries, data, quality):
     from .models import DocumentAIResult
 
     calls = fresh = 0
-    asked, stopped = set(), None
+    asked, stopped, unusable = set(), None, []
     unanswered = [
         (entry, key, text)
         for entry, items, _ in planned
@@ -435,7 +449,7 @@ def enrich_graph(app_id, config, entries, data, quality):
                 (item, True, str(entry.pk)) for item in restated(cached[key][0], str(entry.pk))
             )
             continue
-        if calls >= MAX_EXTRACTION_SOURCES or fresh >= MAX_RELATIONSHIPS:
+        if calls + len(unusable) >= MAX_EXTRACTION_SOURCES or fresh >= MAX_RELATIONSHIPS:
             break
         citation = {
             "id": str(entry.pk),
@@ -445,6 +459,14 @@ def enrich_graph(app_id, config, entries, data, quality):
         }
         try:
             found = extract_relationships(app_id, config, citation, domain=domain)
+        except UnusableAnswer:
+            # That source only. Stopping here was what left a CarePath library
+            # at two relationships: the same source came first in every run, its
+            # reply could not be read, and the 39 after it were never asked.
+            # Not cached, so the next run asks it again; it still counts against
+            # the run's calls, since it was paid for.
+            unusable.append(entry.title)
+            continue
         except (BudgetExceeded, ValidationError) as failure:
             # What was already extracted is paid for and cached: keep it, and
             # say why the rest is not there. Nothing at all to keep is a failure.
@@ -470,6 +492,10 @@ def enrich_graph(app_id, config, entries, data, quality):
         )
         cached[key] = (result, None)
         proposals.extend((item, False, str(entry.pk)) for item in found)
+    if unusable and not calls and not proposals and not legacy and not used:
+        # Every reply was unreadable: a failed run, as one that raised, never a
+        # version that quietly reads as AI-enriched.
+        raise UnusableAnswer("Graph model returned an invalid relationship structure.")
     if not calls and not proposals and not legacy and not used:
         return data, quality
 
@@ -634,6 +660,13 @@ def enrich_graph(app_id, config, entries, data, quality):
         )
     if stopped:
         quality["warnings"].append(f"Extraction stopped early. {stopped}")
+    if unusable:
+        quality["unusable_sources"] = len(unusable)
+        quality["warnings"].append(
+            f"The model's reply could not be read for {len(unusable)} source(s), so they have "
+            f"no AI relationships yet; the next AI run asks again: {', '.join(unusable[:5])}"
+            + (" and more." if len(unusable) > 5 else ".")
+        )
     if quality["pending_sources"]:
         quality["warnings"].append(
             f"{quality['pending_sources']} source(s) are not extracted yet; the next AI run "

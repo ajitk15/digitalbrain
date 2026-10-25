@@ -107,6 +107,40 @@ class PerSourceExtractionTests(TestCase):
         with self.assertRaises(ValidationError):
             self.enrich(["not json at all", "also not json"])
 
+    def test_an_unreadable_reply_costs_its_source_and_the_next_is_still_asked(self):
+        """It used to stop the run: CarePath's first unreadable source held back 39 more."""
+        (data, quality), invoke = self.enrich(
+            [
+                "I could not find a relationship here.",
+                self.answer(self.second, self.second.content, "Service Gamma", "Service Alpha"),
+            ]
+        )
+        self.assertEqual(invoke.call_count, 2)
+        self.assertEqual(quality["semantic_relationships"], 1)
+        self.assertEqual(quality["unusable_sources"], 1)
+        self.assertTrue(any("could not be read for 1 source(s)" in w for w in quality["warnings"]))
+        self.assertFalse(any("stopped early" in w for w in quality["warnings"]))
+        # Not cached, so the next run asks that source again and only that one.
+        entries = list(sources_for(self.app.pk))
+        data, quality = build_graph(entries, len(entries))
+        with patch(
+            "platform_core.ai.invoke_ai",
+            return_value=self.answer(self.first, self.first.content, "Service Alpha", "Queue Beta"),
+        ) as again:
+            data, quality = enrich_graph(self.app.pk, self.config, entries, data, quality)
+        self.assertEqual(again.call_count, 1)
+        self.assertEqual(quality["semantic_relationships"], 2)
+
+    def test_a_reply_with_a_sentence_around_its_object_is_read(self):
+        wrapped = (
+            "Here are the relationships.\n"
+            + self.answer(self.first, self.first.content, "Service Alpha", "Queue Beta")
+            + "\nThat is all."
+        )
+        second = self.answer(self.second, self.second.content, "Service Gamma", "Service Alpha")
+        (data, quality), _ = self.enrich([wrapped, second])
+        self.assertEqual(quality["semantic_relationships"], 2)
+
     def test_more_relationships_than_the_per_source_cap_are_refused(self):
         overflowing = json.dumps(
             {
@@ -123,7 +157,7 @@ class PerSourceExtractionTests(TestCase):
             }
         )
         with self.assertRaises(ValidationError):
-            self.enrich([overflowing])
+            self.enrich([overflowing, overflowing])
 
     def test_a_quote_longer_than_the_cap_is_rejected_by_verification(self):
         long_quote = "y" * (MAX_QUOTE_CHARACTERS + 1)
