@@ -996,12 +996,12 @@ def onboarding_connectors(request, pk):
 
     Owner-only, like the Features screen these are switches on. Every kind gets
     an explicit row, so "answered, nothing ticked" differs from "not asked yet",
-    where every kind is still allowed. Ticked first: the kinds that suit what
-    the application is for.
+    where every kind is still allowed. Ticked first: every kind, so saving the
+    question as offered switches nothing off.
     """
     from .connector_kinds import KINDS
     from .readiness import chosen_connectors
-    from .services import DEFAULT_CONNECTORS, connector_feature, purposes
+    from .services import connector_feature
 
     app, _ = application_for(request.user, pk, owner=True)
     if request.method == "POST":
@@ -1037,7 +1037,9 @@ def onboarding_connectors(request, pk):
         return redirect("onboarding", pk=app.pk)
     chosen = chosen_connectors(app)
     if chosen is None:
-        chosen = {kind for purpose in purposes(app) for kind in DEFAULT_CONNECTORS[purpose]}
+        # Every kind, as a missing row already means: a question nobody has
+        # answered must not switch a connector off by being saved as offered.
+        chosen = set(KINDS)
     return render(
         request,
         "onboarding_connectors.html",

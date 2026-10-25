@@ -57,6 +57,14 @@ start-all.cmd
 stop-all.cmd
 ```
 
+Docker Desktop is optional. With it running, start-all brings up PostgreSQL, Redis
+and ClamAV from `docker-compose.dev.yaml`, as production runs them. Without it - not
+installed, not running, or `start-all.cmd -NoDocker` - it says so and starts on SQLite
+with no Redis and no virus scanner (uploads are not scanned in development unless
+`scan_documents = true`; production always scans). Every feature, Code Factory's local
+write and tests, the demo reset and this machine's Claude login are switched on in
+`config/local.toml` on every start, unless that file says otherwise.
+
 An ordinary start keeps an existing environment up to date but never downloads a
 toolchain. The one exception is a folder with no `.venv`, which is a first run
 rather than an ordinary start, and sets itself up.

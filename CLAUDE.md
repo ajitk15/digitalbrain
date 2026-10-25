@@ -82,7 +82,8 @@ reset/local delivery to development have this explicit demonstration exception.
 anything else: PostgreSQL 16 on 127.0.0.1:5442, Redis 7.4 over TLS on 6390 and a ClamAV
 daemon on 3310 - production's images, TLS from a CA made in a volume (only `ca.crt` leaves,
 into `.runtime/dev-ca`), passwords as files in `.runtime/secrets`. So Redis means uvicorn,
-uploads are scanned, row security and the runtime role hold, exactly as deployed.
+row security and the runtime role hold, exactly as deployed, and uploads are scanned once
+`scan_documents = true` is written (see below).
 `scripts/init_local.py --services` points `config/local.toml` at them once and writes
 `config/local.runtime.toml` on every start: **`local.toml` is the owner's** - migrations,
 `manage.py`, the gates - and the server is started with the runtime file, which connects
@@ -97,6 +98,37 @@ of it. What still differs is what production refuses by design - `claude_use_hos
 and the bucket's name. `manage.py test` follows `local.toml`, so the suite runs on that
 PostgreSQL too; `digitalbrain/test_runner.py` blanks Redis, the scanner, OTel, the bucket
 and the web server for tests, as it blanks the shared connector folder.
+
+**Docker is optional.** When Docker is not installed or not running, or with
+`start-all.cmd -NoDocker`, start-all warns and starts the way a laptop does: SQLite at
+`.runtime/local.sqlite3`, no Redis (so waitress, every stream in this process), no ClamAV,
+and every worker lane in the server process as always. `scripts/init_local.py
+--no-services` writes `config/local.nodocker.toml` - `local.toml` without `[database]`,
+`[redis]`, `clamd` and `scan_documents`, regenerated on every such start and deleted when
+`local.toml` names no service - and start-all runs every command and the server with it;
+a machine that never ran Docker has no such file and runs `local.toml` itself. Run the
+gates against it with `DIGITAL_BRAIN_CONFIG=config/local.nodocker.toml`. **An upload is
+not virus-scanned there**: that is the existing development rule, not a new flag -
+`DOCUMENT_SCAN_REQUIRED` is `PRODUCTION or scan_documents`, so production scans whatever
+the file says and development scans only where `scan_documents = true` (which the Docker
+path does not write either; the ClamAV daemon there is configured but asked only when it
+is). Where the data had been moved to PostgreSQL, the first such start copies
+`local.sqlite3` to `local.before-nodocker.sqlite3` before writing to it, and says it is
+reading the copy from before the move. Nothing is copied back when Docker returns.
+
+**Development switches everything on.** `init_local.py` adds, on every start, each key of
+`DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
+`allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
+`code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
+drive root), `managed_secret_directory`, `ocr` and `tesseract_path` where Tesseract is
+installed - above the first table, so no table swallows it. A key written down, true or
+false, is never changed. `load_config`'s production refusals are untouched, and
+`test_setup` checks each one is still refused. Onboarding's connector question starts
+with every kind ticked, so saving it as offered switches nothing off. So with no
+`claude_<application id>` mounted, Claude calls go to the CLI on this machine's own
+`~/.claude` login - one-shot calls too, because `uses_messages_api` is false for an
+empty credential - and a new application is seeded with Claude when no `_default`
+template exists.
 
 On a first start the ClamAV image can keep serving its bundled signatures after freshclam
 replaced them; the platform then refuses every scan as stale, correctly. A restart of the

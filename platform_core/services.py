@@ -124,8 +124,8 @@ PURPOSE_CHOICES = (
     ),
     ("both", "Both", "Everything above."),
 )
-#: The connector kinds onboarding ticks first for each purpose. Only a starting
-#: point: the owner can tick any kind for any purpose.
+#: The connector kinds each purpose's demonstration application keeps
+#: (`scripts/rebuild_demo.py`). Onboarding starts with every kind ticked.
 DEFAULT_CONNECTORS = {
     "engineering": ("jira", "github"),
     "operations": ("servicenow",),

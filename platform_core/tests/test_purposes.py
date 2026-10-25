@@ -109,10 +109,17 @@ class ConnectorChoiceTests(TestCase):
         operations_only(self.app)
         self.url = reverse("onboarding-connectors", args=[self.app.pk])
 
-    def test_it_starts_with_the_kinds_that_suit_the_purpose(self):
-        response = self.client.get(self.url)
-        self.assertRegex(response.content.decode(), r'name="connector_servicenow"[^>]*checked')
-        self.assertNotRegex(response.content.decode(), r'name="connector_github"[^>]*checked')
+    def test_a_new_application_starts_as_both(self):
+        from platform_core.forms import ApplicationForm
+
+        self.assertEqual(ApplicationForm.base_fields["purpose"].initial, "both")
+
+    def test_it_starts_with_every_kind_ticked(self):
+        from platform_core.connector_kinds import KINDS
+
+        page = self.client.get(self.url).content.decode()
+        for kind in KINDS:
+            self.assertRegex(page, rf'name="connector_{kind}"[^>]*checked')
 
     def test_saving_writes_every_kind_and_audits_the_changes(self):
         response = self.client.post(self.url, {"connector_servicenow": "on"})

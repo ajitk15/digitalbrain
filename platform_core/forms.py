@@ -95,9 +95,11 @@ class ApplicationForm(ResourceForm):
     new_product = forms.CharField(max_length=120, required=False, label="New product name")
     owner = forms.ModelChoiceField(queryset=User.objects.none(), label="Application owner")
     # Asked on the page (the radios carry `required`), tolerated when absent so a
-    # caller that predates the question still creates what it always did.
+    # caller that predates the question still creates what it always did. Starts
+    # on Both, so an application created as offered has every feature on.
     purpose = forms.ChoiceField(
         choices=[(key, label) for key, label, _ in PURPOSE_CHOICES],
+        initial="both",
         required=False,
         label="What is this application for?",
         widget=forms.RadioSelect(attrs={"required": True}),

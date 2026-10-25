@@ -79,7 +79,12 @@ def set_host_login(enabled):
             continue
         rewritten.append(line)
     if not replaced:
-        rewritten += [
+        # Before the first table: after the last one TOML would read the key as
+        # part of [database] or [redis], which refuse it.
+        at = next((i for i, line in enumerate(rewritten) if line.startswith("[")), len(rewritten))
+        while at and rewritten[at - 1].startswith("#"):
+            at -= 1
+        rewritten[at:at] = [
             "# Development only: use this machine's Claude Code login when an",
             "# application has no mounted Claude credential. Refused in production.",
             f"{marker} = {'true' if enabled else 'false'}",

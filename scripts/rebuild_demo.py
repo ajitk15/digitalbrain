@@ -221,19 +221,31 @@ def demo_settings():
 
     path = Path(os.environ.get("DIGITAL_BRAIN_CONFIG", ROOT / "config" / "local.toml"))
     current = tomllib.loads(path.read_text(encoding="utf-8"))
-    lines = path.read_text(encoding="utf-8").splitlines()
-    for key, value, name, applied in wanted_settings(current):
-        found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == key]
-        if found and lines[found[0]].partition("=")[2].strip() == value:
-            print(f"found   {key} = {value}")
-        else:
-            if found:
-                lines[found[0]] = f"{key} = {value}"
+    wanted = wanted_settings(current)
+    # A start without Docker runs a copy init_local.py writes from local.toml on
+    # every start, so the settings go into local.toml as well or the next start
+    # forgets them.
+    paths = [path] + ([path.with_name("local.toml")] if path.name == "local.nodocker.toml" else [])
+    for target in paths:
+        lines = target.read_text(encoding="utf-8").splitlines()
+        for key, value, name, applied in wanted:
+            found = [i for i, line in enumerate(lines) if line.partition("=")[0].strip() == key]
+            if found and lines[found[0]].partition("=")[2].strip() == value:
+                if target == path:
+                    print(f"found   {key} = {value}")
             else:
-                lines.append(f"{key} = {value}")
-            print(f"set     {key} = {value}")
-        setattr(settings, name, applied)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                if found:
+                    lines[found[0]] = f"{key} = {value}"
+                else:
+                    # Before the first table: after the last one TOML would read
+                    # the key as part of [originals] or [redis].
+                    at = next((i for i, line in enumerate(lines) if line.startswith("[")),
+                              len(lines))
+                    lines.insert(at, f"{key} = {value}")
+                if target == path:
+                    print(f"set     {key} = {value}")
+            setattr(settings, name, applied)
+        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def step(number, title):

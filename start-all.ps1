@@ -12,7 +12,11 @@ param(
     # applications, their sources, connectors and credentials (asked for here,
     # hidden), then import, convert and publish. Safe to repeat - it reports
     # what already exists. See scripts/rebuild_demo.py.
-    [switch]$Demo
+    [switch]$Demo,
+    # Start without Docker even when it is running: SQLite, no Redis (so
+    # waitress), no virus scanner. Chosen on its own when Docker is missing or
+    # not running.
+    [switch]$NoDocker
 )
 . (Join-Path $PSScriptRoot 'scripts/runtime-common.ps1')
 . (Join-Path $PSScriptRoot 'scripts/environment.ps1')
@@ -128,18 +132,41 @@ try {
     # copied would otherwise keep pointing at the old machine's secrets - or fail
     # with an error that names the missing signing key and not the real cause.
     $runtimeConfig = $null
+    $localConfig = $null
+    $withoutDocker = $null
     if (-not $env:DIGITAL_BRAIN_CONFIG) {
         # The services production runs - PostgreSQL 16 as two roles, Redis over
         # TLS, a ClamAV daemon - from docker-compose.dev.yaml, so this machine is
         # configured the way a deployment is rather than the way a laptop is.
-        $previous = $ErrorActionPreference
-        $ErrorActionPreference = 'Continue'
-        & docker info *> $null
-        $dockerUp = ($LASTEXITCODE -eq 0)
-        $ErrorActionPreference = $previous
-        if (-not $dockerUp) {
-            throw 'Docker is not running. Start Docker Desktop: PostgreSQL, Redis and ClamAV run in it (docker-compose.dev.yaml).'
+        # Without Docker it runs the way a laptop does instead, rather than not
+        # at all: SQLite, waitress, and uploads not scanned.
+        if ($NoDocker) {
+            $withoutDocker = 'Starting without Docker (-NoDocker).'
+        } elseif (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+            $withoutDocker = 'Docker is not installed, so starting without it.'
+        } else {
+            $previous = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            & docker info *> $null
+            $dockerUp = ($LASTEXITCODE -eq 0)
+            $ErrorActionPreference = $previous
+            if (-not $dockerUp) {
+                $withoutDocker = 'Docker is not running, so starting without it. Start Docker Desktop and restart for PostgreSQL, Redis and ClamAV.'
+            }
         }
+    }
+    if ($withoutDocker) {
+        Write-Warning $withoutDocker
+        Invoke-Checked $PythonExecutable @('scripts/init_local.py', '--no-services')
+        # Only when local.toml names the Docker services: a machine that never
+        # ran Docker has no such file and runs local.toml itself.
+        $candidate = Join-Path $ProjectRoot 'config/local.nodocker.toml'
+        if (Test-Path -LiteralPath $candidate) {
+            $localConfig = $candidate
+            # Every command below, and the server, reads it. Removed in finally.
+            $env:DIGITAL_BRAIN_CONFIG = $localConfig
+        }
+    } elseif (-not $env:DIGITAL_BRAIN_CONFIG) {
         Invoke-Checked $PythonExecutable @('scripts/init_local.py', '--services')
         $compose = @('compose', '-f', 'docker-compose.dev.yaml', '-p', 'digitalbrain-dev')
         Invoke-Docker ($compose + @('up', '-d', '--wait', 'postgres', 'redis'))
@@ -219,6 +246,7 @@ try {
     }
     Write-Output 'Stop with ./stop-all.ps1. Logs: .runtime/server-error.log'
 } finally {
+    if ($localConfig) { Remove-Item Env:DIGITAL_BRAIN_CONFIG -ErrorAction SilentlyContinue }
     Pop-Location
     $operationLock.Dispose()
 }

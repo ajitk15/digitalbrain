@@ -11,6 +11,7 @@ htmlcov/
 .ruff_cache/
 config/local.toml
 config/local.runtime.toml
+config/local.nodocker.toml
 staticfiles/
 *.log
 node_modules/

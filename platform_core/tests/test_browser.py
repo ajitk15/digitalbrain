@@ -1474,10 +1474,11 @@ class OnboardingTests(BrowserTestCase):
                 "connector_github": False,
                 "connector_jira": True,
                 "connector_servicenow": True,
-                "connector_awx": False,
-                "connector_rundeck": False,
-                "connector_azure_automation": False,
-                "connector_automation_list": False,
+                # Every kind starts ticked; only GitHub was unticked.
+                "connector_awx": True,
+                "connector_rundeck": True,
+                "connector_azure_automation": True,
+                "connector_automation_list": True,
             },
         )
         self.assertNoScriptErrors()

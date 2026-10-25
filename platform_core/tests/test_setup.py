@@ -88,6 +88,117 @@ class ConfigurationRepairTests(TestCase):
         )
 
 
+class DevelopmentDefaultsTests(TestCase):
+    """scripts/init_local.py switching development features on, and starting without Docker."""
+
+    SERVICES = (
+        'mode = "development"\n'
+        'hosts = ["localhost"]\n'
+        'secret_directory = "C:/s"\n'
+        "allow_demo_reset = false\n"
+        'clamd = "127.0.0.1:3310"\n'
+        "\n"
+        "[originals]\n"
+        'store = "s3"\n'
+        'bucket = "b"\n'
+        "\n"
+        "[database]\n"
+        'name = "digital_brain"\n'
+        "port = 5442\n"
+        "\n"
+        "[redis]\n"
+        'host = "127.0.0.1"\n'
+    )
+
+    def setUp(self):
+        self.module = load_script("init_local")
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name) / "project"
+        self.config = Path(self.directory.name) / "local.toml"
+
+    def read(self, path):
+        import tomllib
+
+        return tomllib.loads(path.read_text(encoding="utf-8"))
+
+    def test_absent_keys_are_switched_on_above_the_first_table(self):
+        self.config.write_text(self.SERVICES, encoding="utf-8")
+        added = self.module.switch_on(self.config, self.root)
+        current = self.read(self.config)
+        for key in (
+            "claude_use_host_login",
+            "code_factory_local_write",
+            "code_factory_local_tests",
+            "code_graph_local_roots",
+            "managed_secret_directory",
+            "ocr",
+        ):
+            self.assertIn(key, added)
+            self.assertIn(key, current, key)
+        self.assertTrue(current["claude_use_host_login"])
+        # Top-level keys, not swallowed by the tables after them.
+        self.assertEqual(set(current["redis"]), {"host"})
+        self.assertEqual(set(current["originals"]), {"store", "bucket"})
+
+    def test_a_key_written_down_stays_as_written(self):
+        self.config.write_text(self.SERVICES, encoding="utf-8")
+        added = self.module.switch_on(self.config, self.root)
+        self.assertNotIn("allow_demo_reset", added)
+        self.assertFalse(self.read(self.config)["allow_demo_reset"])
+        before = self.config.read_text(encoding="utf-8")
+        self.assertEqual(self.module.switch_on(self.config, self.root), [])
+        self.assertEqual(self.config.read_text(encoding="utf-8"), before)
+
+    def test_code_graph_never_reads_a_drive_root(self):
+        drive = Path(Path.cwd().anchor)
+        self.assertEqual(self.module.local_roots(drive / "app"), [(drive / "app").as_posix()])
+        self.assertEqual(
+            self.module.local_roots(drive / "work" / "app"), [(drive / "work").as_posix()]
+        )
+
+    def test_the_file_without_docker_drops_only_the_services(self):
+        self.config.write_text(self.SERVICES, encoding="utf-8")
+        target = self.module.without_services(self.config)
+        current = self.read(target)
+        self.assertNotIn("database", current)
+        self.assertNotIn("redis", current)
+        self.assertNotIn("clamd", current)
+        self.assertEqual(current["originals"]["bucket"], "b")
+        self.assertFalse(current["allow_demo_reset"])
+        # local.toml itself is untouched: Docker is used again when it is back.
+        self.assertIn("database", self.read(self.config))
+
+    def test_no_file_when_local_toml_names_no_service(self):
+        stale = self.config.with_name("local.nodocker.toml")
+        stale.write_text("left from before", encoding="utf-8")
+        self.config.write_text('mode = "development"\nsecret_directory = "C:/s"\n',
+                               encoding="utf-8")
+        self.assertIsNone(self.module.without_services(self.config))
+        self.assertFalse(stale.exists())
+
+    def test_production_still_refuses_what_development_switches_on(self):
+        import os
+        from unittest import mock
+
+        from django.core.exceptions import ImproperlyConfigured
+
+        from digitalbrain.configuration import load_config
+
+        for key, value, _ in self.module.development(self.root):
+            if value != "true":
+                continue
+            if key == "ocr":
+                continue
+            self.config.write_text(
+                f'mode = "production"\nsecret_directory = "C:/s"\n{key} = true\n',
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"DIGITAL_BRAIN_CONFIG": str(self.config)}):
+                with self.assertRaisesMessage(ImproperlyConfigured, key):
+                    load_config()
+
+
 class HostLoginFlagTests(TestCase):
     """scripts/ai_setup.py editing config/local.toml in place."""
 
@@ -114,6 +225,18 @@ class HostLoginFlagTests(TestCase):
         self.assertEqual(body.count("claude_use_host_login"), 1)
         self.assertIn("claude_use_host_login = false", body)
         self.assertIn('hosts = ["x"]', body)
+
+    def test_the_flag_is_added_above_the_tables(self):
+        self.config.write_text(
+            'mode = "development"\n\n# The development PostgreSQL.\n[database]\nport = 5442\n',
+            encoding="utf-8",
+        )
+        self.module.set_host_login(True)
+        import tomllib
+
+        current = tomllib.loads(self.config.read_text(encoding="utf-8"))
+        self.assertTrue(current["claude_use_host_login"])
+        self.assertEqual(current["database"], {"port": 5442})
 
     def test_every_other_key_survives_the_rewrite(self):
         self.config.write_text(
