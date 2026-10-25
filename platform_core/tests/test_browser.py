@@ -468,6 +468,17 @@ class AccessibilityTests(BrowserTestCase):
         self.assertTrue(back.endswith("/documents/add/"), "focus did not return to its opener")
         self.assertNoScriptErrors()
 
+    def test_the_close_in_a_popups_header_shuts_it(self):
+        self.open("documents", self.app.pk)
+        opener = self.page.locator("a[data-modal][href$='/documents/add/']").first
+        opener.click()
+        self.page.wait_for_selector("dialog[open] .modal-dismiss[aria-label='Close']")
+        self.page.click("dialog[open] .modal-dismiss")
+        self.page.wait_for_selector("dialog[open]", state="detached")
+        back = self.page.evaluate("document.activeElement.getAttribute('href') || ''")
+        self.assertTrue(back.endswith("/documents/add/"), "focus did not return to its opener")
+        self.assertNoScriptErrors()
+
 
 class ChatLayoutTests(BrowserTestCase):
     """Chat's own task fits a laptop window: at 1280x720 the message area had
@@ -769,6 +780,21 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         self.page.select_option("#graph-node", node_id)
         self.page.wait_for_selector(f"#graph-canvas[data-focus='{node_id}']")
         self.assertEqual(self.page.inner_text("#graph-inspector h2"), label)
+        self.assertNoScriptErrors()
+
+    def test_on_a_desktop_the_inspector_sits_beside_the_canvas(self):
+        """Below the canvas, a selected node's evidence was a screen's scroll away."""
+        self.page.set_viewport_size({"width": 1440, "height": 900})
+        self.open("graph", self.app.pk)
+        self.page.wait_for_selector("#graph-canvas[data-state='settled']")
+        boxes = self.page.evaluate(
+            """() => [document.getElementById('graph-canvas'),
+                      document.getElementById('graph-inspector')]
+              .map((node) => node.getBoundingClientRect().toJSON())"""
+        )
+        canvas, inspector = boxes
+        self.assertGreaterEqual(inspector["left"], canvas["right"], boxes)
+        self.assertLess(abs(inspector["top"] - canvas["top"]), 40, boxes)
         self.assertNoScriptErrors()
 
     def test_the_legend_is_on_the_canvas_and_matches_the_filters(self):

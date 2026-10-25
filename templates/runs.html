@@ -1,5 +1,5 @@
 {% extends 'base.html' %}{% load workspace icons %}{% block title %}Runs · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
-<p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>
+<p class="page-back"><a href="{% url 'plans' application.pk %}">{% icon "arrow-left" 13 %}Back to Code Factory</a></p>
 <h1>Pipeline runs</h1>
 <p class="muted">Every run, newest first, kept for as long as the application is.</p>
 <div class="list-card">{% for run in page %}{% include "_run_row.html" %}

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load icons %}{% block content %}<p class="eyebrow">Run {{ run.number }} · Implementation agent</p><h1>{{ label }}</h1>
+{% extends 'base.html' %}{% load icons %}{% block title %}{{ label }} · {{ application.name }}{% endblock %}{% block content %}<p class="eyebrow">Run {{ run.number }} · Implementation agent</p><h1>{{ label }}</h1>
 <dl class="agent-facts">
 <div><dt>Model</dt><dd>{{ model.label }}{% if model.source == 'configured' %} <small class="muted">(will use this application's Code Factory model)</small>{% elif model.source == 'deterministic' %} <small class="muted">(fixed checks, no model is called)</small>{% elif model.source == 'missing' %} <small class="muted">(set one in AI settings)</small>{% endif %}{% if model.id %}<br><code>{{ model.id }}</code>{% endif %}</dd></div>
 <div><dt>Status</dt><dd>{% if phase %}{{ phase.get_status_display }}{% else %}Not started{% endif %}</dd></div>

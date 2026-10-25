@@ -1,5 +1,5 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block title %}{{ item.title }}{% endblock %}{% block content %}{% application_nav %}
-<p><a href="{% url 'plan-detail' application.pk plan.pk %}">← Back to {{ plan.title|truncatechars:60 }}</a></p>
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}{{ item.title }} · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+<p class="page-back"><a href="{% url 'plan-detail' application.pk plan.pk %}">{% icon "arrow-left" 13 %}Back to {{ plan.title|truncatechars:60 }}</a></p>
 <h1>{{ item.title }}</h1>
 <p><span class="pill">{{ item.get_category_display }}</span>{% if item.rubric %} <span class="pill">{{ item.get_rubric_display }}</span>{% endif %} <span class="pill status-{{ item.severity }}">{{ item.get_severity_display }}</span> <span class="pill">{{ item.get_status_display }}</span></p>
 

@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% load workspace static %}
 {% block title %}Chat · {{ application.name }}{% endblock %}
 {% block content %}{% application_nav %}
-<div class="chat-heading"><h1>Chat</h1><span class="muted">Private to you · {{ application.name }}</span></div>
+<div class="chat-heading"><h1>Chat</h1><span class="muted">Private to you</span></div>
 {% comment %}One line, one action, about how answers are made here - not a card competing with the conversation for the first screen.{% endcomment %}{% if not ai_enabled %}<p class="chat-setup" role="status">AI answers are not set up here, so answers are <strong>source excerpts</strong>: the passages that match, with no model. {% if grant.role == 'owner' %}<a href="{% url 'ai-settings' application.pk %}">Set up AI answers</a>{% else %}An application owner can set up AI answers.{% endif %}</p>
 {% elif not chat_key_present %}<p class="chat-setup chat-setup-problem" role="status">{{ chat_config.model }} is chosen, but it has no credential, so AI answers will fail. {% if grant.role == 'owner' %}<a href="{% url 'credentials' application.pk %}">Add the credential</a>{% else %}Ask an application owner to add it.{% endif %}</p>{% endif %}
 <div class="chat-workspace">

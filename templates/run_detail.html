@@ -1,10 +1,10 @@
-{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Run {{ run.number }} · {{ run.ticket_external_id|default:"Code Factory" }}{% endblock %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Run {{ run.number }} · {{ run.ticket_external_id|default:"Code Factory" }} · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 {% comment %}
 The pipeline on one screen, one stage per step, each collapsed to a line that
 says how it went. The stage you can act on is the one left open: a finished
 step is a fact you may want to check, and the current step is work.
 {% endcomment %}
-<p class="run-back"><a href="{% url 'runs' application.pk %}">← All runs</a></p>
+<p class="page-back"><a href="{% url 'runs' application.pk %}">{% icon "arrow-left" 13 %}All runs</a></p>
 {% comment %}The header and every stage carry a data-live key: while the run is moving, static/documents.js re-fetches this page and swaps only what changed, keeping any stage the reader opened or closed and anything they typed or ticked. The Refresh link is the same page for a browser without script.{% endcomment %}
 <section class="card run-hero" data-live="run-hero"{% if active %} data-live-pending{% endif %}>
 <div class="run-hero-head"><div><p class="eyebrow">Run {{ run.number }}{% if run.ticket_external_id %} · {{ run.ticket_external_id }}{% endif %}</p><h1>{{ run.ticket_title|default:"(untitled ticket)" }}</h1></div><span class="pill run-status run-status-{{ run.status }}">{% if active %}<span class="spinner" aria-hidden="true"></span>{% endif %}{{ run.get_status_display }}</span></div>

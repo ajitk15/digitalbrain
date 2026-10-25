@@ -6,8 +6,8 @@
 <p>Nothing is configured yet. Below is everything this application needs for {% if serving|length == 2 %}Engineering and Operations{% elif "engineering" in serving %}Engineering{% elif "operations" in serving %}Operations{% else %}its knowledge{% endif %}, in the order to do it — <strong>{{ done }} of {{ total }}</strong> done. A few screens, and you can stop and come back; this page always shows where you got to.</p>
 </section>
 {% else %}
-{% if "engineering" in serving %}<p><a href="{% url 'plans' application.pk %}">← Back to Code Factory</a></p>{% elif "operations" in serving %}<p><a href="{% url 'serviceops' application.pk %}">← Back to ServiceOps</a></p>{% endif %}
-<div class="page-heading"><div><p class="eyebrow">{{ application.name }}</p><h1>Application onboarding</h1></div>
+{% if "engineering" in serving %}<p class="page-back"><a href="{% url 'plans' application.pk %}">{% icon "arrow-left" 13 %}Back to Code Factory</a></p>{% elif "operations" in serving %}<p class="page-back"><a href="{% url 'serviceops' application.pk %}">{% icon "arrow-left" 13 %}Back to ServiceOps</a></p>{% endif %}
+<div class="page-heading"><div><h1>Application onboarding</h1></div>
 <p class="onboard-progress"><strong>{{ done }} of {{ total }}</strong> done</p></div>
 {% endif %}
 

@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}Documentation · Code Graph · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
 <h2 class="view-title">Code Graph</h2>
 <p class="view-note">Documentation written from an indexed repository: what it is made of, how the parts depend on each other, its data model and endpoints, and which requirements its code names. Each statement names the file and line it was read from.</p>

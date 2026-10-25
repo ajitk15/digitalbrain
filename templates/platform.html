@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load icons %}{% block content %}
+{% extends 'base.html' %}{% load icons %}{% block title %}Administration · Digital Brain{% endblock %}{% block content %}
 <div class="page-heading"><div><p class="eyebrow">PLATFORM</p><h1>Administration</h1><p class="muted">What needs someone first, then the platform's totals. Administering the platform opens no application.</p></div></div>
 {% include 'platform_tabs.html' %}
 <div class="metrics"><div class="metric"><small>Organizations</small><strong>{{ organization_count }}</strong></div><div class="metric"><small>Applications</small><strong>{{ application_count }}</strong></div><div class="metric"><small>Active users</small><strong>{{ user_count }}</strong></div></div>

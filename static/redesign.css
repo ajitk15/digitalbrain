@@ -4214,3 +4214,241 @@
   .trend-flag { color: var(--c-warn); font-weight: 600; }
   .trend-note { margin: 0; max-width: 90ch; font-size: var(--t-12); }
 }
+
+/* Desktop layout pass (docs/desktop-ux-review-plan.md). Every rule here was
+   measured at 1280, 1440 and 1920 wide against the CarePath demo: a desktop is
+   the target, and a narrow window only has to stay usable. */
+@layer redesign {
+  /* Shared parts ------------------------------------------------------ */
+  .button.compact { min-height: 28px; padding: 3px var(--s-3); font-size: var(--t-12); }
+  .icon-link { display: inline-flex; align-items: center; gap: var(--s-1); }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  /* A run of links and small buttons in one table cell, on one line. */
+  .row-actions { display: inline-flex; align-items: center; gap: var(--s-3); white-space: nowrap; }
+  .row-actions .inline-form { margin: 0; }
+  /* A notice with no icon is a sentence, not an icon-and-text row: as a flex
+     box each <strong> and <a> became an item and the gap pushed the full stop
+     after it away ("set up for Engineering   ."). */
+  .notice:not(:has(> svg)) { display: block; }
+
+  /* Versions: one line a row. The model name and "16/16" split mid-token. */
+  .versions-table td { white-space: nowrap; }
+  .versions-table th, .versions-table td { padding-inline: var(--s-3); }
+  .versions-table .share-bar { width: 48px; }
+  @media (max-width: 1365px) { .versions-table .share-bar { display: none; } }
+  .versions-table td:nth-child(6) { white-space: normal; min-width: 7.5em; }
+  .versions-table thead th { letter-spacing: .3px; }
+  .versions-table .row-actions { gap: var(--s-2); }
+  .versions-table .version-score { white-space: nowrap; }
+
+  /* Quality by version: fourteen columns fit the card from 1280 up, and the
+     version stays in view while the rest scroll if they ever do not. */
+  .trend-table th, .trend-table td { padding: var(--s-2) 6px; font-size: var(--t-12); }
+  .trend-table thead th { white-space: normal; vertical-align: bottom; letter-spacing: .2px; min-width: 3.5em; }
+  .trend-table tbody th { position: sticky; left: 0; z-index: 1; background: var(--c-surface); }
+  .trend-table thead th:first-child { position: sticky; left: 0; z-index: 2; }
+  .trend-chart svg { max-width: 1100px; }
+
+  /* Document type: the label stays beside its select. */
+  .inline-form > label[for="document-type-choice"] { white-space: nowrap; flex: none; align-self: center; margin: 0; }
+
+  /* Graph toolbar: the search box fits its placeholder, and the related-code
+     status gets a line of its own instead of being cut with an ellipsis. */
+  .kb-graph-bar { flex-wrap: wrap; row-gap: var(--s-1); }
+  .kb-graph-bar #graph-search { flex: 1 1 240px; min-width: 150px; }
+  .kb-graph-bar #graph-node { flex: 0 1 170px; min-width: 130px; }
+  .kb-graph-bar #graph-code-status { order: 10; flex: 1 0 100%; white-space: normal; overflow: visible; font-size: var(--t-12); }
+}
+
+/* The application bar: trail, sections and focus mode in one row
+   (templates/application_menu.html). It replaces the breadcrumb strip that sat
+   at the top of <main>, which made four rows of chrome on every screen. */
+@layer redesign {
+  .application-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--s-4);
+    min-height: 52px;
+    padding: 6px var(--s-5);
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-line);
+  }
+  .application-bar .application-menu { flex: 1 1 auto; min-width: 0; padding: 0; background: none; border: 0; overflow: visible; }
+  .app-trail { display: flex; align-items: center; gap: var(--s-2); flex: 0 1 auto; min-width: 0; max-width: 340px; padding-right: var(--s-4); border-right: 1px solid var(--c-line-soft); }
+  .app-trail .app-icon { width: 28px; height: 28px; margin: 0; flex: none; font-size: var(--t-12); border-radius: var(--r-md); }
+  .app-trail-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+  .app-trail-path { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-11); color: var(--c-ink-muted); }
+  .app-trail-path > * { margin-right: 4px; }
+  .app-trail-path a { color: inherit; }
+  .app-trail-path a:hover { color: var(--c-brand-strong); }
+  .app-trail-name { font-size: var(--t-13); font-weight: 700; color: var(--c-ink); overflow-wrap: anywhere; }
+  .application-bar .focus-toggle { margin-left: auto; }
+  /* The trail was the first thing in <main> and carried its own spacing. */
+  .application-bar + main { padding-top: var(--s-5); }
+  @media (max-width: 700px) {
+    .application-bar { flex-wrap: wrap; gap: var(--s-2); padding: var(--s-2); }
+    .app-trail { max-width: none; border-right: 0; padding-right: 0; flex: 1 1 100%; }
+  }
+}
+
+/* Knowledge graph: the node details sit beside the canvas, as Code Graph's
+   inspector does, so clicking a node changes something in view. The canvas is
+   held to the window's height rather than a 5:3 shape, which at 1920 wide made
+   it 900px tall and pushed the details below the fold. graph.js re-measures
+   the canvas through its ResizeObserver. */
+@layer redesign {
+  @media (min-width: 1200px) {
+    .kb-graph .graph-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s-3); align-items: start; }
+    .kb-graph #graph-canvas { aspect-ratio: auto; height: clamp(420px, 62vh, 820px); max-height: none; }
+    .kb-graph #graph-inspector { margin-top: 0; max-height: clamp(420px, 62vh, 820px); }
+  }
+}
+
+/* Document page: checks on the left, the file and its actions in a rail. */
+@layer redesign {
+  .detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--s-4); align-items: start; }
+  .detail-main { min-width: 0; }
+  .detail-main > :first-child { margin-top: 0; }
+  .detail-rail { position: sticky; top: var(--s-4); display: grid; gap: var(--s-2); min-width: 0; }
+  .detail-rail .card-heading h2 { font-size: var(--t-15); }
+  .detail-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px var(--s-3); margin: 0 0 var(--s-4); font-size: var(--t-13); }
+  .detail-facts dt { color: var(--c-ink-muted); }
+  .detail-facts dd { margin: 0; overflow-wrap: anywhere; }
+  .rail-actions { display: grid; gap: var(--s-2); }
+  .rail-actions .button, .rail-form .button, .rail-danger .button { width: 100%; justify-content: center; }
+  .rail-note { font-size: var(--t-11); margin: var(--s-3) 0 0; }
+  .rail-form { display: grid; gap: var(--s-1); margin: var(--s-3) 0 0; }
+  .rail-danger { margin-top: var(--s-4); padding-top: var(--s-3); border-top: 1px solid var(--c-line-soft); }
+  .rail-back { margin: 0 0 0 var(--s-1); font-size: var(--t-12); }
+  @media (max-width: 1100px) {
+    .detail-layout { grid-template-columns: minmax(0, 1fr); }
+    .detail-rail { position: static; }
+  }
+}
+
+/* Tickets and documents: one line a row. Graph usage stacked two chips and a
+   disclosure, so seven tickets took 800px and every title wrapped three times. */
+@layer redesign {
+  td.graph-usage { white-space: nowrap; }
+  .versions-more { display: inline-block; position: relative; vertical-align: middle; }
+  .versions-more > summary { list-style: none; cursor: pointer; padding: 1px 6px; border: 1px solid var(--c-line); border-radius: var(--r-sm); font-size: var(--t-11); font-weight: 600; color: var(--c-ink-3); }
+  .versions-more > summary::-webkit-details-marker { display: none; }
+  .versions-more > summary:hover { color: var(--c-brand-strong); border-color: var(--c-brand-border); }
+  .versions-more[open] { display: flex; flex-direction: column; gap: 2px; margin-top: var(--s-1); }
+  .versions-more[open] > summary { align-self: flex-start; }
+  .versions-more > a { font-size: var(--t-12); }
+  .tickets-table td { vertical-align: middle; }
+  /* Every column but the title fits its content; the title takes the rest. */
+  .tickets-table th, .tickets-table td { width: 1%; white-space: nowrap; }
+  .tickets-table th:nth-child(2), .tickets-table td:nth-child(2) { width: auto; white-space: normal; min-width: 30ch; }
+  .tickets-table td, .tickets-table th { padding-block: var(--s-2); }
+}
+
+/* Code Graph files: a file's name and its "python · leaf" line align, and the
+   list is the canvas's height. The rules above named `.code-file-list > a`,
+   which stopped matching when the files moved into folder disclosures. */
+@layer redesign {
+  .code-file-list { max-height: 700px; }
+  .code-file-list .tree-folder > a { display: block; padding: 5px var(--s-2) 5px var(--s-4); border-radius: var(--r-sm); overflow-wrap: anywhere; line-height: 1.35; }
+  .code-file-list .tree-folder > a:hover { background: var(--c-well); text-decoration: none; }
+  .code-file-list .tree-folder > a > span { display: block; font-size: var(--t-13); }
+  .code-file-list .tree-folder > a > small { display: block; margin: 0; font-size: var(--t-11); color: var(--c-ink-muted); }
+}
+
+/* Features: two columns of switches, and Save stays in view while the list
+   scrolls - it used to be 1,700px down the page. */
+@layer redesign {
+  @media (min-width: 1200px) {
+    .feature-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .feature-list > .list-row { border-bottom: 1px solid var(--c-line-soft); }
+    .feature-list > .list-row:nth-child(odd) { border-right: 1px solid var(--c-line-soft); }
+    .feature-list > .list-row:last-child,
+    .feature-list > .list-row:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
+  }
+  .save-bar { position: sticky; bottom: 0; z-index: 3; margin-top: var(--s-4); padding: var(--s-3) 0; background: var(--c-canvas); border-top: 1px solid var(--c-line); }
+}
+
+/* AI costs: figures right-aligned and grouped, rows at table density. */
+@layer redesign {
+  .costs-table td, .costs-table th { padding-block: var(--s-2); }
+  th.num .sort-link { justify-content: flex-end; }
+}
+
+@layer redesign {
+  .quality-notes { padding: var(--s-3) var(--s-4); border: 1px solid var(--c-info-line); border-radius: var(--r-md); background: var(--c-info-bg); color: var(--c-info); }
+  .quality-notes h3 { margin: 0 0 var(--s-1); font-size: var(--t-12); font-weight: 700; color: var(--c-ink-2); }
+  .quality-notes ul { margin: 0; padding-left: var(--s-5); font-size: var(--t-12); line-height: var(--lh-body); }
+  .quality-notes li + li { margin-top: 2px; }
+}
+
+/* Graph AI plan: one line, details folded (desktop UX review #16). */
+@layer redesign {
+  .notice.ai-plan { align-items: flex-start; }
+  .notice.ai-plan details { flex: 1; min-width: 0; }
+  .notice.ai-plan summary { cursor: pointer; }
+  .notice.ai-plan details > p { margin: var(--s-1) 0 0; }
+}
+
+/* Buttons and popups (desktop UX review #17). */
+@layer redesign {
+  /* Send is the page's primary action, so it takes the primary colour like
+     every other primary button. */
+  #chat-send { background: var(--c-brand); border-color: var(--c-brand); }
+  #chat-send:hover { background: var(--c-brand-strong); border-color: var(--c-brand-strong); }
+
+  /* The dialog's own close, top right, outside the scrolling body. */
+  .modal-dismiss {
+    position: absolute;
+    top: var(--s-3);
+    right: var(--s-3);
+    z-index: 1;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-md);
+    background: none;
+    color: var(--c-ink-3);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .modal-dismiss:hover { background: var(--c-subtle); color: var(--c-ink); }
+  .modal-body h1 { padding-right: var(--s-6); }
+  /* Cancel placed after a bare submit button sits beside it. */
+  .modal-body form button + [data-modal-close] { margin-left: var(--s-2); }
+
+  /* Personal data: Save and Mask side by side, each with its own line. */
+  .personal-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: start; gap: var(--s-4); }
+  .personal-actions > div { display: flex; flex-direction: column; align-items: flex-start; gap: var(--s-1); }
+}
+
+/* One way back (desktop UX review #14): the same link, in the same place -
+   first under the application bar - on every page that has a parent. */
+@layer redesign {
+  .page-back { margin: 0 0 var(--s-3); font-size: var(--t-13); }
+  .page-back a { display: inline-flex; align-items: center; gap: var(--s-1); color: var(--c-ink-3); text-decoration: none; }
+  .page-back a:hover { color: var(--c-brand-ink); text-decoration: underline; }
+}
+
+/* Tickets at 1280-1399: nine columns fit once the title gives up some width
+   and cells take less padding. */
+@layer redesign {
+  @media (max-width: 1399px) {
+    .tickets-table th, .tickets-table td { padding-inline: var(--s-2); }
+    .tickets-table th:nth-child(2), .tickets-table td:nth-child(2) { min-width: 20ch; }
+  }
+}
+
+/* Versions: break a word only when it cannot fit at all ("anywhere" also shrinks
+   the column's minimum, which split "recommended" at 1280). */
+@layer redesign {
+  .versions-table td { overflow-wrap: break-word; }
+}
+@layer redesign {
+  @media (max-width: 1399px) {
+    .versions-table th, .versions-table td { padding-inline: var(--s-2); }
+  }
+}

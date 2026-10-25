@@ -5,13 +5,21 @@
   dialog.id = "app-modal";
   const body = document.createElement("div");
   body.className = "modal-body";
-  dialog.append(body);
+  // A header close outside the body, so every render keeps it. With script off
+  // there is no dialog - the link navigated - so it needs no fallback.
+  const dismiss = document.createElement("button");
+  dismiss.type = "button";
+  dismiss.className = "modal-dismiss";
+  dismiss.setAttribute("aria-label", "Close");
+  dismiss.textContent = "×";
+  dialog.append(dismiss, body);
   document.body.append(dialog);
   let opener = null;
   let request = null;
   let generation = 0;
   let submitting = false;
   function close() { if (!submitting) dialog.close(); }
+  dismiss.addEventListener("click", close);
   dialog.addEventListener("cancel", (event) => { if (submitting) event.preventDefault(); });
   dialog.addEventListener("click", (event) => { if (event.target === dialog) close(); });
   dialog.addEventListener("close", () => {
@@ -60,7 +68,14 @@
       cancel.className = "button secondary";
       cancel.textContent = "Cancel";
       cancel.dataset.modalClose = "";
-      (body.querySelector(".actions") || body).append(cancel);
+      // Beside the primary button, not on a line of its own under the help text -
+      // unless the popup holds several forms, where one Cancel at the foot serves all.
+      const actions = body.querySelector(".actions");
+      const forms = body.querySelectorAll("form");
+      const primary = forms.length === 1 ? [...forms[0].querySelectorAll("button[type=submit], button:not([type])")].pop() : null;
+      if (actions) actions.append(cancel);
+      else if (primary) primary.after(cancel);
+      else body.append(cancel);
     }
     body.querySelectorAll("[data-modal-close]").forEach((control) => {
       control.addEventListener("click", (event) => { event.preventDefault(); close(); });

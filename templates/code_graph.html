@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace icons static %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Code Graph · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
 <h2 class="view-title">Code Graph</h2>
 <p class="view-note">Explore repository files, dependencies, and the exact commit used for analysis. Repositories are added, re-indexed and removed on <a href="{% url 'code-repositories' application.pk %}">Code Repos</a>.</p>

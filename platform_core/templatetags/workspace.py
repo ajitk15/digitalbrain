@@ -3,7 +3,13 @@ from django.db.models import Exists, OuterRef, Q
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from platform_core.models import Application, ApplicationGrant, OrganizationMember, Portfolio
+from platform_core.models import (
+    AI_PURPOSES,
+    Application,
+    ApplicationGrant,
+    OrganizationMember,
+    Portfolio,
+)
 from platform_core.policy import applications_for, organizations_for
 from platform_core.services import feature_enabled, knowledge_label, purposes, purposes_for
 
@@ -474,6 +480,21 @@ def evidence_origins(citations):
         for key, label in ORIGINS
         if counts.get(key)
     ]
+
+
+@register.filter
+def ai_task_label(purpose):
+    """A receipt's task by the name AI settings gives it, not its stored key."""
+    return dict(AI_PURPOSES).get(purpose, purpose)
+
+
+@register.filter
+def grouped(number):
+    """A whole number with thousands separators: 702,168 rather than 702168."""
+    try:
+        return f"{int(number):,}"
+    except (TypeError, ValueError):
+        return number
 
 
 @register.filter

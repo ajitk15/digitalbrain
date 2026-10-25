@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}Reviews · Code Graph · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
 <h2 class="view-title">Code Graph</h2>
 <p class="view-note">Review a change against the indexed snapshot it starts from: what it touches, how far that reaches, and the requirements those files name.</p>

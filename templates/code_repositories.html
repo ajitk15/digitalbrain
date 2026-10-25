@@ -1,4 +1,4 @@
-{% extends 'base.html' %}{% load icons workspace %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load icons workspace %}{% block title %}Code Repos · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1>
 <div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}{% if can_manage %}<a class="button" href="{% url 'code-graph-add' application.pk %}" data-modal>{% icon "plus" %}Add repository</a>{% endif %}</div>
 {% comment %}The repositories this application reads (`code_graph.code_repositories`). Code Graph's Structure, Reviews and Documentation open one of them; this page is the only place one is added, checked, re-indexed or removed. Every action is a plain POST form, so it works with JavaScript off.{% endcomment %}
