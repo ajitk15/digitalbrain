@@ -3237,6 +3237,16 @@
 .auto-publish small { display: block; margin-top: var(--s-1); }
 .auto-publish form { flex: none; }
 
+/* Application rules (`rules.py`): the statements a source is read as, and the ones
+   a plan review shows, each quoted from its line. */
+.rule-list { margin: var(--s-2) 0 var(--s-3); padding-left: var(--s-5); columns: 2; column-gap: var(--s-5); font-size: var(--t-13); }
+.rule-list li { break-inside: avoid; padding: 2px 0; }
+.rule-where { font-size: var(--t-12); }
+@media (max-width: 760px) { .rule-list { columns: 1; } }
+.rule-matches { list-style: none; margin: var(--s-2) 0 0; padding: 0; display: grid; gap: var(--s-3); }
+.rule-matches li { display: grid; gap: var(--s-1); }
+.rule-matches blockquote { margin: 0; padding: var(--s-1) var(--s-3); border-left: 3px solid var(--c-line-strong); color: var(--c-ink-2); font-size: var(--t-13); overflow-wrap: anywhere; }
+
 /* Knowledge → Learned (`learning.py`): each candidate a card, what was learned on
    the left and the decision beside it, so a desktop screen shows several at once. */
 .learned-list { display: flex; flex-direction: column; gap: var(--s-3); }

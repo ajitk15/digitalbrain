@@ -17,6 +17,7 @@
 {% endfor %}
 </section>
 {% endif %}
+{% if rules %}<section class="card section plan-rules" aria-labelledby="plan-rules"><h2 id="plan-rules">Rules that apply <span class="count">{{ rules|length }}</span></h2><p class="muted">Statements an owner marked as rules, read from the source by rules and quoted from it, that share the most with this ticket. Check the plan against each; none of them approves or refuses anything.</p><ul class="rule-matches">{% for rule, shared in rules %}<li><strong>{{ rule.statement }}</strong>{% if rule.explanation %}<blockquote>{{ rule.explanation }}</blockquote>{% endif %}<span class="muted rule-where"><a href="{% url 'knowledge-detail' application.pk rule.entry_id %}#rules">{{ rule.source }}</a>, line {{ rule.line }} · shares {{ shared|join:", " }}</span></li>{% endfor %}</ul></section>{% endif %}
 <section class="card section"><h2>Proposed change</h2><pre class="source-text">{{ plan.proposal }}</pre><h2>Validation & rollback</h2><pre class="source-text">{{ plan.validation }}</pre></section>{% if run %}
 <section class="card section"><h2>{% icon "code" %}Delivery</h2>
 {% if run.pull_request_url %}

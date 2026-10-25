@@ -199,6 +199,11 @@ can never relax an invariant or grant access. This extends what Code Factory's
 non-functional rubric already does, and it needs its own benchmark before it is
 trusted.
 
+Built first for Code Factory's plan review only (`rules.py`): statements are read
+by rules and quoted from one line, an owner marks the source, and the scorecard
+holds the ranking to `benchmarks/rules-pack.json`. Code review and triage come
+after the pack has more than three labelled tickets.
+
 ## Information architecture
 
 ```
@@ -224,7 +229,7 @@ walks it once, and the status strip keeps it visible afterwards.
 | 4 ✓ | Source kind registry (`source_kinds.py`): Documents, Code, Tickets behind one contract; tabs and Feed drawn from it (rows, freshness and quality stay on each kind's page) | 5-8 d | Medium (refactor) | Same pages byte-for-byte where nothing changed; query counts held flat |
 | 5 ✓ | Learning loop (`learning.py`): Learned inbox, change records, incident learnings, gaps, answer feedback, benchmark promotion | 8-10 d | Medium-high (new trust path) | Benchmark grows; derived-prefix exclusion tested; scorecard evidence recall unchanged |
 | 6 ✓ | Optional auto-publish policy (`release.auto_publish`) | 1-2 d | Medium | Only on all-green release checks; audited |
-| 7 | Application rules (later, with its own benchmark) | measured first | High | Its own pack, like `typing_pack` |
+| 7 ✓ | Application rules (`rules.py`): Code Factory's plan review first | measured first | High | Its own pack, `benchmarks/rules-pack.json`, held by the scorecard |
 
 Phases 1 and 2 can be built in either order, and together they make the cycle
 visible. Phase 3 is the most valuable single safety step. Phase 4 should come

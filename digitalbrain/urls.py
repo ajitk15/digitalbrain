@@ -20,6 +20,7 @@ from platform_core import (
     knowledge_views,
     learning,
     release,
+    rules,
     scim,
     secrets,
     serviceops,
@@ -122,6 +123,11 @@ urlpatterns = [
         "applications/<uuid:pk>/knowledge/<uuid:entry_id>/",
         knowledge_views.knowledge_detail,
         name="knowledge-detail",
+    ),
+    path(
+        "applications/<uuid:pk>/knowledge/<uuid:entry_id>/rules/",
+        rules.mark_view,
+        name="knowledge-rules",
     ),
     # Machine-facing surfaces. Bearer-token only: no session cookie is accepted,
     # which is what keeps them out of reach of an authenticated browser.

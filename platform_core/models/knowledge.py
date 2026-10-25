@@ -253,6 +253,16 @@ class KnowledgeEntry(models.Model):
     #: The kind of document a person said this is, a `document_types` key. Blank
     #: means the type the rules detect, which `quality` records either way.
     document_type = models.CharField(max_length=40, blank=True)
+    #: The owner who said the work must be checked against this source (`rules.py`).
+    #: Empty means it is knowledge only. A rule only adds a check.
+    rules_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    rules_at = models.DateTimeField(null=True, blank=True)
     #: Who the source system lets open this record, as platform user ids. None
     #: means its system is not checked and every member may see it in answers;
     #: a list - empty until the first check - limits answers to those users.

@@ -210,6 +210,23 @@ METRICS = {
         "exact",
         0,
     ),
+    # Application rules (`rules.py`), against `benchmarks/rules-pack.json`.
+    "rules_shown_recall": (
+        "Rules",
+        "Broken rule among those shown for its ticket",
+        "%",
+        "higher",
+        0,
+    ),
+    "rules_first_recall": ("Rules", "Broken rule shown first", "%", "higher", 0),
+    "rules_quotes_verified": ("Rules", "Rule quotes found in their source", "%", "exact", 0),
+    "rules_shown_unlabelled": (
+        "Rules",
+        "Rules shown for a ticket that breaks none",
+        "per ticket",
+        "lower",
+        0.5,
+    ),
     # The learning loop (`learning.py`): what use teaches, and what it may not.
     "learning_probes_passed": (
         "Learning loop",
@@ -1150,6 +1167,52 @@ def release_check(ws, revision):
     return {"release_probes_passed": round(100 * passed / len(probes), 1)}, probes
 
 
+def application_rules(ws):
+    """Whether the rules a ticket breaks are the rules its plan review shows.
+
+    The pack names a rules document and, per seeded ticket, the statement it
+    breaks. Inside a rolled-back savepoint the document is marked as rules, and
+    each ticket is asked as `rules.for_run` asks it, without a plan. Every quote
+    shown is checked against its source's text.
+    """
+    from django.db import transaction
+
+    from .models import KnowledgeEntry
+    from .rules import SHOWN, applicable, sources
+
+    pack = json.loads((BENCH / "rules-pack.json").read_text(encoding="utf-8"))
+    shown = first = verified = quotes = noise = 0
+    details = []
+    with transaction.atomic():
+        KnowledgeEntry.objects.filter(
+            application=ws.app, active=True, title__in=pack["rule_sources"]
+        ).update(rules_by=ws.people["owner"])
+        entries = list(sources(ws.app))
+        texts = {str(entry.pk): entry.content.splitlines() for entry in entries}
+        for care in list(pack["tickets"]) + pack["unlabelled"]:
+            found = applicable(ws.app, ticket_question(ws.tickets[care]), SHOWN, entries)
+            statements = [rule.statement for rule, _ in found]
+            for rule, _ in found:
+                quotes += 1
+                lines = texts[rule.entry_id]
+                verified += 0 < rule.line <= len(lines) and lines[rule.line - 1] == rule.quote
+            expected = pack["tickets"].get(care)
+            if expected:
+                shown += expected in statements
+                first += bool(statements) and statements[0] == expected
+            else:
+                noise += len(statements)
+            details.append({"ticket": care, "expected": expected, "shown": statements})
+        transaction.set_rollback(True)
+    labelled = len(pack["tickets"])
+    return {
+        "rules_shown_recall": round(100 * shown / labelled, 1),
+        "rules_first_recall": round(100 * first / labelled, 1),
+        "rules_quotes_verified": round(100 * verified / quotes, 1) if quotes else 100.0,
+        "rules_shown_unlabelled": round(noise / len(pack["unlabelled"]), 2),
+    }, details
+
+
 def learning_loop(ws, revision):
     """Whether the learning loop offers, refuses and withdraws as designed. Inside
     a savepoint that is rolled back, so nothing it learns reaches the aspects
@@ -1347,6 +1410,8 @@ def measure():
         found, details["release_check"] = release_check(ws, revision)
         values.update(found)
         found, details["learning_loop"] = learning_loop(ws, revision)
+        values.update(found)
+        found, details["rules"] = application_rules(ws)
         values.update(found)
         # Timed before cost control, which edits a source and adds versions.
         found, _ = speed(ws, revision, questions)

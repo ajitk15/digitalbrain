@@ -495,6 +495,23 @@ report with one is refused). `collect` reads at most `BATCH` signals a kind from
 themselves through 0091's `secure` under a `SECURED` list `test_tenancy` reads. The
 scorecard's "Learning loop probes passing" must stay 100%.
 
+**A rule only adds a check** (`rules.py`, `KnowledgeEntry.rules_by`, migration 0106).
+An owner marks a source - a coding standard, a security design, a control matrix - as
+rules, on its source or document page (`knowledge-rules`, audited `knowledge.rules_on` /
+`_off`); "Convert again" carries the mark. Its statements are read by rules, never by a
+model: a numbered rule heading (with its section, so a "must" in it is the same rule), a
+table row starting with an identifier, a prose line that says must, shall or never. Each
+is quoted from one line and shown only while that line is unchanged in an `answerable()`
+source, like a citation. Code Factory's plan review shows the ones that apply to the
+ticket and plan (`for_run`): BM25 over each rule's section, at least `MIN_SHARED` shared
+terms, and nothing under `RELATIVE` of the best, so a reviewer sees what clearly applies
+rather than a checklist. A rule never approves, refuses, relaxes a gate or grants
+anything; a person still decides the plan. The scorecard's "Rules" aspect holds the
+ranking to `benchmarks/rules-pack.json` (the coding-standard rule each seeded ticket
+breaks, labelled from the gaps document): shown and first recall, quotes verified 100%,
+and rules shown on tickets that break none. Three labelled tickets are a floor, not
+proof - add to the pack before widening it to code review or triage.
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

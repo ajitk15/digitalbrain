@@ -565,6 +565,16 @@ def knowledge_status(application):
 
 
 @register.simple_tag
+def source_rules(entry):
+    """The statements `rules.statements` reads from a source marked as rules."""
+    if not entry.rules_by_id:
+        return []
+    from platform_core.rules import statements
+
+    return statements(entry)
+
+
+@register.simple_tag
 def auto_publish_state(application):
     """Who a version publishes itself as, if anyone, and the last thing it noted."""
     from platform_core.models import KnowledgeGraph

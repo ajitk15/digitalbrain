@@ -238,6 +238,38 @@
    "tolerance": 0,
    "value": 100.0
   },
+  "rules_shown_recall": {
+   "aspect": "Rules",
+   "label": "Broken rule among those shown for its ticket",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "rules_first_recall": {
+   "aspect": "Rules",
+   "label": "Broken rule shown first",
+   "unit": "%",
+   "better": "higher",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "rules_quotes_verified": {
+   "aspect": "Rules",
+   "label": "Rule quotes found in their source",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
+  "rules_shown_unlabelled": {
+   "aspect": "Rules",
+   "label": "Rules shown for a ticket that breaks none",
+   "unit": "per ticket",
+   "better": "lower",
+   "tolerance": 0.5,
+   "value": 2.0
+  },
   "learning_probes_passed": {
    "aspect": "Learning loop",
    "label": "Learning loop probes passing",

@@ -1,0 +1,10 @@
+{
+  "about": "Application rules (platform_core/rules.py). An owner marks the CarePath coding standards as rules; for each seeded ticket that breaks one of them (demo-artifacts/demo-kit/seeded-gaps.md), the statement it breaks. The scorecard asks rules.applicable for each ticket as Code Factory's plan review asks it - the ticket's title and description - and counts the expected rule among those shown, and in first place. The other seeded tickets break no coding-standard rule; what they are shown is counted, not judged. Labelled by hand from the gaps document, never from the ranking's output.",
+  "rule_sources": ["03-build/coding-standards.md"],
+  "tickets": {
+    "CARE-412": "Collections are bounded at the server",
+    "CARE-418": "Nothing with a name goes in a log",
+    "CARE-425": "The audit write shares the transaction"
+  },
+  "unlabelled": ["CARE-401", "CARE-431", "CARE-437"]
+}

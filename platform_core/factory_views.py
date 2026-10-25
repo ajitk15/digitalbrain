@@ -1213,6 +1213,7 @@ def plan_detail(request, pk, plan_id):
     from .code_factory import confirm_repository
     from .code_factory_build import prepare, publish, write_credential
     from .code_factory_evidence import ticket_label
+    from .rules import for_run
 
     app, grant = access(request.user, pk, "code_factory")
     plan = get_object_or_404(ChangePlan, application=app, pk=plan_id)
@@ -1306,6 +1307,9 @@ def plan_detail(request, pk, plan_id):
                 else "You do not hold approval rights on this application."
             ),
             "run": run,
+            # What an owner said the work must keep, that applies to this ticket
+            # (`rules.for_run`): a check for the reviewer, never a gate.
+            "rules": for_run(run, plan) if run else [],
             "ticket_label": ticket_label(run),
             "snapshot_paths": snapshot_paths(
                 run, [target for item in plan.items.all() for target in item.targets]

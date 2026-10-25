@@ -368,6 +368,11 @@ def supersede(user, app_id, document, content):
     if previous and previous.sensitivity == RESTRICTED:
         entry.sensitivity = RESTRICTED
         entry.save(update_fields=["sensitivity"])
+    # And an owner's word that it is rules: new text of the same document is
+    # still the document the work is checked against.
+    if previous and previous.rules_by_id:
+        entry.rules_by_id, entry.rules_at = previous.rules_by_id, previous.rules_at
+        entry.save(update_fields=["rules_by", "rules_at"])
     # So does the type a person set: new text of the same document is the same
     # kind of document, and checking it as whatever the rules guess would undo them.
     if previous and previous.document_type:
