@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Do I Find</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body data-root="" data-page="find.html">
+<main>
+<div class="crumbs"><a href="index.html">Start</a></div>
+<span class="tag">Start</span>
+<h1>Where do I find…</h1>
+<p class="lede">Type a question or a few words. Each answer is one line, with a link to the page that explains it in full. Everything works offline.</p>
+
+<form class="big-search" data-search role="search" action="find.html">
+  <label for="find-q" class="sr-only">Search the documentation</label>
+  <input id="find-q" name="q" type="search" placeholder="e.g. who pays for the AI, backups, row security, HIPAA" autocomplete="off" autofocus>
+</form>
+<div class="filters" role="group" aria-label="Show answers for">
+  <button type="button" data-filter="all" aria-pressed="true">Everything</button>
+  <button type="button" data-filter="everyone" aria-pressed="false">For everyone</button>
+  <button type="button" data-filter="tech" aria-pressed="false">Technical and deployment</button>
+  <span class="muted count" data-count></span>
+</div>
+<ul class="results" data-results></ul>
+
+<noscript><p>Search needs JavaScript. Every page is also listed in the menu on the left, and the <a href="glossary.html">glossary</a> defines every term.</p></noscript>
+
+</main>
+<script src="assets/search-index.js"></script>
+<script src="assets/docs.js"></script>
+</body>
+</html>

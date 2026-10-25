@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing and Scorecard</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/testing.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Testing gates and the scorecard</h1>
+<p class="lede">Nothing is done until five gates are clean. The fifth - the scorecard - measures whether answers, citations, cost control and safeguards got worse, so a change that weakens retrieval fails the build like a broken test.</p>
+
+<figure class="figure">
+  <div class="fig-title">The five gates</div>
+  <svg viewBox="0 0 940 170" role="img" aria-labelledby="gt-t" data-cycle="10">
+    <title id="gt-t">Lint with ruff, no missing migrations, the test suite including browser tests, the production preflight script, and the scorecard checked against its baseline.</title>
+    <defs><marker id="q1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="30" width="160" height="90" rx="12" class="box"/><text x="90" y="62" text-anchor="middle" class="t">1 · Lint</text><text x="90" y="82" text-anchor="middle" class="t-xs">ruff check</text><text x="90" y="98" text-anchor="middle" class="t-xs">E F I B UP</text></g>
+    <g data-at="0.1"><rect x="200" y="30" width="160" height="90" rx="12" class="box"/><text x="280" y="62" text-anchor="middle" class="t">2 · Migrations</text><text x="280" y="82" text-anchor="middle" class="t-xs">makemigrations</text><text x="280" y="98" text-anchor="middle" class="t-xs">--check --dry-run</text></g>
+    <g data-at="0.2"><rect x="390" y="30" width="160" height="90" rx="12" class="box-blue"/><text x="470" y="62" text-anchor="middle" class="t">3 · Tests</text><text x="470" y="82" text-anchor="middle" class="t-xs">146 test files, incl.</text><text x="470" y="98" text-anchor="middle" class="t-xs">Playwright browser tests</text></g>
+    <g data-at="0.3"><rect x="580" y="30" width="160" height="90" rx="12" class="box"/><text x="660" y="62" text-anchor="middle" class="t">4 · Preflight</text><text x="660" y="82" text-anchor="middle" class="t-xs">production_preflight.py</text></g>
+    <g data-at="0.4"><rect x="770" y="30" width="160" height="90" rx="12" class="box-teal"/><text x="850" y="62" text-anchor="middle" class="t">5 · Scorecard</text><text x="850" y="82" text-anchor="middle" class="t-xs">--check vs baseline</text><text x="850" y="98" text-anchor="middle" class="t-xs">~90 s, no model</text></g>
+    <path d="M170 75H198M360 75H388M550 75H578M740 75H768" class="edge flow" marker-end="url(#q1)"/>
+    <g data-at="0.55"><text x="470" y="152" text-anchor="middle" class="t-sm">CI runs gates 3 and 5 twice: on SQLite, and on PostgreSQL 16 with a real Redis.</text></g>
+  </svg>
+</figure>
+
+<pre><code>.venv/Scripts/ruff.exe check digitalbrain platform_core scripts manage.py
+.venv/Scripts/python.exe manage.py makemigrations --check --dry-run
+.venv/Scripts/python.exe manage.py test
+.venv/Scripts/python.exe scripts/production_preflight.py
+.venv/Scripts/python.exe manage.py scorecard --check</code></pre>
+<p>(On Linux, <code>.venv/bin/</code>.)</p>
+
+<h2 id="suite">The test suite</h2>
+<ul>
+  <li><b>Test runner</b> (<code>digitalbrain/test_runner.py</code>) blanks Redis, the scanner, OTel, the bucket, the web server choice and the shared connector folder, so a file on the developer's machine cannot change what "not set" means. It turns the Claude Messages path off; a test of that path turns it on.</li>
+  <li><b>Browser tests</b> (<code>test_browser.py</code>): Playwright drives the installed Chrome against a live test server with the model patched out, so the JavaScript runs for real. They exist because a script error once made every in-place progress update throw for a day while every HTML test passed. They skip and say why without Playwright or Chrome, or with <code>DIGITAL_BRAIN_BROWSER_TESTS=0</code>. They wait on selectors, never <code>wait_for_function</code> - that evaluates a string, and the CSP refuses it.</li>
+  <li><b>Pinned invariants</b>: the CSP string (<code>test_security</code>), tenancy coverage of every table (<code>test_tenancy</code>), expand/contract migrations (<code>test_migration_job</code>), shared-lane races (<code>test_shared_lanes</code>), role capabilities (<code>test_access_review</code>), SLO rules vs registry (<code>test_slo</code>), environment variables botocore and the Anthropic SDK would read (<code>test_originals</code>, <code>test_claude_messages</code>), managed credentials (<code>test_managed_credentials</code>).</li>
+  <li><b>No test makes a real provider call.</b> OpenAI runs through the real Agents SDK over a mocked HTTP transport; Claude's <code>query</code> is replaced. The working notes list what has been verified live and what has not.</li>
+</ul>
+
+<h2 id="ci">Continuous integration</h2>
+<div class="table-wrap"><table>
+  <tr><th>Job</th><th>Runs</th><th>Why</th></tr>
+  <tr><td><code>verify</code></td><td>Suite and scorecard on SQLite</td><td>The fast, zero-service baseline</td></tr>
+  <tr><td><code>postgres</code></td><td>The role tests as the owner, then suite and scorecard as an owner that is not a superuser, on <code>postgres:16-alpine</code> with <code>redis:7.4-alpine</code></td><td>Advisory locks, <code>SKIP LOCKED</code>, full text and row security exist only there. It has caught what SQLite cannot: <code>select_for_update</code> beside a nullable <code>select_related</code> must say <code>of=("self",)</code>; a test that closes connections inside a <code>TestCase</code> loses them on PostgreSQL.</td></tr>
+  <tr><td><code>slo-rules</code></td><td><code>promtool check rules</code> and <code>promtool test rules</code></td><td>Each alert must fire from series named as they really arrive</td></tr>
+</table></div>
+
+<h2 id="scorecard">The scorecard</h2>
+<p><code>platform_core/scorecard.py</code> builds its own workspace from files in the repository - the CarePath documents through the real extractor, the Jira export through the real Jira connector code, <code>benchmarks/*.json</code> - in a throwaway database with stable ids, and calls no model. <code>--check</code> fails on any score worse than <code>benchmarks/baseline.json</code> past its tolerance; leak counts and safeguard probes must match exactly.</p>
+<div class="table-wrap"><table>
+  <tr><th>Aspect</th><th>Measures (baseline)</th></tr>
+  <tr><td>Retrieval</td><td>Graph: right source found 15/16, in top 3 12/16, MRR 0.701 · Keyword: 14/16, 12/16, MRR 0.674</td></tr>
+  <tr><td>Citation integrity</td><td>Citations that re-verify 100% · still given after their source changed: 0</td></tr>
+  <tr><td>Agentic evidence</td><td>Planted-bug identifiers in Code Factory's evidence (recorded 96%, tolerance 0.5) · tickets whose evidence cites the ticket 6/6</td></tr>
+  <tr><td>Ontology</td><td>Phrasings typed or refused correctly, prompt coverage, merge precision and recall - all 100%</td></tr>
+  <tr><td>Document types</td><td>Typed as a person would 100% · with no title or file name to go on 100%</td></tr>
+  <tr><td>Personal data</td><td>Found 100% · real 100% · restricted sources reaching AI 0 · records shown to someone their system denies 0</td></tr>
+  <tr><td>HIPAA safeguards</td><td>§164.312 probes passing 100%</td></tr>
+  <tr><td>AI cost control</td><td>Calls re-running unchanged sources 0 · after one source changes 1 · past the budget 0 · past a reservation or full gateway 0</td></tr>
+  <tr><td>Graph storage</td><td>Versions read back exactly from rows 100% · rows written after one change 1.4% · rows vs memory identical 100%</td></tr>
+  <tr><td>Release check · Learning loop</td><td>Probes passing 100% each</td></tr>
+  <tr><td>Rules</td><td>Broken rule shown for its ticket 100% · shown first 100% · quotes found 100% · rules shown for a ticket that breaks none: 2.0 each</td></tr>
+  <tr><td>Speed</td><td>Graph answer 8.0 ms median · keyword answer 4.8 ms median</td></tr>
+</table></div>
+<ul>
+  <li><code>--set-baseline</code> only in the commit that earned it; <code>--record</code> each release into <code>benchmarks/history/</code>.</li>
+  <li><code>--replay &lt;commit&gt;</code> re-runs an older commit's ranking on today's corpus - the day-one comparison.</li>
+  <li><b>LLM drift</b> is measured separately and costs money: <code>manage.py llm_drift</code> (see <a href="ai-gateway.html#measuring">AI gateway</a>).</li>
+  <li><b>Stream capacity</b>: <code>manage.py load_streams</code> runs the real application under each server against a throwaway Redis, with only the model replaced. Change <code>MAX_ASYNC_READERS</code> only with a run.</li>
+</ul>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

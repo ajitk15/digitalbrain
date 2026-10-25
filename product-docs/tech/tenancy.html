@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tenancy and Row Security</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/tenancy.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Tenancy and row security</h1>
+<p class="lede">An <b>application</b> is the tenant. Three layers keep one application's data from another: the code's own scoping, PostgreSQL row-level security underneath it, and a database role that can only touch rows.</p>
+
+<figure class="figure">
+  <div class="fig-title">Three layers, each holding if the one above slips</div>
+  <svg viewBox="0 0 940 280" role="img" aria-labelledby="ten-t" data-cycle="10">
+    <title id="ten-t">A query for another application's row. Layer one, the code's access check and application filter, should stop it. If a filter is forgotten, layer two, row security bound to the request's application, makes the row read as not found. Layer three, the runtime role, cannot bypass row security or run DDL.</title>
+    <defs><marker id="t1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="100" width="150" height="80" rx="10" class="box-blue"/><text x="85" y="130" text-anchor="middle" class="t">Request</text><text x="85" y="148" text-anchor="middle" class="t-xs">applications/A/…</text><text x="85" y="164" text-anchor="middle" class="t-xs">asks for B's row</text></g>
+    <g data-at="0.12"><rect x="200" y="30" width="220" height="220" rx="12" class="box"/><text x="310" y="58" text-anchor="middle" class="t">1 · The code</text>
+      <text x="216" y="88" class="t-xs">policy.application_for → 404</text><text x="216" y="106" class="t-xs">workbench.access per feature</text><text x="216" y="124" class="t-xs">queries filter application=</text><text x="216" y="142" class="t-xs">agent tools closed over app</text><text x="216" y="160" class="t-xs">and user before the run</text><text x="216" y="190" class="t-xs t-rose">a forgotten filter?</text></g>
+    <g data-at="0.3"><rect x="460" y="30" width="220" height="220" rx="12" class="box-teal"/><text x="570" y="58" text-anchor="middle" class="t">2 · Row security</text>
+      <text x="476" y="88" class="t-xs">TenantMiddleware sets</text><text x="476" y="106" class="t-xs">digitalbrain.tenant = A</text><text x="476" y="124" class="t-xs">FORCEd policy on every table</text><text x="476" y="142" class="t-xs">with a required application</text><text x="476" y="190" class="t-xs t-teal">B's row reads as not found;</text><text x="476" y="206" class="t-xs t-teal">a write for B is refused</text></g>
+    <g data-at="0.48"><rect x="720" y="30" width="210" height="220" rx="12" class="box-violet"/><text x="825" y="58" text-anchor="middle" class="t">3 · The role</text>
+      <text x="736" y="88" class="t-xs">digital_brain_runtime:</text><text x="736" y="106" class="t-xs">LOGIN only - no superuser,</text><text x="736" y="124" class="t-xs">CREATEDB, CREATEROLE,</text><text x="736" y="142" class="t-xs">REPLICATION, BYPASSRLS</text><text x="736" y="160" class="t-xs">or owner membership</text><text x="736" y="190" class="t-xs t-violet">cannot skip layer 2,</text><text x="736" y="206" class="t-xs t-violet">cannot run DDL</text></g>
+    <path d="M160 140H198M420 140H458M680 140H718" class="edge flow" marker-end="url(#t1)"/>
+  </svg>
+</figure>
+
+<h2 id="code-layer">Layer 1: the code decides access</h2>
+<ul>
+  <li><b>Deny by default.</b> Application access is re-checked on every request and every tool call. No grant → <code>Http404</code> from <code>policy.application_for</code>, so the platform never confirms an application exists. Platform administration does not imply application access.</li>
+  <li><b>Live only when all four levels are on</b> (<code>policy.LIVE</code>): organization, portfolio, product and application each have <code>active</code>. Read by <code>applications_for</code>, the gateway, connector scheduling and the graph lane, so turning a parent back on restores exactly what was on.</li>
+  <li><b>Scope is closed over, never model-supplied.</b> Agent tools (<code>agent_runtime/tools.py</code>) are bound to one application and one user before a run. Model arguments may only narrow an already-scoped queryset; a foreign id reads as "not found", never raises and never leaks.</li>
+  <li><b>API tokens are users.</b> <code>api_auth.authenticate</code> returns (user, application) and the same <code>access()</code> checks run. There is no token role and no token permission table, so revoking a grant closes the token with no extra code.</li>
+  <li><b>Background work runs as a person.</b> A scheduled import runs as the connector's creator; automatic AI as whoever switched it on (or the first owner still able to open it). Each re-checks that grant, so revoking it stops the schedule with no code that knows about schedules.</li>
+</ul>
+
+<h2 id="rls">Layer 2: row security</h2>
+<p>Migration 0091 gives every table with a required application a PostgreSQL policy, <b>FORCEd</b> (so it binds the table owner too), reading the session setting <code>digitalbrain.tenant</code>. Bound, a connection reads and writes only that application's rows; unbound, it sees everything.</p>
+<div class="table-wrap"><table>
+  <tr><th>Where</th><th>Bound to</th></tr>
+  <tr><td>A request under <code>applications/&lt;uuid:pk&gt;/</code></td><td>That <code>pk</code>, by <code>TenantMiddleware</code> before the view; cleared afterwards whatever the view did</td></tr>
+  <tr><td>An API request</td><td>The application its token names, by <code>api_auth.authenticate</code></td></tr>
+  <tr><td>A chat answer thread</td><td><code>tenancy.scoped</code></td></tr>
+  <tr><td>A job</td><td>Its <code>application_id</code> (<code>jobs.run_next</code>)</td></tr>
+  <tr><td>A lane step</td><td>The row it claimed - a document, run, triage, review or index - for the length of its work</td></tr>
+  <tr><td>Choosing the next row, management commands, migrations, platform administration</td><td>Unbound (they read across applications by design)</td></tr>
+</table></div>
+<p><code>tenancy.UNSCOPED</code> names the four tables a request reads across applications - grants, features, logos, gateway admissions - and why. <code>test_tenancy</code> fails when a new model with a required application is in neither the policy list nor that set, so a new table makes its choice in its own migration. New tables after 0091 secure themselves through 0091's <code>secure</code>.</p>
+<div class="warn">Row security defends against a <b>missing filter</b>, never against SQL injection, and it does not replace the code's checks - those still decide access. On <b>SQLite</b> there is none: the code is the only layer.</div>
+
+<h2 id="role">Layer 3: a role that can only touch rows</h2>
+<p>The role PostgreSQL's image creates is a superuser: it can read the server's files, run <code>COPY … TO PROGRAM</code>, drop anything, and is never held to row security. The platform used to run as it. Now:</p>
+<ol class="steps">
+  <li>The <b>migrate</b> step connects as the owner (<code>[database] user</code>) with <code>runtime_user</code> naming the role to make.</li>
+  <li><code>apply_migrations</code> (<code>database_roles.py</code>), under its lock, creates or corrects <code>digital_brain_runtime</code>: LOGIN and nothing else, SELECT/INSERT/UPDATE/DELETE on every table, default privileges for tables later migrations add. Every run states it all again, so a privilege added by hand is undone.</li>
+  <li>Everything else - web, worker, <code>manage.py</code> through <code>docker exec</code> - reads the configuration that connects as the runtime role (<code>password_secret = "database_runtime_password"</code>).</li>
+</ol>
+<p>The entrypoint renders both configurations. <code>DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE=0</code> connects as the owner again; an operator's mounted file is used for both. Runtime code never needs DDL - which is also why making audit partitions runs as the owner, in <code>apply_migrations</code> and <code>manage.py partitions</code>.</p>
+
+<h2 id="hierarchy">Disable and delete</h2>
+<ul>
+  <li><b>Disabling is reversible.</b> It fails work still queued under it (<code>hierarchy.STOPPED</code>) - which has cost nothing. A step already running finishes and its next paid call is refused. A schedule just waits.</li>
+  <li><b>Deleting is not.</b> Offered only for a level already disabled, with the name typed exactly, by a platform administrator (everyone else gets 404), and refused while anything under it is in flight - checked under the same lock on application rows that <code>gateway.try_admit</code> takes. Content is removed deepest first; each level's row stays as a tombstone; audit events and receipts are never deleted with what they describe. Files go after the commit.</li>
+</ul>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Using Each Screen</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="guide/screens.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › For everyone</div>
+<span class="tag everyone">For everyone</span>
+<h1>Using each screen</h1>
+<p class="lede">A walk through every screen in the order you would meet them - what it is for, who sees it and the steps to get something done. Menu items appear only when the feature is switched on and your role allows it.</p>
+
+<figure class="figure">
+  <div class="fig-title">Where things live</div>
+  <svg viewBox="0 0 900 230" role="img" aria-labelledby="nav-t">
+    <title id="nav-t">The application menu: Knowledge, Code Factory, ServiceOps, Chat and Settings. Above it, Overview, My access and Administration.</title>
+    <rect x="10" y="10" width="880" height="40" rx="10" class="zone-solid"/>
+    <text x="28" y="35" class="t">Overview</text><text x="118" y="35" class="t-sm">applications · needs attention</text>
+    <text x="370" y="35" class="t">My access</text>
+    <text x="470" y="35" class="t">Account</text><text x="540" y="35" class="t-sm">authenticator app</text>
+    <text x="700" y="35" class="t t-violet">Administration</text><text x="808" y="35" class="t-xs">platform admins</text>
+    <rect x="10" y="66" width="880" height="44" rx="10" class="box-blue"/>
+    <text x="28" y="93" class="t">CarePathDev ▸</text>
+    <text x="170" y="93" class="t">Knowledge</text><text x="290" y="93" class="t">Code Factory</text><text x="420" y="93" class="t">ServiceOps</text><text x="530" y="93" class="t">Chat</text><text x="600" y="93" class="t">Settings</text>
+    <path d="M200 110V128M320 110V128M450 110V128M545 110V128M625 110V128" class="edge edge-dash"/>
+    <rect x="110" y="128" width="170" height="92" rx="10" class="box"/>
+    <text x="122" y="148" class="t-xs">Documents · Code Repos</text><text x="122" y="166" class="t-xs">Tickets · Graph · Quality</text><text x="122" y="184" class="t-xs">Versions · Learned</text><text x="122" y="206" class="t-xs">(Runbooks in Operations)</text>
+    <rect x="290" y="128" width="120" height="92" rx="10" class="box"/>
+    <text x="300" y="148" class="t-xs">Plans · new ticket</text><text x="300" y="166" class="t-xs">Runs · run detail</text><text x="300" y="184" class="t-xs">Onboarding</text>
+    <rect x="420" y="128" width="110" height="92" rx="10" class="box"/>
+    <text x="430" y="148" class="t-xs">Incident triage</text><text x="430" y="166" class="t-xs">Runs · Graph</text><text x="430" y="184" class="t-xs">Automations</text><text x="430" y="202" class="t-xs">Testing</text>
+    <rect x="538" y="128" width="40" height="92" rx="10" class="box"/>
+    <rect x="590" y="128" width="300" height="92" rx="10" class="box"/>
+    <text x="602" y="148" class="t-xs">Application: Appearance · Features · Chat history</text><text x="602" y="166" class="t-xs">AI: AI settings · AI costs</text><text x="602" y="184" class="t-xs">Integrations: Connectors · Credentials</text><text x="602" y="202" class="t-xs">Access: People &amp; access · API access</text>
+  </svg>
+</figure>
+
+<h2 id="sign-in">Signing in</h2>
+<ol class="steps">
+  <li>Open the address your administrator gave you and enter your <b>user ID and password</b>. This way in always works, with or without Microsoft.</li>
+  <li>If your company set it up, <b>Sign in with Microsoft</b> is offered too. It only proves who you are; it never grants access by itself.</li>
+  <li>If you added an <b>authenticator app</b>, enter its six-digit code. Three wrong codes send you back to the password; five failed sign-ins lock the account for 15 minutes.</li>
+</ol>
+<p>Sessions end after 30 minutes of inactivity. <a href="roles-and-access.html#sign-in">More on sign-in and the authenticator app</a>.</p>
+
+<h2 id="overview">Overview</h2>
+<p>Your landing page: the applications you have access to, and <b>Needs attention</b> - a list of things waiting on you, such as a draft graph ready to publish, a published version behind its sources, access reviews due or learned candidates. Each item links to the screen that acts on it.</p>
+
+<h2 id="onboarding">Onboarding</h2>
+<p>For an owner setting up an application. At the top is the knowledge cycle (Set up → Feed → Build → Check → Publish → Use) with where you are; below are the gates each feature needs, ticked as they are met: which connectors you use, an AI provider and credential, a repository, a published graph, an approver.</p>
+
+<h2 id="upload">Knowledge → Documents: adding documents</h2>
+<ol class="steps">
+  <li>Open <b>Knowledge</b> (or <b>Runbooks</b>) and choose <b>Add</b>. Pick <b>Upload documents</b>, <b>Upload a folder</b> or <b>Import from a link</b>.</li>
+  <li>Before you upload, the popup says whether the next graph version will be built with AI, and if not, why (AI switched off, no credential, budget spent).</li>
+  <li>Each file is <b>virus-scanned</b>, then <b>converted</b> to text in an isolated process with no network access. Scanned pages are read by OCR, and the text says which pages were.</li>
+  <li>The document gets a <b>type</b>, a <b>source check</b> score and a <b>content check</b>. "Ready" needs 80 and no check missing outright. The checks only advise - nothing is ever left out of the graph because of them.</li>
+  <li>If the personal-data scan flags PHI or PII, decide whether to <b>Restrict</b> it. Restricted sources stay readable by people with access but are never sent to AI or cited.</li>
+  <li>A new <b>draft</b> graph version is built automatically a few seconds later.</li>
+</ol>
+<div class="note"><b>On a document's page</b> you can change its type (your choice always wins over the rules), <b>Ask AI what it is</b> when the rules said Other, request an <b>AI review</b> of clarity and gaps, <b>Convert again</b> (owners, if the original was kept), mark it as <b>rules</b> (owners), restrict it, or delete it.</div>
+
+<h2 id="code-repos">Knowledge → Code Repos</h2>
+<ol class="steps">
+  <li>Choose <b>Add repository</b> → <b>From GitHub</b> (owner/name) or <b>From a folder on this server</b> (only if an operator listed allowed folders; <b>Browse</b> shows them).</li>
+  <li>Indexing runs in the background and produces a <b>snapshot</b>: files, symbols, routes, imports and calls.</li>
+  <li>Open a repository for <b>Structure</b>, <b>Reviews</b> (compare a branch, pull request or working changes) and <b>Documentation</b> (reverse-engineered docs). <b>Refresh</b> re-indexes; <b>Retire</b> removes it.</li>
+</ol>
+
+<h2 id="tickets">Knowledge → Tickets</h2>
+<p>Imported tickets with a quality score each (Jira tickets keep their own ticket score). Use it to see what a connector brought in and to start a Code Factory run from a ticket.</p>
+
+<h2 id="graph-tabs">Knowledge → Graph, Quality, Versions</h2>
+<ul>
+  <li><b>Graph</b> - explore the published (or any) version: nodes, relationships and the quote behind each. <b>Generate</b> builds a new draft on demand, choosing structure only or a model.</li>
+  <li><b>Quality</b> - each version charted with and without its AI: questions found, ranking quality, cross-document links, orphans, quoted relationships. Up and down arrows say whether a figure got better or worse than the version before.</li>
+  <li><b>Versions</b> - every version with its benchmark score and release check. <b>Check and publish</b> runs the checks again: hard failures (a source changed, a quote no longer verifies, a source since restricted) refuse; soft failures (fewer questions found, weaker sources…) publish only with a typed reason, which is kept. The bar at the top is where an owner switches <b>automatic publishing</b> on or off.</li>
+</ul>
+
+<h2 id="learned-screen">Knowledge → Learned</h2>
+<p>Owners and contributors see candidates waiting: change records, incident learnings, gaps and wrong answers. <b>Accept</b> adds a source (going through the same masking and scanning as an upload) or a benchmark question with the source it should cite; <b>Reject</b> is remembered, so it is not offered again.</p>
+
+<h2 id="chat-screen">Chat</h2>
+<ol class="steps">
+  <li>Start a conversation and choose its mode: <b>Source excerpts</b>, <b>AI answer</b> or <b>Graph answer</b>.</li>
+  <li>Type a question. The answer streams in; <b>Stop</b> ends it and the model call with it.</li>
+  <li>Click a citation number to see the quoted sentence and open its source.</li>
+  <li><b>Wrong answer?</b> under an answer opens a short form; it becomes a candidate in Learned. Questions are shown to owners and contributors without your name.</li>
+</ol>
+<p>Everything works with JavaScript switched off: the page simply reloads with the answer instead of streaming it.</p>
+
+<h2 id="factory-screen">Code Factory</h2>
+<ol class="steps">
+  <li><b>Plans</b>: pick a ticket (or write one with <b>New ticket</b>) and choose a repository. If there is no published graph, the form is replaced by the reason.</li>
+  <li>The run triages, analyses gaps and designs the change. Watch each phase on the run page.</li>
+  <li>Open the plan. Each item shows its evidence; the <b>rules</b> that apply are shown beside it. Approve, reject items, or send it back.</li>
+  <li>After approval, Build B writes the work order, implementation, tests and a review, runs pre-write checks, then opens a <b>pull request</b> - or, where allowed, writes into the server folder and can run that folder's tests on an approver's button press.</li>
+  <li>The run's <b>Tests</b> stage shows the pull request's CI result (or the local test result).</li>
+</ol>
+
+<h2 id="serviceops-screen">ServiceOps</h2>
+<ol class="steps">
+  <li><b>Incident triage</b> lists incidents imported from ServiceNow (or added with <b>New incident</b>).</li>
+  <li>Open one to see its neighbourhood: similar incidents, same event, recent changes, linked runbooks and automations.</li>
+  <li>Press <b>Triage</b>. Steps tick as they run: profile, walk the graph, ask the AI, verify citations, rate the evidence, save.</li>
+  <li>Record the <b>verdict</b>: choose the actual cause from the brief's citations. Withdrawing it removes the confirmed link.</li>
+  <li>The <b>Graph</b> tab shows the operations graph; <b>Automations</b> lists automations, with Simulate run, and real execution for owners where a connection allows it.</li>
+</ol>
+
+<h2 id="settings-screens">Settings</h2>
+<div class="table-wrap"><table>
+  <tr><th>Section</th><th>Screen</th><th>What you do there</th><th>Who</th></tr>
+  <tr><td rowspan="3">Application</td><td>Appearance</td><td>Name, icon and logo</td><td>Owner</td></tr>
+  <tr><td>Features</td><td>Switch features on and off, grouped Engineering / Operations / Connectors / Shared</td><td>Owner</td></tr>
+  <tr><td>Chat history</td><td>How long conversations are kept</td><td>Owner</td></tr>
+  <tr><td rowspan="2">AI</td><td>AI settings</td><td>Provider, model per task, prices, reply caps, monthly budget, personal-data masking, automatic AI on graph builds</td><td>Owner</td></tr>
+  <tr><td>AI costs</td><td>Spend by task, model and person, from receipts</td><td>Any member, when the feature is on</td></tr>
+  <tr><td rowspan="2">Integrations</td><td>Connectors</td><td>Add Jira, GitHub, ServiceNow and automation sources; schedule imports</td><td>Owner</td></tr>
+  <tr><td>Credentials</td><td>Set or clear a provider credential; the value is never shown again</td><td>Owner</td></tr>
+  <tr><td rowspan="2">Access</td><td>People &amp; access</td><td>Invite, change roles, set an end date, confirm the access review</td><td>Owner</td></tr>
+  <tr><td>API access</td><td>Issue and revoke your own API tokens - a token can never do more than you can</td><td>Any member</td></tr>
+</table></div>
+
+<h2 id="my-access">My access and Account</h2>
+<p><b>My access</b> lists every application you can open, your role there and what that role can do. <b>Account → Authenticator app</b> adds or removes your authenticator and shows recovery codes once.</p>
+
+<h2 id="administration">Administration (platform administrators)</h2>
+<p>Seven pages, none of which open an application's content:</p>
+<div class="table-wrap"><table>
+  <tr><th>Page</th><th>For</th></tr>
+  <tr><td>Overview</td><td>What needs attention - no administrator, nobody owns, stale lanes, dead jobs, service levels below target, lockouts, reviews due - then spend by organization</td></tr>
+  <tr><td>People</td><td>Find a person, unlock, one-time password reset link, remove an authenticator, offboard to a successor</td></tr>
+  <tr><td>Organizations</td><td>Create organizations, name their administrators; the Structure page disables or deletes any level</td></tr>
+  <tr><td>Sign-in and security</td><td>Sign-in methods, Microsoft and provisioning status</td></tr>
+  <tr><td>Operations</td><td>Background lanes, waiting work and service levels</td></tr>
+  <tr><td>Settings</td><td>Platform-wide settings in effect</td></tr>
+  <tr><td>Audit</td><td>Every control-plane event</td></tr>
+</table></div>
+<div class="warn"><b>Deleting</b> is the second of two steps: only a disabled level can be deleted, its name must be typed exactly, and nothing under it may be in flight. Audit events and AI receipts are kept even after a delete.</div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

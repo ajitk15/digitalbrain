@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary</title>
+<link rel="stylesheet" href="assets/docs.css">
+</head>
+<body data-root="" data-page="glossary.html">
+<main>
+<div class="crumbs"><a href="index.html">Start</a></div>
+<span class="tag">Start</span>
+<h1>Glossary</h1>
+<p class="lede">Every term these pages use, in plain words. Each definition links to where the term is explained in full.</p>
+
+<nav class="az" aria-label="Letters">
+  <a href="#g-a">A</a><a href="#g-b">B</a><a href="#g-c">C</a><a href="#g-d">D</a><a href="#g-e">E</a><a href="#g-f">F</a><a href="#g-g">G</a><a href="#g-h">H</a><a href="#g-i">I</a><a href="#g-j">J</a><a href="#g-k">K</a><a href="#g-l">L</a><a href="#g-m">M</a><a href="#g-o">O</a><a href="#g-p">P</a><a href="#g-r">R</a><a href="#g-s">S</a><a href="#g-t">T</a><a href="#g-u">U</a><a href="#g-v">V</a><a href="#g-w">W</a>
+</nav>
+
+<dl class="glossary">
+  <dt id="g-a">Admission</dt>
+  <dd>The gateway's permission for one paid call to start: a free slot for the application and the provider, and room in the budget for the call's most expensive outcome. <a href="tech/ai-gateway.html#admission">AI gateway</a></dd>
+  <dt>Advisory lock</dt>
+  <dd>A PostgreSQL lock on a number rather than a row. Used so migrations are applied once, maintenance has one holder, and per-provider admission is counted correctly. <a href="tech/workers.html#shared">Workers</a></dd>
+  <dt>AI answer</dt>
+  <dd>A chat mode where a model writes the answer from current sources it searched, citing them. <a href="guide/features.html#chat">Chat</a></dd>
+  <dt>Application</dt>
+  <dd>The unit of access and billing: its own knowledge, graph, credentials, budget and grants. <a href="guide/what-is.html#organized">How it is organized</a></dd>
+  <dt>Answerable</dt>
+  <dd>A source that is active and not restricted - the only kind any AI path may read or cite. <a href="tech/answering.html#verify">Answering</a></dd>
+  <dt>Approval rights</dt>
+  <dd>A flag on a grant that lets its holder approve Code Factory plans and give approval rights to others. <a href="guide/roles-and-access.html#roles">Roles</a></dd>
+  <dt>Audit event</dt>
+  <dd>A record of a control-plane change: who, what, when. Kept at least six years when a window is set. <a href="guide/roles-and-access.html#audit">What is recorded</a></dd>
+  <dt>Automation</dt>
+  <dd>A runbook job (AWX, Rundeck, Azure Automation, a ServiceNow flow or a team's list) shown in the operations graph; "Simulate run" sends nothing. <a href="guide/features.html#automations">Automations</a></dd>
+
+  <dt id="g-b">Benchmark</dt>
+  <dd>An owner's questions with the source each should find, scored against every saved version - free, no model. <a href="tech/knowledge-lifecycle.html#check">Check</a></dd>
+  <dt>BM25</dt>
+  <dd>A standard way of scoring how well a passage matches the words of a question; the second of three ranking keys. <a href="tech/answering.html#ranking">Ranking</a></dd>
+  <dt>Budget</dt>
+  <dd>An owner's monthly cap on an application's AI spend, checked before every paid call. <a href="guide/ai-and-cost.html#budget">Budget</a></dd>
+
+  <dt id="g-c">Citation</dt>
+  <dd>A pointer from an answer to a source and the exact words quoted from it, verified before it is shown. <a href="guide/faq.html#answers">Can I trust an answer?</a></dd>
+  <dt>Code Factory</dt>
+  <dd>The pipeline from a ticket to a reviewed plan to a delivered change, every step cited and approved by a person. <a href="guide/features.html#code-factory">Code Factory</a></dd>
+  <dt>Code Graph</dt>
+  <dd>An index of a repository's files, symbols, routes and calls, read from a clone or a server folder. <a href="guide/features.html#code-graph">Code Graph</a></dd>
+  <dt>Connector</dt>
+  <dd>A link to another system - Jira, GitHub, ServiceNow, SharePoint, automation tools - that imports its records as sources. <a href="guide/features.html#connectors">Connectors</a></dd>
+  <dt>Content check</dt>
+  <dd>A document's score against the checks for its document type (sections, numbered requirements, owned actions...). Advice only. <a href="tech/knowledge-lifecycle.html#build">Build</a></dd>
+  <dt>Contributor</dt>
+  <dd>The role that can add and change knowledge, start Code Factory runs and triage incidents. <a href="guide/roles-and-access.html#roles">Roles</a></dd>
+  <dt>CSP</dt>
+  <dd>Content Security Policy: the browser rule that only this server's own scripts and styles run. Pinned by a test. <a href="tech/security.html#web-edge">Web edge</a></dd>
+
+  <dt id="g-d">Demonstration</dt>
+  <dd>Production mode with demo reset, local Code Factory delivery and the ServiceOps test workbench allowed - every other production rule kept. <a href="deploy/compose.html#demonstration">Hosted demonstration</a></dd>
+  <dt>Digest</dt>
+  <dd>A fingerprint (SHA-256) of a source's stored text. A citation stays valid only while its source's digest is unchanged. <a href="tech/answering.html#verify">Verification</a></dd>
+  <dt>Document type</dt>
+  <dd>What a document is - requirements, ADR, runbook, postmortem and more - read from its own content by rules; a person's choice wins. <a href="tech/knowledge-lifecycle.html#build">Build</a></dd>
+  <dt>Draft</dt>
+  <dd>A saved graph version nobody has published yet. It can be measured, never answered from. <a href="tech/knowledge-lifecycle.html#publish">Publish</a></dd>
+
+  <dt id="g-e">Embedding</dt>
+  <dd>A list of numbers standing for a text's meaning, used only to choose starting points; never a citation by itself. <a href="tech/answering.html#vectors">Embeddings</a></dd>
+  <dt>Entra ID</dt>
+  <dd>Microsoft's directory. Sign-in through it authenticates and grants nothing. <a href="tech/security.html#identity">Identity providers</a></dd>
+  <dt>Expand and contract</dt>
+  <dd>Changing the schema in two releases - add first, remove later - so the previous release always runs against the new schema. <a href="deploy/operations.html#upgrades">Upgrades</a></dd>
+
+  <dt id="g-f">Feature</dt>
+  <dd>A switch from one registry: Knowledge, Chat, Code Graph, Code Factory, ServiceOps, connector kinds and more, chosen at creation. <a href="guide/features.html">Features</a></dd>
+  <dt>Fingerprint</dt>
+  <dd>A digest over everything a graph is built from; when it moves, a rebuild is due. <a href="tech/workers.html#jobs">Jobs</a></dd>
+
+  <dt id="g-g">Gateway</dt>
+  <dd>The one path every paid model call takes: purpose rule, admission, credential, adapter, receipt. <a href="tech/ai-gateway.html">AI gateway</a></dd>
+  <dt>Grant</dt>
+  <dd>A person's role on one application. No grant means the application reads as not found. <a href="guide/roles-and-access.html#deny">No grant, no access</a></dd>
+  <dt>Graph answer</dt>
+  <dd>The chat mode that answers from the latest published graph version. <a href="guide/features.html#chat">Chat</a></dd>
+  <dt>Graph version (revision)</dt>
+  <dd>One saved build of the knowledge graph, numbered, never changed after it is saved. <a href="guide/features.html#graph">Graph and versions</a></dd>
+  <dt>Graphify</dt>
+  <dd>The code-analysis library used for its deterministic parts only: syntax trees, cross-file calls, clustering. Its model pass is never called. <a href="tech/technology.html#code-tech">Reading code</a></dd>
+
+  <dt id="g-h">Heartbeat</dt>
+  <dd>The timestamp each lane holder writes, so a stopped worker is told apart from a slow one. <a href="tech/workers.html#health">Health</a></dd>
+  <dt>HIPAA §164.312</dt>
+  <dd>The US health-privacy rule's technical safeguards: access control, audit, integrity, authentication, transmission security. <a href="tech/security.html#hipaa">HIPAA</a></dd>
+
+  <dt id="g-i">Intake</dt>
+  <dd>Scan, convert and check an uploaded document - the first lane, run in the sandbox when split. <a href="tech/knowledge-lifecycle.html#intake">Intake</a></dd>
+
+  <dt id="g-j">Job</dt>
+  <dd>A row asking for background work, written in the same transaction as the change that needs it. <a href="tech/workers.html#jobs">Jobs</a></dd>
+
+  <dt id="g-k">Keyword answer (Source excerpts)</dt>
+  <dd>The chat mode that returns verified passages from current sources, ranked, with no model call. <a href="guide/features.html#chat">Chat</a></dd>
+  <dt>Knowledge entry</dt>
+  <dd>One source's stored text - a converted document or an imported record. Citations verify against it. <a href="tech/data-model.html">Data model</a></dd>
+
+  <dt id="g-l">Lane</dt>
+  <dd>A named background loop - intake, graph, code-graph, factory, serviceops, serviceops-tests, automations, connectors, maintenance. <a href="tech/workers.html#lanes">Lanes</a></dd>
+  <dt>Learned</dt>
+  <dd>Candidates that using the platform produces - change records, incident learnings, gaps, wrong answers - offered for a person to accept, never written straight into knowledge. <a href="guide/features.html#learned">Learned</a></dd>
+
+  <dt id="g-m">Managed credential</dt>
+  <dd>A credential an owner typed on the Credentials screen, written as a file in a separate directory; an operator's file always wins. <a href="tech/security.html#secrets">Secrets</a></dd>
+  <dt>Masking</dt>
+  <dd>Replacing chosen personal data with a stable placeholder before a source is stored, so every reader sees only the placeholder. <a href="guide/ai-and-cost.html#data">Your data</a></dd>
+  <dt>MCP</dt>
+  <dd>Model Context Protocol: lets an AI assistant call this platform's graph search and triage briefs with a bearer token. <a href="tech/apis.html#mcp">MCP tools</a></dd>
+  <dt>MRR</dt>
+  <dd>Mean reciprocal rank: 1 when the expected source is ranked first, 0.5 when second, and so on, averaged. <a href="tech/testing.html#scorecard">Scorecard</a></dd>
+
+  <dt id="g-o">Ontology</dt>
+  <dd>The closed list of entity types and relations AI extraction may use; anything outside it is refused. <a href="tech/answering.html#ai-in-graph">AI in the graph</a></dd>
+  <dt>Operations graph</dt>
+  <dd>Incidents, changes, articles and automations joined by rules, rebuilt live and re-verified when read. <a href="tech/knowledge-lifecycle.html#ops-layer">Operations graph</a></dd>
+  <dt>Originals</dt>
+  <dd>The uploaded files themselves, on disk or in a bucket; optional, because the converted text is the record. <a href="deploy/cloud.html#cloud-originals">Originals</a></dd>
+  <dt>Owner</dt>
+  <dd>The role that manages an application: access, credentials, AI settings, budget, features. <a href="guide/roles-and-access.html#roles">Roles</a></dd>
+
+  <dt id="g-p">Passage (chunk)</dt>
+  <dd>A fixed-size window of a source's text, stored as a row for fast search; a copy, never evidence. <a href="tech/answering.html#candidates">Candidates</a></dd>
+  <dt>PHI / PII</dt>
+  <dd>Protected health information / personally identifiable information, found by labelled patterns and only ever suggested. <a href="guide/ai-and-cost.html#data">Your data</a></dd>
+  <dt>Platform administrator</dt>
+  <dd>Runs the platform from Administration; opens no application without a grant. <a href="guide/screens.html#administration">Administration</a></dd>
+  <dt>Published</dt>
+  <dd>The graph version that answers. Publishing is a person's step, or an owner's rule that a version passing every release check publishes itself. <a href="tech/knowledge-lifecycle.html#publish">Publish</a></dd>
+  <dt>Purpose</dt>
+  <dd>One kind of paid AI call - chat, graph extraction, typing, review, triage, embeddings, reranking... - each with its own rules. <a href="tech/ai-gateway.html#purposes">Purposes</a></dd>
+
+  <dt id="g-r">Receipt</dt>
+  <dd>The record of one model turn: provider request id, tokens, cost, application and person. Never silently zero. <a href="tech/ai-gateway.html#receipts">Receipts</a></dd>
+  <dt>Reranking</dt>
+  <dd>A model reorders verified citations; it can add or change none. <a href="tech/answering.html#ranking">Ranking</a></dd>
+  <dt>Restricted</dt>
+  <dd>A source no AI may read or cite; people with access still can. <a href="guide/roles-and-access.html#source-permissions">Source permissions</a></dd>
+  <dt>Row security (RLS)</dt>
+  <dd>A PostgreSQL rule on every table that lets a connection bound to one application read and write only its rows. <a href="tech/tenancy.html#rls">Row security</a></dd>
+  <dt>Rules</dt>
+  <dd>A source an owner marked as rules - a coding standard, a control matrix. Its rule lines are read without AI and shown, quoted, beside a Code Factory plan they apply to; they never decide anything. <a href="guide/features.html#rules">Rules</a></dd>
+  <dt>Runtime role</dt>
+  <dd><code>digital_brain_runtime</code>: the database login the platform serves with, able to touch rows and nothing else. <a href="tech/tenancy.html#role">The role</a></dd>
+
+  <dt id="g-s">Sandbox</dt>
+  <dd>The locked-down container that runs intake, code-graph and factory - the lanes that hand outside content to other programs. <a href="deploy/compose.html#scaled">Scaled split</a></dd>
+  <dt>Scorecard</dt>
+  <dd>The fifth gate: measures retrieval, citations, cost control, safeguards and speed against a baseline, with no model call. <a href="tech/testing.html#scorecard">Scorecard</a></dd>
+  <dt>SCIM</dt>
+  <dd>A standard the directory uses to create and deactivate accounts here; it never grants access. <a href="tech/apis.html#scim">SCIM</a></dd>
+  <dt>ServiceOps</dt>
+  <dd>Incident triage from runbooks, history and changes, every step cited. <a href="guide/features.html#serviceops">ServiceOps</a></dd>
+  <dt>SLO</dt>
+  <dd>Service-level objective: a measured target, such as "99% of answers end complete". <a href="tech/observability.html#slos">Service levels</a></dd>
+  <dt>Source check</dt>
+  <dd>A document's 0-100 score on a fixed rubric; "Ready" needs 80 and no check missing. Advice only. <a href="tech/knowledge-lifecycle.html#build">Build</a></dd>
+  <dt>Structural graph</dt>
+  <dd>The graph built by rules alone - headings, tables, references - free and rebuilt automatically. <a href="tech/knowledge-lifecycle.html#build">Build</a></dd>
+
+  <dt id="g-t">Tenant</dt>
+  <dd>One application, as row security sees it: the id a connection is bound to. <a href="tech/tenancy.html">Tenancy</a></dd>
+  <dt>Token (API)</dt>
+  <dd>A bearer secret standing for one person; it can do exactly what they can, and stops when their grant does. <a href="tech/apis.html#tokens">Tokens</a></dd>
+  <dt>Triage</dt>
+  <dd>ServiceOps' cited brief on an incident: what it resembles, what changed, which runbook applies. <a href="guide/features.html#serviceops">ServiceOps</a></dd>
+
+  <dt id="g-u">Uvicorn / waitress</dt>
+  <dd>The two web servers: uvicorn wherever Redis is configured, so open streams hold no thread; waitress otherwise. <a href="tech/technology.html#web">Serving</a></dd>
+
+  <dt id="g-v">Verified quote</dt>
+  <dd>Words a citation or relationship claims a source says, found exactly in that source's current text. <a href="tech/answering.html#verify">Verification</a></dd>
+  <dt>Viewer</dt>
+  <dd>The role that can ask questions and read everything in an application. <a href="guide/roles-and-access.html#roles">Roles</a></dd>
+
+  <dt id="g-w">Walk</dt>
+  <dd>Following AI relationships up to two hops from the best matches; its finds come after every direct match. <a href="tech/answering.html#walk">The walk</a></dd>
+  <dt>Worker</dt>
+  <dd>The container (or process) that runs the background lanes. <a href="tech/workers.html">Workers</a></dd>
+</dl>
+
+</main>
+<script src="assets/docs.js"></script>
+</body>
+</html>

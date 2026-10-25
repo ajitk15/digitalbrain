@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker Compose Deployment</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="deploy/compose.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › <a href="index.html">Deployment</a></div>
+<span class="tag ops">Deployment</span>
+<h1>Docker Compose: one server, then split</h1>
+<p class="lede">Three compose files stack on one another. <code>docker-compose.yaml</code> alone is a complete deployment on one server. <code>docker-compose.scale.yaml</code> splits it into a migration job, web replicas, a worker, a sandbox and a virus-scan daemon. The observability files add a collector and Prometheus. Nothing has to be prepared on the server first.</p>
+
+<h2 id="single">Single server</h2>
+<figure class="figure">
+  <div class="fig-title">docker-compose.yaml</div>
+  <svg viewBox="0 0 940 340" role="img" aria-labelledby="cs-t">
+    <title id="cs-t">The host's reverse proxy terminates TLS on 80 and 443 and forwards to the app container on port 8000 over the compose network. The app connects to PostgreSQL and Redis over TLS with certificates from one generated CA. Two one-shot services generate secrets and certificates first. Named volumes hold the data.</title>
+    <defs><marker id="c1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="40" width="130" height="80" rx="12" class="box-amber"/><text x="75" y="72" text-anchor="middle" class="t">Reverse proxy</text><text x="75" y="92" text-anchor="middle" class="t-xs">80/443, TLS</text><text x="75" y="106" text-anchor="middle" class="t-xs">certificate</text>
+    <text x="75" y="24" text-anchor="middle" class="t-xs">browser · API · MCP</text>
+    <path d="M75 28V38" class="edge" marker-end="url(#c1)"/>
+    <rect x="170" y="10" width="760" height="320" rx="16" class="zone"/>
+    <text x="186" y="32" class="t-zone">compose network (nothing publishes a port)</text>
+    <path d="M140 80H218" class="edge flow" marker-end="url(#c1)"/><text x="180" y="72" text-anchor="middle" class="t-xs">:8000</text>
+    <rect x="220" y="46" width="250" height="120" rx="12" class="box-blue"/>
+    <text x="345" y="72" text-anchor="middle" class="t">app  (role all)</text>
+    <text x="236" y="96" class="t-xs">entrypoint: render config, apply migrations</text>
+    <text x="236" y="112" class="t-xs">check --deploy, then serve.py:</text>
+    <text x="236" y="128" class="t-xs">uvicorn web + all nine lanes</text>
+    <text x="236" y="144" class="t-xs">clamscan + daily freshclam inside</text>
+    <rect x="560" y="46" width="160" height="56" rx="10" class="box-teal"/><text x="640" y="70" text-anchor="middle" class="t">postgres:16</text><text x="640" y="88" text-anchor="middle" class="t-xs">ssl=on, hostssl only</text>
+    <rect x="560" y="114" width="160" height="56" rx="10" class="box-rose"/><text x="640" y="138" text-anchor="middle" class="t">redis:7.4</text><text x="640" y="156" text-anchor="middle" class="t-xs">TLS only, noeviction</text>
+    <path d="M470 76H558M470 140H558" class="edge flow-slow" marker-end="url(#c1)"/>
+    <text x="514" y="68" text-anchor="middle" class="t-xs">verify-full</text><text x="514" y="132" text-anchor="middle" class="t-xs">TLS + CA</text>
+    <rect x="750" y="46" width="166" height="56" rx="10" class="box"/><text x="833" y="70" text-anchor="middle" class="t-sm">secrets-init</text><text x="833" y="88" text-anchor="middle" class="t-xs">one-shot</text>
+    <rect x="750" y="114" width="166" height="56" rx="10" class="box"/><text x="833" y="138" text-anchor="middle" class="t-sm">postgres-certs</text><text x="833" y="156" text-anchor="middle" class="t-xs">one-shot · one CA</text>
+    <path d="M750 74H722M750 142H722" class="edge edge-dash" marker-end="url(#c1)"/>
+    <text x="186" y="206" class="t-sm">Named volumes</text>
+    <g>
+      <rect x="186" y="218" width="140" height="44" rx="8" class="box-violet"/><text x="256" y="238" text-anchor="middle" class="t-xs">postgres-data</text><text x="256" y="252" text-anchor="middle" class="t-xs">every record</text>
+      <rect x="336" y="218" width="140" height="44" rx="8" class="box-violet"/><text x="406" y="238" text-anchor="middle" class="t-xs">app-runtime</text><text x="406" y="252" text-anchor="middle" class="t-xs">config, disk originals</text>
+      <rect x="486" y="218" width="140" height="44" rx="8" class="box-violet"/><text x="556" y="238" text-anchor="middle" class="t-xs">platform-secrets</text><text x="556" y="252" text-anchor="middle" class="t-xs">/run/secrets</text>
+      <rect x="636" y="218" width="140" height="44" rx="8" class="box-violet"/><text x="706" y="238" text-anchor="middle" class="t-xs">managed-credentials</text><text x="706" y="252" text-anchor="middle" class="t-xs">typed in the browser</text>
+      <rect x="786" y="218" width="130" height="44" rx="8" class="box-violet"/><text x="851" y="238" text-anchor="middle" class="t-xs">postgres-certs</text><text x="851" y="252" text-anchor="middle" class="t-xs">CA + certificates</text>
+      <rect x="186" y="272" width="140" height="44" rx="8" class="box"/><text x="256" y="292" text-anchor="middle" class="t-xs">clamav-db</text><text x="256" y="306" text-anchor="middle" class="t-xs">~1 GB signatures</text>
+      <rect x="336" y="272" width="140" height="44" rx="8" class="box"/><text x="406" y="292" text-anchor="middle" class="t-xs">database-secret</text><text x="406" y="306" text-anchor="middle" class="t-xs">uid 70's copy</text>
+      <rect x="486" y="272" width="140" height="44" rx="8" class="box"/><text x="556" y="292" text-anchor="middle" class="t-xs">redis-config</text><text x="556" y="306" text-anchor="middle" class="t-xs">uid 999's copy</text>
+      <rect x="636" y="272" width="140" height="44" rx="8" class="box"/><text x="706" y="292" text-anchor="middle" class="t-xs">demo-workspace</text><text x="706" y="306" text-anchor="middle" class="t-xs">CarePath folder</text>
+      <rect x="786" y="272" width="130" height="44" rx="8" class="box"/><text x="851" y="292" text-anchor="middle" class="t-xs">connector-credentials</text><text x="851" y="306" text-anchor="middle" class="t-xs">shared, read-only</text>
+    </g>
+  </svg>
+  <figcaption>Coloured volumes are the ones to back up. Redis has no volume: it holds copies in transit, never a record.</figcaption>
+</figure>
+
+<h3 id="why-shape">Why it is shaped this way</h3>
+<div class="cards two">
+  <div class="card"><h4>Named volumes, no bind mounts</h4><p>A deployment platform deploys from git onto a server nobody prepared. A compose file that assumes host directories fails with a message about a mount, not about what is actually missing.</p></div>
+  <div class="card"><h4>No published port</h4><p><code>expose</code>, never <code>ports</code>. That is the one condition that makes <code>--trusted-proxy '*'</code> sound: only the proxy can reach the listener, so only it can set <code>X-Forwarded-*</code>.</p></div>
+  <div class="card"><h4>Passwords written twice</h4><p>The platform reads a secret only at mode 0600 owned by uid 10001; PostgreSQL runs as uid 70 and Redis as 999, and each refuses a file it does not own. So each side gets its own copy of one generated value.</p></div>
+  <div class="card"><h4>A CA made on first boot</h4><p>The client connects with <code>sslmode=verify-full</code>, which checks the certificate and the name. Nothing issues certificates for containers, so <code>postgres-certs</code> makes a CA and certificates named <code>postgres</code> and <code>redis</code>, once.</p></div>
+  <div class="card"><h4>Redis password in a file</h4><p>Redis reads it from its own configuration file, never its command line, where any process in the container could see it.</p></div>
+  <div class="card"><h4>A signing key is never replaced</h4><p>Rotating it signs everyone out and makes authenticator seeds unreadable, so an existing key is kept and only a missing one is created - linked into place, so two containers racing end with one key.</p></div>
+</div>
+
+<h3 id="first-deploy">First deploy</h3>
+<figure class="figure">
+  <div class="fig-title">Start-up order</div>
+  <svg viewBox="0 0 940 150" role="img" aria-labelledby="so-t" data-cycle="10">
+    <title id="so-t">secrets-init and postgres-certs run once and exit, postgres and redis start and become healthy, then the app renders its configuration, downloads signatures on a first boot, applies migrations, runs the deployment check and listens.</title>
+    <defs><marker id="c2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="20" width="150" height="48" rx="10" class="box"/><text x="85" y="49" text-anchor="middle" class="t-sm">secrets-init</text></g>
+    <g data-at="0"><rect x="10" y="80" width="150" height="48" rx="10" class="box"/><text x="85" y="109" text-anchor="middle" class="t-sm">postgres-certs</text></g>
+    <g data-at="0.12"><rect x="190" y="20" width="140" height="48" rx="10" class="box-teal"/><text x="260" y="49" text-anchor="middle" class="t-sm">postgres healthy</text></g>
+    <g data-at="0.12"><rect x="190" y="80" width="140" height="48" rx="10" class="box-rose"/><text x="260" y="109" text-anchor="middle" class="t-sm">redis healthy</text></g>
+    <g data-at="0.24"><rect x="360" y="50" width="110" height="48" rx="10" class="box-blue"/><text x="415" y="72" text-anchor="middle" class="t-xs">render</text><text x="415" y="86" text-anchor="middle" class="t-xs">configuration</text></g>
+    <g data-at="0.36"><rect x="490" y="50" width="110" height="48" rx="10" class="box-blue"/><text x="545" y="72" text-anchor="middle" class="t-xs">freshclam</text><text x="545" y="86" text-anchor="middle" class="t-xs">(first boot)</text></g>
+    <g data-at="0.5"><rect x="620" y="50" width="110" height="48" rx="10" class="box-blue"/><text x="675" y="72" text-anchor="middle" class="t-xs">apply_</text><text x="675" y="86" text-anchor="middle" class="t-xs">migrations</text></g>
+    <g data-at="0.62"><rect x="750" y="50" width="80" height="48" rx="10" class="box-blue"/><text x="790" y="72" text-anchor="middle" class="t-xs">check</text><text x="790" y="86" text-anchor="middle" class="t-xs">--deploy</text></g>
+    <g data-at="0.74"><rect x="850" y="50" width="80" height="48" rx="10" class="box-teal"/><text x="890" y="79" text-anchor="middle" class="t-sm">listen</text></g>
+    <path d="M160 44H188M160 104H188M330 44 C345 44 345 74 358 74M330 104 C345 104 345 74 358 74M470 74H488M600 74H618M730 74H748M830 74H848" class="edge flow" marker-end="url(#c2)"/>
+  </svg>
+</figure>
+<ol class="steps">
+  <li><b>Point the domain at the server.</b> An A record for every name you serve; the proxy's certificate authority validates against it.</li>
+  <li><b>Create the compose resource.</b> Point the deployment platform at the repository and <code>docker-compose.yaml</code>. Set the domain on the <code>app</code> service with container port 8000, and let the platform write its own proxy labels. Set <code>DIGITAL_BRAIN_HOSTS</code> to every name you serve - an unlisted Host header is refused with 400.</li>
+  <li><b>Deploy and wait.</b> The first boot downloads about 1 GB of ClamAV signatures before it listens; the health check's ten-minute start period allows for it. Later deploys reuse the volume.</li>
+  <li><b>Read the log.</b> <code>docker compose logs app</code> shows, in order: the rendered configuration, which paths are real volumes (a path that is a plain directory in the image is flagged NOT PERSISTENT), signatures, migrations, the deployment check, the listener.</li>
+  <li><b>Make the first administrator.</b> <code>docker compose exec app python manage.py bootstrap_admin</code> - the password is read hidden and never reaches a file, argument or shell history. Everything after that is done in the browser.</li>
+  <li><b>Mount what else you use.</b> Bucket keys, Entra client secret, SCIM token - files in <code>platform-secrets</code>, mode 0600, uid 10001. The entrypoint warns at every start while one the configuration needs is missing.</li>
+</ol>
+<h3 id="environment">What the entrypoint reads</h3>
+<p>Non-secret settings come from environment variables and are rendered into <code>/app/.runtime/production.toml</code>. A file mounted at <code>/etc/digitalbrain/production.toml</code> wins and nothing is rendered. Secrets are never variables.</p>
+<div class="table-wrap"><table>
+  <tr><th>Variable</th><th>Renders</th></tr>
+  <tr><td><code>DIGITAL_BRAIN_ROLE</code></td><td><code>all</code> (default), <code>web</code>, <code>worker</code>, <code>migrate</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_MIGRATIONS</code></td><td><code>apply</code> (default) or <code>wait</code>; a worker always waits, migrate always applies</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_HOSTS</code></td><td><code>hosts</code> and <code>csrf_origins</code> (https)</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_REDIS</code></td><td><code>[redis]</code> with TLS against the shared CA; unset, answers stream from process memory (and a split deployment gets <code>shared_streams</code>)</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_CLAMD</code></td><td><code>clamd = "host:port"</code>; unset, <code>clamscan</code> in the container</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_ORIGINALS_BUCKET</code>, <code>_REGION</code></td><td><code>[originals] store = "s3"</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_OTEL</code></td><td><code>[otel]</code> over https</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_ENTRA_TENANT</code>, <code>_CLIENT_ID</code>, <code>DIGITAL_BRAIN_SCIM</code></td><td>Microsoft sign-in and provisioning</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_DEMONSTRATION</code></td><td><code>demonstration = true</code>: demo reset, local Code Factory write and tests, the demo folder</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_SELF_APPROVAL</code></td><td><code>allow_self_approval</code>; on unless <code>0</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_OCR</code></td><td><code>ocr = true</code> unless <code>0</code></td></tr>
+  <tr><td><code>DIGITAL_BRAIN_DATABASE_RUNTIME_ROLE</code></td><td><code>0</code> connects as the owner again</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_LANES</code>, <code>_CONCURRENCY</code></td><td>which lanes a worker runs, and threads per lane</td></tr>
+  <tr><td><code>DIGITAL_BRAIN_TRUSTED_PROXY</code>, <code>_PORT</code>, <code>_INSTANCE</code>, <code>_IMPORT_MAX_FILES</code></td><td>proxy trust, port, process marker, folder-import cap</td></tr>
+  <tr><td><code>SITE_ADMIN_USER_ID</code></td><td>the one non-secret value <code>.env</code> may carry; set for the first sign-in, then remove</td></tr>
+</table></div>
+
+<h3 id="demonstration">The hosted demonstration</h3>
+<p>Both compose files build the image's <code>demo</code> target and set <code>DIGITAL_BRAIN_DEMONSTRATION=1</code>. That is <b>production mode</b> with three things allowed: demo reset, Code Factory's local write and tests, and the ServiceOps test workbench. TLS, secure cookies, scanning and the runtime role stay on; the Claude host login is still refused. The container that applies migrations seeds the CarePath folder into <code>demo-workspace</code> once (<code>scripts/init_vps_demo.py</code>) and keeps approved edits over redeploys. Then <code>docker compose exec app python scripts/rebuild_demo.py</code> builds the organizations and applications, prompts twice (hidden) for any new account's password, and reports missing credentials to set on each application's Credentials screen.</p>
+<div class="note">For a real production deployment, build the <code>runtime</code> target and leave <code>DIGITAL_BRAIN_DEMONSTRATION</code> unset.</div>
+
+<h2 id="scaled">The scaled split</h2>
+<pre><code>docker compose -f docker-compose.yaml -f docker-compose.scale.yaml up -d</code></pre>
+<figure class="figure">
+  <div class="fig-title">docker-compose.yaml + docker-compose.scale.yaml</div>
+  <svg viewBox="0 0 940 330" role="img" aria-labelledby="sc-t" data-cycle="10">
+    <title id="sc-t">A one-shot migrate job applies migrations and exits. Then web replicas serve requests, a worker runs six lanes that read only the platform's records, and a locked-down sandbox runs intake, code-graph and factory. clamd scans for both workers. All share PostgreSQL and Redis.</title>
+    <defs><marker id="c3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="130" width="150" height="80" rx="12" class="box-amber"/><text x="85" y="160" text-anchor="middle" class="t">migrate</text><text x="85" y="180" text-anchor="middle" class="t-xs">apply, sign key,</text><text x="85" y="194" text-anchor="middle" class="t-xs">check --deploy, exit</text></g>
+    <g data-at="0.2">
+      <path d="M160 170 C180 170 180 60 198 60M160 170H198M160 170 C180 170 180 280 198 280" class="edge edge-dash" marker-end="url(#c3)"/>
+      <text x="180" y="122" text-anchor="middle" class="t-xs">exits 0</text>
+      <rect x="200" y="20" width="300" height="80" rx="12" class="box-blue"/><rect x="208" y="28" width="300" height="80" rx="12" class="box-blue" opacity="0.5"/>
+      <text x="350" y="52" text-anchor="middle" class="t">web × DIGITAL_BRAIN_WEB_REPLICAS</text><text x="350" y="72" text-anchor="middle" class="t-xs">role web · migrations wait · serve.py --no-worker</text><text x="350" y="88" text-anchor="middle" class="t-xs">any replica answers any request</text>
+      <rect x="200" y="130" width="300" height="80" rx="12" class="box-violet"/><text x="350" y="156" text-anchor="middle" class="t">worker</text><text x="350" y="176" text-anchor="middle" class="t-xs">graph, connectors, serviceops, serviceops-tests,</text><text x="350" y="192" text-anchor="middle" class="t-xs">automations, maintenance (one holder)</text>
+      <rect x="200" y="240" width="300" height="80" rx="12" class="box-rose"/><text x="350" y="266" text-anchor="middle" class="t">sandbox</text><text x="350" y="286" text-anchor="middle" class="t-xs">intake (×2), code-graph, factory</text><text x="350" y="302" text-anchor="middle" class="t-xs">read-only · no capabilities · 512 pids · 6 GB</text>
+    </g>
+    <g data-at="0.4">
+      <rect x="620" y="40" width="150" height="56" rx="10" class="box-teal"/><text x="695" y="73" text-anchor="middle" class="t">PostgreSQL</text>
+      <rect x="620" y="130" width="150" height="56" rx="10" class="box-rose"/><text x="695" y="163" text-anchor="middle" class="t">Redis</text>
+      <rect x="620" y="240" width="150" height="56" rx="10" class="box-amber"/><text x="695" y="267" text-anchor="middle" class="t">clamd 1.4</text><text x="695" y="284" text-anchor="middle" class="t-xs">loads signatures once</text>
+      <path d="M500 60H618M500 160H618M500 170 C560 170 560 268 618 268M500 280H618" class="edge flow-slow" marker-end="url(#c3)"/>
+      <path d="M500 280 C560 280 560 68 618 68" class="edge edge-dash"/>
+    </g>
+    <g data-at="0.55"><rect x="800" y="20" width="130" height="300" rx="12" class="zone"/>
+      <text x="865" y="46" text-anchor="middle" class="t-zone">why split</text>
+      <text x="812" y="76" class="t-xs">a web deploy no</text><text x="812" y="90" class="t-xs">longer stops an</text><text x="812" y="104" class="t-xs">import half way</text>
+      <text x="812" y="136" class="t-xs">a long provider</text><text x="812" y="150" class="t-xs">call does not share</text><text x="812" y="164" class="t-xs">a process with</text><text x="812" y="178" class="t-xs">sign-in</text>
+      <text x="812" y="210" class="t-xs">a hostile file or</text><text x="812" y="224" class="t-xs">runaway parser is</text><text x="812" y="238" class="t-xs">held to the</text><text x="812" y="252" class="t-xs">sandbox</text></g>
+  </svg>
+</figure>
+<ul>
+  <li><b>Migrations once, before anything serves.</b> <code>migrate</code> runs with <code>restart: "no"</code>; web, worker and sandbox start only after it exits cleanly, so a failed migration stops the deploy before new code serves. The web containers wait rather than apply, which is what lets them be more than one.</li>
+  <li><b>Replicas are safe</b> because sessions, lockouts and jobs live in the database, and streams, Stop and the API rate limit in Redis. Some deployment platforms name each container themselves and allow one per service - leave <code>DIGITAL_BRAIN_WEB_REPLICAS</code> unset there.</li>
+  <li><b>Lanes share by claiming rows.</b> Every lane but maintenance claims its own row before acting, so worker and sandbox replicas never run the same step twice. Maintenance is held by one process through a PostgreSQL advisory lock; a second worker stands by. A test holds the two lane lists to the registry with no lane in both.</li>
+  <li><b>The sandbox</b> is the same image with the three lanes that hand outside content to another program - converters, OCR and the scan; git; the Claude CLI. It writes only <code>/tmp</code> (4 GB tmpfs) and the runtime volume, reads secrets and credentials read-only, drops every Linux capability, cannot gain one, and stops at 512 processes and 6 GB.</li>
+  <li><b>Stops are honoured between steps.</b> <code>run_worker</code> lets a step in progress finish for up to 50 s; <code>stop_grace_period</code> is 70 s.</li>
+  <li><b>Health is per service:</b> each worker's check is <code>queue_status --check --lanes</code> for its own lanes only, so one service's trouble does not restart the other.</li>
+  <li><b>Count connections.</b> Every lane thread holds a database connection while it works; add them against <code>max_connections</code> when raising concurrency or replicas.</li>
+</ul>
+<div class="warn"><b>Still not sandboxed:</b> chat on Claude starts the CLI on the web container's stream thread, and every container mounts the whole secrets volume, owner's database password included.</div>
+
+<h2 id="observability">Observability overlay</h2>
+<pre><code>docker compose -f docker-compose.yaml -f docker-compose.observability.yaml up -d
+# split deployment:
+docker compose -f docker-compose.yaml -f docker-compose.scale.yaml \
+  -f docker-compose.observability.yaml -f docker-compose.observability.scale.yaml up -d</code></pre>
+<ul>
+  <li><code>otel-certs</code> issues the collector a certificate for <code>otel-collector</code> from the same CA, copying only its own key - the collector never mounts the CA's key. Production refuses an http collector.</li>
+  <li><code>otel-collector</code> (contrib 0.120) receives OTLP/HTTP on 4318, compose network only. Traces go to its log until its traces pipeline names a backend.</li>
+  <li><code>prometheus</code> (3.2.1) loads <code>deploy/slo-rules.yml</code>, keeps 15 days, and is published on the host's loopback <code>127.0.0.1:9090</code> only - reach it over an SSH tunnel or behind the proxy with its own sign-in. Add an Alertmanager to send alerts anywhere.</li>
+  <li>The scale variant points the worker and sandbox at the same collector; each process reports its own <code>service.instance.id</code>, so replicas add up rather than overwrite.</li>
+</ul>
+<p>See <a href="../tech/observability.html">Observability</a> for what is measured and why.</p>
+
+<h2 id="commands">Day-to-day commands</h2>
+<pre><code>docker compose exec app python manage.py queue_status --check
+docker compose exec app python manage.py slo --check
+docker compose exec app python manage.py check --deploy --fail-level WARNING
+docker compose exec app python manage.py remove_authenticator &lt;user ID&gt;
+docker compose exec app python manage.py move_originals --check</code></pre>
+<p>Every <code>docker exec</code> finds the configuration at one path (<code>/app/.runtime/production.toml</code>), because the entrypoint's own environment does not reach a later exec.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

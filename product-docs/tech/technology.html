@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Technology Choices</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/technology.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Technology choices and why</h1>
+<p class="lede">Every technology in <code>pyproject.toml</code>, the Dockerfile and the Compose files: what it does in Digital Brain, why it was chosen, and - where the code or its working notes record one - what was rejected instead.</p>
+
+<figure class="figure">
+  <div class="fig-title">The stack, bottom to top</div>
+  <svg viewBox="0 0 940 330" role="img" aria-labelledby="stk-t">
+    <title id="stk-t">Infrastructure at the bottom: Docker, PostgreSQL, Redis, ClamAV, S3. Runtime: Python 3.12, waitress or uvicorn. Framework: Django 5.2 with axes, Argon2, WhiteNoise. Content: MarkItDown, pypdf, pypdfium2, Tesseract, Graphify. AI: Claude Agent SDK, Anthropic SDK, OpenAI Agents SDK, numpy. Operations: OpenTelemetry, Prometheus. Quality: Playwright, ruff, the scorecard.</title>
+    <rect x="10" y="270" width="920" height="50" rx="10" class="box"/>
+    <text x="28" y="300" class="t-zone">Infrastructure</text>
+    <text x="180" y="300" class="t-sm">Docker + Compose · PostgreSQL 16 · Redis 7.4 · ClamAV 1.4 · S3 · tini · Coolify proxy</text>
+    <rect x="10" y="212" width="920" height="50" rx="10" class="box"/>
+    <text x="28" y="242" class="t-zone">Runtime</text>
+    <text x="180" y="242" class="t-sm">Python 3.12 · uv (locked) · waitress (WSGI) · uvicorn + a2wsgi (ASGI) · psycopg 3 · redis-py · boto3</text>
+    <rect x="10" y="154" width="920" height="50" rx="10" class="box-blue"/>
+    <text x="28" y="184" class="t-zone">Framework</text>
+    <text x="180" y="184" class="t-sm">Django 5.2 · django-axes · argon2-cffi · WhiteNoise · cryptography (Fernet) · PyJWT · Pillow</text>
+    <rect x="10" y="96" width="450" height="50" rx="10" class="box-teal"/>
+    <text x="28" y="126" class="t-zone">Content</text>
+    <text x="120" y="126" class="t-sm">MarkItDown · pypdf · pypdfium2 · Tesseract · defusedxml</text>
+    <rect x="480" y="96" width="450" height="50" rx="10" class="box-violet"/>
+    <text x="498" y="126" class="t-zone">AI</text>
+    <text x="540" y="126" class="t-sm">Claude Agent SDK + CLI · anthropic · openai-agents · numpy</text>
+    <rect x="10" y="38" width="300" height="50" rx="10" class="box-teal"/>
+    <text x="28" y="68" class="t-zone">Code</text>
+    <text x="90" y="68" class="t-sm">git · Graphify (Tree-sitter, Leiden)</text>
+    <rect x="320" y="38" width="300" height="50" rx="10" class="box-amber"/>
+    <text x="338" y="68" class="t-zone">Operations</text>
+    <text x="440" y="68" class="t-sm">OpenTelemetry · Prometheus</text>
+    <rect x="630" y="38" width="300" height="50" rx="10" class="box-rose"/>
+    <text x="648" y="68" class="t-zone">Quality</text>
+    <text x="720" y="68" class="t-sm">Playwright · ruff · coverage · fakeredis</text>
+    <text x="10" y="22" class="t-xs">Not used: a JavaScript framework or build step, a vector database, a third-party AI gateway, a message broker for background work.</text>
+  </svg>
+</figure>
+
+<h2 id="web">Web framework and serving</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>Python 3.12</b></td><td>The whole platform</td><td>Both AI SDKs, MarkItDown, Graphify and Tree-sitter are Python-first; one language means one process can index, convert, rank and answer. <code>requires-python</code> allows up to 3.14.</td></tr>
+  <tr><td><b>Django 5.2</b></td><td>Pages, forms, ORM, migrations, sessions, CSRF, authentication</td><td>Server-rendered HTML with real forms is what makes <b>progressive enhancement</b> a contract: every control works with JavaScript off. Django's security middleware (HSTS, SSL redirect, CSRF, clickjacking) and migration system are mature; the expand-then-contract migration rule is enforced by a test.</td></tr>
+  <tr><td><b>No JavaScript build step</b></td><td><code>static/*.js</code>, plain scripts</td><td>A strict CSP (<code>script-src 'self'</code>, no <code>unsafe-inline</code>) is easier to keep when scripts are files served as-is. Browser tests in Playwright run them for real.</td></tr>
+  <tr><td><b>waitress</b></td><td>The WSGI server where there is no Redis</td><td>Pure Python, runs on Windows and Linux alike, clears forwarded headers the proxy did not set. Without Redis a process can only follow its own answers, so there is nothing to gain from an event loop.</td></tr>
+  <tr><td><b>uvicorn + a2wsgi</b></td><td>The default wherever <code>[redis]</code> is set</td><td>Each open answer stream under waitress held a request thread, so a process followed 12 readers at most. Under uvicorn a reader holds no thread: measured, 100 concurrent readers all received. <code>a2wsgi</code> keeps every non-stream request on the same WSGI app, so views, middleware and the CSP are unchanged. The router itself does the edge work uvicorn does not: trusted-proxy headers, 413 over the body limit, 411 with no length.</td></tr>
+  <tr><td><b>WhiteNoise</b></td><td>Static files with hashed names</td><td>No separate web server is needed in the container; the manifest gives cache-safe filenames.</td></tr>
+</table></div>
+
+<h2 id="data">Data</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>PostgreSQL 16</b></td><td>The record: every row the platform keeps</td><td>Five features the platform depends on exist only here: <b>row-level security</b> (the second layer of tenant isolation), <b>advisory locks</b> (one maintenance holder, one migrator), <b><code>FOR UPDATE SKIP LOCKED</code></b> (job claims), <b>stored generated tsvector columns with GIN</b> (keyword search: 51 ms → 10 ms when the expression indexes became stored columns) and <b>declarative partitioning</b> (the audit table, by month). <code>verify-full</code> TLS and SCRAM throughout.</td></tr>
+  <tr><td><b>SQLite</b></td><td>Local development without services; the throwaway database the scorecard can use</td><td>Zero setup. The code says plainly what it loses: no row security (the code's scoping is the only layer), no advisory locks (never run a separate worker beside a server that runs its own lanes), substring search instead of full text.</td></tr>
+  <tr><td><b>psycopg 3</b></td><td>PostgreSQL driver</td><td>Current driver for Django 5.2, binary wheels.</td></tr>
+  <tr><td><b>Redis 7.4</b></td><td>Each answer's events as a stream; Stop; the per-token API rate limit</td><td>Lets an answer outlive its HTTP connection and lets more than one web replica serve the same answer. It holds copies in transit, never a record - so no volume, no persistence, <code>noeviction</code>, TLS and a password file.</td></tr>
+  <tr><td><b>S3 (boto3)</b></td><td>Uploaded original files, when <code>[originals] store = "s3"</code></td><td>Originals are the bulkiest data and do not belong on a container volume. Every botocore default an environment variable could change - credentials, profile, endpoint, proxies, CA bundle - is stated explicitly, and a test plants each one to prove it is ignored.</td></tr>
+  <tr><td><b>numpy</b></td><td>Vector search over embeddings, in process</td><td>Unit float32 vectors and a dot product are enough at this scale. <b>Rejected: pgvector</b> - deliberately left out until a library outgrows memory, so the production database did not change.</td></tr>
+</table></div>
+
+<h2 id="content">Reading content</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>ClamAV</b> (clamd or clamscan)</td><td>Virus-scanning every upload before conversion</td><td>Fails closed: anything clamd does not answer <code>OK</code> or <code>FOUND</code> to is unscanned, and signatures older than seven days are refused. The daemon replaced a <code>clamscan</code> per file, which reloaded the whole signature database for every document.</td></tr>
+  <tr><td><b>MarkItDown</b></td><td>Word, Excel, PowerPoint, PDF, HTML… to text</td><td>One converter for many formats, producing Markdown whose headings and tables the graph builder reads. It runs in a <b>subprocess with <code>socket.connect</code> patched to raise</b> and is never handed a URL - links are downloaded separately, through the one fetcher.</td></tr>
+  <tr><td><b>pypdf, pypdfium2</b></td><td>PDF page reports; rendering text-less pages for OCR</td><td>The page report (pages, pages with no text) is read in the extractor before an original may be deleted.</td></tr>
+  <tr><td><b>Tesseract</b></td><td>OCR of scanned pages and images</td><td>Local, handed a file, no network call. Each page it read is headed with its confidence, so a citation from a scan says so; a low-confidence page marks the document's "Readable text" check missing.</td></tr>
+  <tr><td><b>defusedxml</b></td><td>Parsing XML safely</td><td>Refuses entity-expansion and external-entity tricks in uploaded or imported XML.</td></tr>
+  <tr><td><b>Pillow</b></td><td>Application logos, image handling for OCR</td><td>Validates an uploaded image is really an image.</td></tr>
+</table></div>
+
+<h2 id="code-tech">Reading code</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>git</b> (clone)</td><td>Reading a GitHub repository for Code Graph</td><td>The REST path cost one request per file against an anonymous budget of 60 an hour. The clone takes only <code>owner/name</code> with a hardcoded <code>github.com</code>; hooks go to an empty directory, submodules are not followed, <code>HOME</code> and git config point at scratch, and the token is written to scratch config rather than argv. In a server folder git is <b>never</b> run - the commit is read from <code>.git/HEAD</code> as text.</td></tr>
+  <tr><td><b>Graphify</b> (with Tree-sitter, graspologic-native)</td><td>AST extraction, cross-file calls and inheritance; Leiden clustering for components</td><td>Deterministic and local. <b>Its LLM pass is never called</b>: it would spend under Graphify's own key, bypassing per-application credentials and receipts, and its edges carry no quote to verify. Its search scorer was not reused either - it is private API tuned for code-symbol nodes. A Graphify failure degrades a snapshot to partial, never to none.</td></tr>
+  <tr><td><b>rapidfuzz</b></td><td>Matching a long misspelt word when merging entity names</td><td>Word by word, numbers exact. Whole-string similarity was tried and merged <code>carepath-api</code> with <code>carepath-api-green</code>.</td></tr>
+</table></div>
+
+<h2 id="ai-tech">AI</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>Claude Agent SDK</b> (bundled Claude Code CLI)</td><td>Agentic runs on Claude: chat with tools, Code Factory's agents; any call with a <code>claude setup-token</code> OAuth token</td><td>Gives the model real tools - exactly <code>mcp__brain__search_knowledge</code> and <code>mcp__brain__fetch_source</code>, confirmed against a live CLI - with every built-in tool disabled. The CLI ships inside the wheel and is <b>not installed in the image</b>; its <code>HOME</code> and <code>CLAUDE_CONFIG_DIR</code> point at an empty temporary directory, so no run inherits an operator's login.</td></tr>
+  <tr><td><b>anthropic</b> SDK</td><td>A one-shot Claude call with an API key - one Messages request</td><td>No subprocess. The client is given the key and base URL explicitly, takes no proxy from the environment and drops <code>ANTHROPIC_CUSTOM_HEADERS</code>; a test plants all four.</td></tr>
+  <tr><td><b>OpenAI Agents SDK</b></td><td>Agentic runs on OpenAI; embeddings</td><td>The same tool contract on the other provider. The package owns the top-level <code>agents</code> module, which is why the platform's own is called <code>agent_runtime</code>.</td></tr>
+  <tr><td><b>The AI gateway</b> (built here)</td><td>Every paid call: purpose rule, admission, credential, adapter, receipt</td><td><b>Rejected: LiteLLM, Portkey or a cloud AI gateway</b> - each would hold the provider keys and keep its own prices and retry rules, trading four invariants at once. So the gateway is a pipeline in front of the SDKs already used. <a href="ai-gateway.html">Details</a>.</td></tr>
+  <tr><td><b>Own ranking</b> (BM25 + coverage + spread)</td><td>Ordering citations for every answer path</td><td>Measured, not assumed: "BM25 alone did not help; the spread did most of it". Graph answers went 11/16 → 15/16 found on the CarePath benchmark.</td></tr>
+</table></div>
+
+<h2 id="security-tech">Identity and security libraries</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>argon2-cffi</b></td><td>Password hashing</td><td>Argon2 is Django's strongest hasher; a HIPAA probe checks it is first.</td></tr>
+  <tr><td><b>django-axes</b></td><td>Lockout after 5 failures for 15 minutes, by user and address</td><td>The authenticator allows 3 tries so a person is sent back to the password before the lockout page.</td></tr>
+  <tr><td><b>PyJWT[crypto]</b></td><td>Verifying Entra ID tokens</td><td>RS256 only, by a key the tenant publishes (fetched through the one fetcher, never taken from the token), with exact <code>iss</code>, <code>aud</code>, <code>tid</code> and <code>nonce</code>.</td></tr>
+  <tr><td><b>cryptography</b></td><td>Sealing authenticator seeds with Fernet</td><td>Under an HKDF key from the mounted signing key; the previous key stays readable as a fallback so rotation does not lock people out.</td></tr>
+</table></div>
+
+<h2 id="ops-tech">Operations</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>Docker + Compose</b></td><td>Every deployment and the development services</td><td>One image with build targets (<code>runtime</code>, <code>demo</code>); Compose files describe single-container, scaled and observability layouts. Development runs production's own images (PostgreSQL, Redis over TLS, clamd).</td></tr>
+  <tr><td><b>tini</b></td><td>PID 1 in the container</td><td>Forwards <code>SIGTERM</code> so lanes stop between steps, never inside one.</td></tr>
+  <tr><td><b>uv</b></td><td>Locked dependency install</td><td><code>uv sync --frozen</code> from <code>uv.lock</code>; botocore is held to the release published beside the pinned boto3.</td></tr>
+  <tr><td><b>OpenTelemetry SDK</b></td><td>Traces and metrics over OTLP/HTTP</td><td>A standard any collector reads. <b>Rejected: the OTLP exporter's own HTTP sender</b>, which merges headers, certificates and a CA from <code>OTEL_EXPORTER_OTLP_*</code> whatever it is given - the exporter is written here over the SDK's encoder.</td></tr>
+  <tr><td><b>Prometheus + collector</b></td><td>Service-level rules and burn-rate alerts</td><td>Rules are generated from the SLO registry and checked by <code>promtool</code> in CI.</td></tr>
+</table></div>
+
+<h2 id="quality-tech">Quality</h2>
+<div class="table-wrap"><table>
+  <tr><th style="width:18%">Technology</th><th style="width:30%">Used for</th><th>Why</th></tr>
+  <tr><td><b>Playwright</b> (dev)</td><td>Browser tests against a live test server, model patched out</td><td>A script error once made every in-place progress update throw for a day while every HTML test passed.</td></tr>
+  <tr><td><b>ruff</b>, <b>coverage</b></td><td>Lint and coverage</td><td>One fast linter for errors, imports, bugbear and upgrades.</td></tr>
+  <tr><td><b>fakeredis</b></td><td>Redis streaming tests without a server</td><td>CI runs them again against a real Redis.</td></tr>
+  <tr><td><b>The scorecard</b></td><td>Retrieval, citations, cost control, HIPAA probes, speed</td><td>A change that makes answers worse fails the build like a broken test. <a href="testing.html">Details</a>.</td></tr>
+</table></div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

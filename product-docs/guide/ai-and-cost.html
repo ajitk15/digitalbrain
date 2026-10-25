@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI, Cost and Data</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="guide/ai-and-cost.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › For everyone</div>
+<span class="tag everyone">For everyone</span>
+<h1>AI, cost and your data</h1>
+<p class="lede">Which AI Digital Brain uses, when it spends money, how an owner caps that spending, and what happens to your data on the way to a model.</p>
+
+<h2 id="which-ai">Which AI, and whose account</h2>
+<p>Each application chooses its own provider - <b>Anthropic Claude</b> or <b>OpenAI</b> - and its own model for each task. The credential belongs to that application: an owner sets it on <b>Settings → Credentials</b> (or an operator mounts it as a file), and its value is never shown again. One application never uses another's key, so each team's bill is its own.</p>
+<ul>
+  <li>A Claude credential may be an <b>API key</b> or a <b>Claude subscription token</b> made with <code>claude setup-token</code>.</li>
+  <li><b>Embeddings</b> (finding passages by meaning) use OpenAI only, because Anthropic offers no embeddings service. They switch on only where the application has its own OpenAI key.</li>
+  <li>On a development machine, an operator may let Claude use the developer's own Claude login when an application has no credential. A production server refuses that setting outright.</li>
+</ul>
+
+<h2 id="when">When money is spent</h2>
+<p>Every AI task starts switched on and can be switched off on <b>AI settings</b>. This is when each one costs anything:</p>
+<div class="table-wrap"><table>
+  <tr><th>Task</th><th>What it does</th><th>When it is paid for</th></tr>
+  <tr><td>Chat</td><td>Writes an AI answer from the sources it found</td><td>Each question in AI answer mode</td></tr>
+  <tr><td>Graph answer</td><td>Answers from the published graph's evidence</td><td>Each question in Graph answer mode</td></tr>
+  <tr><td>Conversation title</td><td>Names a conversation</td><td>Once per new conversation</td></tr>
+  <tr><td>Reranking</td><td>Reorders already-verified citations - it can never add one</td><td>A second call on every question</td></tr>
+  <tr><td>Embeddings</td><td>Finds starting points by meaning</td><td>Every question, and each AI graph run</td></tr>
+  <tr><td>Graph generation</td><td>Proposes relationships between things your sources name</td><td>When sources change (unless an owner turned automatic AI off) or on request - and only for text not already read</td></tr>
+  <tr><td>Document typing</td><td>Names a document's type when the rules cannot</td><td>Each new document the rules leave as Other</td></tr>
+  <tr><td>Document review</td><td>Reviews clarity, testability and gaps</td><td>Only when an owner asks</td></tr>
+  <tr><td>Code Factory</td><td>Each agent in a run</td><td>Each run</td></tr>
+  <tr><td>Code review</td><td>AI findings on a change</td><td>Only when someone presses the button</td></tr>
+  <tr><td>Reverse engineering</td><td>AI-written paragraphs about code</td><td>Only when someone asks</td></tr>
+  <tr><td>Incident triage</td><td>Proposes likely causes</td><td>Each triage</td></tr>
+</table></div>
+<div class="why"><span class="label-why">Why</span> Nothing paid for is paid for twice. Each AI answer about a piece of text is stored under a fingerprint of exactly what the model read, so an unchanged document is never sent again - a rebuild after one source changes costs one call, and the scorecard checks that it stays that way.</div>
+
+<h2 id="budget">The monthly budget</h2>
+<figure class="figure">
+  <svg viewBox="0 0 900 200" role="img" aria-labelledby="bud-t" data-cycle="9">
+    <title id="bud-t">Before a paid call starts, recorded spend plus the most each call in flight could cost must stay under the monthly cap. If it would not, the call is refused and nothing is sent. Each call that runs writes a receipt.</title>
+    <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="70" width="140" height="60" rx="10" class="box-blue"/><text x="80" y="98" text-anchor="middle" class="t">A paid call</text><text x="80" y="116" text-anchor="middle" class="t-xs">is about to start</text>
+    <path d="M150 100H190" class="edge flow" marker-end="url(#a4)"/>
+    <rect x="192" y="30" width="330" height="140" rx="12" class="box"/>
+    <text x="210" y="54" class="t">Spent this month + reserved</text>
+    <rect x="210" y="70" width="290" height="22" rx="6" class="zone-solid"/>
+    <rect x="210" y="70" width="170" height="22" rx="6" class="box-teal"/>
+    <rect x="380" y="70" width="60" height="22" class="box-amber"><animate attributeName="width" values="20;60;60;20" dur="9s" repeatCount="indefinite"/></rect>
+    <line x1="470" y1="62" x2="470" y2="100" class="edge-rose" stroke-width="2"/>
+    <text x="470" y="114" text-anchor="middle" class="t-xs t-rose">monthly cap</text>
+    <text x="210" y="138" class="t-xs">green: receipts already written · amber: the most each call</text>
+    <text x="210" y="154" class="t-xs">in flight could still cost (whole prompt + whole reply cap)</text>
+    <path d="M522 80 C560 80 560 50 600 50" class="edge-teal flow" marker-end="url(#a4)"/>
+    <path d="M522 130 C560 130 560 150 600 150" class="edge-rose flow" marker-end="url(#a4)"/>
+    <g data-at="0.2"><rect x="602" y="22" width="288" height="56" rx="10" class="box-teal"/><text x="746" y="46" text-anchor="middle" class="t">Under the cap → call admitted</text><text x="746" y="64" text-anchor="middle" class="t-xs">answered, then a receipt is written</text></g>
+    <g data-at="0.5"><rect x="602" y="122" width="288" height="56" rx="10" class="box-rose"/><text x="746" y="146" text-anchor="middle" class="t">Over the cap → refused</text><text x="746" y="164" text-anchor="middle" class="t-xs">nothing sent, nothing charged</text></g>
+  </svg>
+</figure>
+<ul>
+  <li>An owner sets the cap on <b>AI settings</b>. No cap set means no limit.</li>
+  <li>The cap stops calls from <b>starting</b>. A call already running is never cut off halfway, and a graph build that reaches the cap keeps what it already paid for.</li>
+  <li>Spend is calculated from <b>receipts</b> at the prices an owner entered per model. A model with no price reads as $0 and the Prices table flags it as <b>Not priced</b> - so set prices, or the budget cannot protect you.</li>
+  <li>A missing or unreadable token count from a provider is treated as an error, never as a free call.</li>
+</ul>
+
+<h2 id="receipts">Receipts and cost reports</h2>
+<p>Every paid call writes a receipt: the application, the person, the task, the model, the provider's own request ID and the tokens in and out. <b>AI costs</b> lists them and adds them up. Receipts are kept until a deployment sets a window, which may not be shorter than 400 days, and they outlive even a deleted application so the bill always reconciles.</p>
+
+<h2 id="data">What happens to your data</h2>
+<div class="cards two">
+  <div class="card"><h4>Restricted sources never reach AI</h4><p>Mark a source restricted and it is left out of every AI path - graph builds, search, chat, Code Factory, triage - and taken out of already-published versions at once. People with access can still read it.</p></div>
+  <div class="card"><h4>Masking before storage</h4><p>Optional, per application. Chosen kinds of value (health identifiers by default when on) are replaced by a stable placeholder such as <code>[MRN-QZKTWBAF]</code> before the text is stored, so no reader - AI or person - sees the original.</p></div>
+  <div class="card"><h4>Only what is needed is sent</h4><p>A model sees the passages chosen for the task, not your library. Code review, document review and reverse engineering send only on a button press.</p></div>
+  <div class="card"><h4>Nothing a model says is taken on trust</h4><p>Every quote a model gives is looked up in the source text; anything not found word for word is dropped before it is stored or shown.</p></div>
+</div>
+<div class="warn"><b>Masking is minimization, not de-identification.</b> It replaces only what its rules recognise, and graph versions, chat history and cached AI results written before it was switched on keep what they hold. The AI settings page says both.</div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

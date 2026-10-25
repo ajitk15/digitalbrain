@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observability and SLOs</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/observability.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>Observability and service levels</h1>
+<p class="lede">Logs always, traces and metrics when an <code>[otel]</code> table names a collector, and service levels kept two ways: counted from the platform's own records, or ruled on metrics in Prometheus. What a span or metric may carry is a closed registry, so nothing a person or model wrote can leak into telemetry.</p>
+
+<figure class="figure">
+  <div class="fig-title">Telemetry path</div>
+  <svg viewBox="0 0 940 220" role="img" aria-labelledby="ob-t">
+    <title id="ob-t">Each process - web, worker, sandbox - exports spans and metrics over OTLP/HTTP to a collector, with its own random service instance id. The collector forwards metrics to Prometheus, which evaluates generated SLO rules and burn-rate alerts. Records-based SLOs are counted by the maintenance lane and the slo command.</title>
+    <defs><marker id="o1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <rect x="10" y="20" width="170" height="44" rx="10" class="box-blue"/><text x="95" y="47" text-anchor="middle" class="t">web</text>
+    <rect x="10" y="74" width="170" height="44" rx="10" class="box-violet"/><text x="95" y="101" text-anchor="middle" class="t">worker</text>
+    <rect x="10" y="128" width="170" height="44" rx="10" class="box-rose"/><text x="95" y="155" text-anchor="middle" class="t">sandbox</text>
+    <text x="95" y="196" text-anchor="middle" class="t-xs">each its own service.instance.id</text>
+    <path d="M180 42 C220 42 220 96 258 96M180 96H258M180 150 C220 150 220 96 258 96" class="edge flow" marker-end="url(#o1)"/>
+    <text x="220" y="84" text-anchor="middle" class="t-xs">OTLP/HTTP</text>
+    <rect x="260" y="60" width="200" height="72" rx="12" class="box"/><text x="360" y="90" text-anchor="middle" class="t">OTel collector 0.120</text><text x="360" y="110" text-anchor="middle" class="t-xs">https in production</text>
+    <path d="M460 96H518" class="edge flow" marker-end="url(#o1)"/>
+    <rect x="520" y="60" width="190" height="72" rx="12" class="box-amber"/><text x="615" y="90" text-anchor="middle" class="t">Prometheus 3.2</text><text x="615" y="110" text-anchor="middle" class="t-xs">deploy/slo-rules.yml</text>
+    <path d="M710 96H768" class="edge flow" marker-end="url(#o1)"/>
+    <rect x="770" y="60" width="160" height="72" rx="12" class="box-rose"/><text x="850" y="90" text-anchor="middle" class="t">Burn-rate alerts</text><text x="850" y="110" text-anchor="middle" class="t-xs">add Alertmanager</text>
+    <path d="M360 132V170" class="edge edge-dash"/><text x="370" y="160" class="t-xs">traces → collector log until a backend is named</text>
+    <rect x="520" y="160" width="410" height="48" rx="10" class="box-teal"/><text x="725" y="182" text-anchor="middle" class="t">Records SLOs - no collector needed</text><text x="725" y="199" text-anchor="middle" class="t-xs">maintenance lane every 15 min · manage.py slo [--check]</text>
+  </svg>
+</figure>
+
+<h2 id="traces">Traces: ids and timings only</h2>
+<p>Off by default (<code>telemetry.py</code>). Three things become spans:</p>
+<ul>
+  <li><b>A request</b> - <code>TelemetryMiddleware</code>, first in the stack: method, the route's <i>pattern</i> (never the path), status, request id, application id.</li>
+  <li><b>A lane step that did work</b> - with the job kind; idle steps are dropped.</li>
+  <li><b>A paid call</b> - from the first try for a slot to its release: purpose, provider, model, wait, outcome, and an <code>ai.receipt</code> event per receipt (provider request id and token counts).</li>
+</ul>
+<p>What a span may say is <code>telemetry.ATTRIBUTES</code>; anything else is dropped, so a prompt, answer, source text, name, URL or query cannot reach a collector by accident. Exceptions are recorded by class name, never message. No context is read from incoming headers or sent with outgoing calls; the global tracer provider is never set. One attempt per batch, one warning per five minutes when the collector is down, and the queue drops rather than grows. With no table the SDK is never imported.</p>
+
+<h2 id="metrics">Metrics</h2>
+<p>Same table and exporter (<code>metrics.py</code>; <code>metrics = false</code> turns them off alone; push every <code>metric_interval_seconds</code>, default 60). Rates, errors and durations of requests (streams marked <code>streamed</code>), lane steps, admission waits, admitted calls, answers by mode and outcome, receipt tokens and spend; gauges for each lane's waiting work, oldest age, dead jobs and heartbeat age, calls in flight, answers streaming.</p>
+<ul>
+  <li><code>metrics.INSTRUMENTS</code> is a subset of the trace registry with two more rules: nothing new on every call is a label, and <b>only spend carries an application id</b>.</li>
+  <li>Database-reading gauges are read by the maintenance lane and held, so one process reports them.</li>
+  <li>Each process reports as its own random <code>service.instance.id</code>: without it, a web and a worker exported identical series and the collector kept the last - two processes recording 100 tokens each read as 100.</li>
+  <li>Prometheus names an attribute by its dotted name: <code>lane</code> arrives as <code>digitalbrain_lane</code>. Rules once selected <code>lane=</code>, which no series carries, so two alerts could never fire; now <code>slo.label</code> writes every label from the registry, <code>test_slo</code> checks each selector, and CI runs <code>promtool check rules</code> and <code>promtool test rules</code>.</li>
+</ul>
+
+<h2 id="slos">Service levels</h2>
+<p><code>slo.py</code> is a registry; <code>manage.py slo [--check] [--json] [--rules]</code>. Window 28 days; fewer than 20 events is reported, never failed.</p>
+<div class="table-wrap"><table>
+  <tr><th>Objective</th><th>Target</th><th>Judged from</th></tr>
+  <tr><td>Answers end with an answer, not a failure (a Stop is neither)</td><td>99%</td><td>Records</td></tr>
+  <tr><td>A complete answer ends within 60 s</td><td>95%</td><td>Records</td></tr>
+  <tr><td>A job starts within 300 s of falling due (one still waiting past it counts now)</td><td>99%</td><td>Records</td></tr>
+  <tr><td>Background work finishes rather than using every attempt</td><td>99%</td><td>Records</td></tr>
+  <tr><td>A request is answered without a server error (non-streamed)</td><td>99.9%</td><td>Metrics</td></tr>
+  <tr><td>A page is served in under 1 second</td><td>95%</td><td>Metrics</td></tr>
+  <tr><td>A paid call is admitted rather than turned away busy</td><td>99%</td><td>Metrics</td></tr>
+  <tr><td>Intake, graph and import work fresher than 600 s</td><td>99%</td><td>Metrics</td></tr>
+</table></div>
+<p>The metrics objectives are generated as multi-window burn-rate rules into <code>deploy/slo-rules.yml</code>. <code>test_slo</code> fails when the file and the registry differ - regenerate it, never edit it.</p>
+
+<h2 id="without">Without any collector</h2>
+<pre><code>python manage.py queue_status --check
+python manage.py slo --check</code></pre>
+<p>Logs are structured; a log line inside a span carries its <code>trace_id</code>. Every response carries <code>X-Request-ID</code>. The Administration → Operations page shows lanes and service levels in the browser, and the Overview lists stale lanes, dead jobs and objectives below target.</p>
+
+<h2 id="health-endpoints">Health endpoints</h2>
+<p><code>/health/live</code> and <code>/health/ready</code>. The container health check (<code>deploy/healthcheck.py</code>) sends a host name the application allows - otherwise Django answers 400 and the container never reports healthy while serving perfectly.</p>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

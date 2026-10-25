@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cloud Deployment</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="deploy/cloud.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › <a href="index.html">Deployment</a></div>
+<span class="tag ops">Deployment</span>
+<h1>AWS, Azure and Google Cloud</h1>
+<p class="lede">The platform needs five things from any cloud: containers for its four roles, PostgreSQL 16, a TLS Redis, somewhere for uploaded originals, and secrets delivered as files. This page maps each onto the three large clouds and says plainly what each mapping requires - including the parts the repository does not set up for you.</p>
+
+<div class="note"><b>What has been run.</b> The repository ships and runs Docker Compose on one server, with originals in an AWS S3 bucket. The managed-service mappings below follow from what the code requires (TLS rules, roles, locks, file permissions); they have not been run end to end on each cloud. Rehearse a deploy and a restore before relying on one.</div>
+
+<h2 id="reference">Reference architecture</h2>
+<figure class="figure">
+  <div class="fig-title">The same four roles on managed services</div>
+  <svg viewBox="0 0 940 400" role="img" aria-labelledby="cl-t" data-cycle="12">
+    <title id="cl-t">A load balancer with TLS forwards to web containers in private subnets. A migrate job runs before each release. Worker and sandbox containers run the lanes; a clamd service scans. All connect to managed PostgreSQL with verify-full TLS, managed Redis with TLS, and an object store. A secret manager supplies files through an init step, and a collector forwards telemetry.</title>
+    <defs><marker id="k1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="150" width="140" height="90" rx="12" class="box-amber"/><text x="80" y="182" text-anchor="middle" class="t">Load balancer</text><text x="80" y="202" text-anchor="middle" class="t-xs">TLS · ≥180 s requests</text><text x="80" y="218" text-anchor="middle" class="t-xs">10 s heartbeats</text></g>
+    <rect x="180" y="10" width="420" height="380" rx="16" class="zone"/>
+    <text x="196" y="32" class="t-zone">private network · container platform</text>
+    <g data-at="0.08"><path d="M150 195H208" class="edge flow" marker-end="url(#k1)"/>
+      <rect x="210" y="46" width="170" height="70" rx="10" class="box-amber"/><text x="295" y="74" text-anchor="middle" class="t">migrate job</text><text x="295" y="94" text-anchor="middle" class="t-xs">per release, owner role</text></g>
+    <g data-at="0.18"><rect x="210" y="150" width="170" height="90" rx="10" class="box-blue"/><rect x="218" y="158" width="170" height="90" rx="10" class="box-blue" opacity="0.5"/><text x="295" y="186" text-anchor="middle" class="t">web × N</text><text x="295" y="206" text-anchor="middle" class="t-xs">runtime role</text><text x="295" y="222" text-anchor="middle" class="t-xs">uvicorn</text></g>
+    <g data-at="0.26"><rect x="410" y="46" width="170" height="70" rx="10" class="box-violet"/><text x="495" y="74" text-anchor="middle" class="t">worker × 1-2</text><text x="495" y="94" text-anchor="middle" class="t-xs">six lanes, always on</text></g>
+    <g data-at="0.3"><rect x="410" y="150" width="170" height="90" rx="10" class="box-rose"/><text x="495" y="180" text-anchor="middle" class="t">sandbox × N</text><text x="495" y="200" text-anchor="middle" class="t-xs">read-only root, no caps,</text><text x="495" y="216" text-anchor="middle" class="t-xs">pid + memory limits</text></g>
+    <g data-at="0.34"><rect x="410" y="276" width="170" height="56" rx="10" class="box"/><text x="495" y="300" text-anchor="middle" class="t">clamd</text><text x="495" y="318" text-anchor="middle" class="t-xs">clamav/clamav:1.4</text></g>
+    <g data-at="0.38"><rect x="210" y="276" width="170" height="90" rx="10" class="box"/><text x="295" y="302" text-anchor="middle" class="t-sm">secrets init step</text><text x="295" y="322" text-anchor="middle" class="t-xs">secret manager → files</text><text x="295" y="338" text-anchor="middle" class="t-xs">mode 0600, uid 10001</text><text x="295" y="354" text-anchor="middle" class="t-xs">memory-backed volume</text></g>
+    <g data-at="0.5">
+      <rect x="650" y="20" width="280" height="62" rx="10" class="box-teal"/><text x="790" y="46" text-anchor="middle" class="t">Managed PostgreSQL 16</text><text x="790" y="66" text-anchor="middle" class="t-xs">verify-full · direct or session pooling · PITR</text>
+      <rect x="650" y="100" width="280" height="62" rx="10" class="box-rose"/><text x="790" y="126" text-anchor="middle" class="t">Managed Redis (TLS)</text><text x="790" y="146" text-anchor="middle" class="t-xs">one primary endpoint · noeviction · no persistence needed</text>
+      <rect x="650" y="180" width="280" height="62" rx="10" class="box-violet"/><text x="790" y="206" text-anchor="middle" class="t">Object store</text><text x="790" y="226" text-anchor="middle" class="t-xs">S3 API, https endpoint · versioning</text>
+      <rect x="650" y="260" width="280" height="56" rx="10" class="box"/><text x="790" y="284" text-anchor="middle" class="t">Secret manager</text><text x="790" y="302" text-anchor="middle" class="t-xs">source of every secret file</text>
+      <rect x="650" y="330" width="280" height="56" rx="10" class="box"/><text x="790" y="354" text-anchor="middle" class="t">OTel collector → metrics store</text><text x="790" y="372" text-anchor="middle" class="t-xs">optional · https</text>
+    </g>
+    <g data-at="0.6"><path d="M600 60H648M600 130H648M600 210H648" class="edge flow-slow" marker-end="url(#k1)"/><path d="M648 288H600" class="edge edge-dash" marker-end="url(#k1)"/><path d="M600 358H648" class="edge edge-dash" marker-end="url(#k1)"/></g>
+  </svg>
+</figure>
+
+<h2 id="mapping">Service mapping</h2>
+<div class="table-wrap"><table>
+  <tr><th>Need</th><th>AWS</th><th>Azure</th><th>Google Cloud</th></tr>
+  <tr><td>Containers</td><td>ECS on Fargate, or EKS</td><td>Container Apps, or AKS</td><td>GKE, or Cloud Run (web)</td></tr>
+  <tr><td>Image registry</td><td>ECR</td><td>Container Registry</td><td>Artifact Registry</td></tr>
+  <tr><td>PostgreSQL 16</td><td>RDS for PostgreSQL / Aurora PostgreSQL</td><td>Database for PostgreSQL Flexible Server</td><td>Cloud SQL for PostgreSQL</td></tr>
+  <tr><td>Redis with TLS</td><td>ElastiCache (cluster mode off, in-transit encryption)</td><td>Azure Cache for Redis (TLS port)</td><td>Memorystore for Redis (server-authentication TLS)</td></tr>
+  <tr><td>Originals</td><td>S3 - native</td><td>No S3 API on Blob Storage: keep <code>store = "disk"</code> on a shared Azure Files volume, or use an S3-compatible store</td><td>Cloud Storage through its S3-compatible XML API with HMAC keys (<code>endpoint = "https://storage.googleapis.com"</code>)</td></tr>
+  <tr><td>Secrets</td><td>Secrets Manager</td><td>Key Vault</td><td>Secret Manager</td></tr>
+  <tr><td>Shared writable files (only if needed)</td><td>EFS</td><td>Azure Files</td><td>Filestore</td></tr>
+  <tr><td>Load balancer and certificate</td><td>ALB + ACM</td><td>Application Gateway or Container Apps ingress</td><td>Cloud Load Balancing + managed certificate</td></tr>
+  <tr><td>Metrics and traces</td><td colspan="3">Run the OpenTelemetry collector yourself (as the overlay does) and export from it to the cloud's metrics and trace stores. Load <code>deploy/slo-rules.yml</code> wherever Prometheus rules are evaluated.</td></tr>
+</table></div>
+
+<h2 id="requirements">What each piece must do</h2>
+
+<h3 id="cloud-postgres">PostgreSQL</h3>
+<ul>
+  <li><b>TLS is <code>verify-full</code> in production, always.</b> Mount the provider's CA bundle and name it in <code>sslrootcert</code>; <code>host</code> must be a name on the server's certificate (the instance's DNS name, not an IP).</li>
+  <li><b>The owner must be able to create a role.</b> <code>apply_migrations</code> creates or corrects <code>digital_brain_runtime</code> with LOGIN only (no superuser, CREATEDB, CREATEROLE, REPLICATION or BYPASSRLS), so the owner needs CREATEROLE. A managed service's administrator user normally has it; the platform never needs a true superuser.</li>
+  <li><b>Session advisory locks.</b> Migrations, the maintenance lane's keeper and the gateway's per-provider admission hold PostgreSQL advisory locks. Connect directly, or through a pooler in session mode - never transaction mode, where a session lock does not survive.</li>
+  <li><b>Timeouts are the platform's.</b> Each connection sets <code>statement_timeout=10s</code> and <code>lock_timeout=5s</code>; <code>apply_migrations</code> lifts the first for its own session.</li>
+  <li><b>Partitions are DDL.</b> The monthly audit partitions are made by the owner - in every <code>apply_migrations</code>, and by <code>manage.py partitions</code> on a schedule (monthly is enough). The runtime role cannot.</li>
+  <li><b>Connections.</b> Each web replica and each lane thread holds one. Size <code>max_connections</code> for replicas × threads, plus the migrate job.</li>
+</ul>
+
+<h3 id="cloud-redis">Redis</h3>
+<ul>
+  <li>Production refuses <code>[redis]</code> without <code>tls = true</code> and a <code>ca_certificate</code>. The password is the mounted file <code>redis_password</code>; an ACL user can be named in <code>username</code>.</li>
+  <li><b>Eviction policy <code>noeviction</code>.</b> An evicted stream or owner key would read as an answer whose process died.</li>
+  <li>One primary endpoint, not cluster mode. No persistence or backup is needed: Redis holds copies in transit, never a record.</li>
+</ul>
+
+<h3 id="cloud-originals">Originals</h3>
+<ul>
+  <li><code>[originals] store = "s3"</code>, <code>bucket</code>, <code>region</code>, and for a non-AWS store an <code>endpoint</code> (https in production; path-style addressing is used when one is named). Keys are the mounted files <code>originals_access_key_id</code> and <code>originals_secret_access_key</code>; nothing is read from the environment, a profile or an instance role.</li>
+  <li>A bucket that does not answer is never read as "upload it again": conversion fails with "not answering" so Retry works.</li>
+  <li>Turn on versioning or a backup for the bucket - it holds the only copy of each original.</li>
+</ul>
+
+<h3 id="cloud-secrets">Secrets as files</h3>
+<div class="why"><b>Why files and not environment variables.</b> An environment variable is visible to every child process, copied into crash reports and printed by diagnostic tools. A file is read when needed, at owner-only permissions, and replacing it rotates the secret. The platform refuses a secret file with any group or other permission bit.</div>
+<ul>
+  <li>Cloud secret mounts are often root-owned or group-readable (Kubernetes secret volumes with <code>fsGroup</code>, for example), which the platform refuses. The dependable pattern is the one <code>secrets-init</code> uses in compose: an init container that reads the secret manager and writes each value into a memory-backed volume owned by uid 10001 at mode 0600, shared read-only with the application containers.</li>
+  <li>ECS does not mount secrets as files; it injects them as variables - so the init container is required there, never the variables.</li>
+  <li>Generate <code>django_secret_key</code> into the secret manager yourself. The entrypoint creates one only when it is missing, and a key on a non-persistent volume would sign sessions that do not survive a restart.</li>
+  <li><b>Browser-managed credentials</b> are written by web and read by the workers, so <code>managed_secret_directory</code> needs a shared writable volume (EFS, Azure Files, Filestore). Or leave it unset and project every credential from the secret manager - credentials then become operator-only, and an operator's file always wins anyway.</li>
+</ul>
+
+<h3 id="cloud-containers">Containers</h3>
+<ul>
+  <li><b>Configuration.</b> The entrypoint's rendered configuration names the compose hosts (<code>postgres</code>, <code>redis</code>). On a cloud, mount your own file at <code>/etc/digitalbrain/production.toml</code> (start from <code>deploy/production.example.toml</code>; leave out the demonstration keys). A mounted file is used for both the owner and the runtime connection, so mount two: the migrate job's names the owner and <code>runtime_user = "digital_brain_runtime"</code>; every other container's names <code>user = "digital_brain_runtime"</code> and <code>password_secret = "database_runtime_password"</code>.</li>
+  <li><b>Roles</b> by <code>DIGITAL_BRAIN_ROLE</code>: one <code>migrate</code> task per release, run to completion before the service update; <code>web</code> with <code>DIGITAL_BRAIN_MIGRATIONS=wait</code>; <code>worker</code> with <code>DIGITAL_BRAIN_LANES</code> set as in <code>docker-compose.scale.yaml</code>.</li>
+  <li><b>Workers are always on.</b> Lanes poll every one to thirty seconds; a platform that scales to zero or throttles CPU between requests stops them. Run the worker and sandbox as always-allocated services (GKE or a dedicated service elsewhere), not as request-driven ones.</li>
+  <li><b>The sandbox's limits</b> - read-only root, every capability dropped, <code>no-new-privileges</code>, a process limit and a memory limit - need a platform that offers each. Kubernetes does through the pod security context; check before choosing a serverless runtime for it.</li>
+  <li><b>Health checks:</b> web at <code>/health/ready</code> with a Host header the platform allows; workers with <code>python manage.py queue_status --check --lanes "$DIGITAL_BRAIN_LANES"</code>. A worker's stop grace period must exceed 50 s.</li>
+  <li><b>Proxy trust.</b> <code>--trusted-proxy '*'</code> is sound only while nothing but the load balancer can reach the web port. Keep web in a private subnet or name the balancer's addresses with <code>DIGITAL_BRAIN_TRUSTED_PROXY</code>.</li>
+  <li><b>Streams.</b> An answer can stream for up to 180 s, with a heartbeat every 10 s. Allow at least that per request at the balancer and the container platform.</li>
+  <li><b>Runtime directory.</b> With originals in a bucket, <code>/app/.runtime</code> holds only the rendered configuration and can be per-container. With <code>store = "disk"</code> it holds originals and must be one shared volume for web, worker and sandbox.</li>
+</ul>
+
+<h2 id="per-cloud">Notes per cloud</h2>
+<div class="cards three">
+  <div class="card"><h4>AWS</h4><p>ECS Fargate for web; ECS or EKS for worker and sandbox. RDS CA bundle as <code>sslrootcert</code>. ElastiCache with in-transit encryption and an auth token as <code>redis_password</code>. S3 needs no endpoint. RDS Proxy pins sessions that use advisory locks - connecting directly is simpler.</p></div>
+  <div class="card"><h4>Azure</h4><p>Container Apps or AKS. Flexible Server with its CA; Azure Cache for Redis on its TLS port. Blob Storage does not speak S3, so originals stay on an Azure Files volume shared by web, worker and sandbox (<code>store = "disk"</code>), or go to an S3-compatible store.</p></div>
+  <div class="card"><h4>Google Cloud</h4><p>GKE for all four roles, or Cloud Run for web only. Cloud SQL's server CA with a DNS name on the certificate. Memorystore in server-authentication TLS mode. Cloud Storage through HMAC keys and the XML API endpoint.</p></div>
+</div>
+
+<h2 id="refuses">What production refuses, on any cloud</h2>
+<div class="table-wrap"><table class="matrix">
+  <tr><th>Setting</th><th>Production</th></tr>
+  <tr><td><code>claude_use_host_login</code></td><td class="refused">refused at load; forced off in settings too</td></tr>
+  <tr><td><code>allow_demo_reset</code>, <code>code_factory_local_write</code>, <code>code_factory_local_tests</code></td><td class="refused">refused unless <code>demonstration = true</code></td></tr>
+  <tr><td>Redis without verified TLS; an http collector; a non-https bucket endpoint</td><td class="refused">refused</td></tr>
+  <tr><td>Retention under six years of audit or 400 days of receipts</td><td class="refused">refused (in every mode)</td></tr>
+  <tr><td><code>connector_secret_directory</code></td><td class="yes">accepted, but it lets every application read one set of connector credentials - leave it unset outside a demonstration</td></tr>
+  <tr><td><code>shared_streams</code> beside <code>[redis]</code>; an Entra tenant of <code>common</code> or <code>organizations</code>; a wildcard fetch host; a drive root as a code folder</td><td class="refused">refused (in every mode)</td></tr>
+  <tr><td><code>allow_self_approval</code></td><td class="yes">accepted; the approver is recorded</td></tr>
+</table></div>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

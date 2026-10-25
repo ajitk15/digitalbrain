@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Gateway and Cost</title>
+<link rel="stylesheet" href="../assets/docs.css">
+</head>
+<body data-root="../" data-page="tech/ai-gateway.html">
+<main>
+<div class="crumbs"><a href="../index.html">Start</a> › Technical</div>
+<span class="tag tech">Technical</span>
+<h1>AI gateway and cost control</h1>
+<p class="lede">Every paid model call passes one pipeline (<code>gateway.py</code>): the purpose's rule, the configuration, admission, the credential file, the adapter, the receipt, release, and the rule again. It was built here rather than bought, so provider keys, prices and retry rules stay under the platform's own invariants.</p>
+
+<figure class="figure">
+  <div class="fig-title">One paid call, end to end <span style="font-weight:500;color:var(--ink-3);font-size:.8rem">animated</span></div>
+  <svg viewBox="0 0 940 260" role="img" aria-labelledby="gw-t" data-cycle="12">
+    <title id="gw-t">A caller asks for a purpose. The purpose rule checks feature switches and roles. The budget is checked. Admission takes a slot and reserves the worst-case cost. The credential file for this application and provider is read. The adapter calls the provider. A receipt is written for the application authorized before the call. The slot is released and the rule is checked again.</title>
+    <defs><marker id="g1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" class="arrow"/></marker></defs>
+    <g data-at="0"><rect x="10" y="40" width="100" height="74" rx="10" class="box-blue"/><text x="60" y="70" text-anchor="middle" class="t">Caller</text><text x="60" y="88" text-anchor="middle" class="t-xs">purpose, app,</text><text x="60" y="102" text-anchor="middle" class="t-xs">user</text></g>
+    <g data-at="0.07"><rect x="125" y="40" width="105" height="74" rx="10" class="box"/><text x="177" y="70" text-anchor="middle" class="t">Rule</text><text x="177" y="88" text-anchor="middle" class="t-xs">switches,</text><text x="177" y="102" text-anchor="middle" class="t-xs">roles</text></g>
+    <g data-at="0.14"><rect x="245" y="40" width="105" height="74" rx="10" class="box-amber"/><text x="297" y="70" text-anchor="middle" class="t">Budget</text><text x="297" y="88" text-anchor="middle" class="t-xs">receipts at</text><text x="297" y="102" text-anchor="middle" class="t-xs">entered rates</text></g>
+    <g data-at="0.21"><rect x="365" y="40" width="115" height="74" rx="10" class="box-amber"/><text x="422" y="70" text-anchor="middle" class="t">Admission</text><text x="422" y="88" text-anchor="middle" class="t-xs">slot + reserve</text><text x="422" y="102" text-anchor="middle" class="t-xs">worst case</text></g>
+    <g data-at="0.28"><rect x="495" y="40" width="110" height="74" rx="10" class="box-rose"/><text x="550" y="70" text-anchor="middle" class="t">Credential</text><text x="550" y="88" text-anchor="middle" class="t-xs">&lt;provider&gt;_&lt;app&gt;</text><text x="550" y="102" text-anchor="middle" class="t-xs">file, 0600</text></g>
+    <g data-at="0.35"><rect x="620" y="40" width="110" height="74" rx="10" class="box-violet"/><text x="675" y="70" text-anchor="middle" class="t">Adapter</text><text x="675" y="88" text-anchor="middle" class="t-xs">Messages, CLI</text><text x="675" y="102" text-anchor="middle" class="t-xs">or OpenAI</text></g>
+    <g data-at="0.45"><rect x="745" y="40" width="85" height="74" rx="10" class="box-teal"/><text x="787" y="70" text-anchor="middle" class="t">Receipt</text><text x="787" y="88" text-anchor="middle" class="t-xs">AIUsage</text></g>
+    <g data-at="0.52"><rect x="845" y="40" width="85" height="74" rx="10" class="box"/><text x="887" y="70" text-anchor="middle" class="t">Release</text><text x="887" y="88" text-anchor="middle" class="t-xs">rule again</text></g>
+    <path d="M110 77H123M230 77H243M350 77H363M480 77H493M605 77H618M730 77H743M830 77H843" class="edge flow" marker-end="url(#g1)"/>
+    <circle r="5" class="dot-violet"><animateMotion dur="3s" repeatCount="indefinite" path="M60 77 H887"/></circle>
+    <g data-at="0.6">
+      <rect x="125" y="150" width="225" height="90" rx="10" class="box-rose"/>
+      <text x="237" y="176" text-anchor="middle" class="t t-rose">Refused before sending</text>
+      <text x="237" y="196" text-anchor="middle" class="t-xs">feature off · role not allowed</text>
+      <text x="237" y="212" text-anchor="middle" class="t-xs">budget would be passed</text>
+      <text x="237" y="228" text-anchor="middle" class="t-xs">no slot within slot_wait_seconds</text>
+    </g>
+    <g data-at="0.68">
+      <rect x="400" y="150" width="250" height="90" rx="10" class="box"/>
+      <text x="525" y="176" text-anchor="middle" class="t">Never</text>
+      <text x="525" y="196" text-anchor="middle" class="t-xs">retried for the caller · a lock held</text>
+      <text x="525" y="212" text-anchor="middle" class="t-xs">across the provider call · a missing</text>
+      <text x="525" y="228" text-anchor="middle" class="t-xs">token count read as zero</text>
+    </g>
+    <g data-at="0.76">
+      <rect x="700" y="150" width="230" height="90" rx="10" class="box-teal"/>
+      <text x="815" y="176" text-anchor="middle" class="t">Always</text>
+      <text x="815" y="196" text-anchor="middle" class="t-xs">one receipt per model turn,</text>
+      <text x="815" y="212" text-anchor="middle" class="t-xs">keyed on the provider's request id</text>
+      <text x="815" y="228" text-anchor="middle" class="t-xs">a trace span, a spend metric</text>
+    </g>
+  </svg>
+</figure>
+
+<h2 id="purposes">Purposes: a closed registry</h2>
+<p><code>gateway.PURPOSES</code> names every kind of paid call and the switches and roles it needs, read before the call and again after it. It replaced an if/elif chain that had been written twice, slightly differently.</p>
+<div class="table-wrap"><table>
+  <tr><th>Purpose</th><th>Paid when</th><th>Reply cap owner-settable?</th></tr>
+  <tr><td><code>chat</code></td><td>Each AI-answer question</td><td>Yes (default 1,024 tokens)</td></tr>
+  <tr><td><code>graph_retrieval</code></td><td>Each graph-answer question</td><td>Yes (default 1,024)</td></tr>
+  <tr><td><code>conversation_title</code></td><td>Once per conversation</td><td>No</td></tr>
+  <tr><td><code>reranking</code></td><td>A second call on every question</td><td>No</td></tr>
+  <tr><td><code>embeddings</code></td><td>Every question; requested AI graph runs; <code>manage.py embed</code></td><td>-</td></tr>
+  <tr><td><code>graph_generation</code></td><td>Requested or automatic AI graph runs, only uncached windows</td><td>No</td></tr>
+  <tr><td><code>document_typing</code></td><td>A new document the rules leave as Other, low confidence</td><td>No</td></tr>
+  <tr><td><code>document_review</code></td><td>An owner's button</td><td>No</td></tr>
+  <tr><td><code>plan_drafting</code></td><td>Each Code Factory agent</td><td>Yes</td></tr>
+  <tr><td><code>serviceops_triage</code></td><td>Each triage</td><td>Yes</td></tr>
+  <tr><td><code>code_review</code></td><td>A button on a review</td><td>No</td></tr>
+  <tr><td><code>code_docs</code></td><td>A button on Documentation</td><td>No</td></tr>
+</table></div>
+<p>Every task starts <b>on</b> (<code>ai.SEEDED_DISABLED</code> is empty, kept as the mechanism) - a deliberate trade for an application that uses its model from day one. The one condition left is a credential: embeddings start on only where the application has its own OpenAI key, because Anthropic has no embeddings endpoint.</p>
+
+<h2 id="admission">Admission: slots and reservations</h2>
+<ul>
+  <li>One <code>AIAdmission</code> row per call in flight. At most <code>max_calls_per_application</code> (default <b>4</b>) per application and <code>max_calls_per_provider</code> (default <b>16</b>) across the deployment, so one batch cannot take every connection a provider allows.</li>
+  <li>Each reserves the call's <b>most expensive outcome</b> - every prompt character counted as a third of a token, plus the whole reply cap - so recorded spend plus calls in flight must stay under the cap. Two calls at the cap no longer both start.</li>
+  <li>Admission locks the application row (and a PostgreSQL advisory lock per provider) in a short transaction of its own. No lock is held across a provider call.</li>
+  <li>A caller waits <code>slot_wait_seconds</code> (default 30) and is then told nothing was sent - <b>never retried for it</b>.</li>
+  <li>A streamed answer holds its slot for the whole run, tool turns included. A row left by a dead process expires after <code>admission_minutes</code> (default 15); the maintenance lane sweeps it.</li>
+</ul>
+
+<h2 id="budget">The monthly budget</h2>
+<p><code>budget.py</code>, <code>AIBudget</code> (no row means no cap). The three choke points are <code>ai.invoke_ai</code>, <code>ai.chat_configuration</code> and <code>embeddings.embed</code> - a new paid path must call <code>budget.check</code> and go through <code>gateway.admitted</code>. It caps <b>starting</b> spend from recorded receipts at the entered rates: a call in flight is never cut off, and graph extraction that hits the cap keeps what it already paid for.</p>
+<p>Prices belong to a model and are set once in the Prices table, which writes every <code>AIConfiguration</code> row using that model. A model new to an application takes the price it already has there, else its list price, else zero - flagged <b>Not priced</b>, because spend and therefore the budget would read $0.</p>
+
+<h2 id="receipts">Receipts</h2>
+<ul>
+  <li>One <code>AIUsage</code> row per model turn, unique on the provider's request id. A multi-turn answer records one per turn.</li>
+  <li>A missing or malformed token count is an <b>error</b>, not a free request (<code>agent_runtime/usage.py</code>): providers bill for calls whose usage was not parsed.</li>
+  <li>A receipt is written for the application <b>authorized before the call</b>. It used to look the grant up again, so a grant revoked while the model answered lost the receipt of a call the provider billed.</li>
+  <li><code>AIUsage</code> is deliberately <b>not partitioned</b>: PostgreSQL enforces a unique key across partitions only if it includes the partition key, so the same request could be recorded again in a new month.</li>
+  <li>Receipts are kept until <code>[retention] usage_days</code> is set; the floor is 400 days. They survive deleting their application.</li>
+</ul>
+
+<h2 id="providers">Providers and adapters</h2>
+<div class="table-wrap"><table>
+  <tr><th>Credential</th><th>Adapter</th><th>Notes</th></tr>
+  <tr><td>Claude API key, one-shot call</td><td><code>claude_messages.py</code> - one Messages request via the <code>anthropic</code> SDK</td><td>Receipt keyed on the message id. <code>claude_messages_api = false</code> sends every call to the CLI. No retries.</td></tr>
+  <tr><td>Claude OAuth token (<code>claude setup-token</code>), or any agentic run</td><td><code>claude_agents.py</code> - the Claude Agent SDK driving its bundled CLI</td><td>Sandbox: empty temp <code>HOME</code>/<code>CLAUDE_CONFIG_DIR</code>, blanked environment; <code>agent_runtime/credentials.py</code> picks the API-key or OAuth variable and blanks the other.</td></tr>
+  <tr><td>OpenAI key</td><td><code>llm_agents.py</code> / <code>agent_runtime/openai_runtime.py</code> - OpenAI Agents SDK; embeddings</td><td>Tested through the real SDK over a mocked transport.</td></tr>
+</table></div>
+<p><b>Credentials resolve per application:</b> operator-mounted file first, then the browser-managed directory, then (connectors only, never model providers) the shared connector folder. <code>&lt;provider&gt;_default</code> written by <code>scripts/ai_setup.py</code> is a <b>template copied</b> to <code>&lt;provider&gt;_&lt;application id&gt;</code> when an application is created - never read at request time.</p>
+<div class="rule"><b>Host login.</b> <code>claude_use_host_login = true</code> lets the CLI use the developer's own <code>~/.claude</code> when an application has no Claude credential. <code>load_config</code> refuses it under <code>mode = "production"</code> - demonstration or not - and a mounted credential always wins. A missing secret with the setting off is an error; it must never quietly become "spend the operator's account".</div>
+
+<h2 id="measuring">Measuring models</h2>
+<ul>
+  <li><b>Drift</b> - <code>manage.py llm_drift &lt;app&gt; --as &lt;user&gt; --record</code> sends the frozen <code>benchmarks/drift-pack.json</code> (about ten paid calls), scores extraction with the same judge and answers by their citation markers, and compares with the model's first and latest runs. Run after changing a model, prompt or provider. A new pack starts a new reference.</li>
+  <li><b>Typing</b> - <code>manage.py typing_pack</code> measures AI document typing against person-labelled items.</li>
+  <li><b>Reranking</b> - <code>manage.py benchmark --rerank --as &lt;user&gt;</code>.</li>
+  <li><b>Cost control in CI</b> - the scorecard holds re-runs on unchanged sources at 0, calls after one source changes at 1, and calls past the budget or a full gateway at 0.</li>
+</ul>
+
+</main>
+<script src="../assets/docs.js"></script>
+</body>
+</html>
