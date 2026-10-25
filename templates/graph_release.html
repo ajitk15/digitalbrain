@@ -1,0 +1,20 @@
+{% extends 'base.html' %}{% load icons workspace %}{% block title %}Release check · version {{ revision.number }} · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+{% comment %}`release.release_view`: a version's release check against the version that answers now, and the one place the Versions table publishes from. Hard checks refuse; soft checks warn and need a typed reason, stored on the version and in the audit event. Opened as a popup over Versions; a page of its own with JavaScript off.{% endcomment %}
+<div class="page-heading"><div><p class="eyebrow"><a href="{% url 'graph' application.pk %}?tab=versions">{{ application|knowledge_name|upper }} / VERSIONS</a></p><h1>Release check · version {{ revision.number }}</h1>
+<p class="muted">{% if report.against %}Compared with version {{ report.against }}, which answers now.{% else %}Nothing answers yet, so only the checks that refuse apply.{% endif %} Worked out by rules from the sources, the benchmark and what AI proposed. No model is asked.</p></div></div>
+{% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
+<section class="card section"><div class="table-wrap"><table class="release-checks"><thead><tr><th>Check</th><th>Result</th><th>What it found</th></tr></thead><tbody>
+{% for check in report.checks %}<tr class="release-{% if check.ok %}ok{% elif check.hard %}refused{% else %}warning{% endif %}"><td><strong>{{ check.label }}</strong><small class="muted">{% if check.hard %}Refuses publishing{% else %}Warns, compared with what answers{% endif %}</small></td><td><span class="pill {% if check.ok %}status-ready{% elif check.hard %}status-failed{% else %}status-queued{% endif %}">{% if check.ok %}{% icon "check" 12 %}Passed{% elif check.hard %}Refused{% else %}Worse{% endif %}</span></td><td>{{ check.detail }}</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% if revision.published_at %}<p class="muted">Version {{ revision.number }} is already published{% if revision.publish_reason %}, over a warning: “{{ revision.publish_reason }}”{% endif %}.</p>
+{% elif not can_publish %}<p class="muted">An owner or contributor can publish it.</p>
+{% elif report.hard_failures %}<p class="notice" role="note">{% icon "warning" 14 %} This version cannot be published. Generate a new version once its sources are settled.</p>
+{% else %}<form method="post" class="section release-form">{% csrf_token %}
+{% if report.soft_failures %}<label for="release-reason">Why should version {{ revision.number }} answer anyway?</label>
+<p class="muted" id="release-reason-help">It did worse than version {{ report.against }} on {{ report.soft_failures|length }} check{{ report.soft_failures|length|pluralize }}. Your reason is kept on the version and in the audit trail.</p>
+<textarea id="release-reason" name="reason" rows="3" maxlength="{{ reason_length }}" required aria-describedby="release-reason-help">{{ reason }}</textarea>
+<button class="button" type="submit">{% icon "publish" 13 %}Publish anyway</button>
+{% else %}<button class="button" type="submit">{% icon "publish" 13 %}Publish version {{ revision.number }}</button>{% endif %}
+<a class="button secondary" href="{% url 'graph' application.pk %}?tab=versions" data-modal-close>Cancel</a>
+</form>{% endif %}
+{% endblock %}

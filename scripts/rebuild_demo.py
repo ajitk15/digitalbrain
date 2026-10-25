@@ -519,7 +519,11 @@ def build_graphs(built):
             print(f"found   {app.name}: graph version {current.number} published")
             continue
         try:
-            publish_revision(owner, app.pk, latest.number)
+            # Through the release check like any publish. The reason is used only
+            # if a soft check fails, and says where it came from.
+            publish_revision(
+                owner, app.pk, latest.number, reason="Published by scripts/rebuild_demo.py"
+            )
         except ValidationError as error:
             print(f"FAILED  {app.name}: {' '.join(error.messages)}")
             continue

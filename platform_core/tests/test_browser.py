@@ -865,6 +865,43 @@ class KnowledgeQualityTests(BrowserTestCase):
         self.assertNoScriptErrors()
 
 
+class ReleaseCheckTests(BrowserTestCase):
+    """Publishing opens the release check over Versions; a warning keeps the popup
+    open until a reason is given, and publishing lands back on Versions."""
+
+    def setUp(self):
+        super().setUp()
+        from platform_core.graphs import rebuild
+        from platform_core.models import GraphRevision, KnowledgeEntry
+        from platform_core.release import publish
+
+        add_knowledge(self.owner, self.app.pk, "Runbook", "Restart the worker when it stalls.")
+        add_knowledge(self.owner, self.app.pk, "Design", "The service reads consent first.")
+        rebuild(self.app.pk)
+        publish(self.owner, self.app, GraphRevision.objects.get(application=self.app).number)
+        KnowledgeEntry.objects.filter(application=self.app, title="Design").update(active=False)
+        rebuild(self.app.pk)
+        self.draft = GraphRevision.objects.filter(application=self.app).first()
+
+    def test_a_warning_needs_a_reason_in_the_popup_and_publishing_returns_to_versions(self):
+        self.open("graph", self.app.pk, query="?tab=versions")
+        self.mark_page()
+        self.page.get_by_role("link", name="Check and publish").first.click()
+        dialog = self.page.locator("dialog[open]")
+        heading = f"Release check · version {self.draft.number}"
+        dialog.get_by_role("heading", name=heading).wait_for()
+        dialog.get_by_text("Keeps every source the published version read").wait_for()
+        reason = dialog.get_by_role("textbox", name="Why should version")
+        reason.fill("Design was retired on purpose")
+        dialog.get_by_role("button", name="Publish anyway").click()
+        # The popup follows the redirect and the page reloads on Versions,
+        # where the version now reads as published over its warning.
+        self.page.get_by_text("Published over a warning").wait_for()
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.publish_reason, "Design was retired on purpose")
+        self.assertNoScriptErrors()
+
+
 class ChatTests(BrowserTestCase):
     def setUp(self):
         super().setUp()

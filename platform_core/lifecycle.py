@@ -247,7 +247,28 @@ def stages(app, state=None):
     scores = latest_runs(app, [r for r in (latest, state.published) if r]) if latest else {}
     newest = scores.get(latest.pk) if latest else None
     answering = scores.get(state.published.pk) if state.published else None
-    if newest is None:
+    # A newer version's release check says it best (`release.check`, stored
+    # when the version was saved); the benchmark alone is the fallback for a
+    # version checked under other rules, or never.
+    released = latest.release_state if latest and latest != state.published else None
+    if released:
+        failed = [item["label"].lower() for item in latest.release["checks"] if not item["ok"]]
+        against = latest.release.get("against")
+        check = Stage(
+            "check",
+            "Check",
+            DONE if released == "passed" else WARN,
+            f"Version {latest.number} passed its release check"
+            + (f" against version {against}." if against else ".")
+            if released == "passed"
+            else f"Version {latest.number} cannot be published: {', '.join(failed)}."
+            if released == "refused"
+            else f"Version {latest.number} did worse than version {against} on "
+            f"{', '.join(failed)}.",
+            "graph",
+            "?tab=versions",
+        )
+    elif newest is None:
         check = Stage(
             "check",
             "Check",
@@ -359,13 +380,20 @@ def attention(app, grant):
     found = []
     graph = reverse("graph", args=[app.pk])
     if state.draft:
+        released = state.draft.release_state
         found.append(
             Item(
                 app,
-                f"Version {state.draft.number} is built and waiting to be published",
-                f"{graph}?tab=versions",
+                f"Version {state.draft.number} "
+                + {
+                    "passed": "passed its release check and is waiting to be published",
+                    "warnings": "is waiting to be published; its release check has warnings",
+                    "refused": "was refused by its release check",
+                }.get(released, "is built and waiting to be published"),
+                reverse("graph-release", args=[app.pk, state.draft.number]),
                 "network",
-                "Review it",
+                "See why" if released == "refused" else "Review it",
+                tone="problem" if released == "refused" else "attention",
                 kind="knowledge",
             )
         )

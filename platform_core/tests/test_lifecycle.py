@@ -223,6 +223,7 @@ class LifecycleTests(TestCase):
         self.entry()
         self.version(1)
         texts = [item.text for item in items(self.owner, [self.app])]
+        # Made directly, so never checked: the plain wording.
         self.assertIn("Version 1 is built and waiting to be published", texts)
         self.assertFalse(
             [item for item in items(self.viewer, [self.app]) if item.kind == "knowledge"]

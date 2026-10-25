@@ -557,20 +557,17 @@ def published_revision(app_id):
     )
 
 
-def publish_revision(user, app_id, number):
-    """Make one snapshot the answer for chat and Code Factory."""
-    revision = GraphRevision.objects.filter(application_id=app_id, number=number).first()
-    if revision is None:
-        raise ValidationError("That graph version does not exist.")
-    if not revision_readable(revision, app_id):
-        raise ValidationError(
-            "This version's source evidence has changed, so it cannot be published. "
-            "Generate a new version."
-        )
-    revision.published_at = timezone.now()
-    revision.published_by = user
-    revision.save(update_fields=["published_at", "published_by"])
-    return revision
+def publish_revision(user, app_id, number, reason=""):
+    """Make one snapshot the answer for chat and Code Factory, if its release check allows.
+
+    `release.publish` checks it against what answers now: a hard failure is
+    refused, a soft one needs `reason`. Returns the revision.
+    """
+    from .models import Application
+    from .release import publish
+
+    app = Application.objects.get(pk=app_id)
+    return publish(user, app, number, reason)[0]
 
 
 def refresh_graph(app_id):
@@ -1141,25 +1138,21 @@ def graph_view(request, pk):
         access(request.user, pk, "knowledge", write=True)
         action = request.POST.get("action")
         if action == "publish":
+            # The Versions table opens the release check (`release_view`); this
+            # is the same publish for a form posted from before it existed.
+            from .release import publish, published
+
             number = request.POST.get("version", "")
             try:
-                revision = publish_revision(request.user, pk, int(number))
+                revision, report = publish(
+                    request.user, app, int(number), request.POST.get("reason", "")
+                )
             except (TypeError, ValueError):
                 return HttpResponse("Invalid graph version.", status=400)
             except ValidationError as error:
                 messages.error(request, " ".join(error.messages))
                 return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
-            audit(
-                request.user,
-                "graph.published",
-                app.pk,
-                app.product.portfolio.organization,
-                details={"version": revision.number},
-            )
-            messages.success(
-                request,
-                f"Version {revision.number} published. Chat and Code Factory now answer from it.",
-            )
+            published(request, app, revision, report)
             return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
         if action == "generate":
             return queue_generation(request, app, pk)

@@ -202,6 +202,14 @@ METRICS = {
         "exact",
         0,
     ),
+    # The release check (`release.py`): what may replace the published version.
+    "release_probes_passed": (
+        "Release check",
+        "Release check probes passing",
+        "%",
+        "exact",
+        0,
+    ),
     # Speed - machine dependent, so a generous tolerance.
     "graph_p50_ms": ("Speed", "Graph answer, median", "ms", "lower", 15.0),
     "keyword_p50_ms": ("Speed", "Keyword answer, median", "ms", "lower", 15.0),
@@ -1034,6 +1042,89 @@ def gateway_held(ws, owner):
     return started
 
 
+def release_check(ws, revision):
+    """Whether the release check refuses, warns and passes as designed, against the
+    published scorecard version. Inside a savepoint that is rolled back, so the
+    aspects after it read the workspace as it was."""
+    from django.core.exceptions import ValidationError
+    from django.db import transaction
+
+    from .graphs import build_graph, sources_for
+    from .models import BenchmarkRun, GraphRevision, KnowledgeEntry
+    from .release import check, publish
+
+    def version(entries, edges=()):
+        data, quality = build_graph(entries, len(entries))
+        data["edges"] = data.get("edges", []) + list(edges)
+        return GraphRevision.objects.create(
+            application=ws.app,
+            number=GraphRevision.objects.filter(application=ws.app).count() + 1,
+            fingerprint="scorecard-release",
+            data=data,
+            quality=quality,
+        )
+
+    def refused(number, reason):
+        try:
+            publish(ws.people["owner"], ws.app, number, reason)
+        except ValidationError:
+            return True
+        return False
+
+    probes = {}
+    with transaction.atomic():
+        entries = list(sources_for(ws.app.pk))
+        sound = version(entries)
+        probes["an unchanged rebuild passes"] = check(ws.app, sound, revision).passed
+
+        lost = version(entries[1:])
+        report = check(ws.app, lost, revision)
+        probes["a lost source warns, and nothing else does"] = (
+            report.publishable and [f.key for f in report.soft_failures] == ["sources_lost"]
+        )
+        probes["a warning without a reason is refused"] = refused(lost.number, "")
+
+        first = entries[0]
+        tampered = version(entries, [{
+            "source": "entity:scorecard:a",
+            "target": "entity:scorecard:b",
+            "relation": "depends on",
+            "knowledge_id": str(first.pk),
+            "digest": first.digest,
+            "evidence": "A sentence no source in the library says.",
+            "inferred": True,
+        }])
+        probes["a quote its source does not hold is refused"] = (
+            [f.key for f in check(ws.app, tampered, revision).hard_failures] == ["citations"]
+            and refused(tampered.number, "Anyway")
+        )
+
+        for run, found in ((revision, 16), (sound, 15)):
+            BenchmarkRun.objects.create(
+                application=ws.app, revision=run, questions=16, found=found,
+                top_three=found, reciprocal_rank=found / 16,
+            )
+        probes["a benchmark regression warns"] = [
+            f.key for f in check(ws.app, sound, revision).soft_failures
+        ] == ["benchmark"]
+
+        restricted = version(entries)
+        KnowledgeEntry.objects.filter(pk=first.pk).update(sensitivity="restricted")
+        probes["a restricted source is refused"] = "restricted" in [
+            f.key for f in check(ws.app, restricted, revision).hard_failures
+        ]
+        KnowledgeEntry.objects.filter(pk=first.pk).update(sensitivity="standard")
+
+        published, _ = publish(ws.people["owner"], ws.app, lost.number, "Retired on purpose")
+        probes["a reason given is kept on the version"] = (
+            published.published_at is not None
+            and published.publish_reason == "Retired on purpose"
+        )
+        transaction.set_rollback(True)
+    passed = sum(bool(ok) for ok in probes.values())
+    return {"release_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
 def speed(ws, revision, questions):
     from .graph_ai import citations_from, prepare
     from .workbench import retrieve
@@ -1117,6 +1208,8 @@ def measure():
         data, details["personal_data"] = personal_data(ws, revision)
         values.update(data)
         found, details["hipaa"] = hipaa(ws, revision, values, data)
+        values.update(found)
+        found, details["release_check"] = release_check(ws, revision)
         values.update(found)
         # Timed before cost control, which edits a source and adds versions.
         found, _ = speed(ws, revision, questions)

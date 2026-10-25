@@ -230,6 +230,14 @@
    "tolerance": 0,
    "value": 100.0
   },
+  "release_probes_passed": {
+   "aspect": "Release check",
+   "label": "Release check probes passing",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
   "graph_p50_ms": {
    "aspect": "Speed",
    "label": "Graph answer, median",

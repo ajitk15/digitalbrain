@@ -423,6 +423,27 @@ fingerprint is today's. Every stage links to the screen that acts, with its own
 permission check and audit event - nothing here writes. The strip costs four queries on
 every Knowledge page whatever the library's size (`test_feature_cache` holds the budget).
 
+**A version is checked before it answers** (`release.py`, migration 0103). Publishing
+used to refuse only a version whose evidence changed; now every publish - the Versions
+table's "Check and publish" popup (`graph-release`), the old `action=publish` form,
+`graphs.publish_revision`, `rebuild_demo.py` - goes through `release.publish`, which
+checks the version against the one that answers now, by rules, with no model. **Hard**
+checks refuse whatever the reason: a source changed or retired since it was built, a
+quoted relationship whose quote, digest or source no longer verifies, a source since
+restricted. **Soft** checks compare with the published version, never an ideal: fewer
+benchmark questions found or a lower MRR (or unscored against a scored one), AI that took
+answers away (AI that added nothing is said, never failed - a check that warns on every
+version trains people to override it), a source the published version read and this one
+does not, more documents below Ready, a larger share of AI proposals refused or outside
+the ontology. A soft failure publishes only with a typed reason (`REASON_LENGTH`), kept
+on `GraphRevision.publish_reason` and in the `graph.published` audit event beside the
+failed checks' keys. With nothing published only the hard checks run, and a version is
+never compared with itself. Every saved version is checked after its benchmark
+(`benchmark.run_after_save` → `check_after_save`, never failing the save) and the report
+stored on `GraphRevision.release` under `RULES_VERSION` - a report the strip, Versions and
+Attention read, never a verdict: publishing always checks again. The scorecard's "Release
+check probes passing" stages each outcome in a rolled-back savepoint and must stay 100%.
+
 **Graphify is used for its deterministic parts only.** `code_graph_graphify.py`
 calls `graphify.extract.extract` (Tree-sitter AST, cross-file calls and
 inheritance) on text the clone already read, in a scratch directory of its own;

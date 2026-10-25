@@ -184,6 +184,12 @@ def run_after_save(revision_pk):
         measure(revision)
     except Exception:
         logger.exception("graph_measures_failed", extra={"event": "graph_measures_failed"})
+    # After the benchmark and the measures, which it compares: whether this
+    # version may replace the one that answers (`release.check`), for the strip
+    # and the Versions table. Publishing checks again.
+    from .release import check_after_save
+
+    check_after_save(revision.pk)
 
 
 def latest_runs(app, revisions):

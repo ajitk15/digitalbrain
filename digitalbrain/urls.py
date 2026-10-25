@@ -18,6 +18,7 @@ from platform_core import (
     factory_views,
     graphs,
     knowledge_views,
+    release,
     scim,
     secrets,
     serviceops,
@@ -36,6 +37,11 @@ urlpatterns = [
         name="graph-related-code",
     ),
     path("applications/<uuid:pk>/graph/", graphs.graph_view, name="graph"),
+    path(
+        "applications/<uuid:pk>/graph/<int:number>/publish/",
+        release.release_view,
+        name="graph-release",
+    ),
     path(
         "applications/<uuid:pk>/graph/benchmark/",
         benchmark.benchmark_view,

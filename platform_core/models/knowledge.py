@@ -452,6 +452,13 @@ class GraphRevision(models.Model):
     #: Its shape with AI and as structure alone (`graph_trend.measure`): a report
     #: about the version, filled after it is saved; `data` is never rewritten.
     measures = models.JSONField(null=True, blank=True)
+    #: Its release check against the version that answered when it was last
+    #: checked (`release.check`): a report about the version, rewritten each
+    #: time it is checked, never a condition stored in place of checking again.
+    release = models.JSONField(null=True, blank=True)
+    #: Why a person published it over a soft failure of that check. Blank when
+    #: it passed, or was never published.
+    publish_reason = models.TextField(blank=True, default="", db_default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -464,6 +471,13 @@ class GraphRevision(models.Model):
     @property
     def version(self):
         return self.pk
+
+    @property
+    def release_state(self):
+        """"passed", "warnings" or "refused" from its stored release check, or None."""
+        from platform_core.release import stored_state
+
+        return stored_state(self)
 
     @property
     def updated_at(self):
