@@ -1,0 +1,16 @@
+{
+  "about": "Where each CarePath planted bug lives in the code (demo-artifacts/demo-kit/seeded-gaps.md), as [file, symbol] with the file relative to demo-artifacts/carepath. The scorecard indexes that folder as a Code Graph snapshot and asks code_factory_evidence.code_citations for each ticket exactly as a run's gap analysis asks it; a location's file counts when it is among the cited files, and the location is shown when an excerpt's middle line falls inside the symbol's definition. CARE-401's consent check has since been written, and its export is still the place the ticket is about. CARE-437's missing rate limit has no location and is not scored. Labelled by hand from the gaps document, never from the ranking's output.",
+  "tickets": {
+    "CARE-401": [["src/carepath/api/routes_fhir.py", "export_everything"]],
+    "CARE-412": [["src/carepath/api/routes_patients.py", "search_patients"]],
+    "CARE-418": [
+      ["src/carepath/services/risk.py", "score_for"],
+      ["src/carepath/security/phi.py", "PATTERNS"]
+    ],
+    "CARE-425": [["src/carepath/services/referrals.py", "transition"]],
+    "CARE-431": [
+      ["src/carepath/schemas.py", "PatientSummary"],
+      ["src/carepath/security/phi.py", "mask_mrn"]
+    ]
+  }
+}

@@ -1,6 +1,6 @@
-{% extends 'base.html' %}{% load workspace icons %}{% block title %}Documentation · Code Graph · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons %}{% block title %}Documentation · Code · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
-<h2 class="view-title">Code Graph</h2>
+<h2 class="view-title">Code</h2>
 <p class="view-note">Documentation written from an indexed repository: what it is made of, how the parts depend on each other, its data model and endpoints, and which requirements its code names. Each statement names the file and line it was read from.</p>
 {% include '_code_graph_tabs.html' %}
 {% if not repositories %}<section class="empty"><h2>Index a repository first</h2><p>Documentation is read from a repository's snapshot. Add one on <a href="{% url 'code-repositories' application.pk %}">Code Repos</a>.</p></section>{% else %}
@@ -42,7 +42,7 @@
 </section>
 <section class="card section"><div class="card-heading"><h2>Traceability</h2><span class="origin-tag origin-knowledge_graph">Verified references, not proof of implementation</span></div>
 {% if not s.traceability.available %}<p class="muted">Not worked out: {{ s.traceability.reason }}.</p>{% else %}
-<p class="muted"><small>From knowledge graph v{{ s.traceability.graph_version }}. A requirement passage still in an active, unchanged source, and the code lines that name the same identifier or path.</small></p>
+<p class="muted"><small>From knowledge v{{ s.traceability.graph_version }}. A requirement passage still in an active, unchanged source, and the code lines that name the same identifier or path.</small></p>
 {% if s.traceability.rows %}<div class="table-wrap"><table><thead><tr><th>Requirement</th><th>Source passage</th><th>Code</th></tr></thead><tbody>{% for row in s.traceability.rows %}<tr><td><strong>{{ row.requirement }}</strong></td><td>{% for p in row.passages %}<a href="{% url 'knowledge-detail' application.pk p.entry %}">{{ p.title }} · line {{ p.line }}</a><small>“{{ p.quote|truncatechars:160 }}”</small>{% endfor %}</td><td>{% for place in row.code %}<code>{{ place.path }}:{{ place.line }}</code><small>{{ place.quote|truncatechars:120 }}</small>{% endfor %}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="muted">No requirement passage and code line name the same identifier.</p>{% endif %}
 {% if s.traceability.no_code %}<p class="muted">{% icon "warning" 12 %} In sources, and no code names them: {% for row in s.traceability.no_code %}<code>{{ row.requirement }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {% if s.traceability.no_source %}<p class="muted">{% icon "warning" 12 %} Named in code, and in no source: {% for row in s.traceability.no_source %}<code>{{ row.requirement }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}

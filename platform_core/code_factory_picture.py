@@ -215,13 +215,13 @@ def before_after(run):
             {
                 "key": "before",
                 "title": "Before",
-                "detail": f"code snapshot v{before.number} · knowledge graph v{read.number}",
+                "detail": f"code snapshot v{before.number} · knowledge v{read.number}",
                 "edges": picture["before"],
             },
             {
                 "key": "after",
                 "title": "After",
-                "detail": f"code snapshot v{after.number} · knowledge graph v{newest.number}",
+                "detail": f"code snapshot v{after.number} · knowledge v{newest.number}",
                 "edges": picture["after"],
             },
         ]

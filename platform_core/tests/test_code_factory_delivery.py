@@ -1069,6 +1069,30 @@ class AnnotatedTargetTests(SimpleTestCase):
         """Stripping must not turn prose into a path."""
         self.assertEqual(self.paths("the consent service (consent.current)"), [])
 
+    def test_a_setting_an_endpoint_or_a_requirement_is_not_a_path(self):
+        """A live CARE-412 plan named all of these beside its files; the dotted
+        setting would have been written as a new file called that."""
+        self.assertEqual(
+            self.paths(
+                "settings.max_page_size",
+                "GET /patients",
+                "/patients",
+                "NFR-11",
+                "risk entry R-04",
+                "search_patients",
+                "src/carepath/config.py",
+                "config.py",
+                "README.md",
+                "src/carepath/api/routes_patients.py::search_patients",
+            ),
+            [
+                "src/carepath/config.py",
+                "config.py",
+                "README.md",
+                "src/carepath/api/routes_patients.py",
+            ],
+        )
+
 
 class DerivedTestPathTests(SimpleTestCase):
     """The test file chosen for a changed source file the plan named no test for."""

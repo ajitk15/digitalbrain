@@ -262,7 +262,7 @@ class DemoResetTests(TestCase):
         demo_reset.reset(self.admin, self.org, "ACME")
         self.client.force_login(self.member, backend="django.contrib.auth.backends.ModelBackend")
         page = self.client.get(reverse("graph", args=[self.app.pk]))
-        self.assertContains(page, "No knowledge graph yet")
+        self.assertContains(page, "No graph yet")
         self.assertContains(page, reverse("graph-generate", args=[self.app.pk]))
 
     # ---- what it keeps ----

@@ -73,6 +73,9 @@ class Report:
     #: The published version it was compared with, or None when nothing answers yet.
     against: int | None
     checks: tuple
+    #: Said beside the checks and never one of them: why two versions differ
+    #: that no check should judge (`_domains`).
+    note: str = ""
 
     @property
     def hard_failures(self):
@@ -100,6 +103,7 @@ class Report:
             "hard": [check.key for check in self.hard_failures],
             "soft": [check.key for check in self.soft_failures],
             "checks": [asdict(check) for check in self.checks],
+            "note": self.note,
         }
 
 
@@ -337,6 +341,28 @@ def _ontology(revision, published):
     )
 
 
+def _domains(revision, published):
+    """A sentence when the two versions' AI followed different ontologies, else "".
+
+    Information, not a check, and no rule is relaxed for it: a version read
+    under a new industry domain is still compared with what answers, and the
+    comparison says why its AI figures moved.
+    """
+    from .ontology import CORE, PACKS
+
+    if published is None or not revision.model or not published.model:
+        return ""
+    mine = PACKS.get((revision.quality or {}).get("ontology_pack", ""), CORE)
+    theirs = PACKS.get((published.quality or {}).get("ontology_pack", ""), CORE)
+    if mine is theirs:
+        return ""
+    return (
+        f"The industry domain changed: this version's AI relationships follow {mine.label} "
+        f"and version {published.number}'s follow {theirs.label}, so they are not comparable "
+        "one for one."
+    )
+
+
 def check(app, revision, published=None, store=True):
     """The release check for one version against what answers now.
 
@@ -364,7 +390,12 @@ def check(app, revision, published=None, store=True):
             _quality(app.pk, revision, published),
             _ontology(revision, published),
         ]
-    report = Report(revision.number, published.number if published else None, tuple(checks))
+    report = Report(
+        revision.number,
+        published.number if published else None,
+        tuple(checks),
+        _domains(revision, published),
+    )
     if store:
         stored = report.stored()
         GraphRevision.objects.filter(pk=revision.pk).update(release=stored)

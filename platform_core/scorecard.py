@@ -92,6 +92,22 @@ METRICS = {
         "higher",
         0,
     ),
+    # What a run is shown of the code (`code_factory_evidence.code_citations`),
+    # against `benchmarks/code-evidence.json`: where each planted bug lives.
+    "code_evidence_files": (
+        "Agentic evidence",
+        "Planted-bug files among the code cited",
+        "of 7",
+        "higher",
+        0,
+    ),
+    "code_evidence_shown": (
+        "Agentic evidence",
+        "Planted-bug code shown in an excerpt",
+        "of 7",
+        "higher",
+        0,
+    ),
     # The ontology - typing and name merging, against labelled cases.
     "ontology_typing_accuracy": (
         "Ontology",
@@ -557,6 +573,101 @@ def agentic(ws, revision):
         "seeded_evidence_recall": round(100 * found / expected, 1),
         "seeded_tickets_self_cited": self_cited,
     }, details
+
+
+CAREPATH_CODE = ROOT / "demo-artifacts" / "carepath"
+
+
+def code_snapshot(ws):
+    """The CarePath code as a Code Graph snapshot, read as a local folder is read."""
+    from .code_graph_analysis import facts
+    from .code_graph_local import local_sources
+    from .models import CodeFile, CodeRepository, CodeSnapshot
+
+    _, _, files, _, _ = local_sources(CAREPATH_CODE)
+    repository = CodeRepository.objects.create(
+        application=ws.app,
+        added_by=ws.people["owner"],
+        provider="local",
+        external_id="carepath",
+        name="carepath",
+        source_url="https://example.invalid/carepath",
+        status="ready",
+    )
+    snapshot = CodeSnapshot.objects.create(
+        repository=repository, number=1, ref="main", commit_sha="scorecard", manifest_digest="-"
+    )
+    CodeFile.objects.bulk_create(
+        CodeFile(snapshot=snapshot, **facts(path, content)) for path, content in files
+    )
+    return snapshot
+
+
+def symbol_span(content, name):
+    """(first, last) line of a top-level or nested definition or assignment, decorators included."""
+    import ast
+
+    for node in ast.walk(ast.parse(content)):
+        named = getattr(node, "name", None) == name or (
+            isinstance(node, ast.Assign | ast.AnnAssign)
+            and any(
+                getattr(target, "id", None) == name
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target])
+            )
+        )
+        if named:
+            decorators = [d.lineno for d in getattr(node, "decorator_list", [])]
+            return min([node.lineno, *decorators]), node.end_lineno
+    return None
+
+
+def code_evidence(ws, revision):
+    """What Code Factory is shown of the code for each planted bug, scored by where it lives.
+
+    Asked as `code_factory_analysis.run_analysis` asks: the evidence question,
+    then the pinned code structure that question chose, and the real
+    `code_citations` over a snapshot of `demo-artifacts/carepath`.
+    """
+    from .code_factory_evidence import code_citations, code_context_for
+
+    key = json.loads((BENCH / "code-evidence.json").read_text(encoding="utf-8"))["tickets"]
+    snapshot = code_snapshot(ws)
+    run = SimpleNamespace(
+        code_snapshot_id=snapshot.pk,
+        code_snapshot=snapshot,
+        application_id=ws.app.pk,
+        requested_by=ws.people["owner"],
+        graph_version=revision.number,
+    )
+    contents = {f.path: f.content for f in snapshot.files.all()}
+    files = shown = 0
+    details = []
+    for care, locations in key.items():
+        question = ticket_question(ws.tickets[care])
+        context = code_context_for(run, question)
+        if context:
+            question = f"{question}\n\nPinned code structure:\n{context}"
+        cited = code_citations(run, question)
+        excerpts = []
+        for citation in cited:
+            path, _, line = citation["title"].rpartition(" · line ")
+            middle = int(line) + citation["excerpt"].count("\n") // 2
+            excerpts.append((path, middle))
+        found = []
+        for path, name in locations:
+            span = symbol_span(contents[path], name)
+            in_file = any(cited_path == path for cited_path, _ in excerpts)
+            seen = in_file and any(
+                cited_path == path and span[0] <= middle <= span[1]
+                for cited_path, middle in excerpts
+            )
+            files += in_file
+            shown += seen
+            found.append({"location": f"{path}::{name}", "file": in_file, "shown": seen})
+        details.append(
+            {"ticket": care, "cited": [c["title"] for c in cited], "locations": found}
+        )
+    return {"code_evidence_files": files, "code_evidence_shown": shown}, details
 
 
 def graph_rows(ws, revision, questions):
@@ -1406,6 +1517,8 @@ def measure():
         found, details["integrity"] = integrity(ws, revision, cited_all)
         values.update(found)
         found, details["seeded_tickets"] = agentic(ws, revision)
+        values.update(found)
+        found, details["code_evidence"] = code_evidence(ws, revision)
         values.update(found)
         found, details["graph_rows"] = graph_rows(ws, revision, questions)
         values.update(found)

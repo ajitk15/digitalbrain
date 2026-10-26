@@ -98,7 +98,7 @@ CLAIMED = ("pending", "running", "awaiting_review", "prepare_queued", "preparing
 #: makes is unfalsifiable -- which is worse than no finding at all, because it
 #: reads exactly like a real one.
 NO_GRAPH = (
-    "No knowledge graph is published for this application. Generate a graph in "
+    "No knowledge is published for this application. Generate a graph in "
     "Knowledge and publish it before analysing a ticket: every item a run "
     "produces has to cite evidence a reviewer can open, and there is none "
     "without a published graph."
@@ -505,7 +505,7 @@ def language_gap(snapshot):
     named = ", ".join(f"{row['name']} ({row['share']:.1f}%)" for row in rows[:4])
     verb = "is" if len(rows) == 1 else "are"
     return (
-        f"{named} {verb} in this repository but not parsed by Code Graph, so this run "
+        f"{named} {verb} in this repository but not parsed, so this run "
         "reasons about that code without its files, symbols or imports."
     )
 

@@ -244,7 +244,7 @@ class OnboardingScreenTests(TestCase):
         self.assertContains(response, "Open a pull request")
         # Every step is listed, but only the current one opens up with its
         # reason: the page once explained all eleven at once.
-        self.assertContains(response, "Knowledge graph published")
+        self.assertContains(response, "Knowledge published")
         self.assertContains(response, "Tick the systems this application imports from.")
         self.assertNotContains(response, "generate a graph and publish it")
 
@@ -285,7 +285,7 @@ class OnboardingScreenTests(TestCase):
         self.assertContains(response, "is ready to set up")
         self.assertContains(response, "Start with")
         # And it points at one thing rather than leaving eight to choose from.
-        self.assertContains(response, "Knowledge graph published")
+        self.assertContains(response, "Knowledge published")
 
     def test_the_welcome_gives_way_once_anything_is_configured(self):
         self.index("acme/widgets")

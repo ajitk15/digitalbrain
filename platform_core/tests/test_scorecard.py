@@ -132,7 +132,12 @@ class RegressionTests(SimpleTestCase):
         self.assertEqual(details["merge_errors"], [])
 
     def test_every_fixture_the_scorecard_reads_is_in_the_repository(self):
-        for name in ("seeded-evidence.json", "phi-samples.json", "ontology-samples.json"):
+        for name in (
+            "seeded-evidence.json",
+            "code-evidence.json",
+            "phi-samples.json",
+            "ontology-samples.json",
+        ):
             self.assertTrue(json.loads((scorecard.BENCH / name).read_text(encoding="utf-8")))
         self.assertTrue((scorecard.KIT / "jira-export.json").is_file())
 

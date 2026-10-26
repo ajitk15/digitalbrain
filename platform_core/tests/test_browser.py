@@ -727,7 +727,7 @@ class KnowledgeGraphCanvasTests(BrowserTestCase):
         self.page.get_by_text("Related knowledge", exact=True).wait_for()
         self.page.locator("#related-knowledge details summary").first.click()
         self.page.get_by_text(
-            f"Explore in knowledge graph v{revision.number}", exact=True
+            f"Explore in graph v{revision.number}", exact=True
         ).first.click()
         self.page.wait_for_selector(f"#graph-canvas[data-focus='{node}']")
         self.assertNoScriptErrors()

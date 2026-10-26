@@ -404,7 +404,7 @@ def traceability(snapshot, user, files):
         return {"available": False, "reason": "no knowledge access"}
     revision = published_revision(snapshot.repository.application_id)
     if revision is None:
-        return {"available": False, "reason": "no published knowledge graph"}
+        return {"available": False, "reason": "no published knowledge"}
     found, limited = links(revision, snapshot, limit=500)
     rows = {}
     for link in found:
@@ -538,7 +538,7 @@ def markdown(doc):
     out = [
         f"# Reverse-engineered documentation: {o['repository']}",
         "",
-        f"Written by rules from Code Graph snapshot v{o['snapshot']} of {o['repository']} "
+        f"Written by rules from code snapshot v{o['snapshot']} of {o['repository']} "
         f"at commit {o['commit']} ({o['ref']}), on {doc.created_at:%Y-%m-%d}. Each section "
         "says how it was obtained: read from code (parsed, exact), inferred (clustering or "
         "path matching), verified reference (a requirement passage and a code line that "
@@ -616,7 +616,7 @@ def markdown(doc):
     if not t.get("available"):
         out.append(f"Not worked out: {t.get('reason', 'unavailable')}.")
     else:
-        out.append(f"From knowledge graph version {t['graph_version']}.")
+        out.append(f"From knowledge version {t['graph_version']}.")
         for row in t["rows"]:
             out += ["", f"### {row['requirement']}", ""]
             for p in row["passages"]:

@@ -93,7 +93,7 @@ MANAGEABLE = {
             "github",
             "GitHub (read)",
             "github",
-            "Issue imports, link imports and Code Graph indexing.",
+            "Issue imports, link imports and code indexing.",
             "A fine-grained token with read access to repository contents.",
         ),
         Manageable(

@@ -476,14 +476,14 @@ REFRESH_TARGETS = (
     ),
     (
         "knowledge",
-        "Knowledge graph",
+        "Knowledge",
         "Queue a structural rebuild. Free, and it produces a draft - what runs "
         "and chat answer from is the published revision, which stays as it is "
         "until somebody publishes the new one.",
     ),
     (
         "code",
-        "Code Graph",
+        "Code",
         "Re-index the repository from its default branch, which supersedes the "
         "snapshot for future runs. Past runs keep the snapshot they reasoned "
         "about.",
@@ -618,7 +618,7 @@ def refresh_after(user, app_id, run_id, scope):
                 .first()
             )
         if not feature_enabled("code_graph", app):
-            notes.append("Code Graph is switched off for this application.")
+            notes.append("Code is switched off for this application.")
         elif repository is None:
             notes.append("No repository is registered on Code Repos.")
         else:

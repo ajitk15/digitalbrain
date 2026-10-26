@@ -108,7 +108,7 @@ def change_text(run):
             + (f" on {plan.reviewed_at:%Y-%m-%d}" if plan.reviewed_at else "")
         )
     if run.graph_version:
-        lines.append(f"Answered from knowledge graph version: {run.graph_version}")
+        lines.append(f"Answered from knowledge version: {run.graph_version}")
     paths = [change.path for change in run.changes.all()]
     lines += ["", "Files changed:"] + ([f"- {path}" for path in paths] or ["- none recorded"])
     lines += ["", "Checks:"] + (

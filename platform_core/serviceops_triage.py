@@ -83,7 +83,7 @@ PLAIN_LIMITATIONS = {
         "No runbook passage or knowledge article was used as evidence."
     ),
     "No published graph available": (
-        "No knowledge graph is published for this application, so runbooks and design "
+        "No knowledge is published for this application, so runbooks and design "
         "documents were not searched."
     ),
     "Only one evidence kind": "All the evidence is of one kind, so nothing corroborates it.",

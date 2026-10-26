@@ -26,7 +26,7 @@ LIVE = {
 CAPABILITIES = {
     "viewer": (
         "Ask questions in Chat and read every answer's sources",
-        "Read knowledge, the Code Graph, Code Factory plans and ServiceOps",
+        "Read knowledge, code, Code Factory plans and ServiceOps",
     ),
     "contributor": (
         "Everything a viewer can",

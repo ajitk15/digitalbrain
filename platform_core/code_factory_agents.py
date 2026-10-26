@@ -63,24 +63,40 @@ ANNOTATED = re.compile(r"^(?P<path>[^()]*[^()\s])\s*\([^()]*\)$")
 #: "…/errors.py:ConsentWithheld" and edited none of the real ones.
 SYMBOL_SUFFIX = re.compile(r"^(?P<path>[^:#\s]+\.[A-Za-z0-9]{1,8})(?:::?|#)[^/\s]+$")
 
+#: A file with no folder in front of it: a name, a dot and a short extension.
+#: "config.py" and "README.md" are files; "settings.max_page_size" is a setting,
+#: and "any dot is a path" told implementation to write a new file of that name.
+FILE_NAME = re.compile(r"^[\w.-]*\w\.[A-Za-z][A-Za-z0-9]{0,4}$")
+
+
+def repository_path(target):
+    """The repository path a plan item's target names, or "" for anything else.
+
+    Design may name a component, a function, a setting, an endpoint or a
+    requirement instead of a file, and none of those is something to open -
+    or, absent from the repository, to create. A path has no spaces ("GET
+    /patients" is an endpoint), is relative, and has a folder or a file
+    extension.
+    """
+    candidate = str(target).strip()
+    annotated = ANNOTATED.match(candidate)
+    if annotated:
+        candidate = annotated.group("path").strip()
+    suffixed = SYMBOL_SUFFIX.match(candidate)
+    if suffixed:
+        candidate = suffixed.group("path")
+    if not candidate or candidate.startswith("/") or any(c.isspace() for c in candidate):
+        return ""
+    return candidate if "/" in candidate or FILE_NAME.match(candidate) else ""
+
 
 def target_paths(plan):
     """Every repository path the approved items named, in order, deduplicated."""
     seen, paths = set(), []
     for item in plan.items.exclude(status="rejected").order_by("sequence"):
         for target in item.targets:
-            candidate = str(target).strip()
-            annotated = ANNOTATED.match(candidate)
-            if annotated:
-                candidate = annotated.group("path").strip()
-            suffixed = SYMBOL_SUFFIX.match(candidate)
-            if suffixed:
-                candidate = suffixed.group("path")
-            if not candidate or candidate in seen:
-                continue
-            # A target is only a path if it looks like one. Design is allowed to
-            # name a component instead, and that is not something to open.
-            if "/" in candidate or "." in candidate:
+            candidate = repository_path(target)
+            if candidate and candidate not in seen:
                 seen.add(candidate)
                 paths.append(candidate)
     return paths
@@ -1444,13 +1460,15 @@ def pull_request_body(run, changes=()):
     adding one is the more consequential half of what this can do, and somebody
     deciding how closely to read should be told which it is before they start.
     """
+    from .code_factory_evidence import origin_name
+
     created = [change["path"] for change in changes if change["sha"] is None]
     lines = [
         f"Raised from {run.ticket_url or run.ticket_external_id}.",
         "",
-        f"Analysed against published knowledge graph version {run.graph_version}."
+        f"Analysed against published knowledge version {run.graph_version}."
         if run.graph_version
-        else "No published knowledge graph was available for this analysis.",
+        else "No published knowledge was available for this analysis.",
         "",
         "## Approved items",
     ]
@@ -1465,7 +1483,7 @@ def pull_request_body(run, changes=()):
             lines.append(f"\n**What changes:** {item.change_summary}")
         for citation in item.citations:
             lines.append(f"\n> {str(citation.get('excerpt', ''))[:400]}")
-            origin = citation.get("origin_label", "")
+            origin = origin_name(citation)
             system = citation.get("system", "")
             if system and system not in origin:
                 origin = f"{origin} · {system}" if origin else system

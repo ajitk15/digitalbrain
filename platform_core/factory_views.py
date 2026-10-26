@@ -6,6 +6,7 @@ views there, the Code Factory views here. Access goes through the same
 """
 
 import json
+import re
 from types import SimpleNamespace
 
 from django.contrib import messages
@@ -155,7 +156,7 @@ def graph_unblock(app, grant):
         )
     if sources_for(app.pk).exists():
         return (
-            "Generate a knowledge graph",
+            "Generate a graph",
             "Sources are in, but no graph has been built from them yet. Generate one, "
             "publish it, and tickets can be analysed.",
             reverse("graph-generate", args=[app.pk]),
@@ -300,6 +301,54 @@ def snapshot_paths(run, paths):
     )
 
 
+IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+
+
+def target_tags(run, targets):
+    """What each gap target is, for the tag beside it: {target: {"kind", "path"}}.
+
+    "code" is a file the pinned snapshot holds, "new" a file the change would
+    create, "symbol" a function or class the snapshot defines (in "path").
+    Paths are read with `repository_path`, the rule implementation uses to
+    decide what to open, so a tag never says "new file" about something no
+    change will write - it used to say so of every function, setting, endpoint
+    and requirement a plan named. Any other target is a name and has no tag.
+    """
+    from django.db.models import Q
+
+    from .code_factory_agents import repository_path
+    from .models import CodeFile
+
+    targets = [target for target in dict.fromkeys(targets) if target]
+    if run is None or not run.code_snapshot_id or not targets:
+        return {}
+    paths = {target: repository_path(target) for target in targets}
+    held = snapshot_paths(run, paths.values())
+    tags = {
+        target: {"kind": "code" if path in held else "new", "path": path}
+        for target, path in paths.items()
+        if path
+    }
+    names = [target for target in targets if not paths[target] and IDENTIFIER.fullmatch(target)]
+    if names:
+        condition = Q()
+        for name in names:
+            condition |= Q(content__contains=name)
+        defined = {}
+        for path, symbols in (
+            CodeFile.objects.filter(snapshot_id=run.code_snapshot_id)
+            .filter(condition)
+            .values_list("path", "symbols")
+        ):
+            for symbol in symbols or ():
+                if isinstance(symbol, dict) and symbol.get("name"):
+                    defined.setdefault(symbol["name"], path)
+        tags.update(
+            {name: {"kind": "symbol", "path": defined[name]} for name in names if name in defined}
+        )
+    return tags
+
+
 @login_required
 @require_http_methods(["GET"])
 def plan_item(request, pk, plan_id, item_id):
@@ -327,7 +376,7 @@ def plan_item(request, pk, plan_id, item_id):
             "plan": plan,
             "item": item,
             "run": run,
-            "snapshot_paths": snapshot_paths(run, item.targets),
+            "target_tags": target_tags(run, item.targets),
             "ticket_label": ticket_label(run),
             # Only a gap the analysis classed as stated in the ticket is pointed
             # back into it; the others are found by comparison, not stated.
@@ -910,7 +959,7 @@ def run_detail(request, pk, run_id):
                 ok=not analysis["language_gap"],
                 label="Every code language parsed"
                 if not analysis["language_gap"]
-                else "Some code is in a language Code Graph does not parse",
+                else "Some code is in a language that is not parsed",
             )
         )
     configured = code_factory_model(app)
@@ -976,10 +1025,10 @@ def run_detail(request, pk, run_id):
             # Which shown paths the pinned snapshot holds: a gap's target found
             # there, or a change whose original was read from it, is tagged as
             # coming from the code graph.
-            "snapshot_paths": snapshot_paths(
+            "snapshot_paths": snapshot_paths(run, [change.path for change in changes]),
+            "target_tags": target_tags(
                 run,
-                [target for item in (plan.items.all() if plan else ()) for target in item.targets]
-                + [change.path for change in changes],
+                [target for item in (plan.items.all() if plan else ()) for target in item.targets],
             ),
             # Said on the summary, before anyone opens a pull request: tests that
             # nothing runs are not evidence, and a green PR would not say so.
@@ -1136,7 +1185,7 @@ def next_action(run, grant, user, reviewable, can_retry_analysis):
         return (
             "done",
             "Written to the folder",
-            "Bring the knowledge and code graphs up to date with the change.",
+            "Bring knowledge and code up to date with the change.",
             "#stage-7",
             "Refresh",
         )
@@ -1182,7 +1231,6 @@ def self_approval_allowed():
     return bool(getattr(settings, "ALLOW_SELF_APPROVAL", True))
 
 
-@transaction.atomic
 def code_source_holds(app, source):
     """A code citation still stands: the file is in this application's snapshot,
     unchanged. Snapshots are immutable, so this fails only if one was removed."""
@@ -1209,6 +1257,7 @@ def code_source_holds(app, source):
     return valid
 
 
+@transaction.atomic
 def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=False):
     """Approve or reject a plan, and say which of its items are in.
 
@@ -1390,7 +1439,7 @@ def plan_detail(request, pk, plan_id):
             # (`rules.for_run`): a check for the reviewer, never a gate.
             "rules": for_run(run, plan) if run else [],
             "ticket_label": ticket_label(run),
-            "snapshot_paths": snapshot_paths(
+            "target_tags": target_tags(
                 run, [target for item in plan.items.all() for target in item.targets]
             ),
             "can_deliver": bool(

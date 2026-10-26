@@ -22,7 +22,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .graph_ai import EXTRACTION_TIMEOUT, rubric
+from .graph_ai import EXTRACTION_TIMEOUT, MAX_EXTRACTION_SOURCES, rubric
 from .hierarchy import is_live
 from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
@@ -506,6 +506,10 @@ def rebuild(app_id):
         from .benchmark import run_after_save
 
         transaction.on_commit(lambda pk=revision.pk: run_after_save(pk))
+        if config and quality.get("capped") and quality.get("extraction_calls"):
+            # Stopped at its call limit having paid for something: the rest of
+            # the library is read by the next automatic run, not left unread.
+            transaction.on_commit(lambda: continue_extraction(app_id))
         locked.data, locked.quality = data, quality
         locked.fingerprint = before
         locked.version = revision.pk
@@ -813,7 +817,7 @@ def automatic_ai(app, graph=None):
     return AutomaticAI(True, config.provider, config.model, payer, lost=lost)
 
 
-def arm_auto_refresh(app, graph):
+def arm_auto_refresh(app, graph, stage="Queued (automatic AI enrichment)"):
     """Turn a source change into an incremental AI run, or record why it cannot.
 
     As the owner `automatic_ai` names, re-checked here, like a connector's
@@ -830,7 +834,7 @@ def arm_auto_refresh(app, graph):
     armed = KnowledgeGraph.objects.filter(pk=graph.pk, status=graph.status).update(
         status="queued",
         fingerprint="",
-        stage="Queued (automatic AI enrichment)",
+        stage=stage,
         started_at=timezone.now(),
         failure_reason="",
         requested_provider=plan.provider,
@@ -884,44 +888,236 @@ def set_auto_refresh(request, app, pk):
     return redirect("graph", pk=pk)
 
 
-def set_ontology(request, app, pk):
-    """The owner's choice of industry domain for AI extraction (`ontology.PACKS`).
+#: Characters `invoke_ai` adds around one window - the question, the source's id
+#: and digest - generously, for the estimate's ceiling.
+CALL_OVERHEAD = 500
+#: How long the next automatic run waits after one stopped at its call limit.
+CONTINUE_DELAY = timedelta(seconds=5)
+
+
+@dataclass
+class DomainImpact:
+    """What following one ontology would cost from here: no model is called to say so."""
+
+    pack: object
+    sources: int
+    #: Windows every answerable source is read in, the same text counted once.
+    passages: int
+    #: Of them, answered under this ontology before - kept, so free.
+    read: int
+    runs: int
+    #: The most the rest can cost at the entered rates; None with no graph model saved.
+    ceiling: object
+    model: str
+    #: False when the model's rates are both zero: spend, and the budget, read $0.
+    priced: bool = True
+
+    @property
+    def left(self):
+        return self.passages - self.read
+
+    @property
+    def cost(self):
+        """The ceiling as the page says it."""
+        if self.ceiling is None:
+            return ""
+        if 0 < self.ceiling < 0.01:
+            return "under $0.01"
+        return f"${self.ceiling:,.2f}"
+
+
+def domain_impacts(app):
+    """{pack key: DomainImpact} for every ontology, the current one included.
+
+    The same windows and cache keys `graph_ai.enrich_graph` uses, so "already
+    read" is exactly what a run would not pay for again, and the gateway's own
+    reservation arithmetic, so the ceiling is the most a run could be charged.
+    """
+    from decimal import Decimal
+    from math import ceil
+
+    from .gateway import estimate
+    from .graph_ai import (
+        EXTRACTION_TOKENS,
+        MAX_EXTRACTION_SOURCES,
+        cached_answers,
+        instructions,
+        window_key,
+        windows,
+    )
+
+    entries = list(sources_for(app.pk).only("id", "title", "content"))
+    passages = {}
+    for entry in entries:
+        for text in windows(entry.content)[0]:
+            passages.setdefault(window_key(entry.title, text), len(entry.title) + len(text))
+    config = AIConfiguration.objects.filter(
+        application=app, purpose="graph_generation", enabled=True
+    ).first()
+    configured = config is not None and bool(config.model)
+    found = {}
+    for pack in PACKS.values():
+        done = set(cached_answers(app.pk, set(passages), pack))
+        left = [size for key, size in passages.items() if key not in done]
+        prompt = len(instructions(None if pack is CORE else pack)) + CALL_OVERHEAD
+        found[pack.key] = DomainImpact(
+            pack=pack,
+            sources=len(entries),
+            passages=len(passages),
+            read=len(passages) - len(left),
+            runs=ceil(len(left) / MAX_EXTRACTION_SOURCES),
+            ceiling=sum(
+                (estimate(config, prompt + size, EXTRACTION_TOKENS) for size in left), Decimal(0)
+            )
+            if configured
+            else None,
+            model=config.model if configured else "",
+            priced=configured and bool(config.input_rate or config.output_rate),
+        )
+    return found
+
+
+def change_ontology(user, app, key):
+    """Make `key` the application's ontology. Returns (message level, sentence).
 
     Refused while a run is in flight, so one version is never judged under two
     ontologies. Answers paid for under the previous one are kept in the cache,
-    under its rubric, but not carried into this one: the next AI generation
-    reads every source again, which is what the page says before anyone
-    presses the button.
+    under its rubric, but not carried into this one: the refresh it asks for
+    regenerates the graph, and `continue_extraction` keeps going until every
+    passage is read under the new one. Changing back reads the kept answers.
     """
-    key = request.POST.get("ontology", "")
     if key not in PACKS:
-        messages.error(request, "Choose one of the listed industry domains.")
-        return redirect("graph-generate", pk=pk)
+        return "error", "Choose one of the listed industry domains."
     if run_in_flight(KnowledgeGraph.objects.filter(application=app).first()):
-        messages.info(
-            request, "A graph generation is running. Change the domain once it finishes."
-        )
-        return redirect("graph-generate", pk=pk)
+        return "info", "A graph generation is running. Change the domain once it finishes."
     before = app.ontology
     if key == before:
-        messages.info(request, f"AI extraction already follows {PACKS[key].label}.")
-        return redirect("graph-generate", pk=pk)
+        return "info", f"AI extraction already follows {PACKS[key].label}."
     type(app).objects.filter(pk=app.pk).update(ontology=key)
+    app.ontology = key
     audit(
-        request.user,
+        user,
         "graph.ontology_changed",
         app.pk,
         app.product.portfolio.organization,
         details={"from": before or "core", "to": key or "core"},
     )
     request_refresh(app.pk)
-    messages.success(
-        request,
-        f"AI extraction now follows {PACKS[key].label}. Relationships extracted under the "
-        "previous domain are not carried over: the next AI generation reads every source "
-        "again, and provider charges apply.",
+    plan = automatic_ai(app, KnowledgeGraph.objects.filter(application=app).first())
+    return "success", (
+        f"AI extraction now follows {PACKS[key].label}. The graph is being regenerated "
+        + (
+            f"and every source read again with {plan.model}, charged to {plan.payer.username}, "
+            "in as many runs as it takes. Each version is a draft until it is published."
+            if plan.on
+            else f"from structure only for now: {plan.reason} AI relationships return when "
+            "someone generates with a model."
+        )
     )
+
+
+def set_ontology(request, app, pk):
+    """The Generate popup's old domain form, kept working: a real POST target that
+    a bookmarked page or script may still use. Settings → Industry domain is
+    where it is changed now (`domain_settings`)."""
+    level, sentence = change_ontology(request.user, app, request.POST.get("ontology", ""))
+    getattr(messages, level)(request, sentence)
     return redirect("graph-generate", pk=pk)
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def domain_settings(request, pk):
+    """Settings → Industry domain: the ontology AI extraction follows, owner-only.
+
+    It says what a change will do before anything is saved - the graph is
+    regenerated, how many passages are read again and the most that can cost,
+    who pays or why AI will not run, what keeps answering - and a change takes
+    a ticked box saying so. A plain form: it works with JavaScript off.
+    """
+    from .policy import application_for
+
+    app, grant = application_for(request.user, pk, owner=True)
+    chosen, error = app.ontology, ""
+    if request.method == "POST":
+        chosen = request.POST.get("ontology", "")
+        if request.POST.get("understood") != "on":
+            error = (
+                "Tick the box to confirm that the graph will be regenerated and provider "
+                "charges apply."
+            )
+        else:
+            level, sentence = change_ontology(request.user, app, chosen)
+            if level != "error":
+                getattr(messages, level)(request, sentence)
+                return redirect("application-domain", pk=pk)
+            error = sentence
+    graph = KnowledgeGraph.objects.filter(application=app).select_related("auto_refresh_by").first()
+    impacts = domain_impacts(app)
+    current = PACKS.get(app.ontology, CORE)
+    return render(
+        request,
+        "application_domain.html",
+        {
+            "application": app,
+            "grant": grant,
+            "current": current,
+            "chosen": chosen if chosen in PACKS else app.ontology,
+            "error": error,
+            "choices": [impacts[pack.key] for pack in PACKS.values()],
+            "progress": impacts[current.key],
+            "ai_plan": automatic_ai(app, graph),
+            "running": run_in_flight(graph),
+            "published": published_revision(app.pk),
+            "auto_publish": bool(graph and graph.auto_publish_by_id),
+            "knowledge_on": feature_enabled("knowledge", app),
+            "masking_on": masking_on(app),
+            "max_calls": MAX_EXTRACTION_SOURCES,
+        },
+    )
+
+
+def masking_on(app):
+    """Whether this application masks personal data before storing it."""
+    from .models import PersonalDataPolicy
+
+    return PersonalDataPolicy.objects.filter(application=app, enabled=True).exists()
+
+
+def continue_extraction(app_id):
+    """After an AI version stopped at its call limit with passages left, arm the next run.
+
+    One run makes at most `MAX_EXTRACTION_SOURCES` calls, so a library larger
+    than that - or any library after its ontology changed, when nothing is
+    cached under the new one - used to be read 25 windows at a time and then
+    left: the version's fingerprint matched, so nothing asked again. Each run
+    here is an automatic one, so `automatic_ai` decides it as for a source
+    change - the owner's switch, the payer's grant, the credential, the budget.
+    It ends: `rebuild` asks only after a run that paid for a new answer, every
+    answer is cached, and a run that pays for none asks nothing.
+    """
+    from .models import Application
+
+    app = (
+        Application.objects.select_related("product__portfolio__organization")
+        .filter(pk=app_id)
+        .first()
+    )
+    graph = (
+        KnowledgeGraph.objects.filter(application_id=app_id).select_related("auto_refresh_by").first()
+    )
+    if (
+        app is None
+        or graph is None
+        or graph.status != "ready"
+        or not is_live(app)
+        or not feature_enabled("knowledge", app)
+    ):
+        return False
+    if not arm_auto_refresh(app, graph, stage="Queued (reading the passages left)"):
+        return False
+    request_refresh(app_id, delay=CONTINUE_DELAY)
+    return True
 
 
 def revision_added(revision, app_id):
@@ -1125,7 +1321,6 @@ def graph_generate(request, pk):
                 application=app, purpose="graph_generation", enabled=True
             ).exists(),
             "ontology": PACKS.get(app.ontology, CORE),
-            "ontology_choices": PACKS.values(),
         },
     )
 

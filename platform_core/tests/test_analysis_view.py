@@ -93,5 +93,53 @@ class AnalysisViewTests(TestCase):
         )
         FactoryRun.objects.filter(pk=run.pk).update(code_snapshot=snapshot)
         body = self.page(run)
-        self.assertIn("Some code is in a language Code Graph does not parse", body)
+        self.assertIn("Some code is in a language that is not parsed", body)
         self.assertIn("Java (90.0%) is in this repository but not parsed", body)
+
+
+class TargetTagTests(TestCase):
+    """The tag beside each gap target says what implementation will do with it."""
+
+    setUp = test_code_factory.PipelineTests.setUp
+
+    def test_only_a_path_is_a_file_and_a_defined_name_is_code(self):
+        from types import SimpleNamespace
+
+        from platform_core.factory_views import target_tags
+        from platform_core.models import CodeFile, CodeRepository, CodeSnapshot
+
+        repository = CodeRepository.objects.create(
+            application=self.app, added_by=self.owner, external_id="acme/widgets",
+            name="acme/widgets", source_url="https://github.com/acme/widgets", status="ready",
+        )
+        snapshot = CodeSnapshot.objects.create(
+            repository=repository, number=1, ref="main", commit_sha="c" * 40,
+            manifest_digest="m" * 64,
+        )
+        CodeFile.objects.create(
+            snapshot=snapshot, path="api/patients.py", language="python", digest="d" * 64,
+            content="def search_patients(limit):\n    return limit\n", lines=2,
+            symbols=[{"name": "search_patients", "kind": "function", "line": 1}],
+        )
+        tags = target_tags(
+            SimpleNamespace(code_snapshot_id=snapshot.pk),
+            [
+                "api/patients.py",
+                "api/patients.py::search_patients",
+                "tests/test_bounds.py",
+                "search_patients",
+                "settings.max_page_size",
+                "GET /patients",
+                "NFR-11",
+            ],
+        )
+        self.assertEqual(
+            tags,
+            {
+                "api/patients.py": {"kind": "code", "path": "api/patients.py"},
+                "api/patients.py::search_patients": {"kind": "code", "path": "api/patients.py"},
+                "tests/test_bounds.py": {"kind": "new", "path": "tests/test_bounds.py"},
+                "search_patients": {"kind": "symbol", "path": "api/patients.py"},
+            },
+        )
+        self.assertEqual(target_tags(SimpleNamespace(code_snapshot_id=None), ["a.py"]), {})

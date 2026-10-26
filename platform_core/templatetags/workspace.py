@@ -78,6 +78,9 @@ def settings_sections(app, grant):
             ("Appearance", "application-identity", {"application-identity"}, "application")
         )
         sections.append(("Features", "application-features", {"application-features"}, "toggle"))
+        sections.append(
+            ("Industry domain", "application-domain", {"application-domain"}, "graph")
+        )
         if feature_enabled("chat", app):
             sections.append(("Chat history", "chat-settings", {"chat-settings"}, "history"))
         sections.append(("AI settings", "ai-settings", {"ai-settings"}, "sliders"))
@@ -269,6 +272,7 @@ def settings_navigation(context):
 SETTINGS_GROUPS = {
     "application-identity": "Application",
     "application-features": "Application",
+    "application-domain": "Application",
     "chat-settings": "Application",
     "ai-settings": "AI",
     "usage": "AI",
@@ -480,6 +484,20 @@ def evidence_origins(citations):
         for key, label in ORIGINS
         if counts.get(key)
     ]
+
+
+@register.filter
+def origin_name(citation):
+    """`code_factory_evidence.origin_name`: where a piece of evidence came from."""
+    from platform_core.code_factory_evidence import origin_name
+
+    return origin_name(citation or {})
+
+
+@register.filter
+def target_tag(target, tags):
+    """A gap target's tag from `factory_views.target_tags`, or None for a plain name."""
+    return (tags or {}).get(target)
 
 
 @register.filter
