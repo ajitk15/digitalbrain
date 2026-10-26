@@ -917,6 +917,24 @@ class KnowledgeQualityTests(BrowserTestCase):
         self.assertSamePage()
         self.assertNoScriptErrors()
 
+    def test_a_question_file_imported_from_the_popup_lands_on_the_questions(self):
+        """A file needs a multipart post, which modal.js leaves to the browser."""
+        self.open("graph", self.app.pk, query="?tab=quality")
+        self.page.get_by_role("link", name="See the questions").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Import questions from a file").wait_for()
+        dialog.locator("input[type=file][name=file]").set_input_files(
+            {
+                "name": "questions.csv",
+                "mimeType": "text/csv",
+                "buffer": b"Question,Should cite\nWhich queue is NODE3 on?,Configuration\n",
+            }
+        )
+        dialog.get_by_role("button", name="Import").click()
+        self.page.get_by_text("Added 1 question(s)").wait_for()
+        self.page.get_by_text("Which queue is NODE3 on?").first.wait_for()
+        self.assertNoScriptErrors()
+
 
 class ReleaseCheckTests(BrowserTestCase):
     """Publishing opens the release check over Versions; a warning keeps the popup

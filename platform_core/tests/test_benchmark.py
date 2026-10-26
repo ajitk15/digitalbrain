@@ -224,6 +224,94 @@ class BenchmarkTests(TestCase):
         page = self.client.get(self.url).content.decode()
         self.assertRegex(page, r'aria-current="page">[^<]*<svg[^>]*>.*?</svg>Versions')
 
+    def upload(self, name, data):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post(
+            self.url, {"action": "import", "file": SimpleUploadedFile(name, data)}
+        )
+
+    def test_questions_import_from_json_csv_and_excel(self):
+        import openpyxl
+
+        rows = [("Is consent checked on export?", "KAN-4"), ("How do I restart it?", "runbook")]
+        response = self.upload(
+            "questions.json",
+            json.dumps([{"question": q, "expected": e} for q, e in rows[:1]]).encode(),
+        )
+        self.assertRedirects(response, self.url)
+        # The page's own column name reads back; a question already held is skipped.
+        csv_text = "Question,Should cite\n" + "\n".join(f"{q},{e}" for q, e in rows)
+        self.upload("questions.csv", ("﻿" + csv_text).encode())
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.append(["question", "expected"])
+        sheet.append([None, None])
+        sheet.append(["Who approves a release?", "KAN-7"])
+        data = tempfile.SpooledTemporaryFile()
+        workbook.save(data)
+        data.seek(0)
+        self.upload("questions.xlsx", data.read())
+        held = BenchmarkQuestion.objects.filter(application=self.app)
+        self.assertEqual(
+            sorted(held.values_list("expected", flat=True)), ["KAN-4", "KAN-7", "runbook"]
+        )
+        self.assertEqual({item.created_by for item in held}, {self.owner})
+        from platform_core.models import AuditEvent
+
+        self.assertEqual(
+            AuditEvent.objects.filter(action="benchmark.questions_imported").count(), 3
+        )
+
+    def test_a_bad_row_names_itself_and_adds_nothing(self):
+        response = self.upload(
+            "questions.csv", b"question,expected\nIs consent checked?,KAN-4\nAnything?,ab\n"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Row 3: Should cite - Use at least three characters")
+        self.assertFalse(BenchmarkQuestion.objects.exists())
+        for name, data, refusal in [
+            ("questions.csv", b"title,source\nA,KAN-4\n", "The first row must name the columns"),
+            ("questions.json", b'{"question": "A"}', "must hold a JSON list"),
+            ("questions.xlsx", b"not a zip", "not an Excel .xlsx file"),
+            ("questions.txt", b"question,expected", "Upload a .json, .csv or .xlsx file"),
+        ]:
+            self.assertContains(self.upload(name, data), refusal)
+        self.assertFalse(BenchmarkQuestion.objects.exists())
+
+    def test_an_import_never_passes_the_limit(self):
+        from platform_core.benchmark import MAX_QUESTIONS
+
+        for number in range(MAX_QUESTIONS - 1):
+            self.ask(f"Question {number}?", "KAN-4")
+        response = self.upload(
+            "questions.csv", b"question,expected\nOne more?,KAN-4\nAnd another?,KAN-4\n"
+        )
+        self.assertContains(response, f"can hold {MAX_QUESTIONS} questions")
+        self.assertEqual(BenchmarkQuestion.objects.count(), MAX_QUESTIONS - 1)
+
+    def test_a_viewer_cannot_import(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertNotContains(self.client.get(self.url), 'value="import"')
+        response = self.upload("questions.csv", b"question,expected\nSneaky?,KAN-4\n")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(BenchmarkQuestion.objects.exists())
+
+    def test_the_download_imports_into_another_application(self):
+        self.ask("Is consent checked on export?", "KAN-4")
+        self.ask("Another application's question?", "KAN-9", app=self.other)
+        response = self.client.get(self.url, {"download": "json"})
+        self.assertIn("attachment", response["Content-Disposition"])
+        downloaded = json.loads(response.content)
+        self.assertEqual(
+            downloaded, [{"question": "Is consent checked on export?", "expected": "KAN-4"}]
+        )
+        from platform_core.benchmark import load_questions, read_questions
+
+        self.assertEqual(
+            load_questions(self.other, read_questions("q.json", response.content)), (1, 0)
+        )
+
     def test_the_command_loads_questions_once_and_scores_the_latest_version(self):
         self.revision(number=1)
         self.revision(number=2)

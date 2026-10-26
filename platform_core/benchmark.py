@@ -13,12 +13,18 @@ not answering - which graph may answer is still `graph_snapshot`'s decision,
 and it still refuses drafts.
 """
 
+import csv
+import io
+import json
 import logging
 import uuid
+import zipfile
+from pathlib import Path
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -56,6 +62,151 @@ class BenchmarkQuestionForm(forms.Form):
         if len(value) < 3:
             raise forms.ValidationError("Use at least three characters, so it matches one source.")
         return value
+
+
+#: A question file is a few kilobytes; this leaves room for a spreadsheet's
+#: zipped XML and no more.
+MAX_IMPORT_BYTES = 1024 * 1024
+#: What an .xlsx may unzip to. openpyxl reads its shared strings whole, so a
+#: small zip of repetitive XML must not become a large read in the web process.
+MAX_UNZIPPED_BYTES = 10 * 1024 * 1024
+#: Column headings a file may use, folded to lower case, and the field each fills.
+HEADINGS = {"question": "question", "expected": "expected", "should cite": "expected"}
+FORMATS = (".json", ".csv", ".xlsx")
+
+
+class BenchmarkImportForm(forms.Form):
+    file = forms.FileField(
+        label="Questions file",
+        help_text="JSON (a list of {\"question\": ..., \"expected\": ...}), CSV or Excel "
+        "(.xlsx) with Question and Should cite columns. Questions already here are skipped.",
+        widget=forms.ClearableFileInput(attrs={"accept": ",".join(FORMATS)}),
+    )
+
+
+def read_questions(name, data):
+    """The questions in an uploaded file, as (where, item) pairs.
+
+    `where` names the row or item, so a refusal can say which one. The same
+    columns in every format: question, and expected or "Should cite" - what the
+    page's own table calls it, so a sheet copied from it reads back.
+    """
+    if len(data) > MAX_IMPORT_BYTES:
+        raise ValidationError(f"Keep the file under {MAX_IMPORT_BYTES // 1024} KB.")
+    suffix = Path(name or "").suffix.lower()
+    if suffix == ".json":
+        try:
+            items = json.loads(data.decode("utf-8-sig"))
+        except (UnicodeDecodeError, ValueError) as error:
+            raise ValidationError(f"That is not JSON: {error}") from None
+        if not isinstance(items, list):
+            raise ValidationError("The file must hold a JSON list.")
+        return [(f"Item {number}", item) for number, item in enumerate(items, 1)]
+    if suffix == ".csv":
+        try:
+            text = data.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            raise ValidationError("Save the CSV as UTF-8.") from None
+        return tabulated(csv.reader(io.StringIO(text)))
+    if suffix == ".xlsx":
+        return tabulated(spreadsheet_rows(data))
+    raise ValidationError("Upload a .json, .csv or .xlsx file.")
+
+
+def spreadsheet_rows(data):
+    """The first sheet's rows as values, read without formulas or macros."""
+    import openpyxl
+
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            unzipped = sum(member.file_size for member in archive.infolist())
+    except zipfile.BadZipFile:
+        raise ValidationError("That is not an Excel .xlsx file.") from None
+    if unzipped > MAX_UNZIPPED_BYTES:
+        raise ValidationError("That workbook is too large for a list of questions.")
+    try:
+        workbook = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+    except Exception:
+        raise ValidationError("That Excel file could not be read.") from None
+    try:
+        yield from workbook.worksheets[0].iter_rows(values_only=True)
+    finally:
+        workbook.close()
+
+
+def tabulated(rows):
+    """Rows under a heading row, as (where, item); blank rows are skipped."""
+    columns = None
+    found = []
+    for number, row in enumerate(rows, 1):
+        cells = ["" if cell is None else str(cell).strip() for cell in row]
+        # A sheet's row ends at its last filled cell, so pad it to the heading's width.
+        if columns:
+            cells += [""] * (max(columns) + 1 - len(cells))
+        if not any(cells):
+            continue
+        if columns is None:
+            columns = {
+                index: HEADINGS[cell.casefold()]
+                for index, cell in enumerate(cells)
+                if cell.casefold() in HEADINGS
+            }
+            if sorted(set(columns.values())) != ["expected", "question"]:
+                raise ValidationError(
+                    "The first row must name the columns: Question and Should cite "
+                    "(or expected)."
+                )
+            continue
+        found.append((f"Row {number}", {field: cells[index] for index, field in columns.items()}))
+        # More than an application may hold is refused anyway; stop reading.
+        if len(found) > MAX_QUESTIONS:
+            break
+    if columns is None:
+        raise ValidationError("The file is empty.")
+    return found
+
+
+def load_questions(app, rows, user=None):
+    """Add questions from (where, item) pairs, all or none.
+
+    A question already held - the same words - is skipped, so a file can be
+    loaded again after it grows. Returns (added, skipped).
+    """
+    existing = set(
+        BenchmarkQuestion.objects.filter(application=app).values_list("question", flat=True)
+    )
+    held = len(existing)
+    labels = {
+        name: str(field.label or name).capitalize()
+        for name, field in BenchmarkQuestionForm.base_fields.items()
+    }
+    new, skipped, errors = [], 0, []
+    for where, item in rows:
+        form = BenchmarkQuestionForm(item if isinstance(item, dict) else {})
+        if not form.is_valid():
+            errors.extend(
+                f"{where}: {labels.get(field, field)} - {message}"
+                for field, messages_ in form.errors.items()
+                for message in messages_
+            )
+            continue
+        if form.cleaned_data["question"] in existing:
+            skipped += 1
+            continue
+        existing.add(form.cleaned_data["question"])
+        new.append(form.cleaned_data)
+    if errors:
+        more = len(errors) - 5
+        raise ValidationError(errors[:5] + ([f"... and {more} more."] if more > 0 else []))
+    if held + len(new) > MAX_QUESTIONS:
+        raise ValidationError(
+            f"An application can hold {MAX_QUESTIONS} questions. This one holds {held}, "
+            f"and the file adds {len(new)}."
+        )
+    BenchmarkQuestion.objects.bulk_create(
+        BenchmarkQuestion(application=app, created_by=user, **question) for question in new
+    )
+    return len(new), skipped
 
 
 def matches(entry, expected):
@@ -230,11 +381,55 @@ def benchmark_view(request, pk):
 
     app, grant = access(request.user, pk, "knowledge")
     form = BenchmarkQuestionForm()
+    import_form = BenchmarkImportForm()
+    if request.method == "GET" and request.GET.get("download") == "json":
+        # The import's own format, so one instance's questions load into another.
+        questions = BenchmarkQuestion.objects.filter(application=app).order_by("created_at")
+        response = HttpResponse(
+            json.dumps(
+                [{"question": item.question, "expected": item.expected} for item in questions],
+                indent=2,
+                ensure_ascii=False,
+            ),
+            content_type="application/json; charset=utf-8",
+        )
+        response["Content-Disposition"] = 'attachment; filename="benchmark-questions.json"'
+        return response
     if request.method == "POST":
         access(request.user, pk, "knowledge", write=True)
         organization = app.product.portfolio.organization
         action = request.POST.get("action")
-        if action == "add":
+        if action == "import":
+            import_form = BenchmarkImportForm(request.POST, request.FILES)
+            if import_form.is_valid():
+                upload = import_form.cleaned_data["file"]
+                try:
+                    if upload.size > MAX_IMPORT_BYTES:
+                        raise ValidationError(
+                            f"Keep the file under {MAX_IMPORT_BYTES // 1024} KB."
+                        )
+                    with transaction.atomic():
+                        added, skipped = load_questions(
+                            app, read_questions(upload.name, upload.read()), request.user
+                        )
+                except ValidationError as error:
+                    import_form.add_error("file", error)
+                else:
+                    audit(
+                        request.user,
+                        "benchmark.questions_imported",
+                        app.pk,
+                        organization,
+                        {"added": added, "skipped": skipped},
+                    )
+                    messages.success(
+                        request,
+                        f"Added {added} question(s)"
+                        + (f"; {skipped} already here were skipped" if skipped else "")
+                        + ". Run the benchmark to score them.",
+                    )
+                    return redirect("graph-benchmark", pk=pk)
+        elif action == "add":
             form = BenchmarkQuestionForm(request.POST)
             if BenchmarkQuestion.objects.filter(application=app).count() >= MAX_QUESTIONS:
                 form.add_error(None, f"An application can hold {MAX_QUESTIONS} questions.")
@@ -301,6 +496,7 @@ def benchmark_view(request, pk):
             "knowledge_view": "benchmark",
             "can_edit": grant.role in {"owner", "contributor"},
             "form": form,
+            "import_form": import_form,
             "questions": questions,
             "rows": rows(questions, selected),
             "max_questions": MAX_QUESTIONS,

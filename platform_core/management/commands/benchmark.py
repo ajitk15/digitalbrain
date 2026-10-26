@@ -1,18 +1,20 @@
 """Load benchmark questions and score a graph version, from the console.
 
 The operator's counterpart of Knowledge -> Benchmark: the same questions, the
-same scoring, the same stored run. `--load` adds questions from a JSON list of
-{"question": ..., "expected": ...} objects and skips any already present, so a
-question file can be loaded again after it grows.
+same scoring, the same stored run. `--load` adds questions from the file the
+page imports - a JSON list of {"question": ..., "expected": ...} objects, or a
+CSV or .xlsx with those columns - and skips any already present, so a question
+file can be loaded again after it grows.
 """
 
-import json
 from pathlib import Path
 
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
-from platform_core.benchmark import MAX_QUESTIONS, TOP, BenchmarkQuestionForm, run
-from platform_core.models import Application, BenchmarkQuestion, GraphRevision
+from platform_core.benchmark import TOP, load_questions, read_questions, run
+from platform_core.models import Application, GraphRevision
 
 
 class Command(BaseCommand):
@@ -20,7 +22,9 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("application", help="Application id")
-        parser.add_argument("--load", metavar="FILE", help="JSON list of question/expected objects")
+        parser.add_argument(
+            "--load", metavar="FILE", help="JSON, CSV or .xlsx of question/expected"
+        )
         parser.add_argument(
             "--graph-version", type=int, help="Graph version number (default: latest)"
         )
@@ -69,24 +73,12 @@ class Command(BaseCommand):
 
     def load(self, app, path):
         try:
-            items = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as error:
+            data = path.read_bytes()
+        except OSError as error:
             raise CommandError(f"Could not read {path}: {error}") from None
-        if not isinstance(items, list):
-            raise CommandError("The file must hold a JSON list.")
-        existing = set(
-            BenchmarkQuestion.objects.filter(application=app).values_list("question", flat=True)
-        )
-        added = 0
-        for item in items:
-            form = BenchmarkQuestionForm(item if isinstance(item, dict) else {})
-            if not form.is_valid():
-                raise CommandError(f"Invalid question {item!r}: {form.errors.as_text()}")
-            if form.cleaned_data["question"] in existing:
-                continue
-            if len(existing) >= MAX_QUESTIONS:
-                raise CommandError(f"An application can hold {MAX_QUESTIONS} questions.")
-            BenchmarkQuestion.objects.create(application=app, **form.cleaned_data)
-            existing.add(form.cleaned_data["question"])
-            added += 1
+        try:
+            with transaction.atomic():
+                added, _ = load_questions(app, read_questions(path.name, data))
+        except ValidationError as error:
+            raise CommandError(" ".join(error.messages)) from None
         self.stdout.write(f"Loaded {added} new question(s).")
