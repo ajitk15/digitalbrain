@@ -248,6 +248,7 @@ urlpatterns = [
         name="application-identity",
     ),
     path("applications/<uuid:pk>/logo.png", views.application_logo, name="application-logo"),
+    path("applications/<uuid:pk>/domain/", graphs.domain_settings, name="application-domain"),
     path(
         "applications/<uuid:pk>/onboarding/connectors/",
         views.onboarding_connectors,

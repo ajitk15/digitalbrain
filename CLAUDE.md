@@ -1079,6 +1079,22 @@ long-typo-equal, word by word, numbers exact): whole-string similarity merged
 `carepath-api` with `carepath-api-green`, which is CARE-444's mistake. Each edge keeps its
 own source, digest and quote. Untyped entities in older versions are left alone.
 
+**An application may follow an industry domain** (`Application.ontology`, `ontology.PACKS`:
+the core registry, US insurance, healthcare). A pack adds its own types and relations to the
+core ones and never replaces them; it writes the prompt, judges every proposal, is part of
+the fingerprint and keys the extraction cache (`graph_ai.rubric`), so answers paid for
+under one pack are kept but never carried into another. It is chosen on the create form
+and changed on **Settings → Industry domain** (`graphs.domain_settings`, owner-only; the
+Generate popup only links there, and its old `action=ontology` POST still works). Both go
+through `graphs.change_ontology`: refused while a run is in flight, audited
+`graph.ontology_changed`, then a refresh, which regenerates the graph. **The page says what
+a change will do before anything is saved** (`graphs.domain_impacts`, no model): passages
+to read again under each domain and how many are already cached there (free), runs, the
+most it can cost (the gateway's `estimate` at the entered rates), who pays or
+`automatic_ai`'s reason why nothing will be called, and what keeps answering. A change
+takes a ticked box. The release report adds a note, never a check, when a version's AI
+follows a different pack from the published one's (`release._domains`).
+
 **A source may be the subject of what it says** (`graph_ai.own_names`, `SELF_TYPES`). A
 ticket's body never repeats its own key, so under the exact-quote rule "CARE-401 violates
 BR-05" could never verify: the drift check found 11 of 16 proposals were exactly that,
@@ -1258,7 +1274,15 @@ written keep what they hold. The page says both.
 the ontology version, before the next call starts. So nothing paid for is lost when the
 version is not saved (a source changed mid-run, a later call failed, the budget ran out),
 a superseded record with unchanged text is answered for free, and only windows with no
-cached answer go to the model, up to `MAX_EXTRACTION_SOURCES` calls a run. A source
+cached answer go to the model, up to `MAX_EXTRACTION_SOURCES` calls a run. **A run that
+stops at that limit is continued** (`graphs.continue_extraction`): once its version is
+saved, if it paid for at least one answer and stopped at the limit (`quality["capped"]`,
+`quality["unread_windows"]`), the next automatic run is armed, decided by `automatic_ai`
+like any other - the owner's switch, the payer's grant, the credential, the budget. It
+used to stop after 25 windows, because the saved version matched the fingerprint and
+nothing asked again: a large library, or any library after its industry domain changed,
+stayed partly read. It ends because every answer is cached and a run that pays for none
+arms nothing; each step is a draft. A source
 longer than `MAX_SOURCE_CHARACTERS` is read in `windows`, cut at line ends and before a
 heading, at most `MAX_WINDOWS`; text past them is counted on the version, never silently
 dropped. An answer is kept whole even past `MAX_RELATIONSHIPS` (it stops new calls, not

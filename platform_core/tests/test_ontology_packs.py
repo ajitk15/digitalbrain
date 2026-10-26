@@ -116,6 +116,24 @@ class RegistryTests(SimpleTestCase):
         self.assertEqual(masking.TOKEN_LETTERS, 8)
 
 
+class ReleaseNoteTests(SimpleTestCase):
+    def test_the_release_check_says_when_the_domain_changed(self):
+        from types import SimpleNamespace
+
+        from platform_core.release import _domains
+
+        core = SimpleNamespace(number=4, model="m", quality={})
+        health = SimpleNamespace(number=5, model="m", quality={"ontology_pack": "healthcare"})
+        self.assertIn(
+            "follow Healthcare and life sciences and version 4's follow Software delivery",
+            _domains(health, core),
+        )
+        self.assertEqual(_domains(health, health), "")
+        # A version with no AI follows no ontology, so there is nothing to say.
+        self.assertEqual(_domains(SimpleNamespace(number=6, model="", quality={}), health), "")
+        self.assertEqual(_domains(health, None), "")
+
+
 class JudgeTests(SimpleTestCase):
     def test_a_negated_quote_supports_none_of_a_packs_positive_relations(self):
         text = "Coverage A covers windstorm. Coverage A does not cover flood."
@@ -328,10 +346,10 @@ class ApplicationPackTests(TestCase):
             reverse("graph-generate", args=[self.app.pk]), {"action": "ontology", "ontology": key}
         )
 
-    def test_an_owner_changes_the_domain_and_it_is_audited_and_rebuilt(self):
+    def test_the_generate_popup_links_to_settings_and_its_old_form_still_works(self):
         page = self.client.get(reverse("graph-generate", args=[self.app.pk])).content.decode()
-        self.assertIn('id="industry-domain"', page)
-        self.assertRegex(page, r'value=""[^>]*checked')
+        self.assertNotIn('id="industry-domain"', page)
+        self.assertIn(reverse("application-domain", args=[self.app.pk]), page)
         response = self.post_domain("healthcare")
         self.assertRedirects(response, reverse("graph-generate", args=[self.app.pk]))
         self.app.refresh_from_db()
@@ -355,9 +373,15 @@ class ApplicationPackTests(TestCase):
             self.contributor, backend="django.contrib.auth.backends.ModelBackend"
         )
         page = self.client.get(reverse("graph-generate", args=[self.app.pk])).content.decode()
-        self.assertNotIn('id="industry-domain"', page)
+        self.assertNotIn(reverse("application-domain", args=[self.app.pk]), page)
         self.assertIn('id="graph-ontology"', page)
         self.assertEqual(self.post_domain("us_insurance").status_code, 403)
+        url = reverse("application-domain", args=[self.app.pk])
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.assertEqual(
+            self.client.post(url, {"ontology": "healthcare", "understood": "on"}).status_code,
+            403,
+        )
         self.app.refresh_from_db()
         self.assertEqual(self.app.ontology, "")
 
@@ -366,6 +390,102 @@ class ApplicationPackTests(TestCase):
 
         KnowledgeGraph.objects.create(application=self.app, status="queued")
         self.post_domain("us_insurance")
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.ontology, "")
+
+    def domain_page(self):
+        return self.client.get(reverse("application-domain", args=[self.app.pk])).content.decode()
+
+    def post_settings(self, key, understood=True):
+        values = {"ontology": key}
+        if understood:
+            values["understood"] = "on"
+        return self.client.post(reverse("application-domain", args=[self.app.pk]), values)
+
+    def test_settings_lists_the_domain_for_owners_only(self):
+        url = reverse("application-domain", args=[self.app.pk])
+        self.assertIn(f'href="{url}"', self.domain_page())
+        self.client.force_login(
+            self.contributor, backend="django.contrib.auth.backends.ModelBackend"
+        )
+        page = self.client.get(reverse("api-tokens", args=[self.app.pk])).content.decode()
+        self.assertNotIn(url, page)
+
+    def test_the_page_says_what_a_change_does_before_it_happens(self):
+        from decimal import Decimal
+
+        from platform_core.models import AIConfiguration
+
+        add_knowledge(self.owner, self.app.pk, "Ward", "Discharge needs a pharmacist review.")
+        AIConfiguration.objects.create(
+            application=self.app,
+            purpose="graph_generation",
+            provider="claude",
+            model="claude-sonnet-5",
+            input_rate=Decimal("3"),
+            output_rate=Decimal("15"),
+            configured_by=self.owner,
+        )
+        page = self.domain_page()
+        self.assertIn('id="domain-impact"', page)
+        self.assertIn("Changing the domain regenerates the graph.", page)
+        self.assertIn("1 passage in 1 source", page)
+        self.assertIn("Software delivery and operations &middot; current", page)
+        self.assertIn("1 passage to read &middot; 1 run &middot; at most $0.", page)
+        self.assertIn("with claude-sonnet-5 at the prices entered", page)
+        # Healthcare refuses unmasked patients, and masking is off here.
+        self.assertIn("Masking is off here", page)
+        self.assertIn('name="understood"', page)
+
+    def test_passages_already_read_under_a_domain_cost_nothing(self):
+        entry = add_knowledge(self.owner, self.app.pk, "Ward", "Discharge needs a review.")
+        DocumentAIResult.objects.create(
+            application=self.app,
+            task=graph_ai.EXTRACTION_TASK,
+            digest=graph_ai.window_key(entry.title, entry.content),
+            rubric=rubric(HEALTHCARE),
+            result={"relationships": []},
+        )
+        page = self.domain_page()
+        self.assertIn("All 1 passages are already read under it: no model calls.", page)
+        self.assertIn("1 passage to read", page)
+
+    def test_a_change_needs_the_box_ticked(self):
+        response = self.post_settings("healthcare", understood=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Tick the box to confirm", response.content.decode())
+        self.assertRegex(response.content.decode(), r'value="healthcare"[^>]*checked')
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.ontology, "")
+        self.assertFalse(AuditEvent.objects.filter(action="graph.ontology_changed").exists())
+
+    def test_a_change_from_settings_is_audited_and_regenerates(self):
+        response = self.post_settings("healthcare")
+        self.assertRedirects(response, reverse("application-domain", args=[self.app.pk]))
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.ontology, "healthcare")
+        event = AuditEvent.objects.get(action="graph.ontology_changed")
+        self.assertEqual(event.details, {"from": "core", "to": "healthcare"})
+        self.assertTrue(
+            Job.objects.filter(kind="graph_refresh", application_id=self.app.pk).exists()
+        )
+        self.assertIn("Healthcare and life sciences &middot; current", self.domain_page())
+
+    def test_an_unknown_domain_from_settings_is_refused(self):
+        response = self.post_settings("mining")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Choose one of the listed industry domains.", response.content.decode())
+        self.app.refresh_from_db()
+        self.assertEqual(self.app.ontology, "")
+
+    def test_settings_does_not_change_the_domain_under_a_running_generation(self):
+        from platform_core.models import KnowledgeGraph
+
+        KnowledgeGraph.objects.create(application=self.app, status="queued")
+        page = self.domain_page()
+        self.assertIn("A graph generation is running.", page)
+        self.assertIn('<fieldset class="purpose-cards" disabled>', page)
+        self.post_settings("healthcare")
         self.app.refresh_from_db()
         self.assertEqual(self.app.ontology, "")
 

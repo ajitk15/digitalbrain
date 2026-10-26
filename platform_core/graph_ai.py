@@ -434,7 +434,7 @@ def enrich_graph(app_id, config, entries, data, quality):
     from .models import DocumentAIResult
 
     calls = fresh = 0
-    asked, stopped, unusable = set(), None, []
+    asked, stopped, unusable, capped = set(), None, [], False
     unanswered = [
         (entry, key, text)
         for entry, items, _ in planned
@@ -450,6 +450,9 @@ def enrich_graph(app_id, config, entries, data, quality):
             )
             continue
         if calls + len(unusable) >= MAX_EXTRACTION_SOURCES or fresh >= MAX_RELATIONSHIPS:
+            # The run's own limit, not a refusal: `graphs.continue_extraction`
+            # arms the next run for what is left.
+            capped = True
             break
         citation = {
             "id": str(entry.pk),
@@ -610,6 +613,10 @@ def enrich_graph(app_id, config, entries, data, quality):
     # Which sources this version has a complete extraction for.
     data["ai_sources"] = complete
     unread = sum(left for _, _, left in planned)
+    # Windows, deduplicated as the cache is: what is read under this ontology so far.
+    windowed = {
+        key for entry, items, _ in planned if str(entry.pk) not in legacy for key, _ in items
+    }
     if config is not None:
         provider, model = config.provider, config.model
     elif used:
@@ -637,6 +644,9 @@ def enrich_graph(app_id, config, entries, data, quality):
             "reused_relationships": reused_accepted
             + sum(1 for edge in legacy_edges if edge.get("inferred")),
             "pending_sources": len(entries) - len(complete),
+            "windows": len(windowed),
+            "unread_windows": sum(1 for key in windowed if key not in cached),
+            "capped": capped,
             "unread_characters": unread,
             "carried_forward": config is None,
             "method": f"Markdown structure + {provider} / {model}"
@@ -657,6 +667,17 @@ def enrich_graph(app_id, config, entries, data, quality):
         quality["warnings"].append(
             "No model was called for this version: its AI relationships are the ones already "
             "extracted from text that has not changed."
+        )
+    if quality["unread_windows"]:
+        read = quality["windows"] - quality["unread_windows"]
+        quality["warnings"].append(
+            f"{read} of {quality['windows']} passages are read under the {domain.label} "
+            "ontology so far"
+            + (
+                "; this run stopped at its call limit, so the next automatic run continues."
+                if capped
+                else "."
+            )
         )
     if stopped:
         quality["warnings"].append(f"Extraction stopped early. {stopped}")

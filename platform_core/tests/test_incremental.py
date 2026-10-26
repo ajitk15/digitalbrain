@@ -377,6 +377,54 @@ class AutoRefreshTests(TestCase):
         # Nothing changed since: the worker is quiet and spends nothing.
         self.assertEqual(self.settle().call_count, 0)
 
+    def test_a_run_stopped_at_its_call_limit_is_continued_until_everything_is_read(self):
+        """One run makes at most `MAX_EXTRACTION_SOURCES` calls. A library larger
+        than that was read that far and left, because the version it saved
+        matched the fingerprint and nothing asked again."""
+        with patch.object(graph_ai, "MAX_EXTRACTION_SOURCES", 1):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(self.settle().call_count, 1)
+            first = self.latest()
+            self.assertEqual((first.quality["capped"], first.quality["unread_windows"]), (True, 1))
+            self.assertTrue(
+                any("1 of 2 passages are read" in note for note in first.quality["warnings"])
+            )
+            graph = KnowledgeGraph.objects.get(application=self.app)
+            self.assertEqual(
+                (graph.status, graph.stage), ("queued", "Queued (reading the passages left)")
+            )
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(self.settle().call_count, 1)
+            second = self.latest()
+            self.assertEqual(
+                (second.quality["capped"], second.quality["unread_windows"]), (False, 0)
+            )
+            self.assertEqual(KnowledgeGraph.objects.get(application=self.app).status, "ready")
+            # Everything is read: nothing is armed and nothing more is paid for.
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(self.settle().call_count, 0)
+        self.assertEqual(
+            AuditEvent.objects.filter(
+                action="graph.generation_requested", details__automatic=True
+            ).count(),
+            2,
+        )
+
+    def test_switched_off_a_capped_run_is_not_continued(self):
+        self.switch(enabled=False)
+        KnowledgeGraph.objects.filter(application=self.app).update(
+            status="queued",
+            fingerprint="",
+            requested_provider="claude",
+            requested_model="claude-sonnet-5",
+            requested_by=self.owner,
+        )
+        with patch.object(graph_ai, "MAX_EXTRACTION_SOURCES", 1):
+            with self.captureOnCommitCallbacks(execute=True):
+                self.assertEqual(self.settle().call_count, 1)
+        self.assertTrue(self.latest().quality["capped"])
+        self.assertEqual(KnowledgeGraph.objects.get(application=self.app).status, "ready")
+
     def test_a_reset_graph_waiting_idle_builds_its_next_version_with_ai(self):
         KnowledgeGraph.objects.create(application=self.app, status="idle", fingerprint="old")
         self.assertGreaterEqual(self.settle().call_count, 1)

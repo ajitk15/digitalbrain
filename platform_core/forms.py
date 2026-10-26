@@ -113,7 +113,7 @@ class ApplicationForm(ResourceForm):
         help_text=(
             "What AI graph extraction looks for in your sources. It adds the domain's types "
             "and relations to the software delivery ones; an owner can change it later "
-            "under Generate graph."
+            "in Settings → Industry domain."
         ),
     )
     # Ticked by default. Approval can only be handed on by someone who holds it
