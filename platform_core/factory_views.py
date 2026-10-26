@@ -79,6 +79,7 @@ def plans(request, pk):
     runs_shown = list(
         FactoryRun.objects.filter(application=app).prefetch_related("phases", "events")[:5]
     )
+    tickets = ticket_choices(app, viewer=request.user)
     return render(
         request,
         "plans.html",
@@ -102,7 +103,18 @@ def plans(request, pk):
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
-            "tickets": ticket_choices(app, viewer=request.user),
+            "tickets": tickets,
+            # With a graph and no ticket the form used to vanish and leave nothing
+            # in its place, which read as a broken page rather than a missing import.
+            "no_tickets": dict(
+                zip(
+                    ("title", "detail", "url", "button"),
+                    tickets_unblock(app, grant, connectors, request.user),
+                    strict=True,
+                )
+            )
+            if not tickets
+            else None,
             # Tickets → "Plan a change" opens here with its ticket chosen. Only
             # a choice already in the list can be selected, so the parameter
             # cannot offer a ticket the list would not.
@@ -157,6 +169,73 @@ def graph_unblock(app, grant):
         reverse("source-add", args=[app.pk]),
         "Add sources" if can_act else "",
         True,
+    )
+
+
+def tickets_unblock(app, grant, connectors, viewer):
+    """Why no imported ticket is offered to this person, as one step.
+
+    `ticket_choices` drops what is retired, restricted or hidden by the source's
+    own permissions, and a connector that never imported, or failed, imports
+    nothing - five different fixes behind one empty list. This says which,
+    from records already kept. Returns (headline, detail, url, button); the
+    Connectors screen is owner-only, so only an owner gets its button.
+    """
+    imported = KnowledgeEntry.objects.filter(application=app, active=True).exclude(source="")
+    open_connectors = "Open Connectors" if grant.role == "owner" else ""
+    connectors_url = reverse("connectors", args=[app.pk])
+    if imported.exists():
+        answerable = imported.answerable()
+        if not answerable.exists():
+            return (
+                "Every imported ticket is restricted",
+                f"{imported.count()} imported record(s) are marked restricted, and a "
+                "restricted source is never handed to AI. Lift the restriction on the "
+                "tickets a run should read.",
+                reverse("tickets", args=[app.pk]),
+                "Open Tickets" if grant.role == "owner" else "",
+            )
+        return (
+            "Imported tickets are hidden from you by Jira's permissions",
+            f"{answerable.count()} ticket(s) were imported with Enforce source permissions "
+            "on, and none lists your account among the people Jira lets browse it. Your "
+            "email address here must match your Jira account's, or an operator links the "
+            "two with manage.py link_identity. Import again afterwards.",
+            connectors_url,
+            open_connectors,
+        )
+    connector = connectors.order_by(
+        models.F("last_attempt_at").desc(nulls_last=True), "name"
+    ).first()
+    if connector is None:
+        return (
+            "Connect Jira or ServiceNow",
+            "Code Factory analyses tickets imported from a connector. Add one and import, "
+            "or enter a ticket by hand with New ticket.",
+            connectors_url,
+            "Add a connector" if grant.role == "owner" else "",
+        )
+    if connector.last_status == "failed":
+        return (
+            f"The last import from {connector.name} failed",
+            connector.last_error or "It did not say why. Try Import again on Connectors.",
+            connectors_url,
+            open_connectors,
+        )
+    if connector.last_status == "empty":
+        return (
+            f"{connector.name} found no tickets",
+            connector.last_error
+            or "Its last import returned nothing. Check its filter (the JQL for Jira).",
+            connectors_url,
+            open_connectors,
+        )
+    return (
+        f"Import tickets from {connector.name}",
+        "The connector is saved but has not imported anything yet. Press Import on "
+        "Connectors, or give it a schedule.",
+        connectors_url,
+        open_connectors,
     )
 
 

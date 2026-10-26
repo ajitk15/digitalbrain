@@ -3966,6 +3966,9 @@
   .bench-fields { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) auto; gap: var(--s-3); align-items: end; }
   .bench-fields p { margin: 0; }
   @media (max-width: 700px) { .bench-fields { grid-template-columns: 1fr; } }
+  .bench-import { margin-top: var(--s-5); padding-top: var(--s-4); border-top: 1px solid var(--c-line); }
+  .bench-import h4 { margin: 0 0 var(--s-2); font-size: var(--t-13); }
+  .bench-import p:last-child { display: flex; align-items: center; gap: var(--s-4); margin: 0; }
 }
 
 /* Quality dashboard: a reading order of priorities, signals, then evidence.

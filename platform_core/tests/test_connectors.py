@@ -968,6 +968,55 @@ class ConnectorManagementTests(TestCase):
         page = self.client.get(reverse("plans", args=[self.app.pk]))
         self.assertContains(page, "Any connector")
 
+    def test_no_ticket_to_analyse_says_why_instead_of_an_empty_page(self):
+        """With a graph and no ticket the form vanished and left nothing behind."""
+        from django.utils import timezone
+
+        self.publish_a_graph()
+        plans = reverse("plans", args=[self.app.pk])
+        self.assertContains(self.client.get(plans), "Connect Jira or ServiceNow")
+        connector = self.make("jira", "Ops board")
+        self.assertContains(self.client.get(plans), "Import tickets from Ops board")
+        Connector.objects.filter(pk=connector.pk).update(
+            last_status="failed", last_error="Jira refused the token.",
+            last_attempt_at=timezone.now(),
+        )
+        page = self.client.get(plans)
+        self.assertContains(page, "The last import from Ops board failed")
+        self.assertContains(page, "Jira refused the token.")
+        self.assertContains(page, f'href="{self.url}"')
+        Connector.objects.filter(pk=connector.pk).update(last_status="empty", last_error="")
+        self.assertContains(self.client.get(plans), "Ops board found no tickets")
+
+        add_knowledge(
+            self.owner, self.app.pk, "OPS-1", "A ticket",
+            source="https://team.atlassian.net/browse/OPS-1",
+        )
+        entries = KnowledgeEntry.objects.filter(application=self.app, title="OPS-1")
+        entries.update(access_principals=[])
+        self.assertContains(self.client.get(plans), "hidden from you by Jira")
+        entries.update(sensitivity="restricted")
+        self.assertContains(self.client.get(plans), "Every imported ticket is restricted")
+        entries.update(sensitivity="standard", access_principals=None)
+        page = self.client.get(plans)
+        self.assertContains(page, 'id="run-ticket"')
+        self.assertNotContains(page, "Before an imported ticket can be analysed")
+
+    def test_only_an_owner_is_sent_to_the_connectors_screen(self):
+        from platform_core.models import ApplicationGrant, OrganizationMember, User
+
+        self.publish_a_graph()
+        contributor = User.objects.create_user("contributor")
+        OrganizationMember.objects.create(
+            organization=self.app.product.portfolio.organization, user=contributor
+        )
+        ApplicationGrant.objects.create(application=self.app, user=contributor, role="contributor")
+        self.client.force_login(contributor, backend="django.contrib.auth.backends.ModelBackend")
+        page = self.client.get(reverse("plans", args=[self.app.pk]))
+        self.assertContains(page, "Connect Jira or ServiceNow")
+        self.assertContains(page, "An owner can do this.")
+        self.assertNotContains(page, f'href="{self.url}"')
+
     def test_one_definition_of_a_connector_url_prefix(self):
         """`code_factory.connector_prefix` and `Kind.namespace` had drifted: the
         first returned a Jira site's base URL where records carry /browse/."""
