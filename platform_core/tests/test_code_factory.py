@@ -601,13 +601,13 @@ class PublishedGraphRequiredTests(TestCase):
         self.unpublish()
         with self.assertRaises(ValidationError) as refusal:
             start_run(self.owner, self.app.pk, self.ticket)
-        self.assertIn("No knowledge graph is published", " ".join(refusal.exception.messages))
+        self.assertIn("No knowledge is published", " ".join(refusal.exception.messages))
         self.assertEqual(FactoryRun.objects.count(), 0)
 
     def test_the_screen_says_why_rather_than_offering_a_button_that_fails(self):
         self.unpublish()
         response = self.client.get(reverse("plans", args=[self.app.pk]))
-        self.assertContains(response, "No knowledge graph is published")
+        self.assertContains(response, "No knowledge is published")
         self.assertNotContains(response, 'value="analyse"')
 
     def test_a_post_that_gets_past_the_screen_is_still_refused(self):
@@ -618,7 +618,7 @@ class PublishedGraphRequiredTests(TestCase):
             {"action": "analyse", "ticket": str(self.ticket.pk)},
             follow=True,
         )
-        self.assertContains(response, "No knowledge graph is published")
+        self.assertContains(response, "No knowledge is published")
         self.assertEqual(FactoryRun.objects.count(), 0)
 
     def test_a_revision_withdrawn_while_the_run_waits_fails_it(self):
@@ -629,11 +629,11 @@ class PublishedGraphRequiredTests(TestCase):
             execute(run)
         run.refresh_from_db()
         self.assertEqual(run.status, "failed")
-        self.assertIn("No knowledge graph is published", run.error)
+        self.assertIn("No knowledge is published", run.error)
         # Refused before a single paid call, which is the point of checking here.
         model.assert_not_called()
         problems = run.events.filter(level="problem")
-        self.assertTrue(any("No knowledge graph" in event.message for event in problems))
+        self.assertTrue(any("No knowledge is published" in event.message for event in problems))
 
     def test_a_graph_that_matches_nothing_is_an_answer_not_a_failure(self):
         """Published but silent is a real result; absent is not."""
@@ -1057,7 +1057,7 @@ class NarrationTests(TestCase):
         run = self.run_pipeline()
         joined = " ".join(self.messages(run))
         self.assertIn("Starting the run", joined)
-        self.assertIn("knowledge graph", joined)
+        self.assertIn("published knowledge", joined)
         self.assertIn("Gap analysis found 2 item(s)", joined)
         self.assertIn("Change design", joined)
         sequences = [event.sequence for event in run.events.all()]
@@ -1481,7 +1481,7 @@ class RefreshAfterTests(TestCase):
         run = self.delivered()
         refresh_after(self.owner, self.app.pk, run.pk, ["knowledge"])
         said = " ".join(event.message for event in run.events.all())
-        self.assertIn("knowledge graph", said)
+        self.assertIn("published knowledge", said)
         self.assertIn(self.owner.get_username(), said)
 
     def test_a_viewer_cannot_answer_it(self):

@@ -7,10 +7,10 @@ window.DOCS_INDEX = [
   { q: "What problem does it solve?", a: "Knowledge scattered across documents, boards and repositories, and AI answers nobody can verify.", u: "guide/what-is.html#problem", for: "everyone", k: "why value" },
   { q: "What can it do?", a: "Answer questions with citations, build a knowledge graph, plan and deliver code changes with review, and triage incidents from runbooks.", u: "guide/what-is.html#four-jobs", for: "everyone", k: "features capabilities jobs" },
   { q: "How is it organized: organizations, portfolios, products, applications?", a: "Organization → portfolio → product → application. Access is granted per application.", u: "guide/what-is.html#organized", for: "everyone", k: "hierarchy structure tree tenant" },
-  { q: "What does choosing Engineering, Operations or Both do?", a: "It switches features on: Code Graph and Code Factory for Engineering, ServiceOps for Operations. Changing later is ticking features.", u: "guide/what-is.html#purpose", for: "everyone", k: "purpose create application features" },
+  { q: "What does choosing Engineering, Operations or Both do?", a: "It switches features on: Code and Code Factory for Engineering, ServiceOps for Operations. Changing later is ticking features.", u: "guide/what-is.html#purpose", for: "everyone", k: "purpose create application features" },
   { q: "What is the knowledge cycle?", a: "Generate → draft → check → publish → use → learn. Only a published version answers.", u: "guide/what-is.html#cycle", for: "everyone", k: "lifecycle versions draft publish" },
   { q: "What is AI never allowed to do on its own?", a: "Publish a graph, approve a plan, merge a change, cite something it cannot quote exactly, or read a restricted source.", u: "guide/what-is.html#guardrails", for: "everyone", k: "safety guardrails limits human review" },
-  { q: "Every feature, explained", a: "Knowledge, graph and versions, Learned, Rules, Chat, Code Graph, Code Factory, ServiceOps, Automations, Connectors, AI settings, API.", u: "guide/features.html", for: "everyone", k: "feature list" },
+  { q: "Every feature, explained", a: "Knowledge, graph and versions, Learned, Rules, Chat, Code, Code Factory, ServiceOps, Automations, Connectors, AI settings, API.", u: "guide/features.html", for: "everyone", k: "feature list" },
   { q: "Every screen, explained", a: "A tour of each screen, from sign-in to Administration.", u: "guide/screens.html", for: "everyone", k: "ui pages tour navigation" },
 
   // ------------------------------------------------------------------ answers
@@ -40,7 +40,7 @@ window.DOCS_INDEX = [
   { q: "Can personal data be masked?", a: "Yes, in AI settings → Personal data: chosen kinds are replaced with stable placeholders before the text is stored.", u: "guide/ai-and-cost.html#data", for: "everyone", k: "masking phi pii mrn" },
 
   // ------------------------------------------------------------------ code
-  { q: "What is Code Graph?", a: "An index of a repository - files, symbols, routes, calls - read by cloning or from a server folder, with code review and reverse-engineered documentation.", u: "guide/features.html#code-graph", for: "everyone", k: "repository code index" },
+  { q: "What is Code (Code Repos)?", a: "An index of a repository - files, symbols, routes, calls - read by cloning or from a server folder, with code review and reverse-engineered documentation.", u: "guide/features.html#code-graph", for: "everyone", k: "repository code index" },
   { q: "What is Code Factory?", a: "From a ticket to a reviewed plan to a pull request (or a change written into a server folder), each step cited and approved by a person.", u: "guide/features.html#code-factory", for: "everyone", k: "code changes pull request agent" },
   { q: "Will Code Factory change our code without asking?", a: "No. A plan must be approved by someone with approval rights, and delivery is a pull request or a folder write an approver presses.", u: "guide/faq.html#engineering-faq", for: "everyone", k: "approval review" },
   { q: "Why was my Code Factory run refused?", a: "Most often there is no published graph: a run without one would produce findings nobody could check.", u: "guide/faq.html#engineering-faq", for: "everyone", k: "no graph refused" },

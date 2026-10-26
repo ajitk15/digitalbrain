@@ -320,7 +320,7 @@ def read_change(review):
             if unread:
                 warnings.append(
                     f"{unread} changed file{'s' if unread != 1 else ''} are not source code "
-                    "Code Graph reads (configuration, documents, other languages) and were "
+                    "code indexing reads (configuration, documents, other languages) and were "
                     "not reviewed."
                 )
         if len(changes) > MAX_CHANGED:

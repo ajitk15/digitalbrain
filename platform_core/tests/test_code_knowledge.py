@@ -5,7 +5,13 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from platform_core.code_factory_evidence import code_citations, relevant_code_files
+from platform_core.code_factory_evidence import (
+    CODE_EXCERPT_LINES,
+    code_citations,
+    code_excerpt,
+    code_terms,
+    relevant_code_files,
+)
 from platform_core.code_knowledge import links
 from platform_core.factory_views import code_source_holds
 from platform_core.graphs import build_graph
@@ -102,7 +108,7 @@ class CodeKnowledgeTests(TestCase):
         self.assertEqual(self.client.get(url, {"node": "unknown"}).status_code, 404)
         page = self.client.get(reverse("code-file", args=[self.app.pk, self.file.pk]))
         self.assertContains(page, "Related knowledge")
-        self.assertContains(page, "Explore in knowledge graph v1")
+        self.assertContains(page, "Explore in graph v1")
         self.assertContains(page, f"node={self.node}")
 
     def test_feature_gate_blocks_cross_graph_access(self):
@@ -111,15 +117,40 @@ class CodeKnowledgeTests(TestCase):
         self.assertEqual(self.client.get(url, {"node": self.node}).status_code, 403)
         self.assertEqual(relevant_code_files(self.factory_run(), "FR-09")[0], [])
 
-    def test_linked_files_rank_before_keyword_matches(self):
-        self.code("aaa.py", "# Change keyword result\n")
+    def test_a_linked_file_is_a_candidate_ranked_by_the_question(self):
+        keyword = self.code("aaa.py", "# Change keyword result\n")
         files, _ = relevant_code_files(self.factory_run(), "Change BR-05")
-        # BR-05's source row mentions FR-09, which points at the consent file.
-        self.assertEqual(files[0].pk, self.file.pk)
-        self.assertEqual(files[0].knowledge_link["reason"], "Shared identifier FR-09")
+        # BR-05's source row mentions FR-09, which points at the consent file:
+        # offered with its link though it holds none of the question's words,
+        # and after the file that does.
+        self.assertEqual([f.pk for f in files], [keyword.pk, self.file.pk])
+        self.assertEqual(files[1].knowledge_link["reason"], "Shared identifier FR-09")
         citations = code_citations(self.factory_run(), "Change BR-05")
-        self.assertEqual(citations[0]["id"], f"code:{self.file.pk}")
-        self.assertEqual(citations[0]["knowledge_link"]["revision"], 1)
+        self.assertEqual(citations[1]["id"], f"code:{self.file.pk}")
+        self.assertEqual(citations[1]["knowledge_link"]["revision"], 1)
+
+    def test_files_rank_by_the_question_not_by_path(self):
+        self.code("a/first.py", "# the search\n")
+        holds = self.code("z/last.py", "def search(limit):\n    return clamp(limit)\n")
+        files, terms = relevant_code_files(
+            self.factory_run(), "The search passes the limit unclamped"
+        )
+        self.assertEqual(files[0].pk, holds.pk)
+        self.assertNotIn("the", terms)
+
+    def test_an_excerpt_centres_on_the_line_holding_most_terms(self):
+        lines = ["import search\n"] + [f"x{n} = {n}\n" for n in range(30)]
+        lines[22] = "rows = search(name, limit)  # unbounded limit\n"
+        content = "".join(lines)
+        excerpt, first = code_excerpt(content, code_terms("search limit unbounded"))
+        self.assertIn(lines[22].rstrip(), excerpt)
+        self.assertIn(excerpt, content)
+        # The window is centred: the line sits half a window from its start.
+        self.assertEqual(first, 23 - CODE_EXCERPT_LINES // 2)
+        self.assertNotIn("import search", excerpt)
+        # At the end of a file the window stays whole rather than running off it.
+        _, last = code_excerpt(content + "limit search tail\n", ["limit", "search", "tail"])
+        self.assertEqual(last, len(lines) + 2 - CODE_EXCERPT_LINES)
 
     def test_factory_never_uses_a_different_commit(self):
         old = self.snapshot

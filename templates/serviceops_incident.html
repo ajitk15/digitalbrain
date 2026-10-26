@@ -86,9 +86,9 @@
     {% for row in articles %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.entry.pk %}" data-modal>{% if row.fields.Number %}<span class="incident-badge incident-number">{{ row.fields.Number }}</span>{% endif %}{{ row.entry.title }}</a><small>{{ row.reasons|join:" · " }}{% if row.fields.Category %} · {{ row.fields.Category }}{% endif %}</small>{% include "_ops_path.html" %}<p>{{ row.excerpt|truncatechars:220 }}</p></div>
     {% empty %}<p class="muted">No published knowledge article covers this incident's component, and none was cited by a similar one. Import ServiceNow's kb_knowledge table to add them.</p>{% endfor %}
   </details>
-  <details class="evidence-group"><summary><strong>Runbooks and design documents</strong><span class="count">{% if graph_available %}{{ graph|length }}{% else %}—{% endif %}</span><small>{% if graph_available %}quote-checked passages from the knowledge graph{% else %}no knowledge graph published yet{% endif %}</small></summary>
+  <details class="evidence-group"><summary><strong>Runbooks and design documents</strong><span class="count">{% if graph_available %}{{ graph|length }}{% else %}—{% endif %}</span><small>{% if graph_available %}quote-checked passages from published knowledge{% else %}no knowledge published yet{% endif %}</small></summary>
     {% for row in graph %}<div class="evidence-row"><a href="{% url 'knowledge-detail' application.pk row.id %}" data-modal>{{ row.title }}</a><small>Graph version {{ row.graph_version }}{% if row.context %} · {{ row.context }}{% endif %}</small>{% include "_ops_path.html" %}<p>{{ row.excerpt|truncatechars:220 }}</p></div>
-    {% empty %}<p class="muted">{% if graph_available %}No passage matches this incident.{% else %}Publish a knowledge graph under Knowledge to add runbook and design passages here.{% endif %}</p>{% endfor %}
+    {% empty %}<p class="muted">{% if graph_available %}No passage matches this incident.{% else %}Publish a version under Knowledge to add runbook and design passages here.{% endif %}</p>{% endfor %}
   </details>
 </section>
 </details>

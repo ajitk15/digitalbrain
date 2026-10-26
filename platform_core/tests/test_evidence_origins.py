@@ -34,6 +34,31 @@ CODE = (
 )
 
 
+class OriginNameTests(SimpleTestCase):
+    """Origins are named when the page is drawn, so a run analysed under the old
+    labels reads like a new one - and the stored label, which the model reads in
+    each evidence title, is left as it was."""
+
+    def test_each_origin_reads_in_the_short_names(self):
+        from platform_core.code_factory_evidence import origin_name
+
+        self.assertEqual(
+            origin_name({"origin": "knowledge_graph", "origin_label": "Knowledge graph v7",
+                         "graph_version": "7"}),
+            "Knowledge v7",
+        )
+        self.assertEqual(
+            origin_name({"origin": "code_graph", "origin_label": "Code graph · acme/app v2"}),
+            "Code · acme/app v2",
+        )
+        self.assertEqual(
+            origin_name({"origin": "ticket", "origin_label": "Jira KAN-5"}), "Jira KAN-5"
+        )
+        # Stored before evidence was labelled: only a graph version.
+        self.assertEqual(origin_name({"graph_version": "3"}), "Knowledge v3")
+        self.assertEqual(origin_name({}), "")
+
+
 class SourceSystemTests(SimpleTestCase):
     def entry(self, source="", document_id=None):
         return KnowledgeEntry(source=source, document_id=document_id)
@@ -59,7 +84,7 @@ class SourceSystemTests(SimpleTestCase):
         )
         self.assertEqual(
             [(row["label"], row["count"]) for row in counts],
-            [("Jira ticket", 1), ("Knowledge graph", 1), ("Code graph", 2)],
+            [("Jira ticket", 1), ("Knowledge", 1), ("Code", 2)],
         )
 
 
@@ -137,11 +162,11 @@ class LabelledEvidenceTests(TestCase):
         item = PlanItem.objects.get(plan=run.plan)
         page = self.client.get(reverse("plan-item", args=[self.app.pk, run.plan.pk, item.pk]))
         self.assertContains(page, "origin-knowledge_graph")
-        self.assertContains(page, "Knowledge graph v1")
+        self.assertContains(page, "Knowledge v1")
         self.assertContains(page, "Jira OPS-12")
         detail = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
         self.assertContains(detail, "Jira ticket · 1")
-        self.assertContains(detail, "Knowledge graph · 1")
+        self.assertContains(detail, "Knowledge · 1")
 
 
 @override_settings(**SETTINGS)
@@ -283,10 +308,10 @@ class CodeGraphFileTagTests(TestCase):
         run = self.run_on_snapshot()
         item = PlanItem.objects.filter(plan=run.plan).first()
         page = self.client.get(reverse("plan-item", args=[self.app.pk, run.plan.pk, item.pk]))
-        self.assertContains(page, ">Code graph</span>")
+        self.assertContains(page, ">Code</span>")
         self.assertNotContains(page, ">New file</span>")
         detail = self.client.get(reverse("plan-detail", args=[self.app.pk, run.plan.pk]))
-        self.assertContains(detail, ">Code graph</span>")
+        self.assertContains(detail, ">Code</span>")
 
     def test_a_target_the_snapshot_lacks_is_a_new_file(self):
         run = self.run_on_snapshot()
@@ -303,7 +328,7 @@ class CodeGraphFileTagTests(TestCase):
         ProposedChange.objects.create(run=run, path="queue.py", content="LIMIT = 100\n")
         ProposedChange.objects.create(run=run, path="limits.py", content="MAX = 1\n")
         page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
-        self.assertContains(page, "Code graph · acme/widgets v4")
+        self.assertContains(page, "Code · acme/widgets v4")
         self.assertContains(page, "rewrites the file as acme/widgets snapshot v4 holds it")
         # The path the snapshot does not hold is still a new file.
         self.assertContains(page, "this file does not exist yet")

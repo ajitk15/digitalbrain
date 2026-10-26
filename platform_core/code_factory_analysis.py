@@ -338,7 +338,7 @@ def run_analysis(run, triage, body):
         question = f"{question}\n\nPinned code structure:\n{code_context}"
     note(
         run,
-        f"Gap analysis: connecting to the {run.application.name} knowledge graph "
+        f"Gap analysis: reading {run.application.name}'s published knowledge "
         f"v{run.graph_version}.",
         phase="analysis",
     )
@@ -353,7 +353,7 @@ def run_analysis(run, triage, body):
     # then the ticket, then the code.
     extra = ticket_citation(run) + code_citations(run, question)
     citations = graph + extra
-    also = f" Also offered: {len(extra)} from the ticket and the code graph." if extra else ""
+    also = f" Also offered: {len(extra)} from the ticket and the code." if extra else ""
     note(
         run,
         f"Connected. {len(graph)} passage(s) came back verified against their sources.{also}"

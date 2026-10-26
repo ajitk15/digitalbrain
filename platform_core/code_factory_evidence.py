@@ -5,8 +5,6 @@ imported record, and each is labelled with the system it came from. Reads
 only, and calls no model. Split out of `code_factory`.
 """
 
-import re
-
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 
@@ -39,7 +37,30 @@ def languages_context(languages):
 
 
 def code_terms(question):
-    return [term.lower() for term in re.findall(r"[A-Za-z_$][\w$.-]{2,}", question)[:20]]
+    """The question's terms as ranking reads them: stemmed, no filler, references whole.
+
+    It used to be the first twenty raw words, filler included, so "the" chose
+    every file and the snapshot's path order decided which six were cited.
+    """
+    from .ranking import query_terms
+
+    return query_terms(question)
+
+
+def rank_files(files, terms):
+    """Files holding more of the terms first, then by BM25 over path and text.
+
+    Ties keep order, and a file holding none of them (a linked one) comes last.
+    """
+    from .ranking import BM25
+    from .ranking import terms as split
+
+    index = BM25([split(f"{item.path}\n{item.content}") for item in files])
+    ranked = [position for _, position in index.rank_covering(terms)]
+    held = set(ranked)
+    return [files[position] for position in ranked] + [
+        item for position, item in enumerate(files) if position not in held
+    ]
 
 
 def relevant_code_files(run, question):
@@ -67,35 +88,46 @@ def relevant_code_files(run, question):
     condition = Q()
     for term in terms:
         condition |= Q(path__icontains=term) | Q(content__icontains=term)
-    files = list(run.code_snapshot.files.filter(condition).defer("content")[:20]) if terms else []
+    candidates = list(run.code_snapshot.files.filter(condition)) if terms else []
+    for file, link in linked_files(run, app, question):
+        file.knowledge_link = link
+        candidates = [f for f in candidates if f.pk != file.pk] + [file]
+    # Every candidate - a file holding a term, or one a requirement it shares
+    # with the question links to - is ranked by how much of the question it
+    # holds, never by where its path sorts. Linked files used to come first in
+    # the order their sources were read, and on CarePath they took every place:
+    # CARE-412's unbounded search is the one route that does not name NFR-06,
+    # so the file with the bug was never shown (3 of 7 planted-bug files cited
+    # before, 5 of 7 after; `manage.py scorecard`).
+    files = rank_files(candidates, terms)[:20]
     if not files:
         files = list(run.code_snapshot.files.defer("content")[:12])
+    return files, terms
+
+
+def linked_files(run, app, question):
+    """(file, link) for each snapshot file the published graph links to this question."""
     from .code_knowledge import links
+    from .models import CodeFile
+    from .workbench import access
 
     try:
         access(run.requested_by, run.application_id, "knowledge")
     except (Http404, PermissionDenied):
-        return files, terms
+        return []
     revision = GraphRevision.objects.filter(
         application=app, number=run.graph_version, published_at__isnull=False
     ).first()
-    if revision:
-        linked, _ = links(revision, run.code_snapshot, question=question)
-        reasons = {}
-        for link in linked:
-            reasons.setdefault(link["file_id"], link)
-        from .models import CodeFile
-
-        prioritized = {str(f.pk): f for f in CodeFile.objects.filter(
-            snapshot=run.code_snapshot, pk__in=reasons
-        ).defer("content")}
-        ordered = []
-        for key, link in reasons.items():
-            file = prioritized[key]
-            file.knowledge_link = link
-            ordered.append(file)
-        files = (ordered + [f for f in files if str(f.pk) not in prioritized])[:20]
-    return files, terms
+    if not revision:
+        return []
+    linked, _ = links(revision, run.code_snapshot, question=question)
+    reasons = {}
+    for link in linked:
+        reasons.setdefault(link["file_id"], link)
+    files = {str(f.pk): f for f in CodeFile.objects.filter(
+        snapshot=run.code_snapshot, pk__in=reasons
+    )}
+    return [(files[key], link) for key, link in reasons.items()]
 
 
 #: How many files of the pinned snapshot are offered as citable evidence, and
@@ -105,19 +137,22 @@ CODE_EXCERPT_LINES = 14
 
 
 def code_excerpt(content, terms):
-    """A window of the file around its first matching line, exactly as stored.
+    """A window of the file centred on the line holding most of the terms, exactly as stored.
 
+    The first line holding any term used to anchor it, which was usually an
+    import or the module's docstring rather than the code the ticket is about.
     Cut from the file's own lines with their endings kept, so the excerpt is a
     substring of the stored content and can be re-checked like any quotation.
     """
+    from .ranking import terms as split
+
     lines = content.splitlines(keepends=True)
     if not lines:
         return "", 0
-    hit = next(
-        (index for index, line in enumerate(lines) if any(term in line.lower() for term in terms)),
-        0,
-    )
-    start = max(0, hit - 3)
+    wanted = set(terms)
+    held = [len(wanted.intersection(split(line))) for line in lines]
+    best = max(range(len(lines)), key=lambda index: (held[index], -index))
+    start = max(0, min(best - CODE_EXCERPT_LINES // 2, len(lines) - CODE_EXCERPT_LINES))
     excerpt = "".join(lines[start : start + CODE_EXCERPT_LINES]).rstrip()
     return excerpt[:1500], start + 1
 
@@ -146,7 +181,7 @@ def code_citations(run, question):
         excerpt, line = code_excerpt(item.content, terms)
         link = getattr(selected, "knowledge_link", None)
         if link and link["code_evidence"]:
-            excerpt, line = code_excerpt(item.content, [link["code_evidence"].lower()])
+            excerpt, line = code_excerpt(item.content, code_terms(link["code_evidence"]))
         if not excerpt or excerpt not in item.content:
             continue
         found.append(
@@ -333,9 +368,34 @@ def ticket_passages(run, item, limit=3):
 #: How each origin is named on the page, in the order it is listed.
 ORIGINS = (
     ("ticket", "Ticket"),
-    ("knowledge_graph", "Knowledge graph"),
-    ("code_graph", "Code graph"),
+    ("knowledge_graph", "Knowledge"),
+    ("code_graph", "Code"),
 )
+
+#: What a stored label used to start with, for each origin it names.
+STORED_PREFIXES = {"knowledge_graph": "Knowledge graph", "code_graph": "Code graph"}
+
+
+def origin_name(citation):
+    """A citation's origin as people read it: "Knowledge v7", "Code · acme/app v2".
+
+    Worked out when the page is drawn, from the origin and the version, rather
+    than shown as `origin_label`: that label was written into every plan when
+    its run was analysed, and is what the model reads in each evidence title,
+    so renaming it at the source would leave old runs in the old words and
+    change the prompt. A code label's repository and snapshot are taken from
+    what follows its stored prefix; a ticket's label is its system and key.
+    """
+    origin = citation.get("origin") or ("knowledge_graph" if citation.get("graph_version") else "")
+    names = dict(ORIGINS)
+    if origin == "knowledge_graph":
+        version = citation.get("graph_version")
+        return f"{names[origin]} v{version}" if version else names[origin]
+    stored = citation.get("origin_label") or ""
+    prefix = STORED_PREFIXES.get(origin)
+    if prefix:
+        return names[origin] + stored.removeprefix(prefix)
+    return stored or names.get(origin, "")
 
 
 def code_context_for(run, question):

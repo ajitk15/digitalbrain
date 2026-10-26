@@ -1699,6 +1699,17 @@ load test has been run only on the development machine, not production hardware.
 
 ## Naming
 
+**People read "Knowledge" and "Code"; the code still says graph.** The screens, tags and
+messages name the published knowledge graph **Knowledge** ("Knowledge v7") and Code Graph
+**Code** ("Code · acme/app v2"); the Graph tab inside Knowledge keeps its name, being the
+graph. The feature key `code_graph`, every `code-graph*` URL and route, the worker lane,
+module names and the `origin` keys `knowledge_graph`/`code_graph` are unchanged. A Code
+Factory citation's stored `origin_label` still reads "Knowledge graph v7" - it is in every
+plan already written and in the evidence titles the model reads - so pages and the pull
+request body name it with `code_factory_evidence.origin_name` from its origin instead.
+Prompts kept the old words deliberately: changing what a model reads is measured for drift
+first, not renamed.
+
 `platform_core/agent_runtime/` is deliberately not called `agents` — the OpenAI Agents SDK
 owns the top-level `agents` module and is imported from inside this package.
 

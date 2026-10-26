@@ -42,7 +42,7 @@ FEATURES = {
     "usage_reports": ("AI cost reports", True),
     "chat": ("Knowledge chat", True),
     "knowledge": ("Knowledge sources", True),
-    "code_graph": ("Code Graph", True),
+    "code_graph": ("Code", True),
     # Both read Code Graph's snapshots and need it switched on as well. Not in
     # PURPOSES: an Operations application made before these existed has no row
     # for them, and a missing row reads as on - listing them there would make
@@ -115,7 +115,7 @@ PURPOSE_CHOICES = (
     (
         "engineering",
         "Engineering",
-        "Turn tickets into reviewed fixes and pull requests. Code Graph and Code Factory.",
+        "Turn tickets into reviewed fixes and pull requests. Code and Code Factory.",
     ),
     (
         "operations",

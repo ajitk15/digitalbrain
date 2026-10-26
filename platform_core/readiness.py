@@ -303,7 +303,7 @@ def operations_steps(app):
             runbooks,
             f"Version {published.number} is published with documents."
             if runbooks
-            else "No published knowledge graph with documents."
+            else "No published knowledge with documents."
             if published is None
             else "The published graph holds no documents.",
             ""
@@ -389,7 +389,7 @@ def steps(app):
         Step(
             "graph",
             ANALYSIS,
-            "Knowledge graph published",
+            "Knowledge published",
             published is not None,
             f"Version {published.number}, published {published.published_at:%d %b %Y}."
             if published
@@ -470,14 +470,14 @@ def steps(app):
             if with_snapshot
             else "No repository has been indexed."
             if code_graph
-            else "Code Graph is switched off for this application.",
+            else "Code is switched off for this application.",
             ""
             if with_snapshot
             else "Add the repository under Knowledge, on Code Repos. Without a "
             "snapshot the design names components rather than files, and "
             "implementation has nothing to open."
             if code_graph
-            else "Tick Code Graph on the Features screen, then register the repository.",
+            else "Tick Code on the Features screen, then register the repository.",
             "code-repositories" if code_graph else "application-features",
             "code",
         )

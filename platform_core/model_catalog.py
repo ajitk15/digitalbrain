@@ -67,7 +67,7 @@ PURPOSE_NOTES = {
         "Uses the saved graph and its source evidence to answer in Chat's Graph answer mode."
     ),
     "conversation_title": "Names each conversation from its first exchange. A short, cheap call.",
-    "plan_drafting": "Drafts Code Factory change plans from a ticket and the knowledge graph.",
+    "plan_drafting": "Drafts Code Factory change plans from a ticket and published knowledge.",
     "reranking": (
         "Reorders the twenty best verified citations so the most useful come first, for graph "
         "answers, Code Factory evidence and keyword search. A paid call on every question - "
@@ -88,7 +88,7 @@ PURPOSE_NOTES = {
         "content check and its score are unchanged."
     ),
     "code_review": (
-        "Reviews a change in Code Graph - a folder's working changes, a branch or a pull "
+        "Reviews a code change - a folder's working changes, a branch or a pull "
         "request - only when someone presses Ask AI on the review. Every finding quotes the "
         "changed lines, the code around them or the requirement it rests on, and is dropped "
         "if a quote is not found exactly. The same change is never paid for twice."

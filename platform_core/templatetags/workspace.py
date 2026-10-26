@@ -487,6 +487,20 @@ def evidence_origins(citations):
 
 
 @register.filter
+def origin_name(citation):
+    """`code_factory_evidence.origin_name`: where a piece of evidence came from."""
+    from platform_core.code_factory_evidence import origin_name
+
+    return origin_name(citation or {})
+
+
+@register.filter
+def target_tag(target, tags):
+    """A gap target's tag from `factory_views.target_tags`, or None for a plain name."""
+    return (tags or {}).get(target)
+
+
+@register.filter
 def ai_task_label(purpose):
     """A receipt's task by the name AI settings gives it, not its stored key."""
     return dict(AI_PURPOSES).get(purpose, purpose)

@@ -1,6 +1,6 @@
-{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Code Graph · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
+{% extends 'base.html' %}{% load workspace icons static %}{% block title %}Code · {{ application.name }}{% endblock %}{% block content %}{% application_nav %}
 <h1 class="sr-only">{{ application|knowledge_name }}</h1><div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='code' %}</div>
-<h2 class="view-title">Code Graph</h2>
+<h2 class="view-title">Code</h2>
 <p class="view-note">Explore repository files, dependencies, and the exact commit used for analysis. Repositories are added, re-indexed and removed on <a href="{% url 'code-repositories' application.pk %}">Code Repos</a>.</p>
 {% include '_code_graph_tabs.html' %}
 {% if repositories %}<section class="code-repository-bar section"><form method="get" class="inline-form"><label for="code-repository">Repository</label><select id="code-repository" name="repository" data-auto-submit>{% for item in repositories %}<option value="{{ item.pk }}" {% if item.pk == repository.pk %}selected{% endif %}>{{ item.name }} · {{ item.get_status_display }}</option>{% endfor %}</select><button class="button secondary" data-auto-submit-hide>View</button></form><a class="button secondary" href="{% url 'code-repositories' application.pk %}">{% icon "code-graph" 13 %}All repositories</a></section>{% endif %}
@@ -12,7 +12,7 @@
 <aside class="code-file-list" aria-label="Repository files"><h2>Files</h2>{% for group in tree %}<details class="tree-folder" open><summary><span class="tree-name">{{ group.folder }}</span><span class="tree-count">{{ group.files|length }}{% if group.parse_issues %} · {{ group.parse_issues }}&#9888;{% endif %}</span></summary>{% for file in group.files %}<a href="{% url 'code-file' application.pk file.pk %}"><span>{{ file.path|cut:group.folder|cut:"/" }}</span><small>{{ file.language }}{% if file.role %} · {{ file.role }}{% endif %}{% if not file.parse_ok %} · parse issue{% endif %}</small></a>{% endfor %}</details>{% empty %}<p class="muted">No matching indexed files.</p>{% endfor %}{% if more_files %}<p class="muted">Showing the first 200 {% if query %}matches{% else %}files{% endif %}. {% if query %}Narrow the search to see the rest.{% else %}Search to narrow the list.{% endif %}</p>{% endif %}</aside>
 <div class="code-graph-stage">{% if files %}
 <div class="graph-canvas-frame">
-<svg id="code-graph-canvas" viewBox="0 0 1000 620" role="img" aria-label="Repository dependency graph"><text x="500" y="310" text-anchor="middle">Loading code graph…</text></svg>
+<svg id="code-graph-canvas" viewBox="0 0 1000 620" role="img" aria-label="Repository dependency graph"><text x="500" y="310" text-anchor="middle">Loading dependencies…</text></svg>
 <div class="graph-controls" role="group" aria-label="Graph view">
 <button type="button" class="graph-control" data-graph-theme aria-pressed="false" aria-label="Switch the canvas to light" title="Switch the canvas to light">&#9680;</button>
 <button type="button" class="graph-control" data-graph-action="in" aria-label="Zoom in" title="Zoom in">+</button>

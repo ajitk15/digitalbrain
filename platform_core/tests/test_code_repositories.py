@@ -109,7 +109,7 @@ class CodeRepositoriesTests(TestCase):
         self.assertContains(
             page, f'{reverse("code-graph", args=[self.app.pk])}?repository={repository.pk}'
         )
-        self.assertContains(page, "chat and the knowledge graph do not read it")
+        self.assertContains(page, "chat and the graph do not read it")
         self.assertContains(
             page, f'href="{reverse("code-graph-add", args=[self.app.pk])}" data-modal'
         )
@@ -258,7 +258,7 @@ class CodeRepositoriesTests(TestCase):
         body = self.client.get(
             reverse("code-graph", args=[self.app.pk]), {"repository": repository.pk}
         ).content.decode()
-        views = body.split('aria-label="Code Graph views"')[1].split("</nav>")[0]
+        views = body.split('aria-label="Code views"')[1].split("</nav>")[0]
         self.assertIn("Structure", views)
         self.assertNotIn(">Graph<", views)
         self.assertIn(

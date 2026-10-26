@@ -18,7 +18,7 @@
 <section class="card section">
 <h2>{% icon "code" %}What changes</h2>
 <p>{{ item.change_summary }}</p>
-{% if item.targets %}<h3 class="panel-label">Files this touches</h3><ul class="item-targets">{% for target in item.targets %}<li><code>{{ target }}</code> {% if run.code_snapshot %}{% if target in snapshot_paths %}<span class="origin-tag origin-code_graph" title="In {{ run.code_snapshot.repository.name }} Code Graph snapshot v{{ run.code_snapshot.number }}">Code graph</span>{% else %}<span class="origin-tag origin-system" title="Not in the pinned snapshot: this would be a new file">New file</span>{% endif %}{% endif %}</li>{% endfor %}</ul>
+{% if item.targets %}<h3 class="panel-label">Files this touches</h3><ul class="item-targets">{% for target in item.targets %}<li><code>{{ target }}</code> {% if run.code_snapshot %}{% with tag=target|target_tag:target_tags %}{% if tag.kind == "code" %}<span class="origin-tag origin-code_graph" title="In {{ run.code_snapshot.repository.name }} code snapshot v{{ run.code_snapshot.number }}">Code</span>{% elif tag.kind == "symbol" %}<span class="origin-tag origin-code_graph" title="Defined in {{ tag.path }}, {{ run.code_snapshot.repository.name }} code snapshot v{{ run.code_snapshot.number }}">Code</span>{% elif tag.kind == "new" %}<span class="origin-tag origin-system" title="Not in the pinned snapshot: this would be a new file">New file</span>{% endif %}{% endwith %}{% endif %}</li>{% endfor %}</ul>
 <p class="muted"><small>Named by the design phase from the pinned code snapshot. Implementation reads these files and nothing else.</small></p>{% endif %}
 </section>
 {% endif %}

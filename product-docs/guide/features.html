@@ -16,11 +16,11 @@
 <figure class="figure">
   <div class="fig-title">Features at a glance - who reaches for what</div>
   <svg viewBox="0 0 900 270" role="img" aria-labelledby="map-t">
-    <title id="map-t">Shared features in the middle - Knowledge, Chat, Connectors, AI settings. Engineering features on the left - Code Graph, Code review, Reverse engineering, Code Factory. Operations features on the right - ServiceOps triage, operations graph, automations.</title>
+    <title id="map-t">Shared features in the middle - Knowledge, Chat, Connectors, AI settings. Engineering features on the left - Code, Code review, Reverse engineering, Code Factory. Operations features on the right - ServiceOps triage, operations graph, automations.</title>
     <rect x="10" y="10" width="270" height="250" rx="14" class="zone"/>
     <text x="26" y="34" class="t-zone">Engineering</text>
     <rect x="30" y="50" width="230" height="40" rx="9" class="box-violet"/><text x="145" y="75" text-anchor="middle" class="t">Code Factory</text>
-    <rect x="30" y="100" width="230" height="40" rx="9" class="box"/><text x="145" y="125" text-anchor="middle" class="t">Code Graph (Code Repos)</text>
+    <rect x="30" y="100" width="230" height="40" rx="9" class="box"/><text x="145" y="125" text-anchor="middle" class="t">Code (Code Repos)</text>
     <rect x="30" y="150" width="230" height="40" rx="9" class="box"/><text x="145" y="175" text-anchor="middle" class="t">Code review</text>
     <rect x="30" y="200" width="230" height="40" rx="9" class="box"/><text x="145" y="225" text-anchor="middle" class="t">Reverse engineering</text>
 
@@ -86,8 +86,8 @@
 </table></div>
 <p>The mode belongs to the conversation, so sending a message never silently changes it. If an answer is wrong, <b>Wrong answer?</b> sends it to the Learned inbox. The <b>Chat API</b> lets another program ask questions with an API token, through the same checks.</p>
 
-<h2 id="code-graph">Code Graph, Code review and Reverse engineering</h2>
-<p><b>Code Graph</b> (under Knowledge → Code Repos) indexes a repository - from GitHub, or from a folder on the server an operator allowed - into files, symbols, routes, imports and calls, and links code to the requirements that name it. Code is not a knowledge source: Chat does not read it.</p>
+<h2 id="code-graph">Code, Code review and Reverse engineering</h2>
+<p><b>Code</b> (under Knowledge → Code Repos) indexes a repository - from GitHub, or from a folder on the server an operator allowed - into files, symbols, routes, imports and calls, and links code to the requirements that name it. Code is not a knowledge source: Chat does not read it.</p>
 <ul>
   <li><b>Code review</b> compares a branch, pull request or working changes with the indexed snapshot. Rule-based checks are free: what the change reaches through imports, routes and symbols added or removed, source with no test, requirements that mention it. An <b>AI review</b> runs only when someone presses its button; every finding must quote the diff, a dependent file or a requirement. Nothing is posted to GitHub.</li>
   <li><b>Reverse engineering</b> writes documentation from one snapshot - models, routes, components and traceability - with each section labelled <i>read from code</i>, <i>inferred</i>, <i>verified reference</i> or <i>AI-written</i>. It can be added to Knowledge, but is never accepted as evidence that code meets a requirement.</li>
