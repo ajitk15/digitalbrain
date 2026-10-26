@@ -17,7 +17,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -861,6 +861,30 @@ class SelectiveApprovalTests(TestCase):
         run.plan.refresh_from_db()
         self.assertEqual(run.plan.status, "approved")
         self.assertEqual(run.plan.items.filter(status="accepted").count(), 1)
+
+
+@override_settings(**SETTINGS)
+class ReviewTransactionTests(TransactionTestCase):
+    """Approving holds its own transaction, as a request does not.
+
+    Its decorator once sat on the helper defined above it, so `review_plan`
+    locked the plan with `select_for_update` outside any transaction and every
+    approval in the browser was a 500. A `TestCase` wraps each test in a
+    transaction, which hid it from every other test here.
+    """
+
+    setUp = PipelineTests.setUp
+    answers = PipelineTests.answers
+    run_pipeline = PipelineTests.run_pipeline
+    approver = SelectiveApprovalTests.approver
+
+    def test_a_plan_is_approved_outside_a_test_transaction(self):
+        from platform_core.factory_views import review_plan
+
+        run = self.run_pipeline()
+        review_plan(self.approver(), self.app.pk, run.plan.pk, "approved", "Build it.")
+        run.plan.refresh_from_db()
+        self.assertEqual(run.plan.status, "approved")
 
 
 @override_settings(**SETTINGS)

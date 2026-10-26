@@ -1182,7 +1182,6 @@ def self_approval_allowed():
     return bool(getattr(settings, "ALLOW_SELF_APPROVAL", True))
 
 
-@transaction.atomic
 def code_source_holds(app, source):
     """A code citation still stands: the file is in this application's snapshot,
     unchanged. Snapshots are immutable, so this fails only if one was removed."""
@@ -1209,6 +1208,7 @@ def code_source_holds(app, source):
     return valid
 
 
+@transaction.atomic
 def review_plan(user, app_id, plan_id, decision, note, chosen=None, declared=False):
     """Approve or reject a plan, and say which of its items are in.
 
