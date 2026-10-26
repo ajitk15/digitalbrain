@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Digital Brain Architecture</title>
+<style>
+:root{
+  --ink:#16213a; --muted:#4a5571; --line:#c9d3e6;
+  --blue:#2f6fd6; --blue-bg:#e8f0fc; --green:#2e9b62; --green-bg:#e6f5ec;
+  --purple:#7b4fd0; --purple-bg:#f0eafb; --orange:#d9822b; --orange-bg:#fdf1e3;
+  --pink:#d0457a; --pink-bg:#fbe9f0; --teal:#178a8f; --teal-bg:#e2f4f4;
+  --yellow-bg:#fdf8e1; --red:#c93b3b; --red-bg:#fdeaea; --amber:#b7861a; --amber-bg:#fdf3d6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:2400px;background:#f6f8fc;font-family:"Segoe UI",Arial,sans-serif;color:var(--ink);padding:22px 26px}
+img.i{width:34px;height:34px;flex:none;object-fit:contain}
+img.s{width:22px;height:22px;object-fit:contain;vertical-align:middle}
+.title{text-align:center;margin-bottom:14px}
+.title h1{font-size:46px;font-weight:700;letter-spacing:-.5px;display:flex;align-items:center;justify-content:center;gap:14px}
+.title h1 span{color:var(--blue)}
+.title p{font-size:20px;color:var(--muted);margin-top:2px}
+
+.grid{display:grid;gap:16px;margin-bottom:16px}
+.r1{grid-template-columns:1460px 1fr;height:850px}
+.r2{grid-template-columns:1460px 1fr;height:700px}
+.r3{grid-template-columns:1fr 1fr;height:540px}
+.panel{border:2px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.ph{padding:8px 16px 6px;border-bottom:1px solid var(--line)}
+.ph h2{font-size:25px;font-weight:700}
+.ph p{font-size:15px;color:var(--muted)}
+.ph.blue{background:linear-gradient(90deg,#d6e4fb,#eef4fd)} .ph.blue h2{color:#1d4fa3}
+.ph.purple{background:linear-gradient(90deg,#e6dcfa,#f5f1fd)} .ph.purple h2{color:#5a34a8}
+.ph.green{background:linear-gradient(90deg,#d6f0e1,#eef8f2)} .ph.green h2{color:#1e7349}
+.ph.orange{background:linear-gradient(90deg,#fbe2c4,#fdf3e7)} .ph.orange h2{color:#a65a12}
+.ph.pink{background:linear-gradient(90deg,#f8d6e3,#fcedf3)} .ph.pink h2{color:#a2295a}
+.ph.teal{background:linear-gradient(90deg,#cdeeee,#ebf7f7)} .ph.teal h2{color:#11666a}
+
+/* build pipeline */
+.pipe{display:flex;align-items:stretch;padding:12px 10px;flex:1}
+.col{border-radius:12px;padding:10px 9px;width:192px;flex:none;display:flex;flex-direction:column;gap:13px}
+.col h3{font-size:18px;font-weight:700;padding:4px 8px;border-radius:8px;background:rgba(255,255,255,.75);margin-bottom:2px}
+.arrow{width:18px;flex:none;display:flex;align-items:center;justify-content:center;color:#8a97b3;font-size:24px;font-weight:700}
+.it{display:flex;gap:8px;align-items:flex-start}
+.it b{display:block;font-size:16px;line-height:1.2;margin-bottom:2px}
+.it small{display:block;font-size:13.6px;color:var(--muted);line-height:1.3}
+.logos{display:flex;gap:4px;margin-top:3px}
+.c1{background:var(--blue-bg)} .c1 h3{color:#1d4fa3}
+.c2{background:var(--green-bg)} .c2 h3{color:#1e7349}
+.c3{background:var(--purple-bg)} .c3 h3{color:#5a34a8}
+.c4{background:var(--orange-bg)} .c4 h3{color:#a65a12}
+.c5{background:var(--pink-bg)} .c5 h3{color:#a2295a}
+.c6{background:var(--teal-bg)} .c6 h3{color:#11666a}
+.store{width:170px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 6px}
+.cyl{width:150px}
+.store ul{list-style:none;font-size:14.5px;color:var(--muted);margin-top:8px;align-self:stretch}
+.store li{padding:2px 0 2px 14px;position:relative}
+.store li:before{content:"";position:absolute;left:2px;top:10px;width:6px;height:6px;border-radius:50%;background:var(--purple)}
+.pipe-foot{display:flex;gap:10px;padding:0 12px 12px}
+.chip{flex:1;border:1.5px dashed #b9c5dc;border-radius:10px;padding:8px 12px;font-size:14px;color:var(--muted);display:flex;gap:10px;align-items:center;background:#fbfcfe}
+.chip b{color:var(--ink)}
+.chip img{width:26px;height:26px}
+
+/* retrieval */
+.ret{display:grid;grid-template-columns:1fr 290px;gap:10px;padding:10px 12px;flex:1}
+.flow{display:flex;flex-direction:column;gap:6px}
+.q{display:flex;gap:10px;align-items:center;padding:4px 6px}
+.q b{font-size:16px} .q i{font-size:14.5px;color:var(--muted)}
+.box{border-radius:11px;padding:7px 11px;display:flex;gap:10px;align-items:flex-start}
+.box h4{font-size:15.5px;margin-bottom:1px}
+.box ul{list-style:none;font-size:13px;color:var(--muted);line-height:1.38}
+.box li:before{content:"• ";color:#8a97b3}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.down{text-align:center;color:#8a97b3;font-size:15px;line-height:9px}
+.side h4{font-size:15.5px;text-align:center;margin:2px 0 4px}
+.src{display:flex;gap:8px;align-items:center;font-size:12.8px;line-height:1.25;margin-bottom:7px}
+.src b{font-size:13.2px}
+.ok{color:var(--green);font-weight:700}
+
+/* ontology */
+.onto{display:grid;grid-template-columns:560px 1fr;gap:14px;padding:12px 14px;flex:1}
+.types{display:grid;grid-template-columns:1fr 1fr;gap:9px;align-content:start}
+.type{border-radius:10px;padding:8px 10px;display:flex;gap:9px;align-items:flex-start;border:1.5px solid}
+.type b{font-size:15.5px;display:block}
+.type small{font-size:12.6px;color:var(--muted);line-height:1.3;display:block}
+.type em{font-style:normal;font-size:11.8px;color:var(--muted);opacity:.9;display:block;margin-top:2px}
+.t-Ticket{background:#e8f0fc;border-color:#9fbdf0} .t-Ticket b{color:#1d4fa3}
+.t-Requirement{background:#fdf1e3;border-color:#f0c28f} .t-Requirement b{color:#a65a12}
+.t-Control{background:#e2f4f4;border-color:#8fcfd1} .t-Control b{color:#11666a}
+.t-Component{background:#fbe9f0;border-color:#ecaac4} .t-Component b{color:#a2295a}
+.t-Code{background:#e6f5ec;border-color:#9fd6b6} .t-Code b{color:#1e7349}
+.t-Runbook{background:#f0eafb;border-color:#c5b0ef} .t-Runbook b{color:#5a34a8}
+.t-Incident{background:#fdeaea;border-color:#efa9a9} .t-Incident b{color:#a32a2a}
+.t-Change{background:#fdf3d6;border-color:#ebcf7e} .t-Change b{color:#8a6410}
+table.rel{width:100%;border-collapse:separate;border-spacing:0 3px;font-size:12.8px}
+table.rel th{text-align:left;font-size:12.5px;color:var(--muted);font-weight:600;padding:0 6px 2px}
+table.rel td{padding:3px 6px;background:#f7f9fd;vertical-align:middle}
+table.rel td:first-child{border-radius:7px 0 0 7px;font-weight:700;font-size:13.5px;white-space:nowrap;color:#2a2f6e}
+table.rel td:last-child{border-radius:0 7px 7px 0;color:var(--muted);font-style:italic}
+.tp{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11.5px;font-weight:600;margin:1px 2px 1px 0}
+.tp.Ticket{background:#cfe0fb;color:#1d4fa3} .tp.Requirement{background:#fde0bd;color:#8b4a0e}
+.tp.Control{background:#c9ecec;color:#11666a} .tp.Component{background:#f8d3e2;color:#a2295a}
+.tp.Code{background:#cdecd9;color:#1e7349} .tp.Runbook{background:#e2d7f8;color:#5a34a8}
+.tp.Incident{background:#f9d0d0;color:#a32a2a} .tp.Change{background:#fbe6a8;color:#7a560c}
+.tp.Any{background:#e5e9f2;color:#4a5571}
+.rules{display:flex;gap:8px;padding:0 14px 12px}
+.rule{flex:1;border-radius:9px;padding:7px 10px;font-size:12.8px;line-height:1.3;color:var(--muted);background:#f6f8fc;border:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.rule b{color:var(--ink)}
+.rule img{width:24px;height:24px}
+
+
+/* ontology packs */
+.packs{display:flex;gap:6px;padding:12px 12px 10px;flex:1;align-items:stretch}
+.plus{display:flex;align-items:center;font-size:18px;font-weight:700;color:#8a97b3;width:20px;justify-content:center;flex:none}
+.pack{flex:1;min-width:0;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px;border:1.5px solid}
+.p-core{background:#f3f6fc;border-color:#c7d6f2}
+.p-ins{background:#f1f9f8;border-color:#b9e0de}
+.p-hc{background:#fcf3f6;border-color:#efc6d6}
+.pk-h{display:flex;gap:10px;align-items:center}
+.pk-h img{width:40px;height:40px}
+.pk-h b{font-size:18px;display:block}
+.pk-h small{font-size:12.8px;color:var(--muted)}
+.pack svg{width:100%;height:auto;background:#fff;border-radius:9px;border:1px solid #e1e7f2}
+.pk-l{display:flex;gap:8px;align-items:flex-start}
+.pk-l>span{font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;width:66px;flex:none;padding-top:3px}
+.ch{display:inline-block;font-size:11.6px;padding:1px 7px;border-radius:9px;margin:0 3px 3px 0;font-weight:600}
+.ch.ty{background:#fff;border:1px solid #c9d3e6;color:#2a3352}
+.ch.re{background:#e9edf6;color:#3a4560;font-style:italic;font-weight:500}
+.pk-n{font-size:12.6px;line-height:1.35;color:var(--muted);margin-top:auto;border-top:1px dashed #c9d3e6;padding-top:6px}
+
+
+/* published knowledge applications */
+.apps-panel{margin-bottom:16px}
+.apps{display:flex;gap:10px;padding:12px 12px 10px;align-items:stretch}
+.hub{width:160px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+.hub small{font-size:12.4px;color:var(--muted);line-height:1.3}
+.fan{display:flex;align-items:center;color:#8a97b3;font-size:26px;font-weight:700;width:14px;flex:none}
+.app{flex:1;min-width:0;border:1.5px solid;border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+.app-h{display:flex;gap:9px;align-items:flex-start}
+.app-h img{width:40px;height:40px;flex:none}
+.app-h b{font-size:17px;display:block}
+.app-h small{font-size:13px;color:var(--ink);line-height:1.3;display:block}
+.app ul{list-style:none;font-size:12.9px;color:var(--muted);line-height:1.38}
+.app li{padding-left:12px;position:relative;margin-bottom:3px}
+.app li:before{content:"";position:absolute;left:2px;top:8px;width:5px;height:5px;border-radius:50%;background:currentColor;opacity:.6}
+.who{margin-top:auto;font-size:12.4px;font-weight:700;border-top:1px dashed rgba(0,0,0,.15);padding-top:5px}
+.loop{display:flex;gap:10px;padding:0 12px 12px}
+.lp{flex:1;display:flex;gap:9px;align-items:center;border:1.5px dashed #b9c5dc;border-radius:10px;padding:8px 12px;font-size:13px;line-height:1.35;color:var(--muted);background:#fbfcfe}
+.lp b{color:var(--ink)}
+.lp img{width:30px;height:30px;flex:none}
+
+
+/* access and identity */
+.acc-panel,.id-panel{margin-bottom:16px}
+.acc,.idg{display:grid;gap:14px;padding:12px}
+.acc{grid-template-columns:690px 1fr 560px}
+.idg{grid-template-columns:720px 1fr 780px}
+.acol,.icol{display:flex;flex-direction:column;gap:9px;min-width:0}
+.acol h3,.icol h3{font-size:18px;display:flex;align-items:center;gap:8px}
+.icol h3 img{width:28px;height:28px}
+.lvl{display:flex;gap:10px;align-items:flex-start;border:1.5px solid;border-radius:10px;padding:8px 11px;position:relative}
+.lvl+.lvl:before{content:"";position:absolute;left:-13px;top:-12px;width:12px;height:30px;border-left:2px solid #9aa7c2;border-bottom:2px solid #9aa7c2;border-bottom-left-radius:6px}
+.lvl img{width:38px;height:38px;flex:none}
+.lvl b{font-size:16.5px;display:block}
+.lvl em{font-style:normal;font-size:13px;font-weight:700;display:block}
+.lvl small{font-size:13.3px;color:var(--muted);line-height:1.3;display:block}
+.notes{display:flex;flex-direction:column;gap:7px;margin-top:2px}
+.notes>div,.rnote,.side>div,.audit{display:flex;gap:9px;align-items:center;border:1.5px dashed #b9c5dc;border-radius:10px;padding:7px 11px;font-size:13.4px;line-height:1.35;color:var(--muted);background:#fbfcfe}
+.notes b,.rnote b,.side b,.audit b{color:var(--ink)}
+.notes img,.rnote img,.side img,.audit img{width:28px;height:28px;flex:none}
+table.roles{border-collapse:separate;border-spacing:0 4px;width:100%;font-size:14px}
+.roles thead td{font-size:13.5px;font-weight:700;text-align:center;padding:6px 4px;border-radius:8px 8px 0 0;line-height:1.15}
+.roles td.v{background:var(--blue-bg);color:#1d4fa3}.roles td.c{background:var(--green-bg);color:#1e7349}.roles td.o{background:var(--orange-bg);color:#a65a12}
+.roles td.a{background:var(--amber-bg);color:#8a6410}.roles td.g{background:var(--teal-bg);color:#11666a}.roles td.p{background:var(--purple-bg);color:#5a34a8}
+.roles tbody th{text-align:left;font-weight:600;padding:7px 10px;background:#f4f6fb;border-radius:8px 0 0 8px;line-height:1.25}
+.roles tbody td{text-align:center;background:#fbfcfe;border-top:1px solid #edf1f7;border-bottom:1px solid #edf1f7;width:84px}
+.roles td.y{color:#1e7349;font-size:20px;font-weight:700;background:#eef8f2}
+.ck{display:flex;gap:9px;align-items:center;border:1.5px solid #c9d3e6;border-radius:10px;padding:7px 11px;background:#fff;position:relative}
+.ck+.ck:before{content:"\25BC";position:absolute;top:-12px;left:22px;font-size:10px;color:#8a97b3}
+.ck .n{width:22px;height:22px;border-radius:50%;background:var(--purple);color:#fff;font-size:12.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.ck img{width:30px;height:30px;flex:none}
+.ck b{font-size:15px;display:block}
+.ck small{font-size:13.2px;color:var(--muted);line-height:1.3;display:block}
+.nf{border:2px solid #e5a3a3;background:var(--red-bg);border-radius:10px;padding:8px 12px}
+.nf b{color:#a12d2d;font-size:15px;display:block}
+.nf small{font-size:13.2px;color:var(--muted)}
+.seq svg{width:100%;height:auto;background:#fbfcfe;border:1.5px solid #dfe5f0;border-radius:12px}
+.side{display:flex;flex-direction:column;gap:7px}
+.stage{border:1.5px solid;border-radius:12px;padding:8px 12px 6px}
+.stage.blue{background:var(--blue-bg);border-color:#9fbdf0}.stage.green{background:var(--green-bg);border-color:#9fd6b6}.stage.pink{background:var(--pink-bg);border-color:#ecaac4}
+.stage h4{font-size:16px;margin-bottom:4px}
+.stage.blue h4{color:#1d4fa3}.stage.green h4{color:#1e7349}.stage.pink h4{color:#a2295a}
+.stage ol{list-style:none;display:flex;flex-direction:column;gap:5px}
+.stage li{background:#fff;border-radius:8px;padding:6px 10px;border:1px solid rgba(0,0,0,.07)}
+.stage li b{font-size:14.5px;display:block}
+.stage li small{font-size:13px;color:var(--muted);display:block;line-height:1.3}
+.secg{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.sc{border:1.5px solid #c9d3e6;border-radius:11px;padding:8px 11px;background:#fff}
+.sch{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+.sch img{width:28px;height:28px}
+.sch b{font-size:15.5px;color:#11666a}
+.sc ul{list-style:none;font-size:13.2px;color:var(--muted);line-height:1.35}
+.sc li{padding-left:12px;position:relative;margin-bottom:3px}
+.sc li:before{content:"";position:absolute;left:2px;top:7px;width:5px;height:5px;border-radius:50%;background:#178a8f}
+
+/* stack */
+.stack{padding:10px 12px;display:flex;flex-direction:column;gap:6px;flex:1}
+.row{display:flex;gap:8px;align-items:center;border-radius:9px;padding:6px 10px;flex:1}
+.row>span{font-size:14.5px;font-weight:700;width:118px;flex:none}
+.tech{display:flex;gap:8px;align-items:center;flex:1;min-width:0}
+.tech img{width:32px;height:32px;flex:none;object-fit:contain}
+.tech b{display:block;font-size:13.6px;line-height:1.15}
+.tech small{display:block;font-size:11.6px;color:var(--muted);line-height:1.2}
+
+/* examples */
+.ex{padding:12px 14px;display:flex;flex-direction:column;gap:10px;flex:1}
+.ex h5{font-size:17px;color:#1d4fa3}
+.doc{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.quote{border-left:4px solid var(--orange);background:var(--yellow-bg);border-radius:6px;padding:9px 12px;font-size:14.5px;line-height:1.35;display:flex;gap:10px;align-items:flex-start}
+.quote em{display:block;font-style:normal;font-size:12.5px;color:var(--muted);margin-bottom:2px;font-weight:600}
+.er{display:grid;grid-template-columns:1fr 1.5fr;gap:10px}
+.er>div{border-radius:9px;padding:8px 12px}
+.er h6{font-size:14.5px;margin-bottom:3px}
+.er ul{list-style:none;font-size:13.6px;line-height:1.5;color:var(--ink)}
+.rej{color:var(--red)}
+.ans{padding:12px 14px;display:flex;flex-direction:column;gap:10px;flex:1}
+.ans .card{border-radius:10px;padding:9px 13px;display:flex;gap:11px}
+.ans h6{font-size:16px;margin-bottom:2px}
+.ans p,.ans li{font-size:14.5px;line-height:1.42}
+.ans ol{padding-left:18px}
+sup{color:var(--blue);font-weight:700;font-size:10px}
+
+.foot{display:grid;grid-template-columns:1fr;gap:16px}
+.band{border-radius:12px;padding:8px 14px;display:flex;align-items:center;gap:12px;border:2px solid var(--line);background:#fff}
+.band>b{font-size:16px;white-space:nowrap}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{font-size:13.5px;padding:4px 10px;border-radius:20px;font-weight:600;display:inline-flex;gap:5px;align-items:center}
+.pill img{width:18px;height:18px}
+.credit{text-align:right;font-size:11.5px;color:#8a97b3;margin-top:6px}
+</style>
+</head>
+<body>
+
+<div class="title">
+  <h1><img src="icons/brain.png" width="54" height="54" alt=""><span>Digital Brain</span> — Verified Knowledge Architecture</h1>
+  <p>From enterprise sources to cited answers — build a published knowledge graph, retrieve with graph + passages + vectors, and verify every citation against the live source</p>
+</div>
+
+<div class="grid r1">
+  <!-- 1. BUILD -->
+  <section class="panel">
+    <div class="ph blue"><h2>1. Knowledge Build / Indexing Pipeline</h2>
+      <p>Ingest documents, tickets, operations records and code; check them; extract quoted, ontology-typed relationships; save a version, check it, publish it.</p></div>
+    <div class="pipe">
+      <div class="col c1"><h3>1. Sources</h3>
+        <div class="it"><img class="i" src="icons/document.png" alt=""><div><b>Documents &amp; files</b><small>Uploads: PDF, Office, HTML, images</small>
+          <div class="logos"><img class="s" src="icons/pdf.png" alt=""><img class="s" src="icons/word.png" alt=""><img class="s" src="icons/excel.png" alt=""></div></div></div>
+        <div class="it"><img class="i" src="icons/sharepoint.png" alt=""><div><b>Web links &amp; SharePoint</b><small>A page or a document library</small></div></div>
+        <div class="it"><img class="i" src="icons/jira.png" alt=""><div><b>Work tracking</b><small>Jira &amp; GitHub issues — bugs, stories, tasks</small></div></div>
+        <div class="it"><img class="i" src="icons/support.png" alt=""><div><b>IT service management</b><small>ServiceNow incidents, problems, changes, KB articles</small></div></div>
+        <div class="it"><img class="i" src="icons/automation.png" alt=""><div><b>Automation catalogue</b><small>AWX, Rundeck, Azure Automation, a CSV list</small></div></div>
+        <div class="it"><img class="i" src="icons/github.png" alt=""><div><b>Code repositories</b><small>GitHub or a server folder — Code Graph only</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="col c2"><h3>2. Intake &amp; Conversion</h3>
+        <div class="it"><img class="i" src="icons/antivirus.png" alt=""><div><b>Virus scan</b><small>Every upload scanned by ClamAV; no clean answer means it is refused</small></div></div>
+        <div class="it"><img class="i" src="icons/refresh.png" alt=""><div><b>Text conversion</b><small>MarkItDown turns each file into text, with the network cut off</small></div></div>
+        <div class="it"><img class="i" src="icons/scan.png" alt=""><div><b>OCR</b><small>Tesseract reads scans and images; each page records its confidence</small></div></div>
+        <div class="it"><img class="i" src="icons/mask.png" alt=""><div><b>Masking</b><small>Health IDs and chosen personal data become placeholders before storing</small></div></div>
+        <div class="it"><img class="i" src="icons/sync.png" alt=""><div><b>Scheduled imports</b><small>Connectors re-import on a timer, reading only what changed</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="col c3"><h3>3. Check &amp; Passages</h3>
+        <div class="it"><img class="i" src="icons/speedometer.png" alt=""><div><b>Source check</b><small>Is the text readable, tables usable, structured, titled, finished? Rated Ready, Needs work or Poor</small></div></div>
+        <div class="it"><img class="i" src="icons/tag.png" alt=""><div><b>Document type</b><small>Rules pick one of 20 types (ADR, runbook…) from the content; AI helps only when unsure</small></div></div>
+        <div class="it"><img class="i" src="icons/privacy.png" alt=""><div><b>Personal data</b><small>PHI / PII flagged; a person decides whether to restrict it from AI</small></div></div>
+        <div class="it"><img class="i" src="icons/paragraph.png" alt=""><div><b>Passages</b><small>Each source cut into overlapping passages, indexed for keyword search</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="col c4"><h3>4. AI Processing</h3>
+        <div class="it"><img class="i" src="icons/ai.png" alt=""><div><b>LLM extraction</b><small>The model proposes entities and relationships, each with an exact quote, typed by the ontology (panel 6)</small></div></div>
+        <div class="it"><img class="i" src="icons/scatter.png" alt=""><div><b>Embeddings</b><small>Vectors find passages by meaning; they suggest, never cite</small></div></div>
+        <div class="it"><img class="i" src="icons/tree.png" alt=""><div><b>Code structure</b><small>Graphify maps files, calls and imports, then groups them into components</small></div></div>
+        <div class="it"><img class="i" src="icons/database.png" alt=""><div><b>Answers cached</b><small>Every model answer is kept by content, so unchanged text is never paid for twice</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="col c5"><h3>5. Knowledge Graph</h3>
+        <div class="it"><img class="i" src="icons/mindmap.png" alt=""><div><b>Structural + AI graph</b><small>Rules link tables, references and values; AI adds quoted relationships</small></div></div>
+        <div class="it"><img class="i" src="icons/flowchart.png" alt=""><div><b>Source lineage</b><small>Every edge records its source, a fingerprint of that source and the quote</small></div></div>
+        <div class="it"><img class="i" src="icons/layers.png" alt=""><div><b>Versioned drafts</b><small>Every build saves a draft; unchanged parts are stored once across versions</small></div></div>
+        <div class="it"><img class="i" src="icons/barchart.png" alt=""><div><b>Benchmarked</b><small>Each version answers the owners' test questions, with and without AI</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="col c6"><h3>6. Check &amp; Publish</h3>
+        <div class="it"><img class="i" src="icons/checkbox.png" alt=""><div><b>Hard checks</b><small>Refused if a source changed or was retired, a quote no longer matches, or a source was restricted</small></div></div>
+        <div class="it"><img class="i" src="icons/scales.png" alt=""><div><b>Soft checks</b><small>Compared with the live version: answers, sources, quality. Worse needs a written reason</small></div></div>
+        <div class="it"><img class="i" src="icons/rocket.png" alt=""><div><b>Publish</b><small>A person publishes, or it publishes itself when an owner allowed it and every check passed</small></div></div>
+      </div>
+      <div class="arrow">›</div>
+      <div class="store">
+        <svg class="cyl" viewBox="0 0 150 150">
+          <defs><linearGradient id="cg" x1="0" x2="1"><stop offset="0" stop-color="#b9a2ef"/><stop offset=".5" stop-color="#e2d8fb"/><stop offset="1" stop-color="#a88ce8"/></linearGradient></defs>
+          <path d="M15 28v94c0 11 27 20 60 20s60-9 60-20V28" fill="url(#cg)" stroke="#7b4fd0" stroke-width="2.5"/>
+          <ellipse cx="75" cy="28" rx="60" ry="20" fill="#cfc0f6" stroke="#7b4fd0" stroke-width="2.5"/>
+          <path d="M15 60c0 11 27 20 60 20s60-9 60-20M15 92c0 11 27 20 60 20s60-9 60-20" fill="none" stroke="#7b4fd0" stroke-width="1.5" opacity=".6"/>
+          <text x="75" y="70" text-anchor="middle" font-size="17" font-weight="700" fill="#3c2380" font-family="Segoe UI">Published</text>
+          <text x="75" y="90" text-anchor="middle" font-size="17" font-weight="700" fill="#3c2380" font-family="Segoe UI">Knowledge</text>
+        </svg>
+        <ul><li>Published graph version</li><li>Passage index</li><li>Vector index</li><li>Verified sources &amp; lineage</li><li>Operations graph (live)</li></ul>
+      </div>
+    </div>
+    <div class="pipe-foot">
+      <div class="chip"><img src="icons/sync.png" alt=""><span><b>Queued, not polled</b> — each change queues one job; background workers pick it up</span></div>
+      <div class="chip"><img src="icons/sparkles.png" alt=""><span><b>AI on every version</b> — only changed text is sent; budget checked, every call receipted</span></div>
+      <div class="chip"><img src="icons/verified.png" alt=""><span><b>Nothing answers until published</b> — chat and Code Factory read only the published version</span></div>
+    </div>
+  </section>
+
+  <!-- 2. RETRIEVAL -->
+  <section class="panel">
+    <div class="ph purple"><h2>2. Retrieval / Answering Pipeline</h2>
+      <p>Understand the question, gather candidates from passages and the graph, filter and rerank, then answer — only with citations that verify.</p></div>
+    <div class="ret">
+      <div class="flow">
+        <div class="q"><img class="i" src="icons/user.png" alt=""><div><b>User question</b><br><i>"Is patient consent checked before a FHIR export?"</i></div></div>
+        <div class="box" style="background:var(--purple-bg)"><img class="i" src="icons/brain.png" alt=""><div><h4>1. Query understanding</h4><ul><li>Split into search terms; filler words dropped, word endings normalised</li><li>IDs kept whole — BR-05, C-09, CARE-401</li></ul></div></div>
+        <div class="down">▼</div>
+        <div class="two">
+          <div class="box" style="background:var(--blue-bg)"><img class="i" src="icons/search.png" alt=""><div><h4>2. Passage retrieval</h4><ul><li>Full-text search over passages</li><li>Most question terms first, then BM25</li><li>Every source's best passage first</li></ul></div></div>
+          <div class="box" style="background:var(--pink-bg)"><img class="i" src="icons/mindmap.png" alt=""><div><h4>3. Graph retrieval</h4><ul><li>Matches relationships in the published graph</li><li>Walks up to two hops, after direct matches</li><li>Code Factory follows IDs a ticket names</li></ul></div></div>
+        </div>
+        <div class="down">▼</div>
+        <div class="box" style="background:var(--orange-bg)"><img class="i" src="icons/filter.png" alt=""><div><h4>4. Fuse, filter &amp; rerank</h4><ul><li>Meaning matches merged with keyword matches</li><li>Only what the asker may see — Jira permissions, fail closed</li><li>Restricted sources never read; AI rerank only reorders</li></ul></div></div>
+        <div class="down">▼</div>
+        <div class="box" style="background:var(--green-bg)"><img class="i" src="icons/verified.png" alt=""><div><h4>5. Verify &amp; generate</h4><ul><li>Each citation re-checked: source active, unchanged, quote still there</li><li>Claude or OpenAI writes it through the AI gateway: budget, receipt</li><li>Streamed live; resumes after a dropped connection</li></ul></div></div>
+        <div class="box" style="background:#eef2f9"><img class="i" src="icons/chat.png" alt=""><div><h4>Answer with sources</h4><ul><li>Plain-language answer with numbered citations you can open</li></ul></div></div>
+      </div>
+      <div class="side">
+        <h4>Example subgraph retrieved</h4>
+        <svg viewBox="0 0 290 300" width="290" height="300" font-family="Segoe UI">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#6b7896"/></marker></defs>
+          <g font-size="11.5" fill="#4a5571" font-style="italic">
+            <path d="M118 28H178" stroke="#6b7896" stroke-width="1.6" marker-end="url(#ah)"/><text x="148" y="21" text-anchor="middle">affects</text>
+            <path d="M75 46L128 106" stroke="#6b7896" stroke-width="1.6" marker-end="url(#ah)"/><text x="52" y="84">violates</text>
+            <path d="M118 147L58 198" stroke="#6b7896" stroke-width="1.6" marker-end="url(#ah)"/><text x="18" y="172">required by</text>
+            <path d="M145 144V256" stroke="#6b7896" stroke-width="1.6" marker-end="url(#ah)"/><text x="151" y="252">implemented in</text>
+          </g>
+          <g font-size="12.5" font-weight="700" text-anchor="middle">
+            <rect x="18" y="10" width="100" height="36" rx="9" fill="#cfe0fb" stroke="#2f6fd6" stroke-width="2"/><text x="68" y="26" fill="#1d4fa3">CARE-401</text><text x="68" y="39" font-size="9.5" font-weight="400" fill="#1d4fa3">Ticket</text>
+            <rect x="180" y="10" width="100" height="36" rx="9" fill="#fbe9f0" stroke="#d0457a" stroke-width="2"/><text x="230" y="26" fill="#a2295a">FHIR export</text><text x="230" y="39" font-size="9.5" font-weight="400" fill="#a2295a">Component</text>
+            <rect x="95" y="108" width="100" height="36" rx="9" fill="#fde7c7" stroke="#d9822b" stroke-width="2"/><text x="145" y="124" fill="#8b4a0e">BR-05</text><text x="145" y="137" font-size="9.5" font-weight="400" fill="#8b4a0e">Requirement</text>
+            <rect x="10" y="200" width="88" height="36" rx="9" fill="#e2f4f4" stroke="#178a8f" stroke-width="2"/><text x="54" y="216" fill="#11666a">C-09</text><text x="54" y="229" font-size="9.5" font-weight="400" fill="#11666a">Control</text>
+            <rect x="80" y="258" width="130" height="36" rx="9" fill="#fbe9f0" stroke="#d0457a" stroke-width="2"/><text x="145" y="274" fill="#a2295a">Consent service</text><text x="145" y="287" font-size="9.5" font-weight="400" fill="#a2295a">Component</text>
+          </g>
+        </svg>
+        <h4 style="text-align:left;margin-top:2px">Retrieved supporting sources</h4>
+        <div class="src"><img class="s" src="icons/word.png" alt=""><div><b>Business requirements.docx</b><br>BR-05 row <span class="ok">✓ verified</span></div></div>
+        <div class="src"><img class="s" src="icons/jira.png" alt=""><div><b>Jira · CARE-401</b><br>Open · Highest <span class="ok">✓ verified</span></div></div>
+        <div class="src"><img class="s" src="icons/excel.png" alt=""><div><b>Traceability matrix.xlsx</b><br>BR-05 row <span class="ok">✓ verified</span></div></div>
+        <div class="src"><img class="s" src="icons/excel.png" alt=""><div><b>Risk register.xlsx</b><br>R-01 row <span class="ok">✓ verified</span></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="panel apps-panel">
+  <div class="ph teal"><h2>3. Published Knowledge Applications</h2>
+    <p>Six applications read the published knowledge. Each re-checks the person&#39;s access on every request and every tool call, and none reads a draft.</p></div>
+  <div class="apps">
+    <div class="hub">
+      <svg viewBox="0 0 150 150" width="128" height="128" font-family="Segoe UI">
+        <defs><linearGradient id="cg2" x1="0" x2="1"><stop offset="0" stop-color="#b9a2ef"/><stop offset=".5" stop-color="#e2d8fb"/><stop offset="1" stop-color="#a88ce8"/></linearGradient></defs>
+        <path d="M15 28v94c0 11 27 20 60 20s60-9 60-20V28" fill="url(#cg2)" stroke="#7b4fd0" stroke-width="2.5"/>
+        <ellipse cx="75" cy="28" rx="60" ry="20" fill="#cfc0f6" stroke="#7b4fd0" stroke-width="2.5"/>
+        <path d="M15 60c0 11 27 20 60 20s60-9 60-20M15 92c0 11 27 20 60 20s60-9 60-20" fill="none" stroke="#7b4fd0" stroke-width="1.5" opacity=".6"/>
+        <text x="75" y="70" text-anchor="middle" font-size="17" font-weight="700" fill="#3c2380">Published</text>
+        <text x="75" y="90" text-anchor="middle" font-size="17" font-weight="700" fill="#3c2380">Knowledge</text>
+      </svg>
+      <small>From the build pipeline (panel 1), answered through the retrieval pipeline (panel 2)</small>
+    </div>
+    <div class="fan">›</div>
+    <div class="app" style="background:#e8f0fc;border-color:#9fbdf0">
+          <div class="app-h"><img src="icons/chat.png" alt=""><div><b style="color:#1d4fa3">Chat</b><small>Ask in plain language; every answer cites its sources.</small></div></div>
+          <ul><li>Answers from the published graph and passages, streamed live</li><li>Every citation opens the exact passage it quotes</li><li>Works without JavaScript; “Wrong answer?” feeds the learning loop</li></ul>
+          <div class="who" style="color:#1d4fa3">For: Everyone with access</div>
+        </div><div class="app" style="background:#fdf1e3;border-color:#f0c28f">
+          <div class="app-h"><img src="icons/factory.png" alt=""><div><b style="color:#a65a12">Code Factory</b><small>From a Jira ticket to a reviewed code change.</small></div></div>
+          <ul><li>Triage, analysis and design — every finding cited from knowledge and code</li><li>A person approves the plan before any code is written</li><li>Delivers a GitHub pull request or into a server folder, with checks reported</li></ul>
+          <div class="who" style="color:#a65a12">For: Engineers &amp; approvers</div>
+        </div><div class="app" style="background:#fbe9f0;border-color:#ecaac4">
+          <div class="app-h"><img src="icons/support.png" alt=""><div><b style="color:#a2295a">ServiceOps</b><small>Incident triage grounded in runbooks and history.</small></div></div>
+          <ul><li>Triage cites runbook passages and similar past incidents</li><li>Live operations graph: incidents, changes, KB articles, automations</li><li>Automations run only through an authorized queue, each with a receipt</li></ul>
+          <div class="who" style="color:#a2295a">For: Operations &amp; SRE</div>
+        </div><div class="app" style="background:#e6f5ec;border-color:#9fd6b6">
+          <div class="app-h"><img src="icons/view.png" alt=""><div><b style="color:#1e7349">Code Review</b><small>Checks a branch or pull request before it merges.</small></div></div>
+          <ul><li>Rule checks: what it reaches, routes changed, untested code, requirements touched</li><li>AI review on request — every finding quotes the diff or a requirement</li><li>Nothing is posted to GitHub</li></ul>
+          <div class="who" style="color:#1e7349">For: Developers</div>
+        </div><div class="app" style="background:#f0eafb;border-color:#c5b0ef">
+          <div class="app-h"><img src="icons/docs.png" alt=""><div><b style="color:#5a34a8">Code Documentation</b><small>Documentation written from the code itself.</small></div></div>
+          <ul><li>Data models, routes, components and requirement traceability</li><li>Each section labelled: read from code, inferred or AI-written</li><li>Can become knowledge — never proof for its own code</li></ul>
+          <div class="who" style="color:#5a34a8">For: Architects &amp; new joiners</div>
+        </div><div class="app" style="background:#e2f4f4;border-color:#8fcfd1">
+          <div class="app-h"><img src="icons/api.png" alt=""><div><b style="color:#11666a">REST API &amp; MCP</b><small>The same knowledge in other tools and AI assistants.</small></div></div>
+          <ul><li>Graph search and MCP tools — no model call, no spend</li><li>Chat and triage APIs use the same answering path and budget</li><li>A token acts as its user: revoke the grant and it stops</li></ul>
+          <div class="who" style="color:#11666a">For: Integrations &amp; agents</div>
+        </div>
+  </div>
+  <div class="loop">
+    <div class="lp"><img src="icons/learning.png" alt=""><span><b>Learning loop</b> — delivered changes, confirmed incident causes, uncited answers and &ldquo;wrong answer&rdquo; reports come back as candidates. An owner or contributor accepts each one before it becomes knowledge or a new test question.</span></div>
+    <div class="lp"><img src="icons/scales.png" alt=""><span><b>Rules</b> — an owner marks coding standards or security designs as rules; Code Factory&#39;s plan review shows the ones that apply. A rule never approves anything.</span></div>
+    <div class="lp"><img src="icons/shield.png" alt=""><span><b>Same access everywhere</b> — no grant reads as &ldquo;not found&rdquo;, source permissions follow the asker, and restricted sources never reach a model.</span></div>
+  </div>
+</div>
+
+<div class="panel acc-panel">
+  <div class="ph purple"><h2>4. Organization Hierarchy &amp; Role-Based Access</h2>
+    <p>Deny by default: access is an explicit grant on one application, re-checked on every request and every AI tool call. Administering the tree never grants access to what is in it.</p></div>
+  <div class="acc">
+    <div class="acol hier">
+      <h3>Four levels under the platform</h3>
+      <div class="lvl" style="margin-left:0px;background:#f0eafb;border-color:#c5b0ef">
+          <img src="icons/server.png" alt=""><div><b style="color:#5a34a8">Platform</b><em style="color:#5a34a8">Platform administrators</em><small>Console, people, sign-in settings, operations; can disable or delete any level. Never opens an application without a grant.</small></div></div><div class="lvl" style="margin-left:26px;background:#e8f0fc;border-color:#9fbdf0">
+          <img src="icons/organization.png" alt=""><div><b style="color:#1d4fa3">Organization</b><em style="color:#1d4fa3">Members &middot; organization administrators</em><small>Approve invitations, add members, create portfolios, products and applications.</small></div></div><div class="lvl" style="margin-left:52px;background:#e2f4f4;border-color:#8fcfd1">
+          <img src="icons/portfolio.png" alt=""><div><b style="color:#11666a">Portfolio</b><em style="color:#11666a">Groups products</em><small>A business area of the organization.</small></div></div><div class="lvl" style="margin-left:78px;background:#fdf1e3;border-color:#f0c28f">
+          <img src="icons/product.png" alt=""><div><b style="color:#a65a12">Product</b><em style="color:#a65a12">Groups applications</em><small>One product, with its applications for engineering, operations or both.</small></div></div><div class="lvl" style="margin-left:104px;background:#e6f5ec;border-color:#9fd6b6">
+          <img src="icons/application.png" alt=""><div><b style="color:#1e7349">Application</b><em style="color:#1e7349">Grants: owner &middot; contributor &middot; viewer</em><small>Knowledge, features, ontology pack, connectors, credentials, AI budget. Its own data, isolated in the database.</small></div></div>
+      <div class="notes">
+        <div><img src="icons/refresh.png" alt=""><span><b>Disable is reversible.</b> Each level has its own switch; an application is live only while all four are on. Queued work is stopped; running work finishes.</span></div>
+        <div><img src="icons/padlock.png" alt=""><span><b>Delete is deliberate.</b> Only a disabled level, with its name typed, and nothing in flight. Audit events and AI receipts outlive it.</span></div>
+      </div>
+    </div>
+    <div class="acol">
+      <h3>Roles &mdash; what each can do</h3>
+      <table class="roles">
+          <thead><tr><th></th><td class="v">Viewer</td><td class="c">Contrib&shy;utor</td><td class="o">Owner</td><td class="a">+ Approval right</td><td class="g">Org admin</td><td class="p">Platform admin</td></tr></thead>
+          <tbody><tr><th>Ask in Chat; read answers and their sources</th><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Read knowledge, code repos, plans and ServiceOps</th><td class="y">&#10003;</td><td class="y">&#10003;</td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Add, import and change knowledge</th><td></td><td class="y">&#10003;</td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Start Code Factory runs, triage incidents, request reviews</th><td></td><td class="y">&#10003;</td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Give, change and revoke access; invite people</th><td></td><td></td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Set AI models, credentials, budget, features, connectors</th><td></td><td></td><td class="y">&#10003;</td><td></td><td></td><td></td></tr><tr><th>Approve Code Factory plans</th><td></td><td></td><td></td><td class="y">&#10003;</td><td></td><td></td></tr><tr><th>Approve invitations, add members, create applications</th><td></td><td></td><td></td><td></td><td class="y">&#10003;</td><td></td></tr><tr><th>Disable or delete any level; platform console</th><td></td><td></td><td></td><td></td><td></td><td class="y">&#10003;</td></tr></tbody></table>
+      <div class="rnote"><img src="icons/admin.png" alt=""><span>Each role includes the one before it. <b>Organization and platform administrators get no application access</b> without a grant of their own. Approval is a separate right; a plan&#39;s author approves it only where the deployment allows self-approval.</span></div>
+    </div>
+    <div class="acol">
+      <h3>Checked on every request</h3>
+      <div class="ck"><span class="n">1</span><img src="icons/user.png" alt=""><div><b>Who is asking?</b><small>A signed-in session, or an API bearer token that acts as its user</small></div></div><div class="ck"><span class="n">2</span><img src="icons/layers.png" alt=""><div><b>Is the whole chain on?</b><small>Organization, portfolio, product and application all active</small></div></div><div class="ck"><span class="n">3</span><img src="icons/key.png" alt=""><div><b>Is there a grant?</b><small>An explicit grant for this person, with a role, not past its end date</small></div></div><div class="ck"><span class="n">4</span><img src="icons/checkbox.png" alt=""><div><b>Is the feature on?</b><small>Chat, Code Factory, ServiceOps&hellip; each switched per application</small></div></div><div class="ck"><span class="n">5</span><img src="icons/database.png" alt=""><div><b>Database bound</b><small>Row security lets the connection read and write only this application</small></div></div><div class="ck"><span class="n">6</span><img src="icons/sync.png" alt=""><div><b>Again for every tool call</b><small>AI tools are bound to one application and one user before a run starts</small></div></div><div class="nf"><b>Any answer &ldquo;no&rdquo; &rarr; &ldquo;Not found&rdquo; (404)</b><small>The platform never confirms that an application exists to someone without access</small></div>
+    </div>
+  </div>
+</div>
+
+<div class="panel id-panel">
+  <div class="ph teal"><h2>5. Identity, User Management &amp; Security</h2>
+    <p>Microsoft Entra ID signs people in and provisions accounts, but grants nothing: every grant is made, audited and reviewed here. User ID and password sign-in always works, with or without Microsoft.</p></div>
+  <div class="idg">
+    <div class="icol seq">
+      <h3><img src="icons/entra.png" alt="">Single sign-on &mdash; OpenID Connect with PKCE</h3>
+      <svg viewBox="0 0 700 560" font-family="Segoe UI">
+        <defs><marker id="sq" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#4a5571"/></marker></defs>
+        <g text-anchor="middle" font-size="15" font-weight="700">
+          <rect x="20" y="6" width="150" height="54" rx="10" fill="#e8f0fc" stroke="#2f6fd6" stroke-width="2"/><image href="icons/user.png" x="30" y="17" width="32" height="32"/><text x="112" y="38" fill="#1d4fa3">Person</text>
+          <rect x="270" y="6" width="160" height="54" rx="10" fill="#f0eafb" stroke="#7b4fd0" stroke-width="2"/><image href="icons/brain.png" x="278" y="17" width="32" height="32"/><text x="368" y="31" fill="#5a34a8">Digital</text><text x="368" y="49" fill="#5a34a8">Brain</text>
+          <rect x="528" y="6" width="160" height="54" rx="10" fill="#e2f4f4" stroke="#178a8f" stroke-width="2"/><image href="icons/entra.png" x="536" y="17" width="32" height="32"/><text x="626" y="31" fill="#11666a">Microsoft</text><text x="626" y="49" fill="#11666a">Entra ID</text>
+        </g>
+        <g stroke="#b9c5dc" stroke-width="2" stroke-dasharray="5 5"><path d="M95 62V548"/><path d="M350 62V548"/><path d="M608 62V548"/></g>
+        <g font-size="13.5" fill="#16213a" stroke-width="2">
+          <path d="M97 92H346" stroke="#4a5571" marker-end="url(#sq)"/><text x="222" y="84" text-anchor="middle">Sign in with Microsoft</text>
+          <rect x="356" y="100" width="236" height="40" rx="7" fill="#fdf8e1" stroke="#e3cf86" stroke-width="1"/><text x="364" y="117">Keeps state, nonce and a PKCE</text><text x="364" y="133">verifier for 10 minutes</text>
+          <path d="M352 164H604" stroke="#4a5571" marker-end="url(#sq)"/><text x="478" y="157" text-anchor="middle">Authorize at the one pinned tenant</text>
+          <rect x="434" y="176" width="166" height="56" rx="7" fill="#e2f4f4" stroke="#8fcfd1" stroke-width="1"/><text x="442" y="193">Entra signs the person in;</text><text x="442" y="209">MFA and conditional</text><text x="442" y="225">access are the directory&#39;s</text>
+          <path d="M604 256H354" stroke="#4a5571" marker-end="url(#sq)"/><text x="478" y="249" text-anchor="middle">One-time code + state</text>
+          <path d="M352 292H604" stroke="#4a5571" marker-end="url(#sq)"/><text x="478" y="285" text-anchor="middle">Code + verifier + client secret</text>
+          <text x="478" y="304" text-anchor="middle" font-size="12" fill="#4a5571">server to server</text>
+          <path d="M604 330H354" stroke="#4a5571" marker-end="url(#sq)"/><text x="478" y="323" text-anchor="middle">Signed ID token</text>
+          <rect x="140" y="342" width="204" height="74" rx="7" fill="#fdf8e1" stroke="#e3cf86" stroke-width="1"/><text x="148" y="360">Verify: RS256 with the tenant&#39;s</text><text x="148" y="376">published keys; issuer, tenant,</text><text x="148" y="392">audience, nonce, expiry; the</text><text x="148" y="408">sign-in is used once</text>
+          <rect x="140" y="424" width="204" height="74" rx="7" fill="#fdf8e1" stroke="#e3cf86" stroke-width="1"/><text x="148" y="442">Match tenant + object id. First</text><text x="148" y="458">link by sign-in name only if one</text><text x="148" y="474">account matches and it is not a</text><text x="148" y="490">platform administrator</text>
+          <path d="M346 526H99" stroke="#1e7349" marker-end="url(#sq)"/><text x="222" y="519" text-anchor="middle" fill="#1e7349" font-weight="700">Signed in &mdash; nothing granted</text>
+        </g>
+        <g font-size="12" font-weight="700" fill="#fff" text-anchor="middle">
+          <circle cx="110" cy="80" r="10" fill="#7b4fd0"/><text x="110" y="84">1</text>
+          <circle cx="334" cy="164" r="10" fill="#7b4fd0"/><text x="334" y="168">2</text>
+          <circle cx="590" cy="244" r="10" fill="#7b4fd0"/><text x="590" y="248">3</text>
+          <circle cx="334" cy="292" r="10" fill="#7b4fd0"/><text x="334" y="296">4</text>
+          <circle cx="130" cy="352" r="10" fill="#7b4fd0"/><text x="130" y="356">5</text>
+          <circle cx="130" cy="434" r="10" fill="#7b4fd0"/><text x="130" y="438">6</text>
+          <circle cx="110" cy="514" r="10" fill="#1e7349"/><text x="110" y="518">7</text>
+        </g>
+      </svg>
+      <div class="side">
+        <div><img src="icons/sync.png" alt=""><span><b>SCIM provisioning</b> (off by default): Entra creates accounts with no password, membership or grant, updates name and email, and deactivates on unassign. Never deletes, refuses groups, never touches a platform administrator.</span></div>
+        <div><img src="icons/user.png" alt=""><span><b>Password sign-in always works</b>, with an optional authenticator app. Groups and app roles from Entra are never read, so the directory cannot widen access.</span></div>
+      </div>
+    </div>
+    <div class="icol">
+      <h3><img src="icons/admin.png" alt="">User management &mdash; join, work, leave</h3>
+      <div class="stage blue"><h4>Join</h4><ol><li><b>Owner invites</b><small>A member of the organization is granted at once; anyone else waits</small></li><li><b>Org admin approves</b><small>The inviter&#39;s rights are checked again at approval</small></li><li><b>One-time link, 72 hours</b><small>The person sets their own password &mdash; never sent to them</small></li></ol></div><div class="stage green"><h4>Work</h4><ol><li><b>Optional authenticator app</b><small>Six-digit codes, each used once; ten recovery codes</small></li><li><b>Access can end on a date</b><small>Viewer and contributor grants expire; an owner&#39;s never does</small></li><li><b>Owners review access</b><small>Every 90 days each owner confirms who has access</small></li></ol></div><div class="stage pink"><h4>Leave</h4><ol><li><b>Offboarding names a successor</b><small>Ownership, administration and connectors move to them</small></li><li><b>Disabled and tokens revoked</b><small>Automatic AI refresh is stopped, not handed on</small></li><li><b>Directory unassigns (SCIM)</b><small>Account deactivated; sessions and API tokens end</small></li></ol></div>
+      <div class="audit"><img src="icons/copy.png" alt=""><span>Every step is an audit event naming who did it. Automatic actions run as named non-login accounts &mdash; <b>access-expiry</b>, <b>entra-provisioning</b> &mdash; so nothing is misattributed.</span></div>
+    </div>
+    <div class="icol">
+      <h3><img src="icons/shield.png" alt="">Security built in</h3>
+      <div class="secg"><div class="sc"><div class="sch"><img src="icons/padlock.png" alt=""><b>Sign-in</b></div><ul><li>Passwords hashed with Argon2, at least 14 characters</li><li>Locked for 15 minutes after 5 failures, by account and address</li><li>30-minute sessions; HttpOnly, Secure cookies; HSTS for a year</li></ul></div><div class="sc"><div class="sch"><img src="icons/shield.png" alt=""><b>Browser</b></div><ul><li>Strict Content Security Policy: no inline script, no other origins</li><li>Cannot be framed; camera, microphone and location off</li><li>AI text is escaped, never rendered as Markdown or links</li></ul></div><div class="sc"><div class="sch"><img src="icons/api.png" alt=""><b>API &amp; MCP</b></div><ul><li>Bearer token only, stored as a SHA-256 digest</li><li>120 requests a minute per token</li><li>A token is its user: revoke the grant and the token stops</li></ul></div><div class="sc"><div class="sch"><img src="icons/database.png" alt=""><b>Data isolation</b></div><ul><li>PostgreSQL row security binds each connection to one application</li><li>Runs as a least-privilege role: rows only, no schema changes</li><li>Restricted sources never reach a model; health IDs masked first</li></ul></div><div class="sc"><div class="sch"><img src="icons/key.png" alt=""><b>Secrets</b></div><ul><li>One file per provider per application, owner-only</li><li>Never in the database, logs, audit trail or browser</li><li>A typed credential never overrides an operator&#39;s mounted one</li></ul></div><div class="sc"><div class="sch"><img src="icons/antivirus.png" alt=""><b>Content &amp; network</b></div><ul><li>Every upload virus-scanned; conversion runs with no network</li><li>Outbound fetches refuse private addresses and pin the address</li><li>Parsers and AI coding agents run in a locked-down sandbox</li></ul></div><div class="sc"><div class="sch"><img src="icons/copy.png" alt=""><b>Accountability</b></div><ul><li>Audit trail kept at least six years (HIPAA)</li><li>A receipt for every paid AI call, against a monthly budget</li><li>Traces and metrics carry ids and timings only, never content</li></ul></div><div class="sc"><div class="sch"><img src="icons/verified.png" alt=""><b>Answers</b></div><ul><li>Every citation re-checked against its live source</li><li>Source-system permissions follow the asker, failing closed</li><li>Scorecard release gate: leak counts and HIPAA probes must match</li></ul></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="grid r2">
+  <!-- 3. ONTOLOGY -->
+  <section class="panel">
+    <div class="ph orange"><h2>6. Ontology — one closed registry per application, three to choose from</h2>
+      <p>Every application follows the core registry or an industry pack built on top of it. The extraction prompt is written from the registry, and every proposal is checked against it — the exact quote first, then the types at each end.</p></div>
+    <div class="packs">
+      <div class="pack p-core">
+        <div class="pk-h"><img src="icons/software.png" alt=""><div><b>Software delivery &amp; operations</b><small>The core · every pack includes it · 8 types · 12 relations</small></div></div>
+        <svg viewBox="0 0 450 246" font-family="Segoe UI"><defs><marker id="oa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#6b7896"/></marker></defs><g font-size="11" fill="#4a5571" font-style="italic"><path d="M104 30.0L173 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="24" text-anchor="middle">violates</text><path d="M275 30.0L344 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="24" text-anchor="middle">required by</text><path d="M225.0 48L225.0 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="231" y="82" text-anchor="start">implemented in</text><path d="M84 48L195 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="100" y="76" text-anchor="end">affects</text><path d="M104 125.0L173 125.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="119" text-anchor="middle">is on</text><path d="M346 125.0L277 125.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="119" text-anchor="middle">depends on</text><path d="M84 202L195 145" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="118" y="174" text-anchor="end">covers</text><path d="M255 202L366 145" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="328" y="186" text-anchor="start">modifies</text></g><g font-size="12.5" font-weight="700" text-anchor="middle"><rect x="4" y="12" width="100" height="36" rx="9" fill="#cfe0fb" stroke="#2f6fd6" stroke-width="2"/><text x="54.0" y="35" fill="#1d4fa3">Ticket</text><rect x="175" y="12" width="100" height="36" rx="9" fill="#fde7c7" stroke="#d9822b" stroke-width="2"/><text x="225.0" y="35" fill="#8b4a0e">Requirement</text><rect x="346" y="12" width="100" height="36" rx="9" fill="#d3efef" stroke="#178a8f" stroke-width="2"/><text x="396.0" y="35" fill="#11666a">Control</text><rect x="4" y="107" width="100" height="36" rx="9" fill="#fbdede" stroke="#c93b3b" stroke-width="2"/><text x="54.0" y="130" fill="#a32a2a">Incident</text><rect x="175" y="107" width="100" height="36" rx="9" fill="#fbe0eb" stroke="#d0457a" stroke-width="2"/><text x="225.0" y="130" fill="#a2295a">Component</text><rect x="346" y="107" width="100" height="36" rx="9" fill="#dcf2e5" stroke="#2e9b62" stroke-width="2"/><text x="396.0" y="130" fill="#1e7349">Code</text><rect x="4" y="202" width="100" height="36" rx="9" fill="#e9e0fb" stroke="#7b4fd0" stroke-width="2"/><text x="54.0" y="225" fill="#5a34a8">Runbook</text><rect x="175" y="202" width="100" height="36" rx="9" fill="#fbedc2" stroke="#c99a1c" stroke-width="2"/><text x="225.0" y="225" fill="#7a560c">Change</text></g><g font-size="11" fill="#4a5571"><text x="300" y="208">also: fixes, verifies,</text><text x="300" y="222">deployed to,</text><text x="300" y="236">references</text></g></svg>
+        <div class="pk-l"><span>Types</span><div><span class="ch ty">Ticket</span><span class="ch ty">Requirement</span><span class="ch ty">Control</span><span class="ch ty">Component</span><span class="ch ty">Code</span><span class="ch ty">Runbook</span><span class="ch ty">Incident</span><span class="ch ty">Change</span></div></div>
+        <div class="pk-l"><span>Relations</span><div><span class="ch re">depends on</span><span class="ch re">affects</span><span class="ch re">violates</span><span class="ch re">required by</span><span class="ch re">implemented in</span><span class="ch re">covers</span><span class="ch re">is on</span><span class="ch re">modifies</span><span class="ch re">fixes</span><span class="ch re">deployed to</span><span class="ch re">verifies</span><span class="ch re">references</span></div></div>
+        <div class="pk-n">A ticket, runbook, incident or change may be the subject of what it says — its own key is never repeated in its body.</div>
+      </div>
+      <div class="plus">+</div>
+      <div class="pack p-ins">
+        <div class="pk-h"><img src="icons/insurance.png" alt=""><div><b>US insurance</b><small>P&amp;C, life &amp; annuity · adds 17 types · 23 relations</small></div></div>
+        <svg viewBox="0 0 450 246" font-family="Segoe UI"><defs><marker id="oa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#6b7896"/></marker></defs><g font-size="11" fill="#4a5571" font-style="italic"><path d="M175 30.0L106 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="24" text-anchor="middle">placed by</text><path d="M275 30.0L344 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="24" text-anchor="middle">issued by</text><path d="M195 48L84 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="110" y="76" text-anchor="end">written on</text><path d="M104 125.0L173 125.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="119" text-anchor="middle">includes</text><path d="M366 107L255 50" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="326" y="76" text-anchor="start">made under</text><path d="M225.0 143L225.0 200" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="231" y="177" text-anchor="start">covers peril</text><path d="M396.0 143L396.0 200" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="390" y="177" text-anchor="end">arises from</text><path d="M346 220.0L277 220.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="214" text-anchor="middle">caused by</text><path d="M54.0 202L54.0 145" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="60" y="177" text-anchor="start">files</text></g><g font-size="12.5" font-weight="700" text-anchor="middle"><rect x="4" y="12" width="100" height="36" rx="9" fill="#e9e0fb" stroke="#7b4fd0" stroke-width="2"/><text x="54.0" y="35" fill="#5a34a8">Producer</text><rect x="175" y="12" width="100" height="36" rx="9" fill="#cfe0fb" stroke="#2f6fd6" stroke-width="2"/><text x="225.0" y="35" fill="#1d4fa3">Policy</text><rect x="346" y="12" width="100" height="36" rx="9" fill="#d3efef" stroke="#178a8f" stroke-width="2"/><text x="396.0" y="35" fill="#11666a">Carrier</text><rect x="4" y="107" width="100" height="36" rx="9" fill="#fde7c7" stroke="#d9822b" stroke-width="2"/><text x="54.0" y="130" fill="#8b4a0e">Form</text><rect x="175" y="107" width="100" height="36" rx="9" fill="#dcf2e5" stroke="#2e9b62" stroke-width="2"/><text x="225.0" y="130" fill="#1e7349">Coverage</text><rect x="346" y="107" width="100" height="36" rx="9" fill="#fbdede" stroke="#c93b3b" stroke-width="2"/><text x="396.0" y="130" fill="#a32a2a">Claim</text><rect x="4" y="202" width="100" height="36" rx="9" fill="#fbedc2" stroke="#c99a1c" stroke-width="2"/><text x="54.0" y="225" fill="#7a560c">Filing</text><rect x="175" y="202" width="100" height="36" rx="9" fill="#fbe0eb" stroke="#d0457a" stroke-width="2"/><text x="225.0" y="225" fill="#a2295a">Peril</text><rect x="346" y="202" width="100" height="36" rx="9" fill="#e3e8f1" stroke="#6b7896" stroke-width="2"/><text x="396.0" y="225" fill="#3a4560">Loss event</text></g></svg>
+        <div class="pk-l"><span>Types</span><div><span class="ch ty">Carrier</span><span class="ch ty">Producer</span><span class="ch ty">Party</span><span class="ch ty">Treaty</span><span class="ch ty">Product</span><span class="ch ty">Policy</span><span class="ch ty">Form</span><span class="ch ty">Coverage</span><span class="ch ty">Exclusion</span><span class="ch ty">Guideline</span><span class="ch ty">Claim</span><span class="ch ty">Peril</span><span class="ch ty">Loss event</span><span class="ch ty">Risk</span><span class="ch ty">Jurisdiction</span><span class="ch ty">Regulator</span><span class="ch ty">Filing</span></div></div>
+        <div class="pk-l"><span>Relations</span><div><span class="ch re">issued by</span><span class="ch re">held by</span><span class="ch re">placed by</span><span class="ch re">written on</span><span class="ch re">includes</span><span class="ch re">amends</span><span class="ch re">insures</span><span class="ch re">covers peril</span><span class="ch re">excludes ⊘</span><span class="ch re">governs</span><span class="ch re">made under</span><span class="ch re">caused by</span><span class="ch re">arises from</span><span class="ch re">concerns</span><span class="ch re">licensed in</span><span class="ch re">domiciled in</span><span class="ch re">ceded under</span><span class="ch re">reinsured by</span><span class="ch re">files</span><span class="ch re">filed with</span><span class="ch re">enforces</span><span class="ch re">applies in</span><span class="ch re">subject to</span></div></div>
+        <div class="pk-n">State regulation and filings are first-class: a carrier is licensed in a jurisdiction, a filing is filed with a regulator. A policy, claim, filing, form or guideline may be its own subject.</div>
+      </div>
+      <div class="plus">or</div>
+      <div class="pack p-hc">
+        <div class="pk-h"><img src="icons/stethoscope.png" alt=""><div><b>Healthcare &amp; life sciences</b><small>Clinical &amp; research · adds 12 types · 15 relations</small></div></div>
+        <svg viewBox="0 0 450 246" font-family="Segoe UI"><defs><marker id="oa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#6b7896"/></marker></defs><g font-size="11" fill="#4a5571" font-style="italic"><path d="M175 30.0L106 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="24" text-anchor="middle">attended</text><path d="M275 30.0L344 30.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="24" text-anchor="middle">enrolled in</text><path d="M225.0 48L225.0 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="231" y="82" text-anchor="start">diagnosed with</text><path d="M54.0 48L54.0 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="60" y="82" text-anchor="start">performed by</text><path d="M396.0 48L396.0 105" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="390" y="82" text-anchor="end">studies</text><path d="M346 125.0L277 125.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="119" text-anchor="middle">biomarker for</text><path d="M225.0 202L225.0 145" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="231" y="177" text-anchor="start">treats</text><path d="M104 220.0L173 220.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="140" y="214" text-anchor="middle">recommends</text><path d="M275 220.0L344 220.0" stroke="#6b7896" stroke-width="1.6" marker-end="url(#oa)"/><text x="311" y="214" text-anchor="middle">causes</text></g><g font-size="12.5" font-weight="700" text-anchor="middle"><rect x="4" y="12" width="100" height="36" rx="9" fill="#e9e0fb" stroke="#7b4fd0" stroke-width="2"/><text x="54.0" y="35" fill="#5a34a8">Encounter</text><rect x="175" y="12" width="100" height="36" rx="9" fill="#cfe0fb" stroke="#2f6fd6" stroke-width="2"/><text x="225.0" y="28" fill="#1d4fa3">Patient</text><text x="225.0" y="41" font-size="9.5" font-weight="400" fill="#1d4fa3">[MRN-…] masked</text><rect x="346" y="12" width="100" height="36" rx="9" fill="#d3efef" stroke="#178a8f" stroke-width="2"/><text x="396.0" y="35" fill="#11666a">Trial</text><rect x="4" y="107" width="100" height="36" rx="9" fill="#e3e8f1" stroke="#6b7896" stroke-width="2"/><text x="54.0" y="130" fill="#3a4560">Provider</text><rect x="175" y="107" width="100" height="36" rx="9" fill="#fbdede" stroke="#c93b3b" stroke-width="2"/><text x="225.0" y="130" fill="#a32a2a">Condition</text><rect x="346" y="107" width="100" height="36" rx="9" fill="#fbe0eb" stroke="#d0457a" stroke-width="2"/><text x="396.0" y="130" fill="#a2295a">Biomarker</text><rect x="4" y="202" width="100" height="36" rx="9" fill="#fbedc2" stroke="#c99a1c" stroke-width="2"/><text x="54.0" y="225" fill="#7a560c">Guideline</text><rect x="175" y="202" width="100" height="36" rx="9" fill="#dcf2e5" stroke="#2e9b62" stroke-width="2"/><text x="225.0" y="225" fill="#1e7349">Medication</text><rect x="346" y="202" width="100" height="36" rx="9" fill="#fde7c7" stroke="#d9822b" stroke-width="2"/><text x="396.0" y="225" fill="#8b4a0e">Adverse event</text></g></svg>
+        <div class="pk-l"><span>Types</span><div><span class="ch ty">Patient</span><span class="ch ty">Condition</span><span class="ch ty">Medication</span><span class="ch ty">Procedure</span><span class="ch ty">Observation</span><span class="ch ty">Encounter</span><span class="ch ty">Provider</span><span class="ch ty">Guideline</span><span class="ch ty">Trial</span><span class="ch ty">Product</span><span class="ch ty">Adverse event</span><span class="ch ty">Biomarker</span></div></div>
+        <div class="pk-l"><span>Relations</span><div><span class="ch re">treats</span><span class="ch re">indicated for</span><span class="ch re">contraindicated with ⊘</span><span class="ch re">interacts with</span><span class="ch re">causes</span><span class="ch re">diagnosed with</span><span class="ch re">receives</span><span class="ch re">measured by</span><span class="ch re">recommends</span><span class="ch re">attended</span><span class="ch re">performed by</span><span class="ch re">studies</span><span class="ch re">enrolled in</span><span class="ch re">biomarker for</span><span class="ch re">subject to</span></div></div>
+        <div class="pk-n">A patient is named only by the masked placeholder the text uses — any other name is refused. A guideline or trial may be its own subject.</div>
+      </div>
+    </div>
+    <div class="rules">
+      <div class="rule"><img src="icons/checkbox.png" alt=""><span><b>Quote first.</b> A type is a filter, never evidence</span></div>
+      <div class="rule"><img src="icons/filter.png" alt=""><span><b>Outside the ontology</b> — wrong types or direction — is rejected and counted</span></div>
+      <div class="rule"><img src="icons/scales.png" alt=""><span><b>⊘ Negation:</b> only a negative relation may rest on "does not" / "must not"</span></div>
+      <div class="rule"><img src="icons/mindmap.png" alt=""><span><b>Merge</b> only same type + same words: carepath-api ≠ carepath-api-green</span></div>
+    </div>
+  </section>
+
+  <!-- 4. STACK -->
+  <section class="panel">
+    <div class="ph green"><h2>7. Technology Stack</h2></div>
+    <div class="stack">
+      <div class="row" style="background:var(--blue-bg)"><span>Web platform</span>
+        <div class="tech"><img src="icons/python.png" alt=""><div><b>Python 3.12</b><small>Dependencies locked with uv</small></div></div>
+        <div class="tech"><img src="icons/django.png" alt=""><div><b>Django 5.2</b><small>Server-rendered pages, no JS build</small></div></div>
+        <div class="tech"><img src="icons/server.png" alt=""><div><b>uvicorn · waitress</b><small>Live answer streams · pages</small></div></div></div>
+      <div class="row" style="background:var(--green-bg)"><span>Data</span>
+        <div class="tech"><img src="icons/postgresql.png" alt=""><div><b>PostgreSQL 16</b><small>Row-level security, full-text search</small></div></div>
+        <div class="tech"><img src="icons/redis.png" alt=""><div><b>Redis 7.4</b><small>Answer streams, API rate limits</small></div></div>
+        <div class="tech"><img src="icons/s3.png" alt=""><div><b>Amazon S3</b><small>Original uploaded files</small></div></div></div>
+      <div class="row" style="background:var(--purple-bg)"><span>Ingestion</span>
+        <div class="tech"><img src="icons/markdown.png" alt=""><div><b>MarkItDown</b><small>Office, PDF and Outlook to text</small></div></div>
+        <div class="tech"><img src="icons/antivirus.png" alt=""><div><b>ClamAV 1.4</b><small>Virus scanning</small></div></div>
+        <div class="tech"><img src="icons/scan.png" alt=""><div><b>Tesseract OCR</b><small>Scans and images to text</small></div></div></div>
+      <div class="row" style="background:var(--orange-bg)"><span>AI models</span>
+        <div class="tech"><img src="icons/claude.png" alt=""><div><b>Claude</b><small>Chat, extraction, Code Factory</small></div></div>
+        <div class="tech"><img src="icons/openai.png" alt=""><div><b>OpenAI</b><small>Chat, embeddings</small></div></div>
+        <div class="tech"><img src="icons/scatter.png" alt=""><div><b>numpy</b><small>Vector similarity search</small></div></div></div>
+      <div class="row" style="background:var(--pink-bg)"><span>Graph &amp; ranking</span>
+        <div class="tech"><img src="icons/tree.png" alt=""><div><b>Graphify</b><small>Code structure from syntax trees</small></div></div>
+        <div class="tech"><img src="icons/mindmap.png" alt=""><div><b>graspologic</b><small>Leiden clustering into components</small></div></div>
+        <div class="tech"><img src="icons/sorting.png" alt=""><div><b>BM25 · rapidfuzz</b><small>Keyword ranking · typo-tolerant merging</small></div></div></div>
+      <div class="row" style="background:var(--teal-bg)"><span>Connectors</span>
+        <div class="tech"><img src="icons/jira.png" alt=""><div><b>Jira</b><small>Cloud &amp; Data Center</small></div></div>
+        <div class="tech"><img src="icons/github.png" alt=""><div><b>GitHub</b><small>Issues, clone, PRs</small></div></div>
+        <div class="tech"><img src="icons/automation.png" alt=""><div><b>ServiceNow</b><small>AWX, Rundeck, Azure</small></div></div></div>
+      <div class="row" style="background:var(--yellow-bg)"><span>Identity</span>
+        <div class="tech"><img src="icons/entra.png" alt=""><div><b>Entra ID</b><small>Single sign-on and provisioning</small></div></div>
+        <div class="tech"><img src="icons/padlock.png" alt=""><div><b>Sign-in protection</b><small>Lockout, argon2, authenticator app</small></div></div>
+        <div class="tech"><img src="icons/key.png" alt=""><div><b>Secret files</b><small>One per application, never in the database</small></div></div></div>
+      <div class="row" style="background:#eef2f9"><span>Run &amp; observe</span>
+        <div class="tech"><img src="icons/docker.png" alt=""><div><b>Docker Compose</b><small>Sandboxed worker lanes</small></div></div>
+        <div class="tech"><img src="icons/radar.png" alt=""><div><b>OpenTelemetry</b><small>Traces and metrics, ids and timings only</small></div></div>
+        <div class="tech"><img src="icons/prometheus.png" alt=""><div><b>Prometheus 3.2</b><small>SLO burn-rate alerts</small></div></div></div>
+      <div class="row" style="background:#f3f5f9"><span>Quality gates</span>
+        <div class="tech"><img src="icons/verified.png" alt=""><div><b>Playwright</b><small>Browser tests in Chrome</small></div></div>
+        <div class="tech"><img src="icons/code.png" alt=""><div><b>ruff · coverage</b><small>Lint and test coverage</small></div></div>
+        <div class="tech"><img src="icons/barchart.png" alt=""><div><b>Scorecard</b><small>Release gate: retrieval, leaks, HIPAA</small></div></div></div>
+    </div>
+  </section>
+</div>
+
+<div class="grid r3">
+  <!-- 5. DOC TO GRAPH -->
+  <section class="panel">
+    <div class="ph blue"><h2>8. Example — From Document to Graph (CarePath demo)</h2></div>
+    <div class="ex">
+      <h5>A. Source documents</h5>
+      <div class="doc">
+        <div class="quote"><img class="i" src="icons/word.png" alt=""><div><em>business-requirements.docx · requirements table</em>"BR-05 · Honour the patient's recorded consent decisions before their record leaves the organisation."</div></div>
+        <div class="quote"><img class="i" src="icons/jira.png" alt=""><div><em>Jira CARE-401 · Bug · Open · Highest</em>"Patient consent is not checked before a record is exported to a partner."</div></div>
+      </div>
+      <h5>B. Extracted entities and relationships (via LLM, checked against the ontology and the quote)</h5>
+      <div class="er">
+        <div style="background:var(--blue-bg)"><h6>Entities (ontology-typed)</h6><ul>
+          <li><span class="tp Ticket">Ticket</span> CARE-401</li>
+          <li><span class="tp Requirement">Requirement</span> BR-05</li>
+          <li><span class="tp Control">Control</span> C-09 — HIPAA §164.502(a)</li>
+          <li><span class="tp Component">Component</span> Consent service</li>
+          <li><span class="tp Component">Component</span> FHIR export</li></ul></div>
+        <div style="background:var(--purple-bg)"><h6>Relationships</h6><ul>
+          <li><span class="ok">✓</span> CARE-401 → <b>violates</b> → BR-05</li>
+          <li><span class="ok">✓</span> CARE-401 → <b>affects</b> → FHIR export</li>
+          <li><span class="ok">✓</span> BR-05 → <b>required by</b> → C-09</li>
+          <li><span class="ok">✓</span> BR-05 → <b>implemented in</b> → Consent service</li>
+          <li class="rej">✗ FHIR export → fixes → CARE-401 — a Component cannot <i>fix</i>: outside the ontology, counted</li></ul></div>
+      </div>
+      <h5>C. Resulting knowledge graph (simplified)</h5>
+      <svg viewBox="0 0 1130 110" width="1130" height="110" font-family="Segoe UI">
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#6b7896"/></marker></defs>
+        <g font-size="13" font-style="italic" fill="#4a5571" text-anchor="middle">
+          <path d="M218 34H146" stroke="#6b7896" stroke-width="2" marker-end="url(#ah2)"/><text x="182" y="25">affects</text>
+          <path d="M342 34H418" stroke="#6b7896" stroke-width="2" marker-end="url(#ah2)"/><text x="380" y="25">violates</text>
+          <path d="M538 34H660" stroke="#6b7896" stroke-width="2" marker-end="url(#ah2)"/><text x="599" y="25">implemented in</text>
+          <path d="M479 58V82" stroke="#6b7896" stroke-width="2" marker-end="url(#ah2)"/><text x="534" y="76">required by</text>
+        </g>
+        <g font-size="15" font-weight="700" text-anchor="middle">
+          <rect x="20" y="10" width="124" height="48" rx="10" fill="#fbe9f0" stroke="#d0457a" stroke-width="2"/><text x="82" y="39" fill="#a2295a">FHIR export</text>
+          <rect x="220" y="10" width="122" height="48" rx="10" fill="#cfe0fb" stroke="#2f6fd6" stroke-width="2"/><text x="281" y="39" fill="#1d4fa3">CARE-401</text>
+          <rect x="420" y="10" width="118" height="48" rx="10" fill="#fde7c7" stroke="#d9822b" stroke-width="2"/><text x="479" y="39" fill="#8b4a0e">BR-05</text>
+          <rect x="662" y="10" width="190" height="48" rx="10" fill="#fbe9f0" stroke="#d0457a" stroke-width="2"/><text x="757" y="39" fill="#a2295a">Consent service</text>
+          <rect x="433" y="84" width="92" height="24" rx="7" fill="#e2f4f4" stroke="#178a8f" stroke-width="1.8"/><text x="479" y="101" font-size="13.5" fill="#11666a">C-09</text>
+        </g>
+        <g font-size="13.5" fill="#4a5571"><rect x="880" y="10" width="236" height="48" rx="8" fill="#f6f8fc" stroke="#c9d3e6"/><text x="895" y="30">Every edge keeps its source,</text><text x="895" y="49">digest and exact quote</text></g>
+      </svg>
+    </div>
+  </section>
+
+  <!-- 6. ANSWER -->
+  <section class="panel">
+    <div class="ph pink"><h2>9. Example — Retrieval and Final Answer</h2></div>
+    <div class="ans">
+      <div class="card" style="background:#eef2f9"><img class="i" src="icons/user.png" alt=""><div><h6>User question</h6><p><i>"Is patient consent checked before a FHIR export?"</i></p></div></div>
+      <div class="card" style="background:var(--green-bg)"><img class="i" src="icons/mindmap.png" alt=""><div><h6>Retrieved subgraph &amp; passages (partial)</h6><ul style="list-style:none">
+        <li>• CARE-401 → violates → BR-05 &nbsp;·&nbsp; BR-05 → required by → C-09</li><li>• Traceability matrix: BR-05 "Partially covered"; no test joins consent to export (T-03)</li><li>• Risk register: R-01 scored 20 — escalated to the board</li></ul></div></div>
+      <div class="card" style="background:var(--yellow-bg)"><img class="i" src="icons/claude.png" alt=""><div><h6>Final answer (generated, every claim cited)</h6>
+        <p>No. BR-05 requires consent decisions to be honoured before a record leaves the organisation<sup>[1]</sup>, but the export path does not consult the consent record — CARE-401 is open at Highest<sup>[2]</sup>. No test joins consent to export (T-03)<sup>[3]</sup>, and the risk register scores this R-01 at 20, escalated<sup>[4]</sup>.</p></div></div>
+      <div class="card" style="background:#fff;border:1.5px solid var(--line)"><img class="i" src="icons/verified.png" alt=""><div><h6>Sources — verified when stored and when shown</h6><ol>
+        <li>Business requirements.docx — BR-05 <span class="ok">✓</span></li>
+        <li>Jira CARE-401 — description <span class="ok">✓</span></li>
+        <li>Traceability matrix.xlsx — BR-05 row <span class="ok">✓</span></li>
+        <li>Risk register.xlsx — R-01 <span class="ok">✓</span></li></ol>
+        <p style="font-size:13px;color:var(--muted);margin-top:4px">✓ = source active · digest unchanged · quote still present. What the model claims is not evidence.</p></div></div>
+    </div>
+  </section>
+</div>
+
+<div class="foot">
+  <div class="band"><b>Trust built in</b><div class="pills">
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/shield.png" alt="">Deny by default</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/postgresql.png" alt="">Tenant row security</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/key.png" alt="">Secrets as files</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/scales.png" alt="">AI gateway &amp; budget</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/copy.png" alt="">6-year audit trail</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/checkbox.png" alt="">Every paid call receipted</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/barchart.png" alt="">Scorecard release gate</span>
+    <span class="pill" style="background:var(--teal-bg);color:#11666a"><img src="icons/entra.png" alt="">Single sign-on, nothing granted by it</span></div></div>
+</div>
+<div class="credit">Icons and logos by Icons8 (icons8.com)</div>
+</body>
+</html>
