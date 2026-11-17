@@ -261,6 +261,20 @@ class PipelineTests(TestCase):
         self.assertIn("need OCR, which is not on", document.conversion_error)
         self.assertFalse(Document.objects.filter(status="ready").exists())
 
+    @override_settings(OCR_ENABLED=True, TESSERACT_PATH="")
+    def test_with_ocr_on_and_no_tesseract_it_says_to_install_it_not_to_switch_it_on(self):
+        run = in_process(reader())
+        document = self.upload("board.png", self.png())
+        with (
+            patch("platform_core.processing.shutil.which", return_value=None),
+            patch("platform_core.processing.subprocess.run", run),
+        ):
+            self.convert()
+        document.refresh_from_db()
+        self.assertEqual(document.status, "failed")
+        self.assertIn("Tesseract was not found", document.conversion_error)
+        self.assertNotIn("set ocr = true", document.conversion_error)
+
     @override_settings(OCR_ENABLED=False)
     def test_with_ocr_off_a_scanned_pdf_says_it_is_a_scan(self):
         from pypdf import PdfWriter

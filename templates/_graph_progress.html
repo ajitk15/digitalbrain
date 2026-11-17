@@ -13,4 +13,5 @@ data-document-pending puts this block on the existing poll, so it refreshes itse
 <dt>Started</dt><dd>{% if run.started_at %}{{ run.started_at|timesince }} ago{% else %}just now{% endif %}</dd>
 </dl>
 <p class="muted">This page refreshes itself. Leaving it does not stop the run, and starting another is blocked until this one finishes.</p>
+{% if application and grant.role == 'owner' or application and grant.role == 'contributor' %}<form method="post" action="{% url 'graph' application.pk %}" class="graph-stop">{% csrf_token %}<button class="button secondary" name="action" value="stop">Stop this run</button><small class="muted">Stops before the next model call. A call already in progress finishes and is recorded; answers already paid for are kept.</small></form>{% endif %}
 </div>

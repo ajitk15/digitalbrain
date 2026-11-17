@@ -46,7 +46,7 @@ def plans(request, pk):
     The drafting POST paths went with the list. They had no page posting to
     them, which is code claiming a capability the product does not offer.
     """
-    from .code_factory import NO_GRAPH, ticket_choices
+    from .code_factory import NO_GRAPH, model_problem, ticket_choices
     from .models import Connector, FactoryRun
 
     app, grant = access(request.user, pk, "code_factory")
@@ -101,6 +101,8 @@ def plans(request, pk):
             else None,
             # The same words start_run and execute refuse with (CLAUDE.md: NO_GRAPH).
             "no_graph": NO_GRAPH,
+            # And the same check start_run makes before it queues anything.
+            "model_problem": model_problem(app),
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
@@ -250,13 +252,15 @@ def ticket_new(request, pk):
     ticket is kept on the run alone and never becomes knowledge - see
     `code_factory.start_run`.
     """
-    from .code_factory import NO_GRAPH, start_run
+    from .code_factory import NO_GRAPH, model_problem, start_run
 
     app, _ = access(request.user, pk, "code_factory", write=True)
     published = published_graph_version(app.pk)
     title = request.POST.get("title", "")[:300]
     description = request.POST.get("description", "")
-    error = "" if published else NO_GRAPH
+    # What start_run would refuse, said before anyone types a ticket.
+    blocked = (NO_GRAPH if not published else model_problem(app)) or ""
+    error = blocked
     if request.method == "POST":
         try:
             run = start_run(request.user, pk, title=title, body=description)
@@ -277,6 +281,7 @@ def ticket_new(request, pk):
             "title": title,
             "description": description,
             "error": error,
+            "blocked": blocked,
         },
     )
 

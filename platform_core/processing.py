@@ -237,6 +237,18 @@ def read_original(user, app, doc, path):
 #: names the setting rather than a button.
 TURN_ON_OCR = ("An administrator can install Tesseract and set ocr = true in the "
                "deployment's configuration; then Retry reads it.")
+#: The same, when the setting is already on: telling that operator to set
+#: ocr = true sent them looking for a switch that was never the problem.
+INSTALL_TESSERACT = ("An administrator can install it, or name it with tesseract_path; "
+                     "then Retry reads it.")
+
+
+def ocr_missing():
+    """The end of "... need OCR", saying why it is unavailable as an operator can act on it."""
+    if settings.OCR_ENABLED:
+        return ("need OCR, which is switched on, but Tesseract was not found on this server. "
+                + INSTALL_TESSERACT)
+    return f"need OCR, which is not on in this deployment. {TURN_ON_OCR}"
 
 
 def pages(count):
@@ -254,13 +266,9 @@ def failure_message(refused, ocr):
     said = {
         "scanned": (
             f"This PDF is a scan: none of its {pages(count)} has a text layer, only "
-            "pictures of text, so there is nothing to convert. Scanned PDFs need OCR, "
-            f"which is not on in this deployment. {TURN_ON_OCR}"
+            f"pictures of text, so there is nothing to convert. Scanned PDFs {ocr_missing()}"
         ),
-        "image_needs_ocr": (
-            "This file is an image, and images need OCR, which is not on in this "
-            f"deployment. {TURN_ON_OCR}"
-        ),
+        "image_needs_ocr": f"This file is an image, and images {ocr_missing()}",
         "ocr_no_text": (
             f"OCR found no text on {'any of its ' + pages(count) if count else 'it'}. "
             "A blank or very faint scan reads this way: scan it again at a higher quality."
@@ -291,7 +299,7 @@ def failure_message(refused, ocr):
         + (
             f"Scanned pages are read by OCR, at most {MAX_OCR_PAGES} a document."
             if ocr
-            else "Scanned PDFs and images need OCR, which is not on in this deployment."
+            else f"Scanned PDFs and images {ocr_missing()}"
         )
     )
 

@@ -104,6 +104,30 @@ NO_GRAPH = (
     "without a published graph."
 )
 
+
+
+def model_problem(app):
+    """Why a run here could not reach its model, or None.
+
+    Said at the button, like `NO_GRAPH`, for the same reason: a run whose
+    plan-drafting model has no credential used to queue, fail on the worker and
+    report "stopped unexpectedly" while onboarding listed the missing credential
+    as a step still to do.
+    """
+    from .ai import credential_problem
+    from .models import AIConfiguration
+
+    configured = AIConfiguration.objects.filter(
+        application=app, purpose="plan_drafting", enabled=True
+    ).first()
+    if configured is None or not configured.model:
+        return (
+            "No model is configured for plan drafting, so a ticket cannot be analysed. "
+            "An owner can choose one in AI settings."
+        )
+    return credential_problem(app, configured.provider)
+
+
 #: A background job with nobody holding a request open, but still a ceiling.
 PHASE_TIMEOUT = 300
 #: Phases that write far more than they read get longer. Implementation writes
@@ -586,6 +610,9 @@ def start_run(user, app_id, entry=None, connector=None, *, title="", body=""):
     published = published_revision(app_id)
     if published is None:
         raise ValidationError(NO_GRAPH)
+    problem = model_problem(app)
+    if problem:
+        raise ValidationError(problem)
     # Identified by the ticket's own address rather than its title, which two
     # imports of the same ticket can disagree about. A hand-written ticket has
     # no address, so there is nothing to collide with.

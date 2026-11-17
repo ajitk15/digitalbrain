@@ -26,16 +26,29 @@ def citation(match):
     )
 
 
+#: **bold**, and *emphasis* hugging its words - so "2 * 3 * 4" stays arithmetic.
+STRONG = re.compile(r"\*\*([^*]+)\*\*")
+EMPHASIS = re.compile(r"(?<![*\w])\*(?![\s*])([^*\n]*?[^\s*])\*(?![*\w])")
+
+
+def prose(part):
+    """Citations and emphasis, for text outside a code span."""
+    part = CITATION.sub(citation, part)
+    part = STRONG.sub(r"<strong>\1</strong>", part)
+    # User stories are written "*As* a nurse *I want*": shown raw, the asterisks
+    # read as noise in every excerpt quoted from one.
+    return EMPHASIS.sub(r"<em>\1</em>", part)
+
+
 @register.filter
 def inline(value):
     value = str(escape(value))
-    # Code spans first, and citations only outside them: `items[1]` is code.
+    # Code spans first, and markup only outside them: `items[1]` and `a*b*c` are code.
     parts = re.split(r"(`[^`]+`)", value)
-    value = "".join(
-        f"<code>{part[1:-1]}</code>" if index % 2 else CITATION.sub(citation, part)
+    return "".join(
+        f"<code>{part[1:-1]}</code>" if index % 2 else prose(part)
         for index, part in enumerate(parts)
     )
-    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
 
 
 @register.filter

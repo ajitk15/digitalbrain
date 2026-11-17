@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase, override_settings
 
+from platform_core import fetching
 from platform_core.fetching import (
     FetchError,
     normalise,
@@ -192,7 +193,13 @@ class AddressFallbackTests(SimpleTestCase):
             def getheader(self, name, default=""):
                 return {"Content-Type": "text/plain"}.get(name, default)
 
-            def read(self, limit):
+            sent = False
+
+            def read1(self, limit):
+                # A body read to its end, as http.client gives one: then b"".
+                if self.sent:
+                    return b""
+                self.sent = True
                 return b"hello"
 
         patches = (
@@ -230,3 +237,70 @@ class AddressFallbackTests(SimpleTestCase):
     def test_every_address_unreachable_is_still_reported_as_unreachable(self):
         with self.assertRaisesRegex(FetchError, "could not be reached"):
             self.fetch({"93.184.216.34", "93.184.216.35"})
+
+
+class DeadlineTests(SimpleTestCase):
+    """One deadline for the whole request, not a limit on each read.
+
+    Per read, a server sending a byte every few seconds held a worker for as long
+    as it liked: each read finished inside its own timeout.
+    """
+
+    def serve(self, handler):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                handler(self)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.daemon_threads = True
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}/page.txt"
+
+    def test_a_server_that_drips_its_body_is_cut_off_at_the_deadline(self):
+        import time
+
+        def drip(request):
+            request.send_response(200)
+            request.send_header("Content-Type", "text/plain")
+            request.send_header("Connection", "close")
+            request.end_headers()
+            try:
+                for _ in range(100):
+                    request.wfile.write(b"x")
+                    request.wfile.flush()
+                    time.sleep(0.1)
+            except OSError:
+                pass
+
+        url = self.serve(drip)
+        started = time.monotonic()
+        with (
+            override_settings(FETCH_ALLOW_HOSTS=["127.0.0.1"]),
+            patch("platform_core.fetching.TIMEOUT", 0.6),
+            self.assertRaises(fetching.FetchError) as raised,
+        ):
+            fetching.fetch(url)
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertIn("took longer than", str(raised.exception))
+
+    def test_a_prompt_answer_is_unaffected(self):
+        def answer(request):
+            request.send_response(200)
+            request.send_header("Content-Type", "text/plain")
+            request.send_header("Connection", "close")
+            request.end_headers()
+            request.wfile.write(b"hello " * 30000)
+
+        url = self.serve(answer)
+        with override_settings(FETCH_ALLOW_HOSTS=["127.0.0.1"]):
+            body, content_type, name, _ = fetching.fetch(url)
+        self.assertEqual(len(body), 6 * 30000)
+        self.assertEqual(name, "page.txt")

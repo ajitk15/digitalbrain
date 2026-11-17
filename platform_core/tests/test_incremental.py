@@ -332,6 +332,7 @@ class AutoRefreshTests(TestCase):
         credential = Path(directory.name) / f"claude_{self.app.pk}"
         credential.write_text("sk-ant-api-test", encoding="utf-8")
         credential.chmod(0o600)
+        self.credential = credential
         mounted = override_settings(SECRET_DIRECTORY=directory.name)
         mounted.enable()
         self.addCleanup(mounted.disable)
@@ -452,10 +453,8 @@ class AutoRefreshTests(TestCase):
         self.assertGreaterEqual(self.settle().call_count, 1)
 
     def test_without_a_credential_nothing_is_called_and_the_version_says_why(self):
-        from django.core.exceptions import ImproperlyConfigured
-
-        with patch("platform_core.ai.provider_credential", side_effect=ImproperlyConfigured):
-            self.assertEqual(self.settle().call_count, 0)
+        self.credential.unlink()
+        self.assertEqual(self.settle().call_count, 0)
         self.assertTrue(
             any("has no Claude credential" in note for note in self.latest().quality["warnings"])
         )

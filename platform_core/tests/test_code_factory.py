@@ -107,6 +107,13 @@ class PipelineTests(TestCase):
             output_rate=5,
             configured_by=self.owner,
         )
+        # These tests replace the model (`ask`), so whether a credential is
+        # mounted is not what they are about. The gate itself, which refuses a
+        # run whose model cannot be reached, is held by ModelReachableTests.
+        if not getattr(self, "real_gate", False):
+            reachable = patch("platform_core.code_factory.model_problem", return_value=None)
+            reachable.start()
+            self.addCleanup(reachable.stop)
 
     def answers(self, analysis_items=None):
         """Canned phase replies, in the order the pipeline asks for them."""
@@ -1849,3 +1856,53 @@ class QuietRunTests(TestCase):
         run = self.run_pipeline()
         page = self.client.get(reverse("run-detail", args=[self.app.pk, run.pk]))
         self.assertNotContains(page, "said nothing for")
+
+
+@override_settings(**SETTINGS)
+class ModelReachableTests(TestCase):
+    """A run whose model cannot be reached is refused at the button, not failed later.
+
+    It used to queue, fail on the worker and say "stopped unexpectedly" while
+    onboarding listed the missing credential as a step still to do.
+    """
+
+    real_gate = True
+    setUp = PipelineTests.setUp
+
+    def test_analyse_is_refused_without_a_credential_and_nothing_is_queued(self):
+        with self.assertRaises(ValidationError) as refused:
+            start_run(self.owner, self.app.pk, self.ticket)
+        self.assertIn("no Claude credential", " ".join(refused.exception.messages))
+        self.assertIn("Credentials", " ".join(refused.exception.messages))
+        self.assertFalse(FactoryRun.objects.exists())
+
+    def test_with_no_model_configured_it_says_so(self):
+        AIConfiguration.objects.filter(application=self.app, purpose="plan_drafting").delete()
+        with self.assertRaises(ValidationError) as refused:
+            start_run(self.owner, self.app.pk, self.ticket)
+        self.assertIn("No model is configured for plan drafting", refused.exception.messages[0])
+
+    def test_the_screen_and_the_ticket_form_say_why_before_anyone_types(self):
+        plans = self.client.get(reverse("plans", args=[self.app.pk]))
+        self.assertContains(plans, 'id="model-problem"')
+        self.assertContains(plans, "The model cannot be reached")
+        self.assertNotContains(plans, reverse("ticket-new", args=[self.app.pk]) + '" data-modal')
+        form = self.client.get(reverse("ticket-new", args=[self.app.pk]))
+        self.assertContains(form, "no Claude credential")
+        self.assertContains(form, 'type="submit" disabled')
+
+    def test_a_credential_lost_after_queueing_is_said_plainly(self):
+        from platform_core.ai import MissingCredential, missing_credential_message
+
+        with patch("platform_core.code_factory.model_problem", return_value=None):
+            run = start_run(self.owner, self.app.pk, self.ticket)
+        with patch(
+            "platform_core.code_factory_analysis.ask",
+            side_effect=MissingCredential(missing_credential_message("claude")),
+        ):
+            execute(run)
+        run.refresh_from_db()
+        self.assertEqual(run.status, "failed")
+        self.assertIn("no Claude credential", run.error)
+        self.assertNotIn("unexpectedly", run.error)
+

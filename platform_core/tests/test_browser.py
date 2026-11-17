@@ -1789,3 +1789,77 @@ class PlatformAdministrationTests(BrowserTestCase):
         organization.refresh_from_db()
         self.assertFalse(organization.active)
         self.assertNoScriptErrors()
+
+
+class FailedGenerationTests(BrowserTestCase):
+    """A failed first run says why where the person is looking.
+
+    Centred in a pane stretched to a long source list, the reason and its Retry
+    button were drawn below the fold, and the page read as a blank white box.
+    """
+
+    def test_the_reason_and_retry_are_on_screen_beside_a_long_source_list(self):
+        from platform_core.models import Document, KnowledgeGraph
+
+        add_knowledge(self.owner, self.app.pk, "Runbook", "Step one restarts the queue.")
+        # Twelve failed files, each with its reason: the rail the walkthrough had.
+        for number in range(12):
+            Document.objects.create(
+                application=self.app,
+                uploaded_by=self.owner,
+                name=f"08-quality-samples/scanned-page-{number}.png",
+                size=100,
+                sha256=f"{number:064d}",
+                status="failed",
+                conversion_error="This file is an image, and images need OCR, which is not "
+                "on in this deployment. An administrator can install Tesseract and set "
+                "ocr = true in the deployment's configuration; then Retry reads it.",
+            )
+        KnowledgeGraph.objects.update_or_create(
+            application=self.app,
+            defaults={
+                "status": "failed",
+                "stage": "Generation failed",
+                "failure_reason": "This application has no Claude credential, so the model "
+                "cannot be reached. An owner can set one on Credentials.",
+            },
+        )
+        self.page.set_viewport_size({"width": 1440, "height": 900})
+        self.open("graph", self.app.pk)
+        reason = self.page.locator(".kb-empty .failure-reason")
+        reason.wait_for()
+        box = reason.bounding_box()
+        self.assertLess(box["y"] + box["height"], 900, "the reason is below the fold")
+        retry = self.page.get_by_role("button", name="Retry failed / interrupted generation")
+        self.assertLess(retry.bounding_box()["y"], 900, "Retry is below the fold")
+        self.assertNoScriptErrors()
+
+
+class PhoneHeaderTests(BrowserTestCase):
+    """On a phone the page's own work starts on the first screen.
+
+    The application bar, the setup strip and the tabs wrapped to two and three
+    rows each, and Documents' tabs started 543px down a 664px screen.
+    """
+
+    def test_the_bar_and_tabs_are_one_row_each_and_the_tabs_are_in_view(self):
+        self.page.set_viewport_size({"width": 390, "height": 664})
+        self.open("documents", self.app.pk)
+        found = self.page.evaluate(
+            """() => {
+              const box = (selector) => document.querySelector(selector).getBoundingClientRect();
+              return {
+                menu: box('.application-bar .application-menu').height,
+                tabs: box('.knowledge-tabs').height,
+                tabsTop: box('.knowledge-tabs').top,
+                focus: getComputedStyle(document.querySelector('#focus-toggle')).display,
+                pageScrolls: document.documentElement.scrollWidth > window.innerWidth,
+              };
+            }"""
+        )
+        self.assertLess(found["menu"], 60, found)
+        self.assertLess(found["tabs"], 60, found)
+        self.assertLess(found["tabsTop"], 400, found)
+        self.assertEqual(found["focus"], "none", found)
+        self.assertFalse(found["pageScrolls"], found)
+        self.assertNoScriptErrors()

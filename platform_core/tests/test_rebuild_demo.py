@@ -166,7 +166,9 @@ class RebuildDemoTests(TestCase):
         built = self.built()
         Document.objects.filter(application=built["CarePathDev"]).update(status="ready")
         owner = User.objects.get(username="acmeadmin")
-        requested = self.demo.request_ai_graphs(owner, built)
+        # A credential is said to be mounted: the claim refuses a model it cannot reach.
+        with patch("platform_core.ai.credential_problem", return_value=None):
+            requested = self.demo.request_ai_graphs(owner, built)
         self.assertEqual([app.name for app in requested], ["CarePathDev"])
         graph = KnowledgeGraph.objects.get(application=built["CarePathDev"])
         self.assertEqual(
@@ -197,6 +199,46 @@ class RebuildDemoTests(TestCase):
         )
         owner = User.objects.get(username="acmeadmin")
         self.assertEqual(self.demo.request_ai_graphs(owner, {app.name: app}), [])
+
+    def test_an_unattended_build_does_not_spend_on_the_host_login(self):
+        """No console and no flag is no: a build nobody agreed to must not charge anyone."""
+        from platform_core.models import AIConfiguration
+
+        unattended = patch("sys.stdin.isatty", return_value=False)
+        with override_settings(CLAUDE_USE_HOST_LOGIN=True), unattended:
+            self.build()
+        self.assertFalse(AIConfiguration.objects.filter(enabled=True).exists())
+        self.demo.build_graphs.assert_called_once()
+        self.assertEqual(self.demo.build_graphs.call_args.kwargs, {"ai": False})
+
+    def test_at_a_console_it_asks_and_a_no_builds_without_ai(self):
+        from platform_core.models import AIConfiguration
+
+        with (
+            override_settings(CLAUDE_USE_HOST_LOGIN=True),
+            patch("sys.stdin.isatty", return_value=True),
+            patch("builtins.input", return_value="n") as asked,
+        ):
+            self.build()
+        self.assertIn("Build with AI?", asked.call_args.args[0])
+        self.assertFalse(AIConfiguration.objects.filter(enabled=True).exists())
+
+    def test_ai_flag_builds_with_the_model_and_switches_tasks_back_on(self):
+        from platform_core.models import AIConfiguration
+
+        unattended = patch("sys.stdin.isatty", return_value=False)
+        with override_settings(CLAUDE_USE_HOST_LOGIN=True), unattended:
+            self.build()
+            self.assertEqual(self.demo.main(["--ai"]), 0)
+        self.assertEqual(self.demo.build_graphs.call_args.kwargs, {"ai": True})
+        self.assertTrue(
+            AIConfiguration.objects.filter(purpose="graph_generation", enabled=True).exists()
+        )
+
+    def test_with_nothing_to_charge_nobody_is_asked(self):
+        with patch("sys.stdin.isatty", return_value=True), patch("builtins.input") as asked:
+            self.build()
+        asked.assert_not_called()
 
     def test_production_never_gets_a_known_password(self):
         with override_settings(PRODUCTION=True):

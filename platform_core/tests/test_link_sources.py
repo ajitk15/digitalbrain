@@ -11,6 +11,22 @@ from platform_core.models import CodeRepository, Document
 from . import test_documents
 
 
+def offline(test):
+    """Answer DNS here, so these tests never need the network.
+
+    Submitting a link resolves its host while the person is still looking at the
+    box (`link_sources.preview`), and a sandboxed CI runner has no resolver: eight
+    tests failed there for want of example.com. A public address, so the
+    private-address refusal is still what a test that wants it patches in.
+    """
+    import socket
+
+    records = [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", ("93.184.215.14", 443))]
+    resolver = patch("socket.getaddrinfo", return_value=records)
+    resolver.start()
+    test.addCleanup(resolver.stop)
+
+
 @override_settings(
     DOCUMENT_AUTO_CONVERT=False,
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
@@ -19,6 +35,7 @@ from . import test_documents
 class LinkSubmissionTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        offline(self)
 
     def test_a_page_is_queued_not_downloaded_during_the_request(self):
         """A slow or dead host must never hold a web request open."""
@@ -100,6 +117,7 @@ class LinkSubmissionTests(TestCase):
 class LinkDownloadTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        offline(self)
         self.doc = submit(self.owner, self.app.pk, "https://example.com/guide")[0]
 
     def test_a_successful_download_hands_over_to_the_conversion_queue(self):
@@ -148,6 +166,7 @@ class LinkDownloadTests(TestCase):
 class LinkViewTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        offline(self)
 
     def test_the_rail_opens_the_same_add_a_source_popup_as_sources(self):
         """One way in on both screens: files, a folder and a link, with one set of rules."""

@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from django import forms
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import render
@@ -24,7 +24,9 @@ from .services import audit, feature_enabled
 def access(user, pk, feature, write=False):
     app, grant = application_for(user, pk)
     if not feature_enabled(feature, app):
-        raise PermissionDenied("This feature is disabled.")
+        from .services import FeatureOff
+
+        raise FeatureOff(app, feature, grant.role)
     if write and grant.role not in {"owner", "contributor"}:
         raise PermissionDenied
     return app, grant
@@ -507,12 +509,9 @@ def published_graph_version(app_id):
 
 def credential_available(config, app):
     """Whether a run could authenticate, by mounted secret or development host login."""
-    from .agent_runtime.credentials import host_login_enabled
-    from .secrets import source_of
+    from .ai import credential_problem
 
-    if source_of(app, config.provider):
-        return True
-    return config.provider == "claude" and host_login_enabled()
+    return credential_problem(app, config.provider) is None
 
 
 def mode_options(ai_enabled, graph_ai_enabled):
@@ -592,9 +591,11 @@ def wants_stream(request):
 
 
 def failure_text(error):
-    if isinstance(error, ValidationError):
-        return " ".join(error.messages)
-    return "AI credential is not configured. Ask an application owner to complete setup."
+    from .ai import failure_message
+
+    return failure_message(
+        error, "AI credential is not configured. Ask an application owner to complete setup."
+    )
 
 
 FOLLOWUP = re.compile(r"\b(it|that|those|they|them|this|more|continue|explain)\b", re.I)

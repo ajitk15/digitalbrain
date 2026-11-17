@@ -114,6 +114,14 @@ publishes it, and prints each application's onboarding checklist. Run it again
 after adding a skipped credential; it keeps what exists. On a new machine,
 `start-all.cmd -Install -Demo` does setup and the demo together.
 
+Building with AI is paid - document typing, graph enrichment and one graph
+generation per application - so before it loads anything the build says whose
+account would be charged (the application's Claude credential, or this machine's
+own Claude Code login) and asks. Answer `n` for a structure-only demo; its AI tasks
+are left off in AI settings. Run `scripts/rebuild_demo.py --ai` later to build with
+the model, or `--no-ai` to skip the question. A run with no console and no flag
+builds without AI.
+
 ## AI provider
 
 ```powershell

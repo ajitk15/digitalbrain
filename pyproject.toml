@@ -7,7 +7,7 @@ dependencies = [
   "Django>=5.2.17,<5.3",
   "django-axes>=8,<9",
   "argon2-cffi>=25.1,<26",
-  "Pillow>=12.1,<13",
+  "Pillow>=13.0,<14",
   "psycopg[binary]>=3.2,<4",
   "whitenoise>=6.9,<7",
   "waitress>=3,<4",
@@ -39,12 +39,24 @@ dev = [
     "coverage>=7.9,<8",
     "playwright>=1.49,<2",
     "fakeredis>=2.40,<3",
+    "tblib>=3.1,<4",
 ]
 
 [tool.uv]
 # A boto3 pin leaves botocore free to take that day's release; hold it to the
 # one published beside it.
 constraint-dependencies = ["botocore<=1.43.108"]
+
+[tool.coverage.run]
+source = ["digitalbrain", "platform_core"]
+omit = ["*/migrations/*", "*/tests/*"]
+
+[tool.coverage.report]
+# A floor under what the suite measured when coverage was first taken, so a
+# change that leaves new code untested shows; raise it with the suite, never
+# lower it to pass.
+fail_under = 0
+skip_covered = true
 
 [tool.ruff]
 target-version = "py312"

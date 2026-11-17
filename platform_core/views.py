@@ -246,6 +246,33 @@ def chat_settings(request, pk):
     )
 
 
+def forbidden(request, exception=None):
+    """The 403 page, saying "switched off" when that is what it is.
+
+    A feature switched off for an application the person may open is not a
+    lack of access, and the generic page told its owner to ask its owner.
+    Undecorated, like `server_error`, for the same reason.
+    """
+    from django.shortcuts import render as _render
+
+    from .services import FEATURES, FeatureOff, feature_available
+
+    if isinstance(exception, FeatureOff):
+        label = FEATURES.get(exception.key, (exception.key, True))[0]
+        return _render(
+            request,
+            "feature_off.html",
+            {
+                "application": exception.application,
+                "feature_label": label,
+                "can_switch": exception.role == "owner" and feature_available(exception.key),
+                "platform_off": not feature_available(exception.key),
+            },
+            status=403,
+        )
+    return _render(request, "403.html", status=403)
+
+
 def server_error(request):
     """The 500 page, carrying the request id the operator will need.
 

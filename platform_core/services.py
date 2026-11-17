@@ -344,6 +344,22 @@ def all_features(application):
     }
 
 
+class FeatureOff(PermissionDenied):
+    """A feature switched off for an application the person may open.
+
+    Still a 403 - nothing is reached - but `views.forbidden` says what it is:
+    "You do not have access to this" told an owner they lacked access to a
+    screen they could switch on themselves. Raised only after the grant was
+    read, so it reveals nothing about an application the person cannot open.
+    """
+
+    def __init__(self, application, key, role):
+        super().__init__("This feature is disabled.")
+        self.application = application
+        self.key = key
+        self.role = role
+
+
 def feature_enabled(key, application):
     if not feature_available(key):
         return False

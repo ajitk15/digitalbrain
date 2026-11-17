@@ -16,6 +16,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
+from .ai import MissingCredential
 from .code_factory import (
     GROUND_RULES,
     MANUAL_TICKET_LIMIT,
@@ -404,11 +405,17 @@ def run_analysis(run, triage, body):
             sample=getattr(failure, "sample", ""),
         )
         raise
-    except Exception:
+    except Exception as failure:
         # A phase that stops for any other reason must still say so: leaving the
         # row as "running" while the run is failed makes the record a liar.
+        from .ai import failure_message
+
         finish_phase(
-            phase, "failed", started, error="The analysis stopped unexpectedly.", usage=receipt
+            phase,
+            "failed",
+            started,
+            error=failure_message(failure, "The analysis stopped unexpectedly."),
+            usage=receipt,
         )
         raise
     if not items:
@@ -559,6 +566,14 @@ def execute(run):
         note(run, "The run stopped here. Nothing was changed anywhere.", level="problem")
         FactoryRun.objects.filter(pk=run.pk).update(
             status="failed", error=" ".join(failure.messages)[:2000], finished_at=timezone.now()
+        )
+        return True
+    except MissingCredential as failure:
+        # Said like a refusal, not as a fault: the credential can go between the
+        # button and the worker, and the person can act on this sentence.
+        note(run, "The run stopped here. Nothing was changed anywhere.", level="problem")
+        FactoryRun.objects.filter(pk=run.pk).update(
+            status="failed", error=str(failure)[:2000], finished_at=timezone.now()
         )
         return True
     except Exception:

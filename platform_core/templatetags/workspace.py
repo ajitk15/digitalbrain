@@ -299,6 +299,9 @@ def organization_tree(context):
             "organization_id", flat=True
         )
     )
+    # Read once here for the "+" buttons, and kept for `account_role` below the
+    # tree, so the sidebar's name for the person costs no query of its own.
+    request.administers_organization = bool(administered)
     tree = {
         org.pk: {
             "id": org.pk,
@@ -586,13 +589,18 @@ def source_tabs(context, application):
     return visible(application, grant)
 
 
-@register.inclusion_tag("_knowledge_status.html")
-def knowledge_status(application):
+@register.inclusion_tag("_knowledge_status.html", takes_context=True)
+def knowledge_status(context, application):
     """One line on every Knowledge page: what answers, what waits, what is behind.
 
     `lifecycle.summary`, kept on the application for the rest of the request so a
     page that draws it twice reads it once. Nothing when Knowledge is off: Code
     Repos alone has no version to speak of.
+
+    A page that already worked out `ai_plan` and asks with `ai_plan_in_status`
+    has "built without AI" said on this line too, instead of as a banner of its
+    own: three stacked strips pushed the page's own work below the first screen
+    of a phone. The reason stays in full - it is what an owner acts on.
     """
     if not feature_enabled("knowledge", application):
         return {"status": None}
@@ -600,7 +608,17 @@ def knowledge_status(application):
         from platform_core.lifecycle import summary
 
         application.__dict__["_knowledge_status"] = summary(application)
-    return {"application": application, "status": application.__dict__["_knowledge_status"]}
+    plan = context.get("ai_plan")
+    return {
+        "application": application,
+        "status": application.__dict__["_knowledge_status"],
+        "without_ai": plan
+        if plan is not None
+        and not plan.on
+        and context.get("ai_plan_in_status")
+        and context.get("knowledge_view") != "versions"
+        else None,
+    }
 
 
 @register.simple_tag
@@ -635,3 +653,22 @@ def ticket_tab(application):
     from platform_core.ticket_library import tab_count
 
     return tab_count(application)
+
+
+@register.simple_tag(takes_context=True)
+def account_role(context):
+    """What the sidebar calls the signed-in person.
+
+    "Workspace member" used to name an organization administrator too. Read
+    from what `organization_tree` found, which base.html draws first.
+    """
+    request = context.get("request")
+    user = getattr(request, "user", None)
+    if user is None:
+        return ""
+    if user.is_platform_admin:
+        return "Platform administrator"
+    if getattr(request, "administers_organization", False):
+        return "Organization administrator"
+    return "Workspace member"
+

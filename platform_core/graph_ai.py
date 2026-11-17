@@ -5,6 +5,8 @@ import json
 import re
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
@@ -374,74 +376,29 @@ def restated(result, source_id):
     ]
 
 
-def enrich_graph(app_id, config, entries, data, quality):
-    """Typed, quote-checked AI relationships on top of the structural graph.
+@dataclass
+class Asked:
+    """What one run's calls came to: `_ask`'s answer to `enrich_graph`."""
 
-    Every answer is cached per window as soon as it arrives (`DocumentAIResult`,
-    task `extract`, keyed by the digest of what the model read), so it is paid
-    for once: a run whose version is not saved, because a source changed under
-    it or a later call failed, loses nothing. Only windows with no cached
-    answer go to the model - up to `MAX_EXTRACTION_SOURCES` calls a run, so
-    successive runs work through a library larger than that.
+    calls: int = 0
+    fresh: int = 0
+    asked: set = dataclass_field(default_factory=set)
+    stopped: str | None = None
+    unusable: list = dataclass_field(default_factory=list)
+    capped: bool = False
 
-    `config` None makes no call at all and only carries cached answers forward:
-    every rebuild does that, so a background rebuild after a source change keeps
-    the AI relationships of everything that did not change instead of dropping
-    to structure.
 
-    The application's ontology (`ontology.for_application`) writes the prompt,
-    judges every proposal and keys the cache: answers given under another pack
-    are never carried into this one.
+def _ask(app_id, config, unanswered, cached, proposals, legacy, domain, should_stop):
+    """Ask the model about each window with no cached answer, caching each as it arrives.
+
+    Adds what it hears to `proposals` and `cached` in place. `config` None asks
+    nothing. Stops at the run's call limit, at a budget or other refusal once
+    something is kept, or when a person stopped the run (`GenerationStopped`).
     """
-    from .graphs import MAX_NODES_PER_SOURCE
-
-    if config is not None and not config.configured_by_id:
-        raise ValidationError("Save graph generation settings as an application owner first.")
-    domain = for_application(app_id)
-    planned = []
-    for entry in entries:
-        pieces, unread = windows(entry.content)
-        planned.append((entry, [(window_key(entry.title, text), text) for text in pieces], unread))
-    cached = cached_answers(app_id, {key for _, items, _ in planned for key, _ in items}, domain)
-    # Sources extracted before the cache existed, read whole in one window.
-    legacy_edges, legacy_nodes, legacy = reusable(
-        app_id,
-        [
-            entry
-            for entry, items, _ in planned
-            if len(items) == 1 and items[0][0] not in cached
-        ],
-        domain,
-    )
-    complete_before = {
-        str(entry.pk)
-        for entry, items, _ in planned
-        if str(entry.pk) in legacy or all(key in cached for key, _ in items)
-    }
-    proposals, used = [], []
-    for entry, items, _ in planned:
-        if str(entry.pk) in legacy:
-            continue
-        for key, _ in items:
-            if key in cached:
-                result, created = cached[key]
-                used.append((created, result))
-                proposals.extend(
-                    (item, True, str(entry.pk)) for item in restated(result, str(entry.pk))
-                )
-
     from .budget import BudgetExceeded
     from .models import DocumentAIResult
 
-    calls = fresh = 0
-    asked, stopped, unusable, capped = set(), None, [], False
-    unanswered = [
-        (entry, key, text)
-        for entry, items, _ in planned
-        if str(entry.pk) not in legacy
-        for key, text in items
-        if key not in cached
-    ]
+    run = Asked()
     for entry, key, text in unanswered if config is not None else []:
         if key in cached:
             # The same text in another source, answered earlier in this run.
@@ -449,10 +406,15 @@ def enrich_graph(app_id, config, entries, data, quality):
                 (item, True, str(entry.pk)) for item in restated(cached[key][0], str(entry.pk))
             )
             continue
-        if calls + len(unusable) >= MAX_EXTRACTION_SOURCES or fresh >= MAX_RELATIONSHIPS:
+        if should_stop is not None and should_stop():
+            raise GenerationStopped
+        if (
+            run.calls + len(run.unusable) >= MAX_EXTRACTION_SOURCES
+            or run.fresh >= MAX_RELATIONSHIPS
+        ):
             # The run's own limit, not a refusal: `graphs.continue_extraction`
             # arms the next run for what is left.
-            capped = True
+            run.capped = True
             break
         citation = {
             "id": str(entry.pk),
@@ -468,18 +430,18 @@ def enrich_graph(app_id, config, entries, data, quality):
             # reply could not be read, and the 39 after it were never asked.
             # Not cached, so the next run asks it again; it still counts against
             # the run's calls, since it was paid for.
-            unusable.append(entry.title)
+            run.unusable.append(entry.title)
             continue
         except (BudgetExceeded, ValidationError) as failure:
             # What was already extracted is paid for and cached: keep it, and
             # say why the rest is not there. Nothing at all to keep is a failure.
-            if not proposals and not legacy and not calls:
+            if not proposals and not legacy and not run.calls:
                 raise
-            stopped = " ".join(failure.messages)
+            run.stopped = " ".join(failure.messages)
             break
-        calls += 1
-        fresh += len(found)
-        asked.add(str(entry.pk))
+        run.calls += 1
+        run.fresh += len(found)
+        run.asked.add(str(entry.pk))
         result = {
             "relationships": found,
             "source_id": str(entry.pk),
@@ -495,12 +457,27 @@ def enrich_graph(app_id, config, entries, data, quality):
         )
         cached[key] = (result, None)
         proposals.extend((item, False, str(entry.pk)) for item in found)
-    if unusable and not calls and not proposals and not legacy and not used:
-        # Every reply was unreadable: a failed run, as one that raised, never a
-        # version that quietly reads as AI-enriched.
-        raise UnusableAnswer("Graph model returned an invalid relationship structure.")
-    if not calls and not proposals and not legacy and not used:
-        return data, quality
+    return run
+
+
+@dataclass
+class Judged:
+    """How the proposals fared: `_judge`'s answer to `enrich_graph`."""
+
+    accepted: int = 0
+    rejected: int = 0
+    untyped: int = 0
+    reused_accepted: int = 0
+    reasons: dict = dataclass_field(default_factory=dict)
+
+
+def _judge(app_id, entries, proposals, data, legacy_nodes, legacy_edges, domain):
+    """Judge every proposal against the source it was read from, adding the kept ones to `data`.
+
+    Entities and their edges join `data` in place, with each source's entities
+    capped like its structure, and `data["nodes"]` is rebuilt from them.
+    """
+    from .graphs import MAX_NODES_PER_SOURCE
 
     # Judged against the whole text: every window is part of it, and a quote
     # is only ever accepted where it stands in the source exactly.
@@ -598,6 +575,88 @@ def enrich_graph(app_id, config, entries, data, quality):
         accepted += 1
         reused_accepted += reused
     data["nodes"] = list(nodes.values())
+    return Judged(accepted, rejected, untyped, reused_accepted, reasons)
+
+
+class GenerationStopped(Exception):
+    """A person stopped the run (`graphs.stop_generation`) between two model calls."""
+
+
+def enrich_graph(app_id, config, entries, data, quality, should_stop=None):
+    """Typed, quote-checked AI relationships on top of the structural graph.
+
+    Every answer is cached per window as soon as it arrives (`DocumentAIResult`,
+    task `extract`, keyed by the digest of what the model read), so it is paid
+    for once: a run whose version is not saved, because a source changed under
+    it or a later call failed, loses nothing. Only windows with no cached
+    answer go to the model - up to `MAX_EXTRACTION_SOURCES` calls a run, so
+    successive runs work through a library larger than that.
+
+    `config` None makes no call at all and only carries cached answers forward:
+    every rebuild does that, so a background rebuild after a source change keeps
+    the AI relationships of everything that did not change instead of dropping
+    to structure.
+
+    The application's ontology (`ontology.for_application`) writes the prompt,
+    judges every proposal and keys the cache: answers given under another pack
+    are never carried into this one.
+    """
+    if config is not None and not config.configured_by_id:
+        raise ValidationError("Save graph generation settings as an application owner first.")
+    domain = for_application(app_id)
+    planned = []
+    for entry in entries:
+        pieces, unread = windows(entry.content)
+        planned.append((entry, [(window_key(entry.title, text), text) for text in pieces], unread))
+    cached = cached_answers(app_id, {key for _, items, _ in planned for key, _ in items}, domain)
+    # Sources extracted before the cache existed, read whole in one window.
+    legacy_edges, legacy_nodes, legacy = reusable(
+        app_id,
+        [
+            entry
+            for entry, items, _ in planned
+            if len(items) == 1 and items[0][0] not in cached
+        ],
+        domain,
+    )
+    complete_before = {
+        str(entry.pk)
+        for entry, items, _ in planned
+        if str(entry.pk) in legacy or all(key in cached for key, _ in items)
+    }
+    proposals, used = [], []
+    for entry, items, _ in planned:
+        if str(entry.pk) in legacy:
+            continue
+        for key, _ in items:
+            if key in cached:
+                result, created = cached[key]
+                used.append((created, result))
+                proposals.extend(
+                    (item, True, str(entry.pk)) for item in restated(result, str(entry.pk))
+                )
+
+    unanswered = [
+        (entry, key, text)
+        for entry, items, _ in planned
+        if str(entry.pk) not in legacy
+        for key, text in items
+        if key not in cached
+    ]
+    run = _ask(app_id, config, unanswered, cached, proposals, legacy, domain, should_stop)
+    calls, asked, stopped, unusable, capped = (
+        run.calls, run.asked, run.stopped, run.unusable, run.capped
+    )
+    if unusable and not calls and not proposals and not legacy and not used:
+        # Every reply was unreadable: a failed run, as one that raised, never a
+        # version that quietly reads as AI-enriched.
+        raise UnusableAnswer("Graph model returned an invalid relationship structure.")
+    if not calls and not proposals and not legacy and not used:
+        return data, quality
+
+    judged = _judge(app_id, entries, proposals, data, legacy_nodes, legacy_edges, domain)
+    accepted, rejected, untyped = judged.accepted, judged.rejected, judged.untyped
+    reused_accepted, reasons = judged.reused_accepted, judged.reasons
     merged = merge_entities(app_id, data, domain.types)
     data["ontology"] = ONTOLOGY_VERSION
     if domain is not CORE:

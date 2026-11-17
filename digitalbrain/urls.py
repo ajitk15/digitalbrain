@@ -413,4 +413,5 @@ urlpatterns = [
     path("applications/<uuid:pk>/access/", views.application_access, name="application-access"),
 ]
 
+handler403 = "platform_core.views.forbidden"
 handler500 = "platform_core.views.server_error"

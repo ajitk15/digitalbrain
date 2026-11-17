@@ -263,7 +263,10 @@ class GraphRunTests(TestCase):
         )
 
     def generate(self, choice="claude:claude-sonnet-5"):
-        return self.client.post(self.url, {"action": "generate", "model_choice": choice})
+        # The model is replaced in these tests, so the credential the button now
+        # checks for is said to be there; the refusal is MissingCredentialTests'.
+        with patch("platform_core.ai.credential_problem", return_value=None):
+            return self.client.post(self.url, {"action": "generate", "model_choice": choice})
 
     def graph(self):
         return KnowledgeGraph.objects.get(application=self.app)
@@ -429,16 +432,113 @@ class GraphRunTests(TestCase):
         self.assertNotIn("/srv/secret/path", reason)
         self.assertIn("stopped unexpectedly", reason)
 
-    def test_the_stall_window_outlasts_a_full_length_run(self):
-        """A window shorter than the call would re-offer Retry mid-run and bill twice."""
-        self.assertGreater(STALL_MINUTES * 60, EXTRACTION_TIMEOUT)
+    def test_a_missing_credential_is_said_plainly_not_as_a_fault(self):
+        from platform_core.ai import MissingCredential, missing_credential_message
+
+        self.generate()
+        with patch(
+            "platform_core.graph_ai.enrich_graph",
+            side_effect=MissingCredential(missing_credential_message("claude")),
+        ):
+            with self.assertRaises(MissingCredential):
+                rebuild(self.app.pk)
+        reason = self.graph().failure_reason
+        self.assertIn("no Claude credential", reason)
+        self.assertNotIn("unexpectedly", reason)
+
+    def test_generate_with_an_unreachable_model_is_refused_and_queues_nothing(self):
+        response = self.client.post(
+            self.url, {"action": "generate", "model_choice": "claude:claude-sonnet-5"}, follow=True
+        )
+        self.assertContains(response, "no Claude credential")
+        queued = KnowledgeGraph.objects.filter(application=self.app, status="queued")
+        self.assertFalse(queued.exists())
+        # Structure alone needs no credential, so it is still offered and taken.
+        self.generate("structural")
+        self.assertEqual(self.graph().status, "queued")
+
+    def test_the_form_selects_structural_when_the_saved_model_cannot_be_reached(self):
+        page = reverse("graph-generate", args=[self.app.pk])
+        self.assertContains(
+            self.client.get(page), '<option value="structural" selected>', html=False
+        )
+        with patch("platform_core.ai.credential_problem", return_value=None):
+            reachable = self.client.get(page)
+        self.assertContains(reachable, '<option value="claude:claude-sonnet-5" selected>')
+        self.assertNotContains(reachable, '<option value="structural" selected>')
+
+    def test_the_stall_window_outlasts_several_touches(self):
+        """A window one late touch could cross would re-offer Retry mid-run and bill twice."""
+        from platform_core.graphs import KEEPALIVE_SECONDS
+
+        self.assertGreaterEqual(STALL_MINUTES * 60, 4 * KEEPALIVE_SECONDS)
+        # And it no longer waits out a whole extraction timeout after a crash.
+        self.assertLess(STALL_MINUTES * 60, EXTRACTION_TIMEOUT)
+
+    def test_a_running_build_keeps_its_own_row_alive(self):
+        """Touched through the opaque provider call, so only a stopped worker ages."""
+        touched = []
+
+        class Recorder:
+            def __init__(self, rows, every):
+                touched.append((rows, every))
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        self.generate()
+        with (
+            patch("platform_core.keepalive.KeepAlive", Recorder),
+            patch("platform_core.graph_ai.enrich_graph", side_effect=lambda *a, **k: a[3:5]),
+        ):
+            rebuild(self.app.pk)
+        (rows, every), = touched
+        self.assertEqual(rows.model, KnowledgeGraph)
+        # Its own claim only: nothing after it is saved, failed or stopped.
+        self.assertIn("status", str(rows.query))
+        self.assertIn("fingerprint", str(rows.query))
+
+    def test_stop_ends_a_run_between_calls_and_saves_nothing(self):
+        from platform_core.graphs import stop_generation
+        from platform_core.models import AuditEvent
+
+        self.generate()
+        calls = []
+
+        def answer(app_id, config, citation, domain=None):
+            calls.append(citation["id"])
+            stop_generation(self.owner, self.app)
+            return []
+
+        with patch("platform_core.graph_ai.extract_relationships", side_effect=answer):
+            self.assertTrue(rebuild(self.app.pk))
+        graph = self.graph()
+        self.assertEqual(graph.status, "failed")
+        self.assertIn("Stopped by owner", graph.failure_reason)
+        self.assertEqual(len(calls), 1)
+        self.assertFalse(GraphRevision.objects.filter(application=self.app).exists())
+        self.assertTrue(AuditEvent.objects.filter(action="graph.generation_stopped").exists())
+
+    def test_the_run_card_offers_stop_to_writers_only(self):
+        self.generate()
+        self.assertContains(self.client.get(self.url), 'value="stop"')
+        response = self.client.post(self.url, {"action": "stop"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.graph().status, "failed")
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.client.post(self.url, {"action": "stop"}).status_code, 403)
 
     def test_a_long_running_extraction_is_not_mistaken_for_a_stall(self):
         self.generate()
+        # Its keep-alive touched it half a minute ago, an hour into its call.
         KnowledgeGraph.objects.filter(application=self.app).update(
             status="building",
             stage="Extracting relationships with claude-sonnet-5",
-            updated_at=timezone.now() - timedelta(seconds=EXTRACTION_TIMEOUT - 30),
+            started_at=timezone.now() - timedelta(hours=1),
+            updated_at=timezone.now() - timedelta(seconds=30),
         )
         response = self.client.get(self.url)
         # Still reported as running, with no control that would start a second run.

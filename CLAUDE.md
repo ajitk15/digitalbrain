@@ -43,7 +43,16 @@ made every in-place progress update throw for a day while every HTML test passed
 and say why where Playwright or Chrome is missing, or with `DIGITAL_BRAIN_BROWSER_TESTS=0`.
 Changing `static/*.js`, a CSP-affecting template or a `data-live`/`data-modal` flow means
 adding or updating one there. Wait on selectors, never `wait_for_function`: that evaluates a
-string, and the CSP refuses it - as it should.
+string, and the CSP refuses it - as it should. Where Chrome is not installed but Playwright's
+Chromium is (a Linux container), run them with `DIGITAL_BRAIN_BROWSER_CHANNEL=chromium` and
+`PLAYWRIGHT_BROWSERS_PATH` naming its folder.
+
+CI runs the suite under `coverage` (`[tool.coverage]` in `pyproject.toml` holds the floor -
+raise it with the suite, never lower it to pass) and audits every locked dependency with
+`pip-audit` against `uv export --frozen`, so a known advisory in `uv.lock` fails the build.
+Tests never need the network: one that submits a link answers DNS itself
+(`test_link_sources.offline`). `tblib` is a dev dependency so `--parallel` reports a failure
+instead of crashing on its traceback.
 
 **CI runs the suite and the scorecard twice: on SQLite and on PostgreSQL 16**, the
 second because the advisory lane locks, `SKIP LOCKED` claims and full-text indexes
@@ -75,6 +84,8 @@ database security remains production-grade; host Claude login is still refused.
 approved edits over redeploys. Its `.venv` points to the image's locked Linux
 test environment. `scripts/rebuild_demo.py` accepts a declared hosted demo,
 validates rather than rewrites its config, and prompts for new-account passwords.
+It also asks before it spends - typing, enrichment and generation are paid - and
+builds without AI (tasks left off) when declined or unattended; `--ai`/`--no-ai`.
 See `deploy/README.md` for setup and credentials. Statements below restricting
 reset/local delivery to development have this explicit demonstration exception.
 
@@ -375,7 +386,9 @@ address so DNS cannot change the answer underneath it. Every resolved address is
 and they are dialled in turn until one connects - the request itself is sent once. Pinning
 to only the first used to fail every GitHub download whenever the resolver listed an
 unreachable CDN address first. http/https only, no redirects
-followed, 8 MB and 20 s caps, no credentials attached. Do not add a second code path
+followed, 8 MB, and 20 s for the **whole** request - connect, headers and body, read
+with `read1` so the deadline is checked between reads (`fetching.Deadline`); per read, a
+server dripping a byte at a time held a worker indefinitely - no credentials attached. Do not add a second code path
 that fetches URLs.
 
 `code_graph_clone.py` is the one exception, and it is one because it takes no
@@ -779,7 +792,10 @@ EventSource. No `unsafe-inline`, no external origins.
 `available_features()` filters it to what can actually be switched on. Adding one line
 there puts a checkbox on the create form, a row on the Features screen and an entry in
 the nav, with nothing else to change. A missing `ApplicationFeature` row means enabled,
-so only unticked features are written.
+so only unticked features are written. A feature switched off raises `services.FeatureOff`
+(still a 403, and only after the grant was read, so nothing about an application someone
+cannot open leaks): `views.forbidden` says it is switched off, and offers an owner Features,
+where the generic page told the owner to ask an owner for access.
 
 **What an application is for is the switches, not a field.** The create form asks
 "What is this application for?" - Engineering (`code_graph`, `code_factory`), Operations
@@ -940,6 +956,16 @@ never repeat a paid call - and automatic enrichment, on by default (see "Every v
 built with AI" below), is what requests one when sources change. A rebuild does reuse
 cached answers, which costs nothing. Every run saves a `GraphRevision` as a draft.
 
+**A running build touches its row; a person can stop it** (`graphs.rebuild`,
+`KEEPALIVE_SECONDS`, `STALL_MINUTES`, `stop_generation`). `rebuild` holds a
+`keepalive.KeepAlive` on its own claim (`status="building"` and its fingerprint) for the
+whole build, through the opaque provider call, so a quiet row means a dead worker: the stall
+window is three minutes, where it had to outlast the fifteen-minute extraction timeout and an
+application whose worker died stayed locked that long. Stop (owners and contributors, on the
+run card, audited `graph.generation_stopped`) fails the row with who stopped it; the run
+notices between model calls (`enrich_graph`'s `should_stop`), never inside one, and saves no
+version. Answers already paid for are cached, so the next run reads them free.
+
 `graph_snapshot(app_id, version=None)` resolves to the **latest published** revision, never
 the working graph. Chat and Code Factory both go through it. No published revision is an
 error, not a silent fallback to a draft. A conversation may still pin a specific version.
@@ -952,6 +978,16 @@ different moments: `start_run` refuses at the button, `execute` re-resolves it b
 spending anything because a revision can be withdrawn while a run waits in the queue, and
 the plans screen replaces the form with the reason rather than offering a button that can
 only fail. All three say it in the same words, `NO_GRAPH`.
+
+**A model that cannot be reached is refused at the button too** (`ai.credential_problem`,
+the one check behind `code_factory.model_problem`, `graphs.claim_generation` and the
+Generate form). A run whose plan-drafting model had no credential used to queue, fail on the
+worker and say "stopped unexpectedly" while onboarding listed the missing credential; a
+graph generation the same. `start_run` refuses, the plans screen shows the reason in place of
+the form, Generate pre-selects Structural only when the saved model has no credential, and a
+claim with a model is refused. `provider_credential` raises `ai.MissingCredential` (still an
+`ImproperlyConfigured`) whose message names the provider and Credentials, never a file;
+`ai.failure_message` is how a run, chat or triage shows it rather than a generic fault.
 
 A published graph that matches *nothing* is a different thing and still runs:
 `graph_citations` returns an empty list for it and raises only when there is no graph, so

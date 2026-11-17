@@ -1192,9 +1192,12 @@
     border-color: var(--c-ok-bg);
     color: var(--c-ok);
   }
-  /* Before a first graph exists there are only two panes. */
-  .kb-panes-empty { grid-template-columns: var(--w-kb-rail) minmax(0, 1fr); }
-  .kb-empty { display: flex; flex-direction: column; justify-content: center; }
+  /* Before a first graph exists there are only two panes. The explorer's card
+     sits at the top: centred in a pane stretched to a long source list, a
+     failed run's reason and Retry button were drawn below the fold, and the
+     page read as a blank white box. */
+  .kb-panes-empty { grid-template-columns: var(--w-kb-rail) minmax(0, 1fr); align-items: start; }
+  .kb-empty { display: flex; flex-direction: column; justify-content: flex-start; }
   .kb-empty .card { border: 0; box-shadow: none; padding: 0; }
   .kb-empty h2 { font-size: var(--t-17); }
   /* AI settings ---------------------------------------------------------
@@ -2632,7 +2635,7 @@
   .code-file-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: var(--s-4); align-items: start; }
   .code-source { max-height: 68vh; overflow: auto; white-space: pre; font: var(--t-12)/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; background: var(--c-well); border: 1px solid var(--c-line-soft); padding: var(--s-4); border-radius: var(--r-md); }
   .generate-form select { min-width: 0; max-width: 100%; }
-  .kb-panes-empty { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); }
+  .kb-panes-empty { display: grid; grid-template-columns: minmax(240px, 300px) minmax(0, 1fr); align-items: start; }
 
   /* Readable conversations and small, individually saved settings forms. */
   .chat-heading { margin-bottom: var(--s-3); }
@@ -3221,6 +3224,11 @@
 .knowledge-status > a + a::before,
 .knowledge-status > span + a::before { content: "·"; margin-right: var(--s-2); color: var(--c-ink-3); }
 .knowledge-status-waiting { color: var(--c-warn); font-weight: 600; }
+/* "Built without AI", said on this line rather than as a banner above it. */
+/* Under what answers, as the line's second half: after a dot it wrapped and
+   left the dot dangling at the start of a line. */
+.knowledge-status-warning { display: flex; flex-basis: 100%; align-items: flex-start; gap: var(--s-1); color: var(--c-warn); }
+.knowledge-status-warning > svg { flex: none; margin-top: 3px; }
 
 /* The knowledge cycle on onboarding (`lifecycle.stages`): six stages in a row,
    wrapping on a narrow screen, each saying what is true and opening where to act. */
@@ -4455,3 +4463,32 @@
     .versions-table th, .versions-table td { padding-inline: var(--s-2); }
   }
 }
+
+/* A phone's first screen is the page's own work. The bar, the setup strip and
+   the tabs used to wrap to two and three rows each, and on Documents the tabs
+   started 543px down a 664px screen. Each is now one row: the trail is the
+   application's name (its ancestry is the sidebar's), the sections and tabs
+   scroll sideways, focus mode - meaningless on a phone - is not offered, and
+   the setup strip is one line whose checklist link stays whole. */
+@layer redesign {
+  @media (max-width: 700px) {
+    .application-bar { gap: var(--s-1); }
+    .app-trail { flex: 1 1 100%; }
+    .app-trail-path { display: none; }
+    .application-bar .focus-toggle { display: none; }
+    .application-bar .application-menu,
+    .knowledge-tabs {
+      flex: 1 1 100%;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .application-bar .application-menu a,
+    .knowledge-tabs a { flex: none; white-space: nowrap; }
+    .setup-strip { flex-wrap: nowrap; gap: var(--s-2); }
+    .setup-mark { display: none; }
+    .setup-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .setup-link { flex: none; }
+  }
+}
+

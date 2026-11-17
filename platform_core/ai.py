@@ -283,6 +283,57 @@ def personal_data_status(app):
     }
 
 
+#: How a refusal names a provider: the company, not the SDK `AI_PROVIDERS` labels.
+PROVIDER_NAMES = {"claude": "Claude", "openai": "OpenAI"}
+
+
+class MissingCredential(ImproperlyConfigured):
+    """No credential for a provider this application asked to use.
+
+    Still an `ImproperlyConfigured`, so every caller that already handled one
+    still does. What it adds is a message a person can act on - the provider and
+    where to set it, never a file name - so a run that hits it can say so
+    instead of "stopped unexpectedly". `failure_message` is how they read it.
+    """
+
+
+def missing_credential_message(provider):
+    name = PROVIDER_NAMES.get(provider, provider or "provider")
+    return (
+        f"This application has no {name} credential, so the model cannot be reached. "
+        "An owner can set one on Credentials."
+    )
+
+
+def credential_problem(app, provider):
+    """None when a call to `provider` could authenticate here, else why not.
+
+    The one check behind every place that decides before spending - the
+    Generate form, a graph claim, Code Factory's Analyse - so they cannot
+    disagree with `provider_credential`, which decides at the call.
+    """
+    from .agent_runtime.credentials import host_login_enabled
+    from .secrets import source_of
+
+    if not provider:
+        return "No AI provider is configured for this task. An owner can choose one in AI settings."
+    if source_of(app, provider):
+        return None
+    if provider == "claude" and host_login_enabled():
+        return None
+    return missing_credential_message(provider)
+
+
+def failure_message(error, fallback):
+    """The sentence a person is shown for `error`: its own when it was written for
+    them (a refusal, a missing credential), `fallback` for anything internal."""
+    if isinstance(error, ValidationError):
+        return " ".join(error.messages)
+    if isinstance(error, MissingCredential):
+        return str(error)
+    return fallback
+
+
 def provider_credential(config, app):
     """The mounted credential for this application and provider.
 
@@ -299,7 +350,7 @@ def provider_credential(config, app):
         return value
     if config.provider == "claude" and host_login_enabled():
         return ""
-    raise ImproperlyConfigured(f"Required credential is unavailable: {config.provider}_{app.pk}")
+    raise MissingCredential(missing_credential_message(config.provider))
 
 
 #: Written once by scripts/ai_setup.py during first-run setup. Deliberately not

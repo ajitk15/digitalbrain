@@ -26,10 +26,18 @@ Idempotent: a second run reports what already exists and creates nothing new.
 A password is set only when its user is created, never reset. Production must
 declare demonstration = true and prompts for a strong initial password; the
 published password below is only for development. Nothing here deletes anything.
-The only model call is the one knowledge-graph generation per application
-that step 9 asks for, once; a re-run does not repeat it.
+Building with AI is paid, so it is asked before anything is loaded: document
+typing after each conversion, the automatic AI enrichment of each new version,
+and the one knowledge-graph generation per application step 9 asks for (once;
+a re-run does not repeat it). At a console the build says who would pay - the
+application's mounted Claude credential, or in development this machine's own
+Claude Code login - and asks. `--ai` answers yes, `--no-ai` no, and with no
+console and neither flag it builds without AI: an unattended run never spends
+by default. Without AI the demo applications' AI tasks are left off, said in the
+output, and a later run with `--ai` switches them back on.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -251,6 +259,60 @@ def demo_settings():
 def step(number, title):
     print()
     print(f"== {number}. {title}")
+
+
+def who_pays(app):
+    """Whose account a Claude call for `app` would spend, or "" when none can be made."""
+    from platform_core.agent_runtime.credentials import host_login_enabled
+    from platform_core.secrets import source_of
+
+    if source_of(app, "claude"):
+        return f"{app.name}'s mounted Claude credential"
+    if host_login_enabled():
+        return "this machine's own Claude Code login (claude_use_host_login)"
+    return ""
+
+
+def wants_ai(choice, apps):
+    """Whether this build may call the model: the flag, else the person at the console.
+
+    No console and no flag is no: the build that spent on a sandbox's own login
+    was a non-interactive run nobody was asked about.
+    """
+    payers = sorted({payer for payer in (who_pays(app) for app in apps) if payer})
+    if not payers:
+        print("note    no Claude credential and no host login: nothing can be charged")
+        return True
+    if choice is not None:
+        return choice
+    if not sys.stdin.isatty():
+        print("note    building without AI: nobody is at a console to agree to the charges.")
+        print("        Run with --ai to build with the model.")
+        return False
+    print("This build calls claude-sonnet-5 to type documents after conversion and to")
+    print("enrich and generate each application's knowledge graph. It is charged to:")
+    for payer in payers:
+        print(f"  - {payer}")
+    answer = input("Build with AI? [y/N] ").strip().lower()
+    return answer in {"y", "yes"}
+
+
+def without_ai(app):
+    """Switch `app`'s AI tasks off for a build that was not agreed to spend.
+
+    Through the same switches an owner uses in AI settings, so what the build
+    declined is visible there and nothing in the worker is bypassed. Asked before
+    step 9, the first step that can spend: conversion types each document, and a
+    new version is enriched automatically.
+    """
+    from platform_core.models import AIConfiguration
+
+    switched = AIConfiguration.objects.filter(application=app, enabled=True).update(
+        enabled=False
+    )
+    if switched:
+        print(f"set     {app.name}: AI tasks off for a build without AI "
+              "(run with --ai to switch them back on)")
 
 
 def application(owner, product, name, purpose, ai_purpose):
@@ -483,7 +545,7 @@ def request_ai_graphs(owner, built):
     return requested
 
 
-def build_graphs(built):
+def build_graphs(built, ai=True):
     """Conversion and the code index, the graph with the model, then publish."""
     from platform_core.document_worker import code_graph_steps, graph_steps, intake_steps
     from platform_core.graphs import publish_revision, published_revision
@@ -502,7 +564,7 @@ def build_graphs(built):
         return
 
     owner = User.objects.get(username=DEMO_USER)
-    requested = request_ai_graphs(owner, built)
+    requested = request_ai_graphs(owner, built) if ai else []
 
     def enriched():
         return not KnowledgeGraph.objects.filter(
@@ -559,6 +621,17 @@ def import_tickets(owner, app, missing):
 
 
 def main(argv=None):
+    parser = argparse.ArgumentParser(description="Build the CarePath demonstration.")
+    spending = parser.add_mutually_exclusive_group()
+    spending.add_argument(
+        "--ai", dest="ai", action="store_const", const=True, help="Build with the model."
+    )
+    spending.add_argument(
+        "--no-ai", dest="ai", action="store_const", const=False, help="Build without it."
+    )
+    # An explicit list, never sys.argv by default: a test calling main() would
+    # otherwise hand argparse the test runner's own arguments.
+    arguments = parser.parse_args(argv if argv is not None else [])
     if settings.PRODUCTION and not settings.DEMONSTRATION:
         print("Refusing to build the demo on a production instance.")
         return 1
@@ -598,6 +671,10 @@ def main(argv=None):
     for number, (name, purpose, ai_purpose) in zip((4, 5), APPLICATIONS, strict=True):
         step(number, f"{purpose.capitalize()} application")
         built[name] = application(owner, product, name, purpose, ai_purpose)
+    ai = wants_ai(arguments.ai, built.values())
+    if not ai:
+        for app in built.values():
+            without_ai(app)
     step(6, "Users")
     print(f"{DEMO_USER} is owner (administrator) of ACME and owns CarePathDev and CarePathOps")
     site_admin(password)
@@ -616,8 +693,9 @@ def main(argv=None):
     import_tickets(owner, built["CarePathOps"], missing)
 
     print()
-    print("== Building the knowledge graph (with the model) and the code graph")
-    build_graphs(built)
+    print("== Building the knowledge graph" + (" (with the model)" if ai else " (structure only)")
+          + " and the code graph")
+    build_graphs(built, ai=ai)
     print()
     print(f"Sign in as {DEMO_USER}. Missing credential files: put them where step 8 says")
     print("and run this again; it imports what it could not before." if missing else "Done.")
@@ -625,4 +703,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

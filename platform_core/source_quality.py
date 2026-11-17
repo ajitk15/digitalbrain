@@ -31,7 +31,7 @@ from .graphs import MAX_RECORDS_PER_SOURCE, walk
 from .models import KnowledgeEntry
 from .ticket_quality import PLACEHOLDER, Check, quote
 
-QUALITY_VERSION = 5
+QUALITY_VERSION = 6
 
 #: Text this short was most likely not read: a scanned page, an image, a
 #: template with nothing filled in.
@@ -152,6 +152,12 @@ def readable_check(content, report):
     finding = sentence("; ".join(problems)) + "."
     improve = ("Upload the original Word, Excel or PowerPoint file rather than a scan or a "
                "PDF of one" + (", or turn on OCR so scanned pages are read." if blank else "."))
+    if not pages and not garbled:
+        # Text that was read whole and is simply short - a note, a stub. Telling
+        # its author to upload the Word original "rather than a scan" was advice
+        # for a different problem.
+        improve = (f"Add the rest of the document: under {MIN_CHARACTERS} characters gives "
+                   "the graph little to read or cite.")
     if low:
         improve = ("Scan the pages again at 300 dpi or better, or upload the original "
                    "document, because text read with low confidence may be cited wrongly.")

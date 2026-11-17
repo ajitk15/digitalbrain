@@ -22,7 +22,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from .graph_ai import EXTRACTION_TIMEOUT, MAX_EXTRACTION_SOURCES, rubric
+from .graph_ai import MAX_EXTRACTION_SOURCES, rubric
 from .hierarchy import is_live
 from .model_catalog import MODEL_CHOICES
 from .models import AIConfiguration, Document, GraphRevision, KnowledgeEntry, KnowledgeGraph
@@ -376,6 +376,18 @@ def rebuild(app_id):
     )
     if not claimed:
         return False
+    from .keepalive import KeepAlive
+
+    # Touched while it runs, so age means a stopped worker (`STALL_MINUTES`).
+    # Handed this claim's own filter: it stops touching once the run is saved,
+    # failed or stopped by a person.
+    ours = KnowledgeGraph.objects.filter(pk=graph.pk, status="building", fingerprint=before)
+    with KeepAlive(ours, every=KEEPALIVE_SECONDS):
+        return _build(app_id, graph, before, requested, ours)
+
+
+def _build(app_id, graph, before, requested, ours):
+    """The claimed run's work: read, enrich if asked, save. `rebuild` holds the claim."""
     entries = list(sources_for(app_id))
     if not entries:
         # Nothing to read is not a version. Saving one put an empty "Version 1"
@@ -404,18 +416,25 @@ def rebuild(app_id):
         # picks it up, and leave this one structural.
         KnowledgeGraph.objects.filter(pk=graph.pk).update(requested_provider="", requested_model="")
     if config and entries:
-        from .graph_ai import enrich_graph
+        from .graph_ai import GenerationStopped, enrich_graph
 
         set_stage(app_id, f"Extracting relationships with {config.model}")
         try:
-            data, quality = enrich_graph(app_id, config, entries, data, quality)
+            # Asked between calls, never during one: a call in flight is
+            # finished and recorded, and every answer is already cached.
+            data, quality = enrich_graph(
+                app_id, config, entries, data, quality, should_stop=lambda: not ours.exists()
+            )
+        except GenerationStopped:
+            # Someone pressed Stop; `stop_generation` already said so on the row.
+            return True
         except Exception as failure:
             # ValidationError messages are already sanitized for display; anything
             # else is an internal fault and must not be echoed to the page.
-            reason = (
-                " ".join(failure.messages)
-                if isinstance(failure, ValidationError)
-                else "Graph generation stopped unexpectedly. See the server log."
+            from .ai import failure_message
+
+            reason = failure_message(
+                failure, "Graph generation stopped unexpectedly. See the server log."
             )
             KnowledgeGraph.objects.filter(
                 pk=graph.pk, fingerprint=before, status="building"
@@ -472,6 +491,10 @@ def rebuild(app_id):
         locked = KnowledgeGraph.objects.select_for_update().get(pk=graph.pk)
         if fingerprint(app_id) != before:
             return False
+        if locked.status == "failed":
+            # Stopped by a person after the last call: what they stopped is not
+            # saved as a version behind their back.
+            return True
         if (
             locked.status == "ready"
             and locked.fingerprint == before
@@ -692,10 +715,6 @@ def reconcile_if_due():
     return False
 
 
-#: How a refusal names a provider: the company, not the SDK `AI_PROVIDERS` labels.
-PROVIDER_NAMES = {"claude": "Claude", "openai": "OpenAI"}
-
-
 @dataclass
 class AutomaticAI:
     """What the next version will be built with when nobody presses Generate."""
@@ -773,10 +792,8 @@ def automatic_ai(app, graph=None):
     sentence a person can act on, and is written on the structural version it
     leaves, so a version without AI always says why.
     """
-    from django.core.exceptions import ImproperlyConfigured
-
     from . import budget
-    from .ai import provider_credential
+    from .ai import credential_problem
 
     if graph is not None and graph.auto_refresh_declined:
         return AutomaticAI(False, reason="An owner switched automatic AI enrichment off.")
@@ -800,16 +817,9 @@ def automatic_ai(app, graph=None):
         return AutomaticAI(
             False, reason="No owner of this application can be charged for it.", lost=lost
         )
-    try:
-        provider_credential(config, app)
-    except ImproperlyConfigured:
-        name = PROVIDER_NAMES.get(config.provider, config.provider)
-        return AutomaticAI(
-            False,
-            reason=f"This application has no {name} credential, so the model cannot be "
-            "reached. An owner can set one on Credentials.",
-            lost=lost,
-        )
+    problem = credential_problem(app, config.provider)
+    if problem:
+        return AutomaticAI(False, reason=problem, lost=lost)
     try:
         budget.check(app.pk)
     except ValidationError as refusal:
@@ -1156,14 +1166,20 @@ def revision_readable(revision, app_id):
     return revision_drift(revision, app_id)[0] == 0
 
 
+#: How often a running build touches its row (`keepalive.KeepAlive`).
+KEEPALIVE_SECONDS = 30
+
 #: How long a "building" run may go quiet before it is treated as interrupted.
 #:
-#: This MUST exceed the extraction timeout. A legitimate run makes one opaque
-#: provider call with no row updates in between, so a window shorter than that
-#: call would declare a live run dead, re-offer Retry underneath it and bill the
-#: application twice. Derived rather than written as a literal so the two cannot
-#: drift apart.
-STALL_MINUTES = EXTRACTION_TIMEOUT // 60 + 5
+#: A live run is never quiet that long: `rebuild` touches its row every
+#: `KEEPALIVE_SECONDS` on a thread of its own, through the opaque provider call
+#: too, so only a stopped worker ages - the property every other lane's
+#: `KeepAlive` gives it. The window used to have to outlast the whole extraction
+#: timeout (fifteen minutes), because nothing was written during a call; an
+#: application whose worker died sat locked for that long. Several intervals,
+#: so a delayed touch never reads as a death and re-offers Retry under a live,
+#: billing run.
+STALL_MINUTES = 3
 
 
 def run_in_flight(graph):
@@ -1185,6 +1201,32 @@ def run_in_flight(graph):
     return graph.updated_at > timezone.now() - timedelta(minutes=STALL_MINUTES)
 
 
+def stop_generation(user, app):
+    """Stop a queued or running generation. Returns whether there was one.
+
+    The run notices between model calls (`enrich_graph`'s `should_stop`) and
+    saves nothing; the call in progress, if any, is finished and recorded like
+    every paid call. Answers already paid for stay cached, so the next run reads
+    them without charge.
+    """
+    stopped = KnowledgeGraph.objects.filter(
+        application=app, status__in=["queued", "building"]
+    ).update(
+        status="failed",
+        stage="Stopped",
+        failure_reason=(
+            f"Stopped by {user.get_username()}. Answers already paid for are kept, "
+            "and the next run reuses them without charge."
+        ),
+        requested_provider="",
+        requested_model="",
+        updated_at=timezone.now(),
+    )
+    if stopped:
+        audit(user, "graph.generation_stopped", app.pk, app.product.portfolio.organization)
+    return bool(stopped)
+
+
 def claim_generation(user, app, provider="", model=""):
     """Arm the graph row for one run, or say why not. Returns (claimed, reason).
 
@@ -1196,6 +1238,18 @@ def claim_generation(user, app, provider="", model=""):
 
     It takes a user rather than a request: the second caller has no form.
     """
+    if model:
+        # Refused here, at the button, rather than queued and failed on the
+        # worker: a run with no credential can only fail, and used to say
+        # "stopped unexpectedly" while the reason sat in a banner above it.
+        from .ai import credential_problem
+
+        configured = AIConfiguration.objects.filter(
+            application=app, purpose="graph_generation", enabled=True
+        ).first()
+        problem = credential_problem(app, provider or (configured.provider if configured else ""))
+        if problem:
+            return False, problem
     graph, _ = KnowledgeGraph.objects.get_or_create(application=app)
     if run_in_flight(graph):
         # Re-arming the row under a live run would let both finish and bill twice.
@@ -1282,6 +1336,8 @@ def graph_generate(request, pk):
     path is `queue_generation`, unchanged, so the popup and the plain page
     cannot diverge.
     """
+    from .ai import credential_problem
+
     app, grant = access(request.user, pk, "knowledge")
     if grant.role not in {"owner", "contributor"}:
         raise PermissionDenied("Only an owner or contributor may generate a graph.")
@@ -1311,8 +1367,13 @@ def graph_generate(request, pk):
             "graph": graph,
             "ai_plan": automatic_ai(app, graph),
             # The saved model is selected: AI is the default here too, and
-            # structural only is something a person picks on purpose.
-            "default_choice": f"{saved.provider}:{saved.model}" if saved else "structural",
+            # structural only is something a person picks on purpose - unless
+            # the saved model cannot be reached, when pre-selecting it offered
+            # a button that could only fail.
+            "default_choice": f"{saved.provider}:{saved.model}"
+            if saved and credential_problem(app, saved.provider) is None
+            else "structural",
+            "credential_problem": credential_problem(app, saved.provider) if saved else None,
             "model_choices": MODEL_CHOICES,
             "has_versions": GraphRevision.objects.filter(application=app).exists(),
             # Said, never enforced: a source that needs work still goes in.
@@ -1351,6 +1412,18 @@ def graph_view(request, pk):
             return redirect(f"{reverse('graph', args=[pk])}?tab=versions")
         if action == "generate":
             return queue_generation(request, app, pk)
+        if action == "stop":
+            if grant.role not in {"owner", "contributor"}:
+                raise PermissionDenied("Only an owner or contributor may stop a generation.")
+            if stop_generation(request.user, app):
+                messages.success(
+                    request,
+                    "Stopping. The call in progress, if any, finishes and is recorded; nothing "
+                    "else is sent and no version is saved.",
+                )
+            else:
+                messages.info(request, "There is no generation running to stop.")
+            return redirect("graph", pk=pk)
         if action != "retry":
             return HttpResponse("Unknown graph action.", status=400)
         if run_in_flight(KnowledgeGraph.objects.filter(application=app).first()):

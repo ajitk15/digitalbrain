@@ -16,7 +16,10 @@ Everything in this module exists to bound that:
 * Redirects are never followed. A redirect is an unvalidated second destination;
   the caller is told where it pointed instead.
 * Responses are bounded in bytes and in time, and nothing is streamed to disk
-  until the size is known to be acceptable.
+  until the size is known to be acceptable. The time is one deadline for the
+  whole request - connect, headers and body - not a limit on each socket read:
+  per read, a server sending a byte every nineteen seconds could hold a worker
+  for as long as it liked.
 * No credential, cookie or authorization header is ever attached by this module.
   Callers that need one pass it explicitly.
 
@@ -29,12 +32,16 @@ import ipaddress
 import re
 import socket
 import ssl
+import time
 from urllib.parse import unquote, urlparse
 
 MAX_BYTES = 8 * 1024 * 1024
 #: Per address: a dead one in a rotation should cost seconds, not the whole budget.
 CONNECT_TIMEOUT = 5
+#: The whole request, from the first connect to the last byte of the body.
 TIMEOUT = 20
+#: How much of the body one read asks for, so the deadline is checked between reads.
+READ_CHUNK = 64 * 1024
 USER_AGENT = "Digital-Brain"
 
 #: Extensions MarkItDown handles, chosen from the content type when the URL path
@@ -144,12 +151,30 @@ def resolve(host, port):
     return addresses
 
 
-def _connection(parsed, family, literal):
+class Deadline:
+    """What is left of one request's `TIMEOUT`, for each socket operation in turn."""
+
+    def __init__(self, host, seconds=None):
+        self.host = host
+        self.seconds = TIMEOUT if seconds is None else seconds
+        self.ends = time.monotonic() + self.seconds
+
+    def left(self, most=None):
+        remaining = self.ends - time.monotonic()
+        if remaining <= 0:
+            raise FetchError(
+                f"{self.host} took longer than {self.seconds:g} seconds to answer."
+            )
+        return remaining if most is None else min(most, remaining)
+
+
+def _connection(parsed, family, literal, deadline=None):
     """A connection pinned to one already-validated address.
 
     The host header and TLS server name stay the real hostname, so certificate
     verification is unaffected; only the address dialled is fixed.
     """
+    deadline = deadline or Deadline(parsed.hostname)
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     if parsed.scheme == "https":
         connection = http.client.HTTPSConnection(
@@ -160,13 +185,13 @@ def _connection(parsed, family, literal):
 
     def connect():
         sock = socket.socket(family, socket.SOCK_STREAM)
-        sock.settimeout(CONNECT_TIMEOUT)
+        sock.settimeout(deadline.left(CONNECT_TIMEOUT))
         try:
             sock.connect((literal, port))
         except OSError:
             sock.close()
             raise
-        sock.settimeout(TIMEOUT)
+        sock.settimeout(deadline.left())
         if parsed.scheme == "https":
             sock = connection._context.wrap_socket(sock, server_hostname=parsed.hostname)
         connection.sock = sock
@@ -175,7 +200,7 @@ def _connection(parsed, family, literal):
     return connection
 
 
-def _connected(parsed, addresses):
+def _connected(parsed, addresses, deadline=None):
     """A connection to the first of `addresses` that answers.
 
     Every one of them already passed `resolve`, so moving to the next keeps the
@@ -186,7 +211,7 @@ def _connected(parsed, addresses):
     """
     failure = None
     for family, literal in dict.fromkeys(addresses):
-        connection = _connection(parsed, family, literal)
+        connection = _connection(parsed, family, literal, deadline)
         try:
             connection.connect()
         except (OSError, ssl.SSLError) as error:
@@ -194,7 +219,9 @@ def _connected(parsed, addresses):
             failure = error
             continue
         return connection
-    raise failure
+    # Unreachable, whatever the last address said - a connect that timed out is
+    # not the request's deadline passing, and must not read as one.
+    raise ConnectionError(str(failure)) from failure
 
 
 def normalise(raw):
@@ -265,11 +292,16 @@ def fetch(raw, *, headers=None, method="GET", body=None):
     request_headers.update(headers or {})
 
     connection = None
+    deadline = Deadline(parsed.hostname)
     try:
-        connection = _connected(parsed, addresses)
+        connection = _connected(parsed, addresses, deadline)
         if body is not None:
             request_headers.setdefault("Content-Length", str(len(body)))
         connection.request(method, target, body=body, headers=request_headers)
+        # Held here: a response that closes the connection takes `connection.sock`
+        # with it, while the socket itself stays open under the response.
+        sock = connection.sock
+        sock.settimeout(deadline.left())
         response = connection.getresponse()
         if response.status in {301, 302, 303, 307, 308}:
             location = response.getheader("Location", "")
@@ -285,7 +317,20 @@ def fetch(raw, *, headers=None, method="GET", body=None):
         declared = response.getheader("Content-Length")
         if declared and declared.isdigit() and int(declared) > MAX_BYTES:
             raise FetchError("That document is larger than 8 MB.")
-        body = response.read(MAX_BYTES + 1)
+        received = []
+        size = 0
+        while size <= MAX_BYTES:
+            # Each read gets only what is left of the request's time, so a
+            # server that drips a byte at a time cannot outlast the deadline.
+            sock.settimeout(deadline.left())
+            # read1: what has arrived, up to the size - `read(n)` would wait for
+            # all n bytes, one dripped byte at a time, past any deadline.
+            chunk = response.read1(min(READ_CHUNK, MAX_BYTES + 1 - size))
+            if not chunk:
+                break
+            received.append(chunk)
+            size += len(chunk)
+        body = b"".join(received)
         if len(body) > MAX_BYTES:
             raise FetchError("That document is larger than 8 MB.")
         if not body.strip():
@@ -293,6 +338,10 @@ def fetch(raw, *, headers=None, method="GET", body=None):
         content_type = response.getheader("Content-Type", "")
     except FetchError:
         raise
+    except TimeoutError:
+        raise FetchError(
+            f"{parsed.hostname} took longer than {deadline.seconds:g} seconds to answer."
+        ) from None
     except (OSError, http.client.HTTPException, ssl.SSLError, ValueError):
         raise FetchError(
             f"{parsed.hostname} could not be reached. Check the link and connectivity."

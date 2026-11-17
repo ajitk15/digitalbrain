@@ -26,6 +26,9 @@ After deploying, create or refresh the demo from the app container:
 docker compose exec app python scripts/rebuild_demo.py
 ```
 
+Add `--ai` to build with the model (it asks at a console, and builds without AI
+when nobody is there to agree to the charge), or `--no-ai`.
+
 It creates ACME, CarePathDev, CarePathOps, `acmeadmin` and, if absent,
 `siteadmin@db.com`. New accounts use a password prompted twice with hidden
 input and checked against the platform password rules. Existing passwords and
