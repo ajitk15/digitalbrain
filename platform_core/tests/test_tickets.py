@@ -2,6 +2,7 @@
 
 import hashlib
 import re
+from unittest.mock import patch
 
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
@@ -32,6 +33,11 @@ def snow(table, sys_id):
 class TicketsTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
+        # The Analyse form is what these tests read; whether its model has a
+        # credential is test_code_factory.ModelReachableTests'.
+        reachable = patch("platform_core.code_factory.model_problem", return_value=None)
+        reachable.start()
+        self.addCleanup(reachable.stop)
 
     def connector(self, kind="jira", name="Jira", app=None, **config):
         defaults = {

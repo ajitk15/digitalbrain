@@ -52,10 +52,10 @@ source = ["digitalbrain", "platform_core"]
 omit = ["*/migrations/*", "*/tests/*"]
 
 [tool.coverage.report]
-# A floor under what the suite measured when coverage was first taken, so a
+# A floor under the 86% the suite measured when coverage was first taken, so a
 # change that leaves new code untested shows; raise it with the suite, never
 # lower it to pass.
-fail_under = 0
+fail_under = 85
 skip_covered = true
 
 [tool.ruff]

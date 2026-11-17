@@ -1881,6 +1881,10 @@ class ModelReachableTests(TestCase):
         with self.assertRaises(ValidationError) as refused:
             start_run(self.owner, self.app.pk, self.ticket)
         self.assertIn("No model is configured for plan drafting", refused.exception.messages[0])
+        # And the screen sends the owner to where a model is chosen, not to Credentials.
+        plans = self.client.get(reverse("plans", args=[self.app.pk]))
+        self.assertContains(plans, "Open AI settings")
+        self.assertNotContains(plans, "Open Credentials")
 
     def test_the_screen_and_the_ticket_form_say_why_before_anyone_types(self):
         plans = self.client.get(reverse("plans", args=[self.app.pk]))

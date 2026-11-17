@@ -302,9 +302,11 @@ class GraphPublishingTests(TestCase):
             output_rate=Decimal("10"),
             configured_by=self.owner,
         )
-        self.client.post(
-            self.url, {"action": "generate", "model_choice": "claude:claude-sonnet-5"}
-        )
+        # A credential is said to be mounted: the claim refuses a model it cannot reach.
+        with patch("platform_core.ai.credential_problem", return_value=None):
+            self.client.post(
+                self.url, {"action": "generate", "model_choice": "claude:claude-sonnet-5"}
+            )
         graph = KnowledgeGraph.objects.get(application=self.app)
         self.assertEqual(graph.status, "queued")
         # The per-run choice overrides the saved model without changing it.

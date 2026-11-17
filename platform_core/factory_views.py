@@ -103,6 +103,12 @@ def plans(request, pk):
             "no_graph": NO_GRAPH,
             # And the same check start_run makes before it queues anything.
             "model_problem": model_problem(app),
+            # Where it is fixed: no model chosen is AI settings, no key is Credentials.
+            "model_chosen": AIConfiguration.objects.filter(
+                application=app, purpose="plan_drafting", enabled=True
+            )
+            .exclude(model="")
+            .exists(),
             "runs": runs_shown,
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),

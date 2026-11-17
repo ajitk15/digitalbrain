@@ -437,6 +437,11 @@ class ConnectorManagementTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
         self.url = reverse("connectors", args=[self.app.pk])
+        # The Analyse form is what these tests read; whether its model has a
+        # credential is test_code_factory.ModelReachableTests'.
+        reachable = patch("platform_core.code_factory.model_problem", return_value=None)
+        reachable.start()
+        self.addCleanup(reachable.stop)
 
     def make(self, kind="jira", name="Ops board"):
         return Connector.objects.create(
