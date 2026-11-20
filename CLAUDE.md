@@ -439,7 +439,18 @@ change was written into it: off unless `code_factory_local_tests = true`
 folder's own `.venv` interpreter, an environment stripped to PATH and system
 variables, and a five-minute limit. The verdict is stored in `FactoryRun.checks`,
 where a pull request's CI verdict goes, so the Tests stage reads the same. Do not
-run anything automatically, and do not use this server's interpreter.
+run anything automatically, and do not use this server's interpreter. **Such a run
+moves on to Refresh only once its tests pass** (`FactoryRun.tests_required`: written
+to a folder, local tests on, a pytest suite declared; `refresh_gate` refuses
+otherwise). A folder with no `.venv` is shown the commands that make one
+(`code_factory_local.setup_steps`, from its requirements files, `pyproject.toml` or
+`uv.lock`) and a button that runs them and then the tests (`set_up_environment`):
+**a second, deliberate exception to "never runs the code"**, since installing runs
+packages' build code and downloads from the person's index. Same gates as the tests -
+`code_factory_local_tests`, an approver's press, a written change, a time limit - with
+an environment trimmed to PATH, system, home/config, proxy and CA variables (no
+credential variable), and the venv made by the system's Python: this server's own
+interpreter is refused.
 
 **Code Graph is read under Knowledge → Code Repos** (`code_graph.code_repositories`,
 `documentation/engineering/knowledge-code-repos-plan.md`). Knowledge's tabs are Documents · Code Repos ·

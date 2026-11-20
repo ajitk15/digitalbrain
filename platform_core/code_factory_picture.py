@@ -21,7 +21,13 @@ def shown_paths(columns):
     return [key for column in columns[1:] for _, key, _ in column]
 
 
-def change_picture(read, before, after, touched, was, now, connections):
+def by_identifier_first(label):
+    """Identifiers first - T-03, BR-05, C-09 - because they are what a reader
+    recognises; long passages that merely mention one follow."""
+    return (len(label) > 24, label)
+
+
+def change_picture(read, newest, before, after, touched, was, now, linked):
     """Two drawings of the same neighbourhood - before the run and after it.
 
     Three columns: knowledge items on the left, the files the run changed in
@@ -29,24 +35,28 @@ def change_picture(read, before, after, touched, was, now, connections):
     position, so what moved is the only thing that differs. Coordinates are
     computed here because a CSP of `style-src 'self'` leaves SVG attributes as
     the only way to place anything.
+
+    The knowledge column is every item linked to a changed file on either side
+    (`linked`, by label, since two knowledge versions can give one item
+    different ids): one linked before and after is drawn on both, one linked
+    only after is new. Before reads the version the run read against the code
+    it read; after, the newest version against the newest snapshot.
     """
     from .code_knowledge import links
 
     changed = touched[:4]
-    seen, chosen = set(), []
-    for row in connections:
-        for item in row["items"]:
-            label = item["node_label"]
-            if item["node_id"] not in seen and label not in {c["label"] for c in chosen}:
-                seen.add(item["node_id"])
-                chosen.append({"id": item["node_id"], "label": label})
-    chosen = chosen[:PICTURE_KNOWLEDGE]
+    chosen = [
+        {"id": f"knowledge:{label}", "label": label, **ids}
+        for label, ids in sorted(linked.items(), key=lambda pair: by_identifier_first(pair[0]))
+    ][:PICTURE_KNOWLEDGE]
 
     outgoing = [edge for edge in (was | now) if edge[0] in changed and edge[1] not in changed]
     linked_paths = {}
     for node in chosen:
-        for snapshot, key in ((before, "before"), (after, "after")):
-            found, _ = links(read, snapshot, node_id=node["id"])
+        for revision, snapshot, key in ((read, before, "before"), (newest, after, "after")):
+            found = []
+            if node.get(key):
+                found, _ = links(revision, snapshot, node_id=node[key])
             linked_paths.setdefault(node["id"], {})[key] = {item["path"] for item in found}
     any_linked = set().union(*(set().union(*paths.values()) for paths in linked_paths.values()))
     ranked = sorted(
@@ -130,6 +140,10 @@ def change_picture(read, before, after, touched, was, now, connections):
         "width": PICTURE_WIDTH,
         "height": height,
         "nodes": nodes,
+        # Said rather than left as an empty column, which reads as a fault.
+        "knowledge_note": ""
+        if chosen
+        else "No knowledge item names these files by an identifier, before or after this run.",
         "before": [edge for edge in edges if edge["state"] != "new"],
         "after": [edge for edge in edges if edge["state"] != "gone"],
         "new_count": sum(1 for edge in edges if edge["state"] == "new"),
@@ -175,25 +189,35 @@ def before_after(run):
 
     was, now = edges(before), edges(after)
     connections = []
+    # Every knowledge item linked to a changed file, by label, with its id in
+    # each version: {label: {"before": id, "after": id}}.
+    linked = {}
+    newest = knowledge["after"] or read
     if read:
         earlier = dict(before.files.filter(path__in=touched).values_list("path", "pk"))
         for file in after.files.filter(path__in=touched).only("pk", "path"):
-            found, _ = links(read, after, file_id=file.pk)
+            # After is the newest knowledge against the newest code; before is
+            # what the run read against the code it read. Labels, not ids,
+            # compare them, since the two versions may number an item apart.
+            found, _ = links(newest, after, file_id=file.pk)
+            for item in found:
+                linked.setdefault(item["node_label"], {}).setdefault("after", item["node_id"])
             known = set()
             if file.path in earlier:
                 earlier_links, _ = links(read, before, file_id=earlier[file.path])
-                known = {item["node_id"] for item in earlier_links}
+                known = {item["node_label"] for item in earlier_links}
+                for item in earlier_links:
+                    linked.setdefault(item["node_label"], {}).setdefault(
+                        "before", item["node_id"]
+                    )
             gained = {}
             for item in found:
-                if item["node_id"] not in known:
+                if item["node_label"] not in known:
                     gained.setdefault(item["node_id"], item)
             if gained:
-                # Identifiers first - T-03, BR-05, C-09 - because they are what a
-                # reader recognises; long passages that merely mention one follow.
                 # One row per label, since a table repeats the same cell.
                 ranked = sorted(
-                    gained.values(),
-                    key=lambda item: (len(item["node_label"]) > 24, item["node_label"]),
+                    gained.values(), key=lambda item: by_identifier_first(item["node_label"])
                 )
                 shown = list({item["node_label"]: item for item in reversed(ranked)}.values())
                 shown.reverse()
@@ -207,10 +231,9 @@ def before_after(run):
                     }
                 )
     picture = (
-        change_picture(read, before, after, touched, was, now, connections) if read else None
+        change_picture(read, newest, before, after, touched, was, now, linked) if read else None
     )
     if picture:
-        newest = knowledge["after"] or read
         picture["sides"] = [
             {
                 "key": "before",

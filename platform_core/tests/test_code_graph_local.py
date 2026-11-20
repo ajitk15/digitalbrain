@@ -18,7 +18,7 @@ from django.urls import reverse
 from digitalbrain.configuration import load_config
 from platform_core import code_graph_local
 from platform_core.code_graph_ingest import index_repository, refresh_head, register_local
-from platform_core.models import CodeRepository
+from platform_core.models import AuditEvent, CodeRepository
 
 from .test_documents import DocumentTests
 
@@ -505,10 +505,10 @@ class LocalDeliveryTests(TestCase):
             # T-1 reaches util.py only once the change exists.
             return ([{"path": "app/util.py"}] if snapshot == after else []), False
 
-        connections = [{"items": [{"node_id": "n1", "node_label": "#: T-1"}]}]
+        linked = {"#: T-1": {"after": "n1"}}
         with patch("platform_core.code_knowledge.links", fake_links):
             picture = change_picture(
-                object(), before, after, ["app/util.py"], was, now, connections
+                object(), object(), before, after, ["app/util.py"], was, now, linked
             )
         labels = [node["label"] for node in picture["nodes"]]
         self.assertEqual(labels[:2], ["T-1", "util.py"])
@@ -518,6 +518,43 @@ class LocalDeliveryTests(TestCase):
         new = [edge for edge in picture["after"] if edge["state"] == "new"]
         self.assertEqual({edge["kind"] for edge in new}, {"code", "link"})
         self.assertEqual(picture["new_count"], len(new))
+        self.assertEqual(picture["knowledge_note"], "")
+
+    def test_knowledge_linked_before_and_after_is_drawn_on_both_sides(self):
+        """Only newly linked items used to be drawn, so an unchanged link left the
+        Knowledge column empty; and after was read from the old knowledge version."""
+        from platform_core.code_factory_picture import change_picture
+
+        old_version, new_version = object(), object()
+        asked = []
+
+        def fake_links(revision, snapshot, node_id=None, **_):
+            asked.append((revision, node_id))
+            return [{"path": "app/util.py"}], False
+
+        # One item, numbered differently by the two knowledge versions.
+        linked = {"BR-05": {"before": "old-id", "after": "new-id"}}
+        with patch("platform_core.code_knowledge.links", fake_links):
+            picture = change_picture(
+                old_version, new_version, self.snapshot, self.snapshot,
+                ["app/util.py"], set(), set(), linked,
+            )
+        self.assertEqual(picture["nodes"][0]["label"], "BR-05")
+        links_drawn = [edge for edge in picture["after"] if edge["kind"] == "link"]
+        self.assertEqual([edge["state"] for edge in links_drawn], ["same"])
+        self.assertEqual(
+            [edge["state"] for edge in picture["before"] if edge["kind"] == "link"], ["same"]
+        )
+        self.assertEqual(asked, [(old_version, "old-id"), (new_version, "new-id")])
+
+    def test_a_change_that_names_no_knowledge_says_so(self):
+        from platform_core.code_factory_picture import change_picture
+
+        picture = change_picture(
+            object(), object(), self.snapshot, self.snapshot, ["app/util.py"], set(), set(), {}
+        )
+        self.assertFalse([node for node in picture["nodes"] if node["kind"] == "knowledge"])
+        self.assertIn("No knowledge item names these files", picture["knowledge_note"])
 
     def test_a_viewer_cannot_write(self):
         from django.core.exceptions import PermissionDenied
@@ -615,6 +652,17 @@ class LocalTestRunTests(LocalDeliveryTests):
         (self.service / ".venv" / "Scripts").mkdir(parents=True)
         (self.service / ".venv" / "Scripts" / "python.exe").write_bytes(b"")
 
+    def apply(self, passed=True):
+        """Write the change, and (for the inherited refresh tests) see it pass.
+
+        Refresh waits for a passing run here, so the tests written for a folder
+        whose tests this server does not run are given one.
+        """
+        folder = super().apply()
+        if passed and type(self.run).objects.get(pk=self.run.pk).tests_required:
+            self.run_tests()
+        return folder
+
     def run_tests(self, returncode=0, stdout="115 passed in 0.60s\n"):
         import subprocess
 
@@ -664,6 +712,150 @@ class LocalTestRunTests(LocalDeliveryTests):
         self.assertEqual(conclusion, "failure")
         self.run.refresh_from_db()
         self.assertEqual(self.run.checks_state, "failed")
+
+    def test_refresh_waits_until_the_tests_pass(self):
+        from platform_core.code_factory_build import refresh_after
+
+        self.apply(passed=False)
+        self.run.refresh_from_db()
+        stage ={stage["number"]: stage["state"] for stage in self.run.stages}
+        self.assertEqual(stage[7], "pending")
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, self.run.pk]))
+        self.assertContains(page, "Refresh waits until these tests pass")
+        with self.assertRaisesMessage(ValidationError, "see them pass first"):
+            refresh_after(self.owner, self.app.pk, self.run.pk, ["code"])
+        self.run_tests(returncode=1, stdout="1 failed, 114 passed\n")
+        self.run.refresh_from_db()
+        self.assertEqual({s["number"]: s["state"] for s in self.run.stages}[7], "pending")
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, self.run.pk]))
+        self.assertContains(page, "The tests did not pass")
+        with self.assertRaisesMessage(ValidationError, "see them pass first"):
+            refresh_after(self.owner, self.app.pk, self.run.pk, ["code"])
+        self.run_tests()
+        self.run.refresh_from_db()
+        self.assertEqual({s["number"]: s["state"] for s in self.run.stages}[7], "current")
+        refresh_after(self.owner, self.app.pk, self.run.pk, ["code"])
+
+    def test_a_folder_with_no_venv_is_shown_how_to_make_one(self):
+        import shutil
+
+        shutil.rmtree(self.service / ".venv")
+        (self.service / "requirements.txt").write_text("requests\n")
+        self.apply(passed=False)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, self.run.pk]))
+        self.assertContains(page, "Set up the folder&#x27;s test environment")
+        self.assertContains(page, "-m venv .venv")
+        self.assertContains(page, "-m pip install -r requirements.txt")
+        self.assertContains(page, "I set it up myself - run the tests")
+        with self.assertRaisesMessage(ValidationError, "commands on the Tests stage"):
+            self.run_tests()
+        self.assertTrue(self.run.events.filter(message__contains="has no .venv yet").exists())
+
+    def set_up(self, failing=None):
+        """Press "Set up the .venv", with every program faked; returns the calls."""
+        import subprocess
+
+        calls = []
+
+        def fake_run(arguments, **options):
+            calls.append((arguments, options))
+            command = " ".join(arguments)
+            if "venv" in arguments:
+                (self.service / ".venv" / "Scripts").mkdir(parents=True, exist_ok=True)
+                (self.service / ".venv" / "Scripts" / "python.exe").write_bytes(b"")
+            if failing and failing in command:
+                return subprocess.CompletedProcess(arguments, 1, stdout="", stderr="no wheel")
+            if "pytest" in arguments and "-q" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, stdout="3 passed\n", stderr="")
+            return subprocess.CompletedProcess(arguments, 0, stdout="", stderr="")
+
+        with (
+            patch("subprocess.run", fake_run),
+            patch("shutil.which", lambda name, path=None: f"C:/Python/{name}.exe"),
+            patch.dict("os.environ", {"GITHUB_TOKEN": "leak", "PATH": "p", "APPDATA": "a"}),
+        ):
+            response = self.client.post(
+                reverse("run-detail", args=[self.app.pk, self.run.pk]),
+                {"action": "set-up-tests"},
+            )
+        self.assertEqual(response.status_code, 302)
+        return calls
+
+    def test_the_button_sets_up_the_venv_then_runs_the_tests(self):
+        import shutil
+
+        shutil.rmtree(self.service / ".venv")
+        (self.service / "requirements.txt").write_text("requests\n")
+        self.apply(passed=False)
+        page = self.client.get(reverse("run-detail", args=[self.app.pk, self.run.pk]))
+        self.assertContains(page, 'value="set-up-tests"')
+        calls = self.set_up()
+        commands = [arguments for arguments, _ in calls]
+        self.assertEqual(commands[0], ["C:/Python/py.exe", "-m", "venv", ".venv"])
+        self.assertEqual(commands[1][1:], ["-m", "pip", "install", "-r", "requirements.txt"])
+        self.assertTrue(commands[1][0].startswith(str(self.service)))
+        self.assertEqual(commands[2][1:], ["-m", "pip", "install", "pytest"])
+        self.assertEqual(commands[3][1:4], ["-m", "pytest", "-q"])
+        for _, options in calls:
+            self.assertEqual(options["cwd"], self.service)
+            self.assertNotIn("GITHUB_TOKEN", options["env"])
+        self.assertEqual(calls[0][1]["env"]["APPDATA"], "a")  # the person's pip config
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.checks_state, "ok")
+        self.assertEqual({s["number"]: s["state"] for s in self.run.stages}[7], "current")
+        self.assertTrue(
+            AuditEvent.objects.filter(action="factory.local_environment_set_up").exists()
+        )
+
+    def test_a_failed_install_stops_before_the_tests(self):
+        import shutil
+
+        shutil.rmtree(self.service / ".venv")
+        (self.service / "requirements.txt").write_text("requests\n")
+        self.apply(passed=False)
+        calls = self.set_up(failing="requirements.txt")
+        self.assertEqual(len(calls), 2)  # the venv, the failed install, nothing after
+        self.assertTrue(self.run.events.filter(message__contains="no wheel").exists())
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.checks, [])
+        self.assertEqual({s["number"]: s["state"] for s in self.run.stages}[7], "pending")
+
+    def test_only_an_approver_with_local_tests_on_sets_up(self):
+        from django.core.exceptions import PermissionDenied
+
+        from platform_core.code_factory_local import set_up_environment
+
+        with self.assertRaisesMessage(ValidationError, "Write the change"):
+            set_up_environment(self.owner, self.app.pk, self.run.pk)
+        self.apply(passed=False)
+        with override_settings(CODE_FACTORY_LOCAL_TESTS=False):
+            with self.assertRaisesMessage(ValidationError, "code_factory_local_tests"):
+                set_up_environment(self.owner, self.app.pk, self.run.pk)
+        with self.assertRaises(PermissionDenied):
+            set_up_environment(self.viewer, self.app.pk, self.run.pk)
+
+    def test_this_servers_own_python_is_never_used_for_the_venv(self):
+        import sys
+
+        from platform_core.code_factory_local import set_up_environment
+
+        shutil_which = patch("shutil.which", lambda name, path=None: sys.executable)
+        self.apply(passed=False)
+        with shutil_which, patch("subprocess.run") as ran:
+            ok, summary = set_up_environment(self.owner, self.app.pk, self.run.pk)
+        self.assertFalse(ok)
+        self.assertIn("this server's own", summary)
+        ran.assert_not_called()
+
+    def test_setup_commands_follow_what_the_folder_declares(self):
+        from platform_core.code_factory_local import setup_commands
+
+        self.assertTrue(setup_commands(self.service)[-1].endswith("-m pip install pytest"))
+        (self.service / "pyproject.toml").write_text("[project]\nname='s'\n")
+        commands = setup_commands(self.service)
+        self.assertTrue(any(line.endswith("pip install -e .") for line in commands))
+        (self.service / "uv.lock").write_text("")
+        self.assertIn("uv sync", setup_commands(self.service))
 
     def test_production_refuses_running_tests(self):
         with tempfile.TemporaryDirectory() as directory:

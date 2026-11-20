@@ -514,6 +514,11 @@ def refresh_gate(user, app_id, run_id):
         )
     if run.refresh_choice:
         raise ValidationError("That question has already been answered for this run.")
+    if run.tests_required and run.checks_state != "ok":
+        raise ValidationError(
+            "Run the folder's tests and see them pass first: the change is not "
+            "refreshed into knowledge until it does."
+        )
     return app, run
 
 

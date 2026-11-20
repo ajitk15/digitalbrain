@@ -248,10 +248,19 @@ class FactoryRun(models.Model):
             # and not while its tests are still deciding whether it survives.
             # A repository with no CI has nothing to wait for, so "pending"
             # checks are not a reason to hold the question back.
+            # A folder run whose tests this server runs waits for them to pass:
+            # a change nobody has seen pass is not one to describe as current.
             7: "ok"
             if self.refresh_choice
             else (
-                "current" if delivered and self.checks_state != "running" else "pending"
+                "current"
+                if delivered
+                and (
+                    self.checks_state == "ok"
+                    if self.tests_required
+                    else self.checks_state != "running"
+                )
+                else "pending"
             ),
         }
         # A failed run stops where it stopped: everything after the failure is
@@ -274,6 +283,23 @@ class FactoryRun(models.Model):
             }
             for number, label in self.STAGES
         ]
+
+    @property
+    def tests_required(self):
+        """Whether this run's tests must pass, here, before it moves on to Refresh.
+
+        True for a change written into a folder, when this server may run tests
+        (`code_factory_local_tests`) and the folder declares a pytest suite - the
+        runs whose Tests stage has a button. A pull request's CI, or a folder
+        whose tests cannot be run here, holds nothing back.
+        """
+        from django.conf import settings
+
+        if not self.delivered_to or not self.code_snapshot_id:
+            return False
+        if not settings.CODE_FACTORY_LOCAL_TESTS:
+            return False
+        return (self.code_snapshot.test_setup or {}).get("python") == "pytest"
 
     @property
     def delivered(self):

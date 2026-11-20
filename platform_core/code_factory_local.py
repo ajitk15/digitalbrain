@@ -195,6 +195,203 @@ def folder_python(folder):
     return None
 
 
+#: Requirement files a folder's .venv is filled from, in the order offered.
+REQUIREMENT_FILES = (
+    "requirements.txt",
+    "requirements-dev.txt",
+    "requirements-test.txt",
+    "dev-requirements.txt",
+    "test-requirements.txt",
+)
+
+
+#: How long setting up a folder's .venv may take, every step together.
+LOCAL_SETUP_TIMEOUT = 900
+#: Variables an installer is given besides the ones the tests get: where the
+#: person's own pip/uv configuration and caches are, a proxy, a CA bundle. No
+#: credential variable, no secrets directory, nothing of this platform's.
+SETUP_VARIABLES = {
+    "PATH", "PATHEXT", "SYSTEMROOT", "SystemRoot", "SYSTEMDRIVE", "COMSPEC", "TEMP",
+    "TMP", "LANG", "HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH", "APPDATA",
+    "LOCALAPPDATA", "PROGRAMDATA", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
+}
+
+
+def venv_python():
+    """The .venv interpreter, relative to the folder, for this server's system."""
+    import sys
+
+    return r".venv\Scripts\python.exe" if sys.platform == "win32" else ".venv/bin/python"
+
+
+def setup_steps(folder):
+    """The commands that give the folder a .venv its tests can use, as argv lists.
+
+    Read from what the folder declares: `uv sync` for a uv.lock, otherwise a
+    venv made by the system's Python, filled from each requirements file (or
+    the project itself from pyproject.toml), and pytest last in every case.
+    """
+    import sys
+
+    python = venv_python()
+    pip = [python, "-m", "pip", "install"]
+    if (folder / "uv.lock").is_file():
+        return [["uv", "sync"], [*pip, "pytest"]]
+    steps = [["py" if sys.platform == "win32" else "python3", "-m", "venv", ".venv"]]
+    found = [name for name in REQUIREMENT_FILES if (folder / name).is_file()]
+    steps += [[*pip, "-r", name] for name in found]
+    if not found and (folder / "pyproject.toml").is_file():
+        steps.append([*pip, "-e", "."])
+    steps.append([*pip, "pytest"])
+    return steps
+
+
+def setup_commands(folder):
+    """The same steps as lines a person could type, shown beside the button."""
+    return [f'cd "{folder}"', *(" ".join(step) for step in setup_steps(folder))]
+
+
+def set_up_environment(user, app_id, run_id):
+    """Make the folder's .venv and install its dependencies, on an approver's press.
+
+    The second thing this platform runs in a folder, and run under the same
+    rules as its tests: off unless `code_factory_local_tests` (refused under
+    production), approval rights, a change already written there, a trimmed
+    environment and a time limit. It runs installers, which execute the
+    packages' own build code and download from an index - which is why it is a
+    button a person presses and never a step a run takes by itself. The venv is
+    made by the system's Python, never this server's interpreter. Returns
+    (ok, summary); each step is in the run log.
+    """
+    import os
+    import shutil
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    from django.conf import settings
+
+    from .code_graph_ingest import local_folder
+
+    app, run, _ = gate(user, app_id, run_id)
+    if not settings.CODE_FACTORY_LOCAL_TESTS:
+        raise ValidationError(
+            "Running tests on this server is not enabled. Set "
+            "code_factory_local_tests = true in the configuration to allow it."
+        )
+    repository = local_repository(run)
+    if repository is None or not run.delivered_to:
+        raise ValidationError("Write the change to the folder before setting up its tests.")
+    if (run.code_snapshot.test_setup or {}).get("python") != "pytest":
+        raise ValidationError(
+            "Only pytest suites can be run here so far, and this folder does not declare one."
+        )
+    folder = local_folder(repository)
+    environment = {key: value for key, value in os.environ.items() if key in SETUP_VARIABLES}
+    environment.update(
+        {
+            "PYTHONIOENCODING": "utf-8",
+            "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+            "PIP_NO_INPUT": "1",
+            # uv would otherwise use an active environment of this server's.
+            "UV_PROJECT_ENVIRONMENT": str(folder / ".venv"),
+        }
+    )
+    ours = Path(sys.executable).resolve()
+    note(run, f"{user.get_username()} set up {repository.name}'s .venv.", level="check")
+    deadline = time.monotonic() + LOCAL_SETUP_TIMEOUT
+    for step in setup_steps(folder):
+        shown = " ".join(step)
+        if step[0].startswith(".venv"):
+            program = str(folder / step[0])
+        else:
+            program = shutil.which(step[0], path=environment.get("PATH"))
+            if program is None:
+                summary = f"{step[0]} was not found on this server's PATH."
+                note(run, f"Setup stopped: {summary}", phase="tests", level="problem")
+                return False, summary
+            if Path(program).resolve() == ours:
+                summary = "The only Python found is this server's own; install a system Python."
+                note(run, f"Setup stopped: {summary}", phase="tests", level="problem")
+                return False, summary
+        remaining = deadline - time.monotonic()
+        try:
+            finished = subprocess.run(
+                [program, *step[1:]],
+                cwd=folder,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=max(remaining, 1),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            summary = f"Stopped after {LOCAL_SETUP_TIMEOUT} seconds at: {shown}"
+            note(run, f"Setup stopped: {summary}", phase="tests", level="problem")
+            return False, summary
+        except OSError as failure:
+            summary = f"{shown} could not be started: {failure.strerror or failure}."
+            note(run, f"Setup stopped: {summary}", phase="tests", level="problem")
+            return False, summary
+        if finished.returncode != 0:
+            output = (finished.stderr or "") + (finished.stdout or "")
+            lines = [line for line in output.splitlines() if line.strip()]
+            summary = f"{shown} failed (exit {finished.returncode})."
+            note(
+                run,
+                f"Setup stopped: {summary}" + ("\n" + "\n".join(lines[-12:]) if lines else ""),
+                phase="tests",
+                level="problem",
+            )
+            audit(
+                user,
+                "factory.local_environment_set_up",
+                run.pk,
+                app.product.portfolio.organization,
+                details={"folder": str(folder), "ok": False, "step": shown[:200]},
+            )
+            return False, summary
+        note(run, f"Ran {shown}.", phase="tests")
+    audit(
+        user,
+        "factory.local_environment_set_up",
+        run.pk,
+        app.product.portfolio.organization,
+        details={"folder": str(folder), "ok": True},
+    )
+    summary = f"{repository.name}'s .venv is set up."
+    note(run, summary, phase="tests", level="result")
+    return True, summary
+
+
+def test_environment(run):
+    """Whether a written folder run has its own .venv, and how to make one if not.
+
+    None for anything but a folder run whose change was written there and whose
+    folder declares a pytest suite - the only runs whose tests this server runs.
+    """
+    from .code_graph_ingest import local_folder
+
+    if not run.tests_required:
+        return None
+    repository = local_repository(run)
+    if repository is None:
+        return None
+    try:
+        folder = local_folder(repository)
+    except ValidationError:
+        return None
+    ready = folder_python(folder) is not None
+    return {
+        "ready": ready,
+        "folder": str(folder),
+        "commands": [] if ready else setup_commands(folder),
+    }
+
+
 def run_local_tests(user, app_id, run_id):
     """Run the folder's test suite once a change has been written into it.
 
@@ -229,9 +426,16 @@ def run_local_tests(user, app_id, run_id):
         )
     python = folder_python(folder)
     if python is None:
+        note(
+            run,
+            f"{repository.name} has no .venv yet, so its tests were not run. The Tests "
+            "stage lists the commands that make one.",
+            phase="tests",
+            level="problem",
+        )
         raise ValidationError(
-            f"{repository.name} has no .venv to run its tests with. Create one in the "
-            "folder and install its dependencies, then try again."
+            f"{repository.name} has no .venv to run its tests with. Set one up with the "
+            "commands on the Tests stage, then run the tests again."
         )
     environment = {
         key: value

@@ -204,14 +204,24 @@ def tickets_unblock(app, grant, connectors, viewer):
                 reverse("tickets", args=[app.pk]),
                 "Open Tickets" if grant.role == "owner" else "",
             )
+        # The switch is the connector's own "Enforce source permissions" box:
+        # off (the default), its records are visible at once, no import needed.
+        enforcing = connectors.filter(enforce_permissions=True).order_by("name").first()
+        where = enforcing.name if enforcing else "the Jira connector"
         return (
             "Imported tickets are hidden from you by Jira's permissions",
             f"{answerable.count()} ticket(s) were imported with Enforce source permissions "
-            "on, and none lists your account among the people Jira lets browse it. Your "
-            "email address here must match your Jira account's, or an operator links the "
-            "two with manage.py link_identity. Import again afterwards.",
-            connectors_url,
-            open_connectors,
+            "on, and none lists your account among the people Jira lets browse it. Either "
+            f"turn off Enforce source permissions on {where}, which makes them visible at "
+            "once, or keep it on and make your email address here match your Jira "
+            "account's (an operator can link the two with manage.py link_identity), then "
+            "import again.",
+            reverse("connector-edit", args=[app.pk, enforcing.pk])
+            if enforcing
+            else connectors_url,
+            (f"Edit {enforcing.name}" if enforcing else open_connectors)
+            if grant.role == "owner"
+            else "",
         )
     connector = connectors.order_by(
         models.F("last_attempt_at").desc(nulls_last=True), "name"
@@ -883,7 +893,12 @@ def run_detail(request, pk, run_id):
         request_preparation,
         write_credential,
     )
-    from .code_factory_local import apply_local, run_local_tests
+    from .code_factory_local import (
+        apply_local,
+        run_local_tests,
+        set_up_environment,
+        test_environment,
+    )
     from .code_factory_picture import before_after
     from .models import FactoryRun
     from .readiness import setup
@@ -931,6 +946,19 @@ def run_detail(request, pk, run_id):
             elif action == "apply-local":
                 folder = apply_local(request.user, pk, run.pk)
                 messages.success(request, f"The change was written to {folder}.")
+            elif action == "set-up-tests":
+                # One press: make the .venv, then run the tests with it.
+                ready, summary = set_up_environment(request.user, pk, run.pk)
+                if not ready:
+                    messages.error(request, f"The .venv was not set up: {summary}")
+                else:
+                    conclusion, summary = run_local_tests(request.user, pk, run.pk)
+                    if conclusion == "success":
+                        messages.success(request, f".venv set up, and the tests passed: {summary}")
+                    else:
+                        messages.error(
+                            request, f".venv set up, but the tests did not pass: {summary}"
+                        )
             elif action == "run-tests":
                 conclusion, summary = run_local_tests(request.user, pk, run.pk)
                 if conclusion == "success":
@@ -997,6 +1025,9 @@ def run_detail(request, pk, run_id):
         run.status == "failed" and run.plan is None and grant.role in {"owner", "contributor"}
     )
     changes = list(run.changes.all()) if run.status in {"prepared", "delivered"} else []
+    # A written folder run's .venv, or the commands that make one: its tests
+    # must pass before Refresh is asked.
+    environment = test_environment(run)
     return render(
         request,
         "run_detail.html",
@@ -1018,7 +1049,9 @@ def run_detail(request, pk, run_id):
             "next": dict(
                 zip(
                     ("tone", "title", "detail", "anchor", "button"),
-                    next_action(run, grant, request.user, reviewable, can_retry_analysis),
+                    next_action(
+                        run, grant, request.user, reviewable, can_retry_analysis, environment
+                    ),
                     strict=True,
                 )
             ),
@@ -1053,6 +1086,7 @@ def run_detail(request, pk, run_id):
             "local_repository": local_repository(run),
             "local_write": settings.CODE_FACTORY_LOCAL_WRITE,
             "local_tests": settings.CODE_FACTORY_LOCAL_TESTS,
+            "test_environment": environment,
             "write_credential": bool(write_credential(app)),
             # Offered once the change exists and its tests have stopped moving.
             # The stage itself decides when to show; this is only the vocabulary
@@ -1090,7 +1124,7 @@ def run_before_after(request, pk, run_id):
     )
 
 
-def next_action(run, grant, user, reviewable, can_retry_analysis):
+def next_action(run, grant, user, reviewable, can_retry_analysis, environment=None):
     """The one thing this reader should do next on a run, or why there is none.
 
     Every stage already carries its own controls; a reader still had to scan
@@ -1192,6 +1226,37 @@ def next_action(run, grant, user, reviewable, can_retry_analysis):
                 "Read the summary",
             )
         return ("waiting", "Waiting for an approver to write the change", "", "", "")
+    if run.status == "delivered" and run.delivered_to and environment is not None:
+        # Refresh waits for the tests; say which of the three steps is next.
+        button = grant.can_approve
+        if not environment["ready"]:
+            return (
+                "attention",
+                "Set up the folder's test environment",
+                f"{environment['folder']} has no .venv. Set one up from the Tests stage - "
+                "it installs the folder's dependencies, then runs the tests.",
+                "#stage-6",
+                "Set it up" if button else "",
+            )
+        if run.checks_state == "failed":
+            summary = next((check.get("summary") for check in run.checks), "") or ""
+            return (
+                "problem",
+                "The tests did not pass",
+                (summary + ". " if summary else "")
+                + "Fix the folder and run them again; Refresh waits until they pass.",
+                "#stage-6",
+                "Run the tests again" if button else "",
+            )
+        if run.checks_state != "ok":
+            return (
+                "attention" if button else "waiting",
+                "Run the tests",
+                "The change is written. Its tests must pass before knowledge is "
+                "refreshed with it.",
+                "#stage-6",
+                "Run the tests" if button else "",
+            )
     if run.status == "delivered" and run.delivered_to:
         return (
             "done",

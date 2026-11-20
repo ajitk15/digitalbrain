@@ -1712,6 +1712,7 @@
   .agent-failed .agent-text strong { color: var(--c-bad); }
   .agent-why { display: block; margin-top: 2px; color: var(--c-ink-2); }
   .agent-sample { margin: var(--s-2) 0; }
+  .setup-commands { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--t-12); padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-subtle); color: var(--c-ink); margin: var(--s-2) 0; }
   .agent-sample pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--t-11); max-height: 240px; overflow: auto; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line); border-radius: var(--r-md); background: var(--c-subtle); margin: var(--s-1) 0 0; }
   .stage-no {
     flex: none;

@@ -1000,6 +1000,19 @@ class ConnectorManagementTests(TestCase):
         entries = KnowledgeEntry.objects.filter(application=self.app, title="OPS-1")
         entries.update(access_principals=[])
         self.assertContains(self.client.get(plans), "hidden from you by Jira")
+        # The block names the switch and links the connector that has it on.
+        Connector.objects.filter(pk=connector.pk).update(enforce_permissions=True)
+        page = self.client.get(plans)
+        self.assertContains(page, "turn off Enforce source permissions on Ops board")
+        edit = reverse("connector-edit", args=[self.app.pk, connector.pk])
+        self.assertContains(page, f'href="{edit}"')
+        # Turning it off makes the tickets visible at once, with no import.
+        from platform_core.permissions import enforce
+
+        connector.refresh_from_db()
+        enforce(connector, self.app, False)
+        self.assertNotContains(self.client.get(plans), "hidden from you by Jira")
+        entries.update(access_principals=[])
         entries.update(sensitivity="restricted")
         self.assertContains(self.client.get(plans), "Every imported ticket is restricted")
         entries.update(sensitivity="standard", access_principals=None)
