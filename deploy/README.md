@@ -63,7 +63,7 @@ written and tested. In CarePathOps, run the ServiceOps test workbench and requir
 actual browser results with no skipped coverage. Perform any reset on disposable
 demo work only; the script can reload the sources afterward.
 
-`docs/index.html#infrastructure` is the general procedure and the authority on why each rule
+`documentation/engineering/index.html#infrastructure` is the general procedure and the authority on why each rule
 exists. This is the specific one, and it differs in ways worth knowing.
 
 **Nothing has to be prepared on the server.** No directories to create, no
@@ -233,7 +233,7 @@ mount `entra_client_secret` for the Sign in with Microsoft button;
 Entra create and deactivate accounts at `https://<host>/api/scim/v2`. Both secret
 files go in `platform-secrets`, mode 0600, owned by uid 10001, and the entrypoint
 warns at start while either is missing. Neither grants access to anything.
-Setup, Entra side included: `docs/single-sign-on.md`.
+Setup, Entra side included: `documentation/engineering/single-sign-on.md`.
 
 ## 5. Watching it
 

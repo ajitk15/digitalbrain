@@ -24,7 +24,7 @@ from platform_core.models import Document, KnowledgeSource
 
 from . import test_documents
 
-TREE = "https://github.com/ajitk15/digitalbrain/tree/main/demo-artifacts/docs"
+TREE = "https://github.com/ajitk15/digitalbrain/tree/main/documentation/demo/docs"
 FILE_ZERO = "https://raw.example/0.md"
 FILE_ONE = "https://raw.example/1.md"
 
@@ -46,7 +46,7 @@ class SourceRegistrationTests(TestCase):
 
     def test_a_name_identifies_the_directory_not_just_the_repository(self):
         self.assertEqual(
-            readable_name("github", TREE), "ajitk15/digitalbrain · demo-artifacts/docs"
+            readable_name("github", TREE), "ajitk15/digitalbrain · documentation/demo/docs"
         )
 
     def test_importing_the_same_address_twice_adds_to_one_source(self):

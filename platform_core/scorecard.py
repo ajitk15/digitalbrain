@@ -37,10 +37,10 @@ from unittest.mock import patch
 from django.test.utils import override_settings
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ROOT / "demo-artifacts" / "docs"
+DOCS = ROOT / "documentation" / "demo" / "docs"
 #: Documents with one planted problem each, for the Source check; some need OCR.
 SAMPLES = DOCS / "08-quality-samples"
-KIT = ROOT / "demo-artifacts" / "demo-kit"
+KIT = ROOT / "documentation" / "demo" / "demo-kit"
 BENCH = ROOT / "benchmarks"
 CACHE = ROOT / ".runtime" / "scorecard-cache"
 JIRA_SITE = "https://ajitk15.atlassian.net"
@@ -575,7 +575,7 @@ def agentic(ws, revision):
     }, details
 
 
-CAREPATH_CODE = ROOT / "demo-artifacts" / "carepath"
+CAREPATH_CODE = ROOT / "documentation" / "demo" / "carepath"
 
 
 def code_snapshot(ws):
@@ -626,7 +626,7 @@ def code_evidence(ws, revision):
 
     Asked as `code_factory_analysis.run_analysis` asks: the evidence question,
     then the pinned code structure that question chose, and the real
-    `code_citations` over a snapshot of `demo-artifacts/carepath`.
+    `code_citations` over a snapshot of `documentation/demo/carepath`.
     """
     from .code_factory_evidence import code_citations, code_context_for
 

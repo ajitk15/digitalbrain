@@ -16,4 +16,4 @@ What the platform is measured against, and what it measured.
 | `typing/` | Recorded typing-pack runs, one file per run, named by model. |
 | `drift/` | Recorded drift runs, one file per run, named by model. |
 
-The benchmark questions themselves are `demo-artifacts/demo-kit/benchmark-questions.json`.
+The benchmark questions themselves are `documentation/demo/demo-kit/benchmark-questions.json`.

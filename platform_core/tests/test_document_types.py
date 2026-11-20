@@ -16,7 +16,7 @@ from platform_core.workbench import add_knowledge
 from . import test_documents
 from .test_ticket_quality import SETTINGS
 
-DOCS = Path(__file__).resolve().parents[2] / "demo-artifacts" / "docs"
+DOCS = Path(__file__).resolve().parents[2] / "documentation" / "demo" / "docs"
 
 #: The repository's own Markdown documents and what a person would call them.
 #: The Word, Excel and PDF ones are typed by the scorecard, which converts them.

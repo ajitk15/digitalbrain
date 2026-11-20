@@ -88,7 +88,7 @@ def local_roots(root):
 
     Its parent, so a repository beside this one can be indexed - unless that is
     a drive root, which `load_config` refuses: then the checkout itself, which
-    holds demo-artifacts/carepath.
+    holds documentation/demo/carepath.
     """
     parent = root.parent
     return [(root if parent == Path(parent.anchor) else parent).as_posix()]

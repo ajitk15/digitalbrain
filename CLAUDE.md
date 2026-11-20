@@ -272,7 +272,7 @@ warning nobody sees. Mount `claude_<application id>` before other people use tha
 instance, rather than putting the banner back.
 
 **Single sign-on authenticates and grants nothing** (`sso.py`,
-`docs/single-sign-on.md`). Microsoft Entra ID OpenID Connect, code flow with
+`documentation/engineering/single-sign-on.md`). Microsoft Entra ID OpenID Connect, code flow with
 PKCE, pinned to one tenant: `load_config` refuses `common`/`organizations`, and
 the ID token must be RS256 by a key the tenant publishes (fetched through
 `fetching`, never taken from the token), with exact `iss`, `aud`, `tid` and
@@ -442,7 +442,7 @@ where a pull request's CI verdict goes, so the Tests stage reads the same. Do no
 run anything automatically, and do not use this server's interpreter.
 
 **Code Graph is read under Knowledge → Code Repos** (`code_graph.code_repositories`,
-`docs/knowledge-code-repos-plan.md`). Knowledge's tabs are Documents · Code Repos ·
+`documentation/engineering/knowledge-code-repos-plan.md`). Knowledge's tabs are Documents · Code Repos ·
 Tickets · Graph · Quality · Versions, and there is no Code Graph menu item. Code Repos is
 the one place a repository is added, branch-checked, re-indexed, retired or (a
 "Documents only" repository a GitHub link import made) indexed for the first time;
@@ -457,7 +457,7 @@ knowledge graph do not read it, and the page says so. Onboarding's two repositor
 route to `code-repositories`, because Remove lives there.
 
 **The knowledge cycle is shown, never driven** (`lifecycle.py`,
-`docs/knowledge-lifecycle-plan.md`). Set up → Feed → Build → Check → Publish → Use is
+`documentation/engineering/knowledge-lifecycle-plan.md`). Set up → Feed → Build → Check → Publish → Use is
 worked out from records already kept, with no model: `stages` is the cycle at the top of
 onboarding, above each consumer's gates (which are what Use needs; `readiness.steps` keeps
 Code Factory's list because `prevalidate` narrates it); `summary` is the status strip
@@ -661,8 +661,8 @@ so a citation from it says so too. At most `MAX_OCR_PAGES` a document, which is
 equal in `processing` and the extractor and tested; over it the document fails rather
 than half-reads. A page under `LOW_CONFIDENCE` makes the Source check's "Readable text"
 missing: text read badly is the one case where a quote can verify exactly and still be
-wrong. `demo-artifacts/docs/08-quality-samples/` holds scans and broken documents to
-try it on (`demo-artifacts/tools/quality-samples.md` says what each shows). The
+wrong. `documentation/demo/docs/08-quality-samples/` holds scans and broken documents to
+try it on (`documentation/demo/tools/quality-samples.md` says what each shows). The
 scorecard reads them with the rest of `docs/` and skips only those the converter
 refuses without OCR.
 
@@ -1073,7 +1073,7 @@ expected source among the citations, in the top three, and at what rank. It call
 is free and runs automatically after each version is saved. It may score a **draft**: measuring
 is not answering, and which graph answers is still `graph_snapshot`'s decision, which refuses
 drafts. Change ranking only with a before/after benchmark run; CarePath's questions are in
-`demo-artifacts/demo-kit/benchmark-questions.json`.
+`documentation/demo/demo-kit/benchmark-questions.json`.
 
 **Every version is measured with its AI and without it** (`graph_trend.py`, Knowledge →
 Quality → "Quality by version"). An AI-built version is two graphs - what the rules read
@@ -1185,7 +1185,7 @@ revision's data never changes after it is saved; a `post_save` drops it anyway. 
 component name however it is punctuated (`ops_graph.name_pattern`) and also under names
 the knowledge graph merged (`ontology.aliases_for`); `RULES_VERSION` rebuilds every
 operations graph when a rule changes. The plan for the rest is
-`docs/retrieval-roadmap-plan.md`.
+`documentation/engineering/retrieval-roadmap-plan.md`.
 
 **Embeddings choose starting points, never citations.** `embeddings.py` (purpose
 `embeddings`, OpenAI only - Anthropic has no endpoint - and **on only where the

@@ -1,5 +1,5 @@
 {
-  "note": "The keys the CarePath tickets were given on the demo Jira, frozen so the scorecard's Jira import names them as the baseline was measured. A demo run writes its own to demo-artifacts/demo-kit/jira-created.json, which is not read here.",
+  "note": "The keys the CarePath tickets were given on the demo Jira, frozen so the scorecard's Jira import names them as the baseline was measured. A demo run writes its own to documentation/demo/demo-kit/jira-created.json, which is not read here.",
   "issues": {
     "CARE-401": "KAN-4",
     "CARE-412": "KAN-5",

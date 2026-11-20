@@ -1,7 +1,7 @@
 """Build the CarePath demonstration workspace in one run - and only this:
 
  0. Settings in config/local.toml: self-approval, demo reset, Code Graph local
-    folders (this checkout's demo-artifacts), writing to them and running their
+    folders (this checkout's documentation/demo), writing to them and running their
     tests, and the shared connector-credential folder if none is set
  1. Organization ACME
  2. Portfolio Integrated Care
@@ -12,9 +12,9 @@
     administrator siteadmin@db.com, both with password demo123456789
  7. The connectors and their configuration
  8. Where the Jira and ServiceNow credential files go, and their names
- 9. Knowledge from the local folder demo-artifacts/docs, built into a graph -
+ 9. Knowledge from the local folder documentation/demo/docs, built into a graph -
     with the model set for Graph generation in AI settings, then published
-10. Code from the local folder demo-artifacts/carepath, built into a code graph
+10. Code from the local folder documentation/demo/carepath, built into a code graph
 11. Jira tickets imported into CarePathDev
 12. ServiceNow tickets imported into CarePathOps
 
@@ -77,11 +77,11 @@ from platform_core.services import (  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 DOCS_FOLDER = (
     Path("/opt/digitalbrain/demo-seed/docs") if settings.PRODUCTION
-    else ROOT / "demo-artifacts" / "docs"
+    else ROOT / "documentation" / "demo" / "docs"
 )
 CODE_FOLDER = (
     Path("/var/lib/digitalbrain/demo/carepath") if settings.PRODUCTION
-    else ROOT / "demo-artifacts" / "carepath"
+    else ROOT / "documentation" / "demo" / "carepath"
 )
 
 #: The demo's sign-in, for a demonstration instance on this machine only.
@@ -174,7 +174,7 @@ def wanted_settings(current):
     """(config key, TOML value, settings name, Python value) the demo needs.
 
     The folder roots are worked out from where this checkout is, so a clone in
-    any directory reads its own demo-artifacts. Roots already configured are
+    any directory reads its own documentation/demo. Roots already configured are
     kept and the demo folder is added beside them.
     """
     demo_root = CODE_FOLDER.parent.resolve()
@@ -186,7 +186,7 @@ def wanted_settings(current):
         ("allow_self_approval", "true", "ALLOW_SELF_APPROVAL", True),
         # The platform administrator may empty ACME between demos.
         ("allow_demo_reset", "true", "ALLOW_DEMO_RESET", True),
-        # Code Graph may read demo-artifacts/carepath ("From a folder on this server").
+        # Code Graph may read documentation/demo/carepath ("From a folder on this server").
         ("code_graph_local_roots", json.dumps(roots), "CODE_GRAPH_LOCAL_ROOTS", roots),
         # Code Factory may write an approved change into that folder.
         ("code_factory_local_write", "true", "CODE_FACTORY_LOCAL_WRITE", True),
@@ -683,9 +683,9 @@ def main(argv=None):
     load_connectors(owner, built)
     step(8, "Credential files")
     missing = credential_files(built)
-    step(9, "Knowledge from demo-artifacts/docs")
+    step(9, "Knowledge from documentation/demo/docs")
     load_docs(owner, built)
-    step(10, "Code from demo-artifacts/carepath")
+    step(10, "Code from documentation/demo/carepath")
     load_code(owner, built["CarePathDev"])
     step(11, "Jira tickets into CarePathDev")
     import_tickets(owner, built["CarePathDev"], missing)

@@ -22,7 +22,7 @@ from platform_core.models import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCUMENTS = sum(1 for path in (ROOT / "demo-artifacts/docs").rglob("*") if path.is_file())
+DOCUMENTS = sum(1 for path in (ROOT / "documentation/demo/docs").rglob("*") if path.is_file())
 
 
 def builder():
@@ -109,7 +109,7 @@ class RebuildDemoTests(TestCase):
 
         self.build()
         lines = self.config.read_text(encoding="utf-8").splitlines()
-        demo_root = (ROOT / "demo-artifacts").resolve().as_posix()
+        demo_root = (ROOT / "documentation" / "demo").resolve().as_posix()
         self.assertIn(f'code_graph_local_roots = ["{demo_root}"]', lines)
         self.assertIn("code_factory_local_write = true", lines)
         self.assertIn("code_factory_local_tests = true", lines)

@@ -74,7 +74,7 @@ RUN set -eu; \
         tini; \
     rm -rf /var/lib/apt/lists/*
 
-# An unprivileged identity, as docs/index.html#infrastructure requires. The uid is fixed so
+# An unprivileged identity, as documentation/engineering/index.html#infrastructure requires. The uid is fixed so
 # a bind-mounted secret directory can be chowned to it from the host - read_secret
 # refuses any file carrying group or other permission bits.
 RUN groupadd --gid 10001 brain \
@@ -120,7 +120,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     UV_PROJECT_ENVIRONMENT=/opt/demo-venv uv sync --only-dev --frozen --no-install-project
 
 FROM deps AS carepath-deps
-COPY demo-artifacts/carepath/pyproject.toml demo-artifacts/carepath/uv.lock /carepath/
+COPY documentation/demo/carepath/pyproject.toml documentation/demo/carepath/uv.lock /carepath/
 RUN --mount=type=cache,target=/root/.cache/uv \
     UV_PROJECT_ENVIRONMENT=/opt/carepath-venv uv sync --project /carepath \
       --frozen --no-install-project
@@ -140,8 +140,8 @@ RUN printf '/opt/demo-venv/lib/python3.12/site-packages\n' \
 FROM demo-browser AS demo
 COPY --from=static --chown=root:root /app/staticfiles /app/staticfiles
 COPY --chown=root:root . /app
-COPY demo-artifacts/docs /opt/digitalbrain/demo-seed/docs
-COPY demo-artifacts/carepath /opt/digitalbrain/demo-seed/carepath
+COPY documentation/demo/docs /opt/digitalbrain/demo-seed/docs
+COPY documentation/demo/carepath /opt/digitalbrain/demo-seed/carepath
 RUN chmod +x /app/deploy/entrypoint.sh \
     && mkdir -p /var/lib/digitalbrain/demo /var/lib/digitalbrain/connectors \
     && chown brain:brain /var/lib/digitalbrain/demo /var/lib/digitalbrain/connectors \

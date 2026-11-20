@@ -262,7 +262,7 @@ services:
       # files originals_access_key_id and originals_secret_access_key.
       DIGITAL_BRAIN_ORIGINALS_BUCKET: "digital-brain-originals-prod"
       DIGITAL_BRAIN_ORIGINALS_REGION: "us-west-2"
-      # Sign in with Microsoft Entra ID (docs/single-sign-on.md): the directory
+      # Sign in with Microsoft Entra ID (documentation/engineering/single-sign-on.md): the directory
       # (tenant) id and the application (client) id, both or neither. The client
       # secret is the mounted file entra_client_secret. Empty: no Microsoft button.
       DIGITAL_BRAIN_ENTRA_TENANT: ${DIGITAL_BRAIN_ENTRA_TENANT:-}

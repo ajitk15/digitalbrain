@@ -10,13 +10,13 @@
 #      holding the digibrain user's password.
 #   3. Run start-all.cmd -Demo. Its first step writes the demo's settings into
 #      config/local.toml itself - self-approval, demo reset, Code Graph local
-#      folders for this checkout's demo-artifacts, writing to them, running
+#      folders for this checkout's documentation/demo, writing to them, running
 #      their tests, and the credential folder above - so copying this file is
 #      optional. It then builds ACME, Integrated Care, Care Coordination,
 #      CarePathDev and CarePathOps, acmeadmin (owner of ACME) and the platform
 #      administrator siteadmin@db.com (both with password demo123456789), the
-#      connectors, knowledge from demo-artifacts/docs, code from
-#      demo-artifacts/carepath, and imports Jira and ServiceNow.
+#      connectors, knowledge from documentation/demo/docs, code from
+#      documentation/demo/carepath, and imports Jira and ServiceNow.
 #
 # On a machine that has already started once without -Demo, run
 # start-all.cmd -Demo now: it adds the missing settings, and the restart picks

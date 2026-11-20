@@ -271,7 +271,7 @@ class DocumentNamingTests(SimpleTestCase):
     def test_the_directory_that_was_asked_for_is_not_repeated_in_every_name(self):
         self.assertEqual(
             github_sources.relative_name(
-                "demo-artifacts/docs/07-govern/risk-register.xlsx", "demo-artifacts/docs"
+                "documentation/demo/docs/07-govern/risk-register.xlsx", "documentation/demo/docs"
             ),
             "07-govern/risk-register.xlsx",
         )
@@ -298,10 +298,10 @@ class DocumentNamingTests(SimpleTestCase):
             {
                 "type": "file",
                 "name": "risk-register.xlsx",
-                "path": "demo-artifacts/docs/07-govern/risk-register.xlsx",
+                "path": "documentation/demo/docs/07-govern/risk-register.xlsx",
                 "download_url": "https://raw.example/risk.xlsx",
             }
         ]
         with patch.object(github_sources, "_api", return_value=listing):
-            found = github_sources.tree("o", "r", "main", "demo-artifacts/docs", "")
+            found = github_sources.tree("o", "r", "main", "documentation/demo/docs", "")
         self.assertEqual(found[0][0], "07-govern/risk-register.xlsx")

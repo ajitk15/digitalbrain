@@ -5,7 +5,7 @@ documents, tickets, incidents and code become a versioned knowledge graph that a
 questions, plans code fixes and triages incidents, with every citation re-verified
 against its live source. Django 5.2, Python 3.12, server-rendered.
 
-**Documentation: [`docs/index.html`](docs/index.html)** (one file, open it in a browser: product overview, architecture,
+**Documentation: [`documentation/engineering/index.html`](documentation/engineering/index.html)** (one file, open it in a browser: product overview, architecture,
 components, engineering, infrastructure, marketing). Rules for changing code:
 [`CLAUDE.md`](CLAUDE.md).
 
@@ -175,7 +175,7 @@ Mounted secret loading follows [Django's deployment checklist](https://docs.djan
 ## Verification
 
 All five must be clean before a change is done (see
-[How we build](docs/index.html#engineering--the-five-gates-all-must-be-clean)):
+[How we build](documentation/engineering/index.html#engineering--the-five-gates-all-must-be-clean)):
 
 ```powershell
 .venv/Scripts/ruff.exe check digitalbrain platform_core scripts manage.py

@@ -49,7 +49,7 @@ ITEM_CATEGORIES = [
     ("non_functional", "Non-functional gap"),
 ]
 
-#: Non-functional headings the analysis reasons in. docs/index.html (How we build)
+#: Non-functional headings the analysis reasons in. documentation/engineering/index.html (How we build)
 #: lists the same four, so a reader and the analysis use the same terms.
 RUBRIC = [
     ("security", "Security and privacy"),
