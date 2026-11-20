@@ -7,6 +7,7 @@ into, and every check is repeated when the index actually runs.
 """
 
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -791,7 +792,8 @@ class LocalTestRunTests(LocalDeliveryTests):
         self.assertContains(page, 'value="set-up-tests"')
         calls = self.set_up()
         commands = [arguments for arguments, _ in calls]
-        self.assertEqual(commands[0], ["C:/Python/py.exe", "-m", "venv", ".venv"])
+        launcher = "py" if sys.platform == "win32" else "python3"
+        self.assertEqual(commands[0], [f"C:/Python/{launcher}.exe", "-m", "venv", ".venv"])
         self.assertEqual(commands[1][1:], ["-m", "pip", "install", "-r", "requirements.txt"])
         self.assertTrue(commands[1][0].startswith(str(self.service)))
         self.assertEqual(commands[2][1:], ["-m", "pip", "install", "pytest"])
