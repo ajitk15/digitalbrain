@@ -24,7 +24,10 @@ from platform_core.processing import convert_document
 
 from . import test_documents
 
-PDF = Path(settings.BASE_DIR) / "documentation/demo/docs/01-requirements/regulatory-requirements.pdf"
+PDF = (
+    Path(settings.BASE_DIR)
+    / "documentation/demo/docs/01-requirements/regulatory-requirements.pdf"
+)
 
 SETTINGS = dict(
     STORAGES={"staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"}},
