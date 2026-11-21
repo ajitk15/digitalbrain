@@ -157,6 +157,32 @@ imply application access.
 run starts. Model arguments may only narrow an already-scoped queryset. A foreign id must
 read as "not found", never raise and never leak.
 
+**Every agent runs through the harness** (`agent_runtime/harness.py`, Phase 0 of
+`documentation/engineering/agentic-ai-plan.md`; chat is the only agent today). An agent
+chooses what it reads, never what it writes, who it acts as or what counts as evidence.
+Its tools are a closed registry (`agent_runtime/registry.py`: a tool serves the purposes it
+names and no others, and every one is read-only) that both provider runtimes build from -
+OpenAI and Claude are shown the tools exactly as before the registry, wording and schema,
+and `test_agent_harness` pins both, because changing what a model reads is measured for
+drift first. `run_agent` authorizes, asks admission for the worst case of **every** turn
+(`gateway.turn_costs`: each later turn re-reads the prompt, the replies before it and the
+tools' results, bounded by `tools.RESULT_CHARACTERS`) and runs only as many turns as the
+budget's headroom pays for - one turn means no tools, from the evidence alone, and fewer
+turns a smaller tool budget (`tool_budget`) - writes one receipt a turn, raises again a
+refusal a tool met (a provider SDK turns it into text and carries on; the answer is lost,
+the receipts kept) and authorizes once more. After Stop no further tool runs
+(`tools.STOPPED`). Each call is an `AgentStep` row (migration 0107, secured like 0104):
+tool, the **shape** of its arguments (`tools.shape`: numbers, ids and lengths, never a
+string), outcome, result size, duration - never what was asked or read; it goes with its
+message, whose link carries no database constraint so the release before can still delete
+messages. A run that needs more turns than it was allowed fails as the SDK fails it; there
+is no clean stop at the turn limit yet. A provider failure is `AgentFailure`, its class
+name only. `agent_runtime/scripted.py` is a model that follows a script, never selectable
+by configuration, so every guardrail is tested with no provider; the scorecard's "Agent
+guardrail probes passing" must stay 100%. A new tool is one registry entry with its
+purposes, read-only, scoped by `ToolScope` (`run_id`/`snapshot_id` for a run pinned to
+one snapshot) - never a write.
+
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
 TO PROGRAM`, drop anything, and is never held to row security - and the platform used to
@@ -1256,7 +1282,9 @@ the client is given the key and base URL explicitly, takes no proxy from the env
 and drops `ANTHROPIC_CUSTOM_HEADERS`; `test_claude_messages` plants all four and checks
 the request. No retries. Tests run with it off (`digitalbrain/test_runner.py`) because
 they mount made-up keys and patch the CLI adapter; a test of this path turns it on.
-Agentic runs - chat on Claude, Code Factory's agents - still need the CLI's tools.
+Chat on Claude is the one agentic run, and it still needs the CLI's tools. Code
+Factory's "agents" are not agents: each is one `ask()` → `invoke_ai` call with
+`max_turns=1` and no tools, over files Python chose beforehand.
 
 **Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
 used to list document typing, embeddings and reranking, so a new application had AI

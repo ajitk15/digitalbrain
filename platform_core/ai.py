@@ -758,69 +758,49 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
     """Run a streamed, tool-using chat answer. Executed on a worker thread.
 
     Returns (answer, verified citations). Raises ValidationError on any provider
-    or runtime failure, with provider detail deliberately not surfaced.
+    or runtime failure, with provider detail deliberately not surfaced. The run
+    itself - tools, the reservation for every turn, receipts, the checks after -
+    is `agent_runtime.harness.run_agent`, which every agent goes through.
     """
-    import asyncio
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
 
-    from . import gateway
-    from .agent_runtime import claude_runtime, openai_runtime
-    from .agent_runtime.tools import CitationRecorder, ToolScope
-
-    runtime = openai_runtime if config.provider == "openai" else claude_runtime
     # A graph conversation is answered by the graph retrieval configuration, and
     # its receipts say so: they used to be filed as chat whatever answered them.
     purpose = getattr(config, "purpose", "chat")
-    scope = ToolScope(user_id=user.pk, app_id=app.pk, purpose="chat")
-    recorder = CitationRecorder(scope)
-    # Evidence computed before the run seeds the answer, so a single-turn reply is
-    # never worse than the non-agentic path.
-    recorder.seed(citations)
-    cap = reply_cap(app.pk, purpose, config)
-    # The slot is held for the whole run, every tool turn included; a run that
-    # cannot get one fails before anything is sent, so it says nothing was billed.
-    with gateway.admitted(
-        user,
-        app,
-        config,
-        purpose,
-        prompt_characters=prompt_size(question, citations, history),
-        max_tokens=cap,
-    ):
-        try:
-            turns, answer = asyncio.run(
-                runtime.run(
-                    config.model,
-                    question,
-                    citations,
-                    token,
-                    history,
-                    scope,
-                    recorder,
-                    session.emit,
-                    session.cancel,
-                    max_tokens=cap,
-                )
-            )
-        except (PermissionDenied, Http404):
-            raise
-        except Exception as failure:
-            # The class name only: a provider's message can carry the prompt.
-            logger.warning(
-                "streamed answer failed",
-                extra={
-                    "event": "chat_answer_failed",
-                    "provider": config.provider,
-                    "exception_type": type(failure).__name__,
-                },
-            )
-            raise ValidationError(
-                "AI response unavailable. Check the model, credential and provider limits. "
-                "The request may have been billed by the provider; it is not retried "
-                "automatically."
-            ) from None
-        record_turns(user, app, config, purpose, turns)
-    gateway.authorize(user, app.pk, purpose)
-    return answer, recorder.verified_citations()
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose=purpose,
+            scope=ToolScope(user_id=user.pk, app_id=app.pk, purpose="chat"),
+            question=question,
+            citations=citations,
+            history=history,
+            emit=session.emit,
+            cancel=session.cancel,
+            max_tokens=reply_cap(app.pk, purpose, config),
+            prompt_characters=prompt_size(question, citations, history),
+            message_id=getattr(session, "message_id", None),
+        )
+    except AgentFailure as failure:
+        # The class name only: a provider's message can carry the prompt.
+        logger.warning(
+            "streamed answer failed",
+            extra={
+                "event": "chat_answer_failed",
+                "provider": config.provider,
+                "exception_type": failure.kind,
+            },
+        )
+        raise ValidationError(
+            "AI response unavailable. Check the model, credential and provider limits. "
+            "The request may have been billed by the provider; it is not retried "
+            "automatically."
+        ) from None
+    return result.answer, result.citations
 
 
 def owned_application(request, pk):

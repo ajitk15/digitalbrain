@@ -67,6 +67,8 @@ ATTRIBUTES = frozenset({
     "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
     "gen_ai.token.type",
+    "gen_ai.tool.name",
+    "digitalbrain.turns",
     "digitalbrain.mode",
     "digitalbrain.objective",
     "digitalbrain.currency",
@@ -135,6 +137,10 @@ SHORT = {
     "input_tokens": "gen_ai.usage.input_tokens",
     "output_tokens": "gen_ai.usage.output_tokens",
     "token_type": "gen_ai.token.type",
+    # A tool's registry name (`agent_runtime.registry.TOOLS`), written by code.
+    "tool": "gen_ai.tool.name",
+    # How many model turns an agent run's reservation paid for.
+    "turns": "digitalbrain.turns",
     "mode": "digitalbrain.mode",
     "objective": "digitalbrain.objective",
     "currency": "digitalbrain.currency",

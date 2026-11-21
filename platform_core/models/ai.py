@@ -126,3 +126,54 @@ class AIAdmission(models.Model):
             models.Index(fields=["application_id", "expires_at"], name="ai_admission_app"),
             models.Index(fields=["provider", "expires_at"], name="ai_admission_provider"),
         ]
+
+
+AGENT_STEP_OUTCOMES = [
+    ("found", "Found"),
+    ("nothing", "Found nothing"),
+    ("budget", "Over the tool budget"),
+    ("stopped", "After Stop"),
+    ("refused", "Access ended"),
+    ("failed", "Failed"),
+]
+
+
+class AgentStep(models.Model):
+    """One tool call an agent run made (`agent_runtime.harness`), with no text in it.
+
+    The tool's registry name, the *shape* of its arguments (numbers, ids and
+    lengths - `agent_runtime.tools.shape`), what came of it, how much text came
+    back, how many citations and how long it took. Never the query, the result
+    or anything a model or a person wrote: it says how an answer was reached,
+    not what it read. It belongs to the message it answered and goes with it,
+    whatever removes the message - its owner, chat retention, a reset.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    # A string reference: `chat` is imported after this module. No constraint in
+    # the database: the release before this one deletes messages without knowing
+    # this table exists, and a constraint would refuse it while both run. Django
+    # still cascades; a row the old release left behind is ids and counts only,
+    # and goes with its application.
+    message = models.ForeignKey(
+        "platform_core.ChatMessage",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
+    purpose = models.CharField(max_length=24)
+    sequence = models.PositiveIntegerField()
+    tool = models.CharField(max_length=64)
+    arguments = models.JSONField(default=dict, blank=True)
+    outcome = models.CharField(max_length=10, choices=AGENT_STEP_OUTCOMES)
+    result_characters = models.PositiveIntegerField(default=0)
+    citations = models.PositiveIntegerField(default=0)
+    duration_ms = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["message_id", "sequence"]
+        indexes = [models.Index(fields=["message", "sequence"], name="agent_step_message")]

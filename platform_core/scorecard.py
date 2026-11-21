@@ -251,6 +251,15 @@ METRICS = {
         "exact",
         0,
     ),
+    # The agent harness (`agent_runtime.harness`): what an agent may read, pay for
+    # and leave behind, driven by a scripted model.
+    "agent_probes_passed": (
+        "Agents",
+        "Agent guardrail probes passing",
+        "%",
+        "exact",
+        0,
+    ),
     # Speed - machine dependent, so a generous tolerance.
     "graph_p50_ms": ("Speed", "Graph answer, median", "ms", "lower", 15.0),
     "keyword_p50_ms": ("Speed", "Keyword answer, median", "ms", "lower", 15.0),
@@ -1444,6 +1453,159 @@ def learning_loop(ws, revision):
     return {"learning_probes_passed": round(100 * passed / len(probes), 1)}, probes
 
 
+def agent_guardrails(ws):
+    """Whether an agent run reads, pays and records as the harness says, with a
+    scripted model in place of a provider (`agent_runtime.scripted`). Inside a
+    savepoint that is rolled back, so no receipt, budget or step it writes reaches
+    the aspects after it."""
+    import threading
+
+    from django.core.exceptions import PermissionDenied
+    from django.db import transaction
+    from django.db.models import Sum
+    from django.http import Http404
+
+    from . import gateway
+    from .agent_runtime import harness
+    from .agent_runtime.scripted import Script
+    from .agent_runtime.tools import MAX_TOOL_CALLS, NOT_FOUND, RESULT_CHARACTERS, ToolScope
+    from .models import (
+        AgentStep,
+        AIAdmission,
+        AIBudget,
+        AIConfiguration,
+        AIUsage,
+        ApplicationGrant,
+        ChatConversation,
+        ChatMessage,
+        KnowledgeEntry,
+    )
+    from .workbench import add_knowledge
+
+    owner, viewer = ws.people["owner"], ws.people["viewer"]
+    probes = {}
+    with transaction.atomic():
+        config = AIConfiguration.objects.create(
+            application=ws.app, purpose="chat", provider="claude", model="claude-sonnet-5",
+            input_rate=Decimal("3"), output_rate=Decimal("15"), configured_by=owner,
+        )
+        conversation = ChatConversation.objects.create(application=ws.app, user=viewer, title="t")
+        message = ChatMessage.objects.create(
+            application=ws.app, user=viewer, conversation=conversation, role="assistant",
+            body="", status="streaming", sequence=2,
+        )
+        mine = KnowledgeEntry.objects.filter(application=ws.app).answerable().order_by("id")
+        source, hidden = mine[0], mine[1]
+        KnowledgeEntry.objects.filter(pk=hidden.pk).update(sensitivity="restricted")
+        foreign = add_knowledge(
+            owner, ws.other.pk, "Elsewhere only", "A passage that belongs elsewhere."
+        )
+
+        @contextmanager
+        def scripted(script):
+            with patch.object(harness, "runtime_for", return_value=script):
+                yield
+
+        def run(*turns, user=viewer, cancel=None, steps=True):
+            script = Script(*turns)
+            with scripted(script):
+                result = harness.run_agent(
+                    user=user, app=ws.app, config=config, token="unused", purpose="chat",
+                    scope=ToolScope(user_id=user.pk, app_id=ws.app.pk), question="q",
+                    citations=[], history=[], emit=lambda *a: None, cancel=cancel,
+                    max_tokens=1024, prompt_characters=200,
+                    message_id=message.pk if steps else None,
+                )
+            return script, result
+
+        def outcomes():
+            return list(
+                AgentStep.objects.filter(message=message).order_by("sequence")
+                .values_list("outcome", flat=True)
+            )
+
+        receipts = AIUsage.objects.filter(application=ws.app).count()
+        script, result = run(
+            [("search_knowledge", {"query": "consent export"})],
+            [("fetch_source", {"source_id": str(source.pk)})],
+            "Answered.",
+        )
+        probes["one receipt per turn"] = (
+            AIUsage.objects.filter(application=ws.app).count() - receipts == 3
+        )
+        probes["every citation is verified against a live source"] = bool(
+            result.citations
+        ) and all(
+            KnowledgeEntry.objects.filter(pk=c["id"], digest=c["digest"]).answerable().exists()
+            for c in result.citations
+        )
+        kept = list(AgentStep.objects.filter(message=message).values("arguments"))
+        probes["a step holds no text"] = len(kept) == 2 and "consent" not in str(kept)
+
+        script, result = run(
+            [("fetch_source", {"source_id": str(foreign.pk)})], "Nothing.", steps=False
+        )
+        probes["another application's source reads as not found"] = (
+            script.tool_text == [NOT_FOUND] and result.citations == []
+        )
+        script, result = run(
+            [("fetch_source", {"source_id": str(hidden.pk)})], "Nothing.", steps=False
+        )
+        probes["a restricted source is never read"] = script.tool_text == [NOT_FOUND]
+
+        AgentStep.objects.filter(message=message).delete()
+        script, _ = run([("remove_source", {"source_id": str(source.pk)})], "No.")
+        probes["a tool the run was not given never runs"] = (
+            script.seen == ["remove_source"] and outcomes() == []
+        )
+
+        cancel = threading.Event()
+        run(
+            [("search_knowledge", {"query": "consent"}), cancel.set],
+            [("search_knowledge", {"query": "consent"})],
+            "Stopped.",
+            cancel=cancel,
+        )
+        probes["Stop runs no further tool"] = outcomes() == ["found", "stopped"]
+
+        AgentStep.objects.filter(message=message).delete()
+        run([("search_knowledge", {"query": "consent"})] * (MAX_TOOL_CALLS + 1), "Enough.")
+        probes["the tool budget holds"] = outcomes()[-1] == "budget"
+
+        AgentStep.objects.filter(message=message).delete()
+
+        def revoke():
+            ApplicationGrant.objects.filter(application=ws.app, user=viewer).delete()
+
+        try:
+            run([revoke], [("search_knowledge", {"query": "consent"})], "Must not be kept.")
+            probes["a grant revoked mid-run ends the answer"] = False
+        except (Http404, PermissionDenied):
+            probes["a grant revoked mid-run ends the answer"] = outcomes() == ["refused"]
+        ApplicationGrant.objects.create(application=ws.app, user=viewer, role="viewer")
+
+        tools = MAX_TOOL_CALLS * RESULT_CHARACTERS
+        costs = gateway.turn_costs(config, 200, 1024, turns=4, tool_characters=tools)
+        AIBudget.objects.create(application=ws.app, monthly_limit=Decimal("1000"))
+        held = []
+        run([lambda: held.append(AIAdmission.objects.get().reserved)], "Answer.")
+        probes["every turn is reserved before the first is sent"] = held == [costs[-1]]
+
+        spent = AIUsage.objects.filter(application=ws.app).aggregate(
+            total=Sum("amount")
+        )["total"] or Decimal("0")
+        AIBudget.objects.filter(application=ws.app).update(
+            monthly_limit=spent + (costs[0] + costs[1]) / 2
+        )
+        script, result = run("From the evidence.")
+        probes["a budget with room for one turn gets no tools"] = (
+            script.given == [] and result.turns == 1
+        )
+        transaction.set_rollback(True)
+    passed = sum(bool(ok) for ok in probes.values())
+    return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
 def speed(ws, revision, questions):
     from .graph_ai import citations_from, prepare
     from .workbench import retrieve
@@ -1535,6 +1697,8 @@ def measure():
         found, details["learning_loop"] = learning_loop(ws, revision)
         values.update(found)
         found, details["rules"] = application_rules(ws)
+        values.update(found)
+        found, details["agents"] = agent_guardrails(ws)
         values.update(found)
         # Timed before cost control, which edits a source and adds versions.
         found, _ = speed(ws, revision, questions)

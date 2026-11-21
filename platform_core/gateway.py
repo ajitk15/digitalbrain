@@ -30,6 +30,14 @@ The cap keeps its meaning: a call starts while recorded spend plus the
 reservations of calls in flight is under the cap, and a call already started
 is finished. With one call at a time that is exactly the check it always was.
 
+**An agent run reserves every turn it may take** (`turn_costs`). A tool-using
+answer is several billed requests, and each re-reads the conversation so far: the
+prompt, every reply before it and every tool result. Admission is asked for up to
+`turns` of them and reserves the worst case of as many as the budget's headroom
+can pay for, at least one; `Admission.turns` says how many, and the harness gives
+the run exactly that many (`agent_runtime.harness`). One turn is the single-call
+reservation it always was.
+
 Admission takes its locks in a short transaction of its own, so no lock is
 held across a provider call - callers call the gateway outside a transaction,
 as every one does.
@@ -145,6 +153,22 @@ def estimate(config, prompt_characters, max_tokens):
     )
 
 
+def turn_costs(config, prompt_characters, max_tokens, turns=1, tool_characters=0):
+    """The most each number of turns can cost, running total: [one, two, ...].
+
+    Turn N re-reads the prompt, the N replies before it (each the whole reply
+    cap) and every tool result the run can be handed (`tool_characters`, the
+    tools' own bound), all at the pessimistic `CHARACTERS_PER_TOKEN`.
+    """
+    reply_characters = (max_tokens or 0) * CHARACTERS_PER_TOKEN
+    total, costs = Decimal("0"), []
+    for turn in range(max(1, turns)):
+        read = prompt_characters + (tool_characters if turn else 0) + turn * reply_characters
+        total += estimate(config, read, max_tokens)
+        costs.append(total)
+    return costs
+
+
 def provider_lock(provider):
     """Serialize admissions to one provider across applications, on PostgreSQL.
 
@@ -157,8 +181,13 @@ def provider_lock(provider):
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
 
 
-def try_admit(app, config, purpose, user, amount):
-    """An admission row, or None when no slot is free. Raises BudgetExceeded."""
+def try_admit(app, config, purpose, user, amount, costs=None):
+    """An admission row, or None when no slot is free. Raises BudgetExceeded.
+
+    `costs` is `turn_costs` for a call that may take several turns: the row
+    reserves as many as the headroom under the cap pays for (at least one) and
+    says how many in its `turns`. Without it, `amount` is one turn.
+    """
     from .budget import BudgetExceeded, month_start, spent
     from .models import AIAdmission, AIBudget, Application
     from .policy import LIVE
@@ -195,14 +224,21 @@ def try_admit(app, config, purpose, user, amount):
             or live.filter(provider=config.provider).count() >= bound["provider"]
         ):
             return None
-        return AIAdmission.objects.create(
+        costs = list(costs or [amount])
+        turns = len(costs)
+        if budget is not None:
+            headroom = budget.monthly_limit - used - reserved
+            turns = max(1, sum(1 for cost in costs if cost <= headroom))
+        admission = AIAdmission.objects.create(
             application_id=app.pk,
             purpose=purpose,
             provider=config.provider,
             actor=user,
-            reserved=amount if budget is not None else Decimal("0"),
+            reserved=costs[turns - 1] if budget is not None else Decimal("0"),
             expires_at=now + timedelta(minutes=bound["minutes"]),
         )
+        admission.turns = turns
+        return admission
 
 
 #: Seconds between looks for a free slot.
@@ -210,8 +246,13 @@ POLL = 0.25
 
 
 @contextmanager
-def admitted(user, app, config, purpose, prompt_characters=0, max_tokens=0):
+def admitted(
+    user, app, config, purpose, prompt_characters=0, max_tokens=0, turns=1, tool_characters=0
+):
     """Hold a slot and a reservation for one paid call, released however it ends.
+
+    `turns` and `tool_characters` are for an agent run (`turn_costs`); the
+    admission yielded says in `turns` how many the reservation paid for.
 
     Traced as one span from the first try for a slot to the release
     (`telemetry`): how long admission waited, the outcome, and each receipt
@@ -224,21 +265,19 @@ def admitted(user, app, config, purpose, prompt_characters=0, max_tokens=0):
         model=config.model,
         application_id=app.pk,
     ) as traced:
-        with _admitted(
-            user, app, config, purpose, prompt_characters, max_tokens, traced
-        ) as admission:
+        costs = turn_costs(config, prompt_characters, max_tokens, turns, tool_characters)
+        with _admitted(user, app, config, purpose, costs, traced) as admission:
             yield admission
 
 
 @contextmanager
-def _admitted(user, app, config, purpose, prompt_characters, max_tokens, traced):
+def _admitted(user, app, config, purpose, costs, traced):
     from .models import AIAdmission
 
-    amount = estimate(config, prompt_characters, max_tokens)
     waiting = time.monotonic()
     deadline = waiting + limits()["wait"]
     while True:
-        admission = try_admit(app, config, purpose, user, amount)
+        admission = try_admit(app, config, purpose, user, costs[0], costs)
         if admission is not None:
             break
         if time.monotonic() >= deadline:
@@ -255,7 +294,7 @@ def _admitted(user, app, config, purpose, prompt_characters, max_tokens, traced)
             )
         time.sleep(POLL)
     started = time.monotonic()
-    traced.set(wait_ms=round((started - waiting) * 1000))
+    traced.set(wait_ms=round((started - waiting) * 1000), turns=admission.turns)
     metrics.record("digitalbrain.ai.admission.wait", started - waiting,
                    purpose=purpose, provider=config.provider, outcome="admitted")
     outcome = "failed"

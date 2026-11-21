@@ -19,8 +19,8 @@ tests and the five verification gates in `CLAUDE.md`. They are not calendar time
 | ServiceOps triage | One call over `serviceops_triage.evidence_pack` | No |
 | Graph extraction, typing, document review, code review, code docs, reranking | One call each, JSON out, every quote verified | No |
 
-`CLAUDE.md` says "Code Factory's agents still need the CLI's tools". The code does not:
-they run with `max_turns=1` and no tools. Phase 0 corrects that line.
+`CLAUDE.md` used to say "Code Factory's agents still need the CLI's tools". The code did
+not: they run with `max_turns=1` and no tools. Phase 0 corrected that line.
 
 ## The rule every phase keeps
 
@@ -48,7 +48,7 @@ what counts as evidence.**
 
 | Phase | What | Effort | Model cost | Measured by | Default |
 |---|---|---|---|---|---|
-| 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | - |
+| 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | **Done** - chat runs on it |
 | 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | Off, then on once it beats one-shot |
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` (92% today) | Rules on; agent off |
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | Triage replay + `idea_confidence` against confirmed verdicts | Off |
@@ -63,7 +63,32 @@ Order: 0 must come first (every later phase uses it). 1 before 4 (review reuses 
 repository tools). 2's rule half is free and measured by the scorecard, so it can run
 alongside 0.
 
-## Phase 0 - Agent harness
+## Phase 0 - Agent harness (done)
+
+**What shipped:** `agent_runtime/registry.py`, `agent_runtime/harness.py`,
+`agent_runtime/scripted.py`, `gateway.turn_costs` and per-turn admission, `AgentStep`
+(migration 0107), the `gen_ai.tool.name` and `digitalbrain.turns` span attributes, the
+scorecard's "Agent guardrail probes passing" (11 probes, 100%, in the baseline) and
+`tests/test_agent_harness.py` (34 tests). Chat's answer is `run_agent`; its tools are shown
+to both providers exactly as before (pinned by test), and its citations are verified on
+the same path, so the benchmark is unchanged.
+
+**What differs from the plan below, and why:**
+
+- **The trajectory is not on a page yet.** The only agent is chat, which already shows each
+  tool call live; the run page it was meant for is Code Factory's, which gets tools in
+  Phase 1. `AgentStep` rows are written now so Phase 1 starts with history.
+- **There is no clean stop at the turn limit.** Neither SDK can forbid tools on a run's
+  last turn, so a model that ignores "answer with the evidence you have" still fails as the
+  SDK fails it, as before. What the harness does instead: a run the budget pays one turn
+  for is given no tools at all, and fewer turns means a proportionally smaller tool budget,
+  so the model is told to answer while a turn is left.
+- **Receipts are not linked to steps.** The Claude CLI reports usage once per run, not per
+  tool call, so a step carries no receipt id; receipts stay one per turn.
+- **A run's Stop is honoured before each tool**, not only between turns - the same thing for
+  the SDKs, which run tools between turns.
+
+The original plan for this phase follows.
 
 One place that builds an agent run, so phases 1-6 add tools and do not each rebuild
 the sandbox, the receipts and the limits.

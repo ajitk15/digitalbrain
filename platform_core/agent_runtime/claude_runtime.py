@@ -39,8 +39,9 @@ from django.db import close_old_connections
 
 from .credentials import HOST_LOGIN_PASSTHROUGH, claude_environment, host_login_enabled
 from .prompts import TOOL_INSTRUCTIONS
+from .registry import for_scope
 from .runtime import ANSWER_TOKENS, evidence_payload, recent_turns
-from .tools import FETCH_SCHEMA, FETCH_SOURCE, SEARCH_KNOWLEDGE, SEARCH_SCHEMA, run_tool
+from .tools import run_tool
 from .usage import TurnUsage, checked_answer, claude_usage
 
 SERVER_NAME = "brain"
@@ -49,6 +50,7 @@ MAX_TURNS = 4
 RUN_TIMEOUT = 120
 DRAIN_AFTER_STOP = 10
 MAX_BUFFER = 4 * 1024 * 1024
+#: What chat is allowed today; a run is allowed exactly the tools it is given.
 ALLOWED_TOOLS = [f"{TOOL_PREFIX}{name}" for name in ("search_knowledge", "fetch_source")]
 
 SAFE_ENVIRONMENT = {
@@ -78,21 +80,25 @@ def _text(body):
     return {"content": [{"type": "text", "text": body}]}
 
 
-def build_server(scope, recorder, emit):
+def bound(spec, scope, recorder, emit):
+    """One registry tool as an SDK tool, bound to one application."""
+    description, schema = spec.wire("claude")
+
+    @tool(spec.name, description, schema)
+    async def handler(args):
+        emit("tool", {"name": spec.name, "detail": spec.shown(args)})
+        return _text(await _call(spec, scope, args, recorder))
+
+    return handler
+
+
+def build_server(scope, recorder, emit, tools=None):
     """An in-process MCP server whose tools are bound to one application."""
-
-    @tool(SEARCH_KNOWLEDGE.name, SEARCH_KNOWLEDGE.description, SEARCH_SCHEMA)
-    async def search_knowledge(args):
-        emit("tool", {"name": SEARCH_KNOWLEDGE.name, "detail": str(args.get("query", ""))[:120]})
-        return _text(await _call(SEARCH_KNOWLEDGE, scope, args, recorder))
-
-    @tool(FETCH_SOURCE.name, FETCH_SOURCE.description, FETCH_SCHEMA)
-    async def fetch_source(args):
-        emit("tool", {"name": FETCH_SOURCE.name, "detail": str(args.get("source_id", ""))[:64]})
-        return _text(await _call(FETCH_SOURCE, scope, args, recorder))
-
+    tools = for_scope(scope) if tools is None else tools
     return create_sdk_mcp_server(
-        name=SERVER_NAME, version="1.0.0", tools=[search_knowledge, fetch_source]
+        name=SERVER_NAME,
+        version="1.0.0",
+        tools=[bound(spec, scope, recorder, emit) for spec in tools],
     )
 
 
@@ -172,8 +178,15 @@ async def run(
     emit,
     cancel=None,
     max_tokens=ANSWER_TOKENS,
+    tools=None,
+    max_turns=MAX_TURNS,
 ):
-    """Stream one answer, returning (turn usages, answer text)."""
+    """Stream one answer, returning (turn usages, answer text).
+
+    `tools` are registry specs (the scope's own when not given); with none, the
+    model answers from the evidence it was handed, in one turn.
+    """
+    tools = for_scope(scope) if tools is None else list(tools)
     with tempfile.TemporaryDirectory(
         prefix="digital-brain-agent-", ignore_cleanup_errors=True
     ) as directory:
@@ -182,16 +195,18 @@ async def run(
             model=model,
             system_prompt=TOOL_INSTRUCTIONS,
             tools=[],
-            allowed_tools=ALLOWED_TOOLS,
+            allowed_tools=[f"{TOOL_PREFIX}{spec.name}" for spec in tools],
             permission_mode="dontAsk",
-            mcp_servers={SERVER_NAME: build_server(scope, recorder, emit)},
+            mcp_servers=(
+                {SERVER_NAME: build_server(scope, recorder, emit, tools)} if tools else {}
+            ),
             strict_mcp_config=True,
             setting_sources=[],
             skills=[],
             plugins=[],
             cwd=directory,
             env=build_environment(directory, token, max_tokens),
-            max_turns=MAX_TURNS,
+            max_turns=max_turns if tools else 1,
             max_buffer_size=MAX_BUFFER,
             include_partial_messages=True,
             extra_args={"no-session-persistence": None},

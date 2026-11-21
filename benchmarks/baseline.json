@@ -278,6 +278,14 @@
    "tolerance": 0,
    "value": 100.0
   },
+  "agent_probes_passed": {
+   "aspect": "Agents",
+   "label": "Agent guardrail probes passing",
+   "unit": "%",
+   "better": "exact",
+   "tolerance": 0,
+   "value": 100.0
+  },
   "graph_p50_ms": {
    "aspect": "Speed",
    "label": "Graph answer, median",

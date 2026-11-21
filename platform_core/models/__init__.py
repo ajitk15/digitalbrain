@@ -31,8 +31,10 @@ from .accounts import (  # noqa: F401
     unique_slug,
 )
 from .ai import (  # noqa: F401
+    AGENT_STEP_OUTCOMES,
     AI_PROVIDERS,
     AI_PURPOSES,
+    AgentStep,
     AIAdmission,
     AIBudget,
     AIConfiguration,

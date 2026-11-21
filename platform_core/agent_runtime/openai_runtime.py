@@ -19,19 +19,20 @@ import json
 
 from agents import (
     Agent,
+    FunctionTool,
     ModelSettings,
     OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
     RunConfig,
     Runner,
-    function_tool,
 )
 from asgiref.sync import sync_to_async
 from django.db import close_old_connections
 
 from .prompts import TOOL_INSTRUCTIONS
+from .registry import for_scope
 from .runtime import ANSWER_TOKENS, RESPONSES_MODELS, evidence_payload, recent_turns
-from .tools import FETCH_SOURCE, SEARCH_KNOWLEDGE, run_tool
+from .tools import run_tool
 from .usage import TurnUsage, checked_answer, checked_request_id, openai_usage
 
 MAX_TURNS = 4
@@ -57,37 +58,51 @@ async def _call(spec, scope, args, recorder):
     return await sync_to_async(_guarded, thread_sensitive=True)(spec, scope, args, recorder)
 
 
-def build_tools(scope, recorder, emit):
+def arguments(spec, raw):
+    """The model's arguments as a dict, with the defaults its schema declares.
+
+    `function_tool` used to fill them from the function's signature; strict mode
+    sends every key anyway, so this matters only for a model that does not.
+    Anything that is not a JSON object is no arguments, which every tool answers.
+    """
+    try:
+        args = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+    _, schema = spec.wire("openai")
+    for name, rule in (schema or {}).get("properties", {}).items():
+        if name not in args and "default" in rule:
+            args[name] = rule["default"]
+    return args
+
+
+def bound(spec, scope, recorder, emit):
+    """One registry tool as an Agents SDK tool, bound to one application."""
+    description, schema = spec.wire("openai")
+
+    async def invoke(context, raw):
+        args = arguments(spec, raw)
+        emit("tool", {"name": spec.name, "detail": spec.shown(args)})
+        return await _call(spec, scope, args, recorder)
+
+    return FunctionTool(
+        name=spec.name,
+        description=description,
+        params_json_schema=schema,
+        on_invoke_tool=invoke,
+        strict_json_schema=True,
+    )
+
+
+def build_tools(scope, recorder, emit, tools=None):
     """Tools bound to one application and one user.
 
     `scope` is closed over. Nothing the model sends can widen it.
     """
-
-    @function_tool
-    async def search_knowledge(query: str, limit: int = 5) -> str:
-        """Search this application's knowledge sources for relevant passages.
-
-        Args:
-            query: What to look for.
-            limit: Maximum passages to return, 1-8.
-        """
-        emit("tool", {"name": "search_knowledge", "detail": query[:120]})
-        return await _call(SEARCH_KNOWLEDGE, scope, {"query": query, "limit": limit}, recorder)
-
-    @function_tool
-    async def fetch_source(source_id: str, offset: int = 0) -> str:
-        """Read more of one knowledge source returned by search_knowledge.
-
-        Args:
-            source_id: The source id to read.
-            offset: Character offset to start from.
-        """
-        emit("tool", {"name": "fetch_source", "detail": source_id[:64]})
-        return await _call(
-            FETCH_SOURCE, scope, {"source_id": source_id, "offset": offset}, recorder
-        )
-
-    return [search_knowledge, fetch_source]
+    tools = for_scope(scope) if tools is None else tools
+    return [bound(spec, scope, recorder, emit) for spec in tools]
 
 
 def build_agent(model, client, instructions, max_tokens, tools):
@@ -165,8 +180,14 @@ async def run(
     emit,
     cancel=None,
     max_tokens=ANSWER_TOKENS,
+    tools=None,
+    max_turns=MAX_TURNS,
 ):
-    """Stream one answer, returning (turn usages, answer text)."""
+    """Stream one answer, returning (turn usages, answer text).
+
+    `tools` are registry specs (the scope's own when not given); with none, the
+    model answers from the evidence it was handed, in one turn.
+    """
     from openai import AsyncOpenAI
 
     from ..llm_agents import _http_client
@@ -182,13 +203,12 @@ async def run(
         timeout=30,
         http_client=_http_client(),
     ) as client:
-        agent = build_agent(
-            model, client, TOOL_INSTRUCTIONS, max_tokens, build_tools(scope, recorder, emit)
-        )
+        given = build_tools(scope, recorder, emit, tools)
+        agent = build_agent(model, client, TOOL_INSTRUCTIONS, max_tokens, given)
         result = Runner.run_streamed(
             agent,
             input=build_input(question, citations, history),
-            max_turns=MAX_TURNS,
+            max_turns=max_turns if given else 1,
             run_config=RunConfig(tracing_disabled=True, trace_include_sensitive_data=False),
         )
         watcher = asyncio.ensure_future(_watch_cancel(result, cancel))
