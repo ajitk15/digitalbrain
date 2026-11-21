@@ -88,6 +88,12 @@ CODE_FACTORY_LOCAL_TESTS = (
 # factory pack (`manage.py factory_pack`) shows it beats the one-shot path; see
 # documentation/engineering/agentic-ai-plan.md, Phase 1.
 CODE_FACTORY_AGENT_TOOLS = bool(CONFIG.get("code_factory_agent_tools", False))
+# Let ServiceOps triage look further than its evidence pack with read-only tools
+# (`agent_runtime/ops_tools.py`): another incident's neighbourhood, the published
+# knowledge, sources. Off unless written down, until the paid triage pack
+# (`manage.py triage_pack`) shows it beats the one-shot call; Phase 3 of
+# documentation/engineering/agentic-ai-plan.md.
+SERVICEOPS_TRIAGE_AGENT_TOOLS = bool(CONFIG.get("serviceops_triage_agent_tools", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

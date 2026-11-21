@@ -175,6 +175,15 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the ServiceOps triage run it served (Phase 3), the same way.
+    triage = models.ForeignKey(
+        "platform_core.TriageRun",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
     phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
@@ -191,4 +200,5 @@ class AgentStep(models.Model):
         indexes = [
             models.Index(fields=["message", "sequence"], name="agent_step_message"),
             models.Index(fields=["run", "phase", "sequence"], name="agent_step_run"),
+            models.Index(fields=["triage", "sequence"], name="agent_step_triage"),
         ]

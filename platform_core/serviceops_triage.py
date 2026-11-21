@@ -141,13 +141,16 @@ def redact(value):
     return value
 
 
-def evidence_pack(app, incident, walk=None):
+def evidence_pack(app, incident, walk=None, own_confirmed=True):
     """Bounded source-linked evidence, with no provider or external ticket call.
 
     Gathered by walking the operations graph, the same walk the incident page
     shows, so the reader and the model are shown one set. Each item keeps the
     path that found it; the model is told it in the item's title, since only
-    the excerpt is quotable.
+    the excerpt is quotable. `own_confirmed=False` leaves out a cause people
+    confirmed on this incident itself, keeping those confirmed on similar ones:
+    for the triage agent's look at another incident, and for measuring triage
+    against the answer people gave (`triage_pack`).
     """
     from .ops_graph import neighbourhood, path_text
 
@@ -172,6 +175,8 @@ def evidence_pack(app, incident, walk=None):
     # A person's confirmed cause first: it is the strongest lead there is, and
     # still only a lead.
     for row in walk["confirmed"]:
+        if row["own"] and not own_confirmed:
+            continue
         add(
             row["entry"],
             "confirmed_cause",
@@ -680,6 +685,8 @@ def _execute(run):
         "scorer": SCORER_VERSION,
         "provider": config.provider if config else "",
         "model": config.model if config else "",
+        # An answer that read further is not the answer to the pack alone.
+        "agent": uses_agent(),
     }
     digest = hashlib.sha256(json.dumps(cache_input, sort_keys=True).encode()).hexdigest()
     cached = (
@@ -696,6 +703,7 @@ def _execute(run):
     answer = None
     receipt = {}
     error = ""
+    extra = []
     if cached and run_still_verified(cached, run.requested_by):
         # Same incident, same evidence, same model: the answer would be the one
         # already paid for. It is copied, and still verified again below.
@@ -734,36 +742,13 @@ def _execute(run):
             "ServiceOps AI is off in AI settings, so this brief is evidence only.",
         )
     else:
-        from .ai import invoke_ai, reply_cap
         from .factory_views import MODEL_LABELS
 
         label = MODEL_LABELS.get(config.model, config.model)
         started = time.monotonic()
         _step(run, "model", "running", f"Asking {label} about {len(pack)} evidence item(s)")
         try:
-            fields, description = fields_and_description(incident)
-            question = redact(
-                json.dumps(
-                    {
-                        "title": incident.title,
-                        "description": description[:2500],
-                        "service": fields.get("Service"),
-                        "ci": fields.get("CI"),
-                    }
-                )
-            )
-            citations = model_evidence(pack)
-            answer = invoke_ai(
-                user,
-                app.pk,
-                "serviceops_triage",
-                question,
-                citations,
-                receipt=receipt,
-                instructions=INSTRUCTIONS,
-                max_tokens=reply_cap(app.pk, "serviceops_triage"),
-                timeout=TRIAGE_TIMEOUT,
-            )
+            answer, extra = ask_model(user, app, incident, pack, receipt, triage_id=run.pk)
         except (ValidationError, ImproperlyConfigured, OSError, TimeoutError) as exc:
             error = " ".join(getattr(exc, "messages", [str(exc)]))[:300]
         if error:
@@ -779,10 +764,19 @@ def _execute(run):
                 "model",
                 "ok",
                 f"{label} · {spent_in:,} in / {spent_out:,} out tokens · about "
-                f"${cost:.4f}",
+                f"${cost:.4f}"
+                + (
+                    f" · {receipt['tool_calls']} read(s) over {receipt['turns']} turn(s), "
+                    f"{len(extra)} new evidence item(s)"
+                    if "turns" in receipt
+                    else ""
+                ),
                 started,
             )
         proposed = _proposed(answer)
+        # What the agent read with its tools is evidence too: a hypothesis may
+        # cite it, and the brief re-checks it on every read like the rest.
+        pack = pack + extra
         hypotheses = _parsed_hypotheses(answer, pack) if answer else []
 
     started = time.monotonic()
@@ -879,6 +873,140 @@ def _execute(run):
         else "Evidence-only brief saved",
         started,
     )
+
+
+#: The triage agent's turns and tool calls, when `serviceops_triage_agent_tools`
+#: is on; each turn is reserved before the first is sent.
+TOOL_TURNS = 6
+TOOL_CALLS = 12
+TOOL_GUIDANCE = (
+    " You may look further than the evidence with the tools you are given: what the "
+    "operations graph connects to another incident in the evidence, the published "
+    "knowledge, and sources. Anything a tool returns may be cited exactly like the "
+    "evidence, by its id and an exact quote. The tools only read; none can run, change "
+    "or start anything. Answer, in your last turn, with the JSON object you were asked "
+    "for and nothing else."
+)
+
+
+def uses_agent():
+    from django.conf import settings
+
+    return settings.SERVICEOPS_TRIAGE_AGENT_TOOLS
+
+
+def triage_question(incident):
+    fields, description = fields_and_description(incident)
+    return redact(
+        json.dumps(
+            {
+                "title": incident.title,
+                "description": description[:2500],
+                "service": fields.get("Service"),
+                "ci": fields.get("CI"),
+            }
+        )
+    )
+
+
+def ask_model(user, app, incident, pack, receipt, triage_id=None, agent=None):
+    """The model's answer about one incident's pack: (answer, evidence it read).
+
+    One call over the pack, as triage always made, unless the agent is switched
+    on (`uses_agent`, or `agent=` for the triage pack): then the same question
+    and evidence go through the harness with the triage tools, and what they found
+    comes back as evidence rows to join the pack.
+    """
+    from .ai import invoke_ai, reply_cap
+
+    question = triage_question(incident)
+    citations = model_evidence(pack)
+    if not (uses_agent() if agent is None else agent):
+        answer = invoke_ai(
+            user,
+            app.pk,
+            "serviceops_triage",
+            question,
+            citations,
+            receipt=receipt,
+            instructions=INSTRUCTIONS,
+            max_tokens=reply_cap(app.pk, "serviceops_triage"),
+            timeout=TRIAGE_TIMEOUT,
+        )
+        return answer, []
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
+    from .ai import agent_configuration, prompt_size
+
+    app, config, token = agent_configuration(user, app.pk, "serviceops_triage")
+    told = INSTRUCTIONS + TOOL_GUIDANCE
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose="serviceops_triage",
+            scope=ToolScope(user_id=user.pk, app_id=app.pk, purpose="serviceops_triage"),
+            question=question,
+            citations=citations,
+            history=[],
+            emit=lambda event, data: None,
+            max_tokens=reply_cap(app.pk, "serviceops_triage"),
+            prompt_characters=prompt_size(question, citations, None, {"instructions": told}),
+            turns=TOOL_TURNS,
+            tool_calls=TOOL_CALLS,
+            instructions=told,
+            timeout=TRIAGE_TIMEOUT,
+            triage_id=triage_id,
+        )
+    except AgentFailure as failure:
+        raise ValidationError(
+            f"The triage model call failed ({failure.kind}). It may have been billed by the "
+            "provider; it is not retried automatically."
+        ) from None
+    receipt.update(
+        {
+            "provider": config.provider,
+            "model": config.model,
+            "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
+            "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
+            "request_id": result.usages[-1].request_id if result.usages else "",
+            "turns": len(result.usages),
+            "tool_calls": len(result.steps),
+        }
+    )
+    return result.answer, read_rows(app, pack, result.found)
+
+
+def read_rows(app, pack, found):
+    """The agent's verified finds as evidence rows, skipping what the pack holds."""
+    held = {(row["id"], row["excerpt"]) for row in pack}
+    entries = {
+        str(entry.pk): entry
+        for entry in KnowledgeEntry.objects.filter(
+            application=app, pk__in={citation["id"] for citation in found}
+        ).only("id", "created_at")
+    }
+    rows = []
+    for citation in found:
+        entry = entries.get(citation["id"])
+        if entry is None or (citation["id"], citation["excerpt"]) in held:
+            continue
+        held.add((citation["id"], citation["excerpt"]))
+        rows.append(
+            {
+                "id": citation["id"],
+                "kind": "agent_read",
+                "title": citation["title"],
+                "excerpt": citation["excerpt"],
+                "digest": citation["digest"],
+                "reasons": ["read by the triage agent"],
+                "path": "",
+                "as_of": entry.created_at.isoformat(),
+            }
+        )
+    return rows
 
 
 def create_run(user, app_id, incident, trigger="manual"):

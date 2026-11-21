@@ -121,6 +121,15 @@ def _scoped_application(scope):
     from ..workbench import access
 
     user = User.objects.get(pk=scope.user_id)
+    purpose = getattr(scope, "purpose", "chat")
+    if purpose not in KNOWLEDGE_PURPOSES:
+        # A tool serving another purpose - triage - is held to that purpose's
+        # rule on every call, as Code Factory's code tools are to theirs. A scope
+        # that names no purpose is chat's, as `ToolScope`'s default says.
+        from .. import gateway
+
+        app, _ = gateway.authorize(user, scope.app_id, purpose)
+        return app
     app, _ = access(user, scope.app_id, "knowledge")
     return app
 
@@ -240,8 +249,10 @@ OPENAI_FETCH_SCHEMA = {
 }
 
 #: The chat answer's tools serve both chat purposes: a graph conversation reads
-#: knowledge the same way.
+#: knowledge the same way. Triage reads sources with the same two
+#: (`ops_tools.py` adds its own), held to its own purpose's rule.
 KNOWLEDGE_PURPOSES = frozenset({"chat", "graph_retrieval"})
+SOURCE_PURPOSES = KNOWLEDGE_PURPOSES | {"serviceops_triage"}
 
 SEARCH_KNOWLEDGE = ToolSpec(
     name="search_knowledge",
@@ -254,7 +265,7 @@ SEARCH_KNOWLEDGE = ToolSpec(
     openai_description="Search this application's knowledge sources for relevant passages.",
     openai_schema=OPENAI_SEARCH_SCHEMA,
     detail=("query", 120),
-    purposes=KNOWLEDGE_PURPOSES,
+    purposes=SOURCE_PURPOSES,
 )
 
 FETCH_SOURCE = ToolSpec(
@@ -268,7 +279,7 @@ FETCH_SOURCE = ToolSpec(
     openai_description="Read more of one knowledge source returned by search_knowledge.",
     openai_schema=OPENAI_FETCH_SCHEMA,
     detail=("source_id", 64),
-    purposes=KNOWLEDGE_PURPOSES,
+    purposes=SOURCE_PURPOSES,
 )
 
 
@@ -288,6 +299,7 @@ class CitationRecorder:
         self.revoked = None
         self.steps = []
         self._citations = []
+        self.seeded = 0
 
     @property
     def exhausted(self):
@@ -304,6 +316,17 @@ class CitationRecorder:
         """Pre-load evidence computed before the run, without spending budget."""
         for citation in citations or []:
             self._citations.append(citation)
+        self.seeded = len(self._citations)
+
+    def found_citations(self, limit=24):
+        """What the tools found, beyond the evidence the run was seeded with,
+        verified against live sources: an agent's own reading, in the order read."""
+        from ..models import User
+
+        viewer = User.objects.filter(pk=self.scope.user_id).first()
+        return verify_citations(self.scope.app_id, self._citations[self.seeded :], viewer)[
+            :limit
+        ]
 
     def verified_citations(self):
         """Drop anything the database no longer backs, then renumber."""
@@ -414,6 +437,21 @@ def _step(recorder, spec, args, outcome, started, text="", citations=0):
     )
 
 
+def shown_to_model(purpose, text):
+    """A tool's text as the model may read it.
+
+    Triage minimizes identifiers and secret shapes in everything it hands a model
+    (`serviceops_triage.redact`), its evidence pack included, so what its tools
+    read is minimized the same way. The citations keep the source's own words:
+    they are verified against it, never shown.
+    """
+    if purpose == "serviceops_triage":
+        from ..serviceops_triage import redact
+
+        return redact(text)
+    return text
+
+
 def run_tool(spec, scope, args, recorder):
     """Execute one tool under the budget, returning text for the model.
 
@@ -433,7 +471,10 @@ def run_tool(spec, scope, args, recorder):
         _step(recorder, spec, args, "budget", started)
         return BUDGET_EXHAUSTED
     with telemetry.span(
-        "agent tool", tool=spec.name, purpose=scope.purpose, application_id=scope.app_id
+        "agent tool",
+        tool=spec.name,
+        purpose=getattr(scope, "purpose", "chat"),
+        application_id=scope.app_id,
     ) as traced:
         try:
             result = spec.run(scope, args)
@@ -446,7 +487,7 @@ def run_tool(spec, scope, args, recorder):
         except Exception:
             _step(recorder, spec, args, "failed", started)
             raise
-        text = result.text
+        text = shown_to_model(getattr(scope, "purpose", "chat"), result.text)
         if len(text) > RESULT_CHARACTERS:
             text = text[: RESULT_CHARACTERS - len(CUT)] + CUT
         recorder.record(result)

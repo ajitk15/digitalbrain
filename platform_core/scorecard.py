@@ -1607,9 +1607,75 @@ def agent_guardrails(ws):
         )
         AIBudget.objects.filter(application=ws.app).delete()
         probes.update(code_tool_probes(ws, owner, config))
+        probes.update(triage_tool_probes(ws, owner, viewer))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
+def triage_tool_probes(ws, owner, viewer):
+    """ServiceOps triage's tools (agentic plan, Phase 3), inside the caller's
+    savepoint: whose incidents they read, what they never show, what they minimize."""
+    from django.core.exceptions import PermissionDenied
+    from django.utils import timezone
+
+    from . import ops_graph
+    from .agent_runtime import ops_tools
+    from .agent_runtime.tools import FETCH_SOURCE, CitationRecorder, ToolScope, run_tool
+    from .models import TriageHypothesis, TriageRun, TriageVerdict
+    from .workbench import add_knowledge
+
+    def incident(app, title, state="New"):
+        return add_knowledge(
+            owner, app.pk, title,
+            f"{title}\n\nType: Incident\nState: {state}\nService: Probe\nCI: probe-1\n\n"
+            "Probe workers stall.",
+            source="https://probe.service-now.com/nav_to.do?uri=incident.do%3Fsys_id%3D1",
+        )
+
+    def read(spec, args, user=owner):
+        scope = ToolScope(user.pk, ws.app.pk, "serviceops_triage")
+        recorder = CitationRecorder(scope)
+        return run_tool(spec, scope, args, recorder), recorder
+
+    current = incident(ws.app, "Probe workers stall")
+    incident(ws.app, "Probe workers stalled before", state="Resolved")
+    foreign = incident(ws.other, "Probe workers stall elsewhere")
+    secret = "The probe pool is sized by capacity@probe.example."
+    cause = add_knowledge(owner, ws.app.pk, "Probe pool note", secret)
+    run = TriageRun.objects.create(
+        application=ws.app, incident=current, requested_by=owner,
+        incident_digest=current.digest, pack_digest="p", status="completed",
+    )
+    verdict = TriageVerdict.objects.create(
+        hypothesis=TriageHypothesis.objects.create(
+            run=run, rank=1, statement="s", next_step="n",
+            citations=[{"id": str(cause.pk), "quote": secret}],
+        ),
+        user=owner, verdict="accepted", actual_cause=cause, confirmed_at=timezone.now(),
+    )
+    ops_graph.confirm_cause(ws.app, current, cause, verdict, secret)
+    probes = {}
+    mine, _ = read(ops_tools.INCIDENT_CONTEXT, {"incident_id": str(current.pk)})
+    theirs, _ = read(ops_tools.INCIDENT_CONTEXT, {"incident_id": str(foreign.pk)})
+    probes["a triage tool reads this application's incidents alone"] = (
+        mine.startswith("Around") and theirs == ops_tools.NOT_AN_INCIDENT
+    )
+    probes["an incident's own confirmed cause is never shown for it"] = (
+        "[confirmed_cause]" not in mine and "capacity@" not in mine
+    )
+    shown, recorder = read(FETCH_SOURCE, {"source_id": str(cause.pk)})
+    probes["what triage's tools show a model is minimized"] = (
+        "[email]" in shown
+        and "capacity@probe.example" not in shown
+        and recorder.found_citations()[0]["excerpt"] == secret
+    )
+    try:
+        read(ops_tools.INCIDENT_CONTEXT, {"incident_id": str(current.pk)}, user=viewer)
+        probes["a triage tool is held to triage's rule"] = False
+    except PermissionDenied:
+        probes["a triage tool is held to triage's rule"] = True
+    return probes
 
 
 def code_tool_probes(ws, owner, chat_config):

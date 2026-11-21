@@ -12,9 +12,12 @@ never as a tool (`documentation/engineering/agentic-ai-plan.md`).
 """
 
 from .code_tools import CODE_TOOLS
+from .ops_tools import OPS_TOOLS
 from .tools import FETCH_SOURCE, SEARCH_KNOWLEDGE
 
-TOOLS = {spec.name: spec for spec in (SEARCH_KNOWLEDGE, FETCH_SOURCE, *CODE_TOOLS)}
+TOOLS = {
+    spec.name: spec for spec in (SEARCH_KNOWLEDGE, FETCH_SOURCE, *CODE_TOOLS, *OPS_TOOLS)
+}
 
 
 def for_scope(scope):

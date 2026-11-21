@@ -207,6 +207,30 @@ no fewer checks met, at most `COST_BAR` (2x) the cost. The labels are tested aga
 CarePath code, so a check cannot describe a bug that is not there; they are a proxy, and
 CarePath's own suite is the proof. The scorecard's agent probes include the code tools.
 
+**ServiceOps triage may look past its pack with tools - off until measured**
+(`agent_runtime/ops_tools.py`, `serviceops_triage.ask_model`, Phase 3). With
+`serviceops_triage_agent_tools = true` (a boolean, off by default, accepted in
+production), triage's one call over its evidence pack becomes a harness run with four
+read-only tools: `incident_context` (another incident's neighbourhood, through the same
+`evidence_pack` and `neighbourhood` the page uses), `search_published_knowledge` (the
+published graph, `spend=False`), and `search_knowledge`/`fetch_source`, which serve triage
+too (`tools.SOURCE_PURPOSES`) - each call held to the `serviceops_triage` rule, not
+chat's. **Everything a triage tool shows the model is `redact`ed** (`tools.shown_to_model`),
+as the pack always was; the citations keep the source's words, since they are verified,
+never shown. What the tools found (`CitationRecorder.found_citations`, verified) joins the
+pack as `agent_read` rows, so a hypothesis may cite it and `run_still_verified` re-checks
+it on every read; a quote the model never read is still refused, the next-step rule and
+the band are unchanged (an agent-read source alone is one uncorroborated source, and the
+scorer withholds it), and the cache key says which way the answer was made. An
+incident's **own** confirmed cause is never shown for it (`evidence_pack(...,
+own_confirmed=False)`): a cause confirmed on a similar incident is a lead, the asked
+one's own is the answer. No tool can start an automation. Steps are kept as `AgentStep`
+rows with `triage` (migration 0109). **Turn it on only after `manage.py triage_pack <app>
+--as <user> [--record]`** (paid: each incident with a cause people confirmed, newest per
+incident, asked one-shot and with tools over its pack without that confirmation, scored by
+whether and where a kept hypothesis cites the confirmed cause, and cost) clears the same
+bar as Phase 1. The scorecard's agent probes include the triage tools.
+
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
 TO PROGRAM`, drop anything, and is never held to row security - and the platform used to

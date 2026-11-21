@@ -71,6 +71,8 @@ class AgentResult:
     usages: list
     turns: int
     steps: list = field(default_factory=list)
+    #: What the tools found beyond the seeded evidence, verified (`found_citations`).
+    found: list = field(default_factory=list)
 
 
 def runtime_for(provider):
@@ -92,27 +94,35 @@ def tool_budget(allowed, requested, calls=MAX_TOOL_CALLS):
     return max(1, math.ceil(calls * (allowed - 1) / (requested - 1)))
 
 
-def keep_steps(app, purpose, steps, message_id=None, run_id=None, phase=""):
-    """Write a run's steps as `AgentStep` rows, for the chat message or the Code
-    Factory run (and phase) they belong to; a failure here never fails the run."""
-    if not steps or (message_id is None and run_id is None):
-        return 0
-    from ..models import AgentStep, ChatMessage, FactoryRun
+def keep_steps(app, purpose, steps, message_id=None, run_id=None, phase="", triage_id=None):
+    """Write a run's steps as `AgentStep` rows, for the chat message, the Code
+    Factory run (and phase) or the triage run they belong to; a failure here
+    never fails the run."""
+    from ..models import AgentStep, ChatMessage, FactoryRun, TriageRun
 
-    owner = ChatMessage if message_id is not None else FactoryRun
+    owners = [
+        (model, pk, field)
+        for model, pk, field in (
+            (ChatMessage, message_id, "message_id"),
+            (FactoryRun, run_id, "run_id"),
+            (TriageRun, triage_id, "triage_id"),
+        )
+        if pk is not None
+    ]
+    if not steps or not owners:
+        return 0
+    owner, pk, field = owners[0]
     try:
         with transaction.atomic():
             # What the steps describe may be gone by now - a message removed by
             # its owner or retention, a run deleted with its application - and
             # its steps go with it; there is nothing left to describe.
-            pk = message_id if message_id is not None else run_id
             if not owner.objects.filter(pk=pk, application_id=app.pk).exists():
                 return 0
             AgentStep.objects.bulk_create(
                 AgentStep(
                     application_id=app.pk,
-                    message_id=message_id,
-                    run_id=run_id,
+                    **{field: pk},
                     phase=phase,
                     purpose=purpose,
                     sequence=step["sequence"],
@@ -156,6 +166,7 @@ def run_agent(
     message_id=None,
     run_id=None,
     phase="",
+    triage_id=None,
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
 
@@ -230,7 +241,7 @@ def run_agent(
                 raise AgentFailure(failure) from None
             ai.record_turns(user, app, config, purpose, usages)
     finally:
-        keep_steps(app, purpose, recorder.steps, message_id, run_id, phase)
+        keep_steps(app, purpose, recorder.steps, message_id, run_id, phase, triage_id)
     if recorder.revoked is not None:
         raise recorder.revoked
     gateway.authorize(user, app.pk, purpose)
@@ -240,4 +251,5 @@ def run_agent(
         usages=usages,
         turns=allowed,
         steps=list(recorder.steps),
+        found=recorder.found_citations(),
     )

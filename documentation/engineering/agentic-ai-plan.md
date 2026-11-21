@@ -51,7 +51,7 @@ what counts as evidence.**
 | 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | **Done** - chat runs on it |
 | 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **Built, off** - waiting on a paid `factory_pack` run |
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` | **Done by rule** - 92% -> 100%; agent not needed |
-| 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | Triage replay + `idea_confidence` against confirmed verdicts | Off |
+| 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **Built, off** - waiting on a paid `triage_pack` run |
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | Labelled review pack (new) | Off |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | On where it is measured equal or better |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | Off |
@@ -237,7 +237,34 @@ noise first".
 `evidence_for` still refuses without a published graph (`NO_GRAPH`). Citations still
 come from `graph_snapshot`, never a draft.
 
-## Phase 3 - ServiceOps triage agent
+## Phase 3 - ServiceOps triage agent (built, switched off until measured)
+
+**What shipped:** `agent_runtime/ops_tools.py` - `incident_context` and
+`search_published_knowledge` - with `search_knowledge` and `fetch_source` serving triage
+too, each call held to triage's purpose; `serviceops_triage.ask_model`, which sends the
+question through `run_agent` with those tools when `serviceops_triage_agent_tools = true`
+and through the one-shot call otherwise; tool results `redact`ed before any model reads
+them; what the agent read joining the pack (`agent_read`), so it can be cited and is
+re-verified with the brief; `AgentStep.triage` (migration 0109); `manage.py triage_pack`;
+four more scorecard probes (19 in all, 100%); `tests/test_ops_tools.py`.
+
+**What differs from the plan below, and why:**
+
+- **The tools are the readers triage already trusts, not new ones.** `incident_context`
+  is `evidence_pack` on another incident, so "similar", "same event", changes, runbooks
+  and automations mean exactly what they mean on the incident page. There is no separate
+  `recent_changes` or `automation_for`: both are in that neighbourhood.
+- **An incident's own confirmed cause is withheld from it** - from the tool always, and
+  from the pack when measuring - or the measure would hand the model its answer.
+- **The scorer is unchanged.** A hypothesis resting on one source the agent found, with
+  nothing from the pack beside it, is withheld as too weak, as any single uncorroborated
+  source is. If the pack shows that costs the agent real causes, the scorer is the next
+  thing to measure - not something to loosen in passing.
+- **Measured against confirmed verdicts, not `idea_confidence`**: whether a kept
+  hypothesis cites the cause people confirmed, and at what rank. No paid run has been
+  made; it needs an application with confirmed causes and your go-ahead.
+
+The original plan for this phase follows.
 
 Triage is the most natural agent here: an on-call engineer asks "what changed?",
 "have we seen this before?", "what does the runbook say?" in turn, and the answer to
