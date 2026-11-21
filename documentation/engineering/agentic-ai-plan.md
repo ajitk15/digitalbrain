@@ -50,7 +50,7 @@ what counts as evidence.**
 |---|---|---|---|---|---|
 | 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | **Done** - chat runs on it |
 | 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **Built, off** - waiting on a paid `factory_pack` run |
-| 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` (92% today) | Rules on; agent off |
+| 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` | **Done by rule** - 92% -> 100%; agent not needed |
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | Triage replay + `idea_confidence` against confirmed verdicts | Off |
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | Labelled review pack (new) | Off |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | On where it is measured equal or better |
@@ -193,7 +193,33 @@ the files the answer key names, whether CarePath's tests pass under
 **Done when:** the agent beats one-shot on the pack at no more than twice the cost,
 and the guardrail probes cover every new tool.
 
-## Phase 2 - Evidence follow-through
+## Phase 2 - Evidence follow-through (done, by rule)
+
+**What shipped:** `graph_ai.evidence_references` and `follow=` on `citations_from` and
+`graph_citations`; `code_factory.evidence_for` asks for `MAX_FOLLOWED` (1). After the
+ticket's own cross-references, each reference the cited evidence names and the ticket does
+not is followed on its own, in the order the evidence names it, to the best passage naming
+it that is not already in front of the model. Another record's references are not followed.
+The scorecard measures it as a run asks, and holds rows and memory identical with it on.
+
+| Planted-bug evidence, 6 tickets | Recall | Passages added | Added with no planted identifier |
+|---|---|---|---|
+| Before (no follow) | 92% (23/25) | 0 | 0 |
+| All evidence references as one query, 4 | 96% | 24 | 9 |
+| One at a time, 1 | 92% | 6 | 2 |
+| One at a time, skipping passages already read, **1 (shipped)** | **100% (25/25)** | 6 | 2 |
+| Same, 2 | 100% | 12 | 5 |
+
+The two noisy passages both follow `SEV-2`, a severity label. How many sources name a
+reference does not tell a label from a reference (SEV-2 and T-04, which leads to R-02, are
+each named by four), so no stoplist was added: one tuned to this corpus would be a rule
+that only works here. `seeded_evidence_recall` in the baseline is now 100.
+
+**The agent half was not built.** The plan said to build it only if rules stall; they
+reached every planted identifier. It stays the option for a corpus where they do not -
+measured with the factory pack, never by the scorecard, since it is paid.
+
+The original plan for this phase follows.
 
 `CLAUDE.md` already names the next step: F-03 is named only by evidence (C-08), not
 by the ticket, and following references *from the evidence* "would need measuring for

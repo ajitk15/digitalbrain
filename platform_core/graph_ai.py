@@ -897,7 +897,9 @@ def available_graph_versions(app_id):
     )
 
 
-def graph_citations(app_id, question, version=None, user=None, references=0, spend=True):
+def graph_citations(
+    app_id, question, version=None, user=None, references=0, spend=True, follow=0
+):
     """Verified citations from the published graph.
 
     `user` is who is asking - what a source system lets them see decides what
@@ -906,8 +908,9 @@ def graph_citations(app_id, question, version=None, user=None, references=0, spe
     used and otherwise the ranking is by words alone, exactly as before
     embeddings. `spend=False` keeps `user` as the viewer and charges nobody: the
     graph search API and the MCP server call no model. `references` adds up to
-    that many cross-references after the eight (`referenced`); Code Factory
-    asks for them, chat does not.
+    that many cross-references after the eight (`referenced`), and `follow`
+    that many passages the evidence's own references lead to
+    (`evidence_references`); Code Factory asks for both, chat for neither.
     """
     from django.conf import settings
 
@@ -938,6 +941,7 @@ def graph_citations(app_id, question, version=None, user=None, references=0, spe
         limit=rerank.CANDIDATES if wide else 8,
         viewer=user,
         references=references,
+        follow=follow,
         # Reranking chooses the eight; cross-references are added after it.
         choose=(lambda direct: rerank.rerank(user, app_id, question, direct, 8)) if wide else None,
     )
@@ -1015,6 +1019,12 @@ def walk(data, ranked):
 
 #: Cross-references a ticket's evidence follows, after its direct matches.
 MAX_REFERENCED = 4
+#: Passages added after those, one per reference the evidence names and the
+#: ticket does not (`evidence_references`). Measured on the scorecard's planted
+#: bugs: one took evidence recall from 92% to 100% (F-03 through C-08, R-02
+#: through T-04) for six more passages, two of them carrying no planted
+#: identifier; two took nothing more and added three more without one.
+MAX_FOLLOWED = 1
 
 
 def referenced(question, ready, order, cited=frozenset()):
@@ -1112,6 +1122,7 @@ def citations_from(
     references=0,
     choose=None,
     graph=None,
+    follow=0,
 ):
     """Verified citations for a question, from one graph's data.
 
@@ -1123,6 +1134,8 @@ def citations_from(
     many cross-references (`referenced`) to add after the direct matches, and
     `choose`, when given, picks the direct matches from the `limit` found.
     `graph`, when given, answers in place of `data` (`graph_store.RowsGraph`).
+    `follow` is how many passages to add, after those, that name a reference the
+    evidence already cited names and the question does not (`evidence_references`).
     """
     from .graphs import sources_for
     from .permissions import permitted
@@ -1200,4 +1213,67 @@ def citations_from(
     seen.update(signatures.get(id(citation)) for citation in direct)
     cited = {citation["id"] for citation in direct}
     found = verified(graph.referenced(question, cited))
-    return direct + spread(found, key=lambda citation: citation["id"], limit=references)
+    crossed = spread(found, key=lambda citation: citation["id"], limit=references)
+    if not follow:
+        return direct + crossed
+    # One more hop, by rule: what the evidence itself points at. A ticket names
+    # control C-08, the control matrix row for C-08 names finding F-03, and F-03
+    # is where the gap is written down - named by the evidence, never by the
+    # ticket, so neither the words nor the ticket's references reach it.
+    named = evidence_references(question, direct + crossed)
+    if not named:
+        return direct + crossed
+    seen.clear()
+    seen.update(signatures.get(id(citation)) for citation in direct + crossed)
+    cited |= {citation["id"] for citation in crossed}
+    # One reference at a time, in the order the evidence names them, the best
+    # passage for each: asked together, a reference many passages share (a
+    # requirement every design document cites) tied with the one that leads
+    # somewhere, and the passage that led somewhere lost the tie.
+    # And a passage already in front of the model is not followed again under
+    # another of its edges: a table row is several relationships with one quote,
+    # and the row that *is* C-08 names C-08 in each of them.
+    read = {(citation["id"], citation.get("quote")) for citation in direct + crossed}
+    followed = []
+    for name in named:
+        if len(followed) >= follow:
+            break
+        second = (
+            (edge, text, 2, [f"evidence {path[0]}"])
+            for edge, text, _, path in graph.referenced(name, cited)
+        )
+        best = next(
+            (found for found in verified(second) if (found["id"], found["quote"]) not in read),
+            None,
+        )
+        if best is not None:
+            followed.append(best)
+            cited.add(best["id"])
+            read.add((best["id"], best["quote"]))
+    return direct + crossed + followed
+
+
+def evidence_references(question, citations):
+    """References the cited evidence names that the question does not, in the
+    order the evidence names them.
+
+    Read from each citation's relationship and quote - the source's own words -
+    never from anything a model said. A source's own key is not a reference out
+    of it (`own_names`), as for the question's references, and another record's
+    references - a source titled by its own key, such as another ticket or an
+    incident - are that record's: it is cited for its likeness to this one, not
+    as a record of what this one breaks.
+    """
+    from .ranking import identifiers
+
+    asked = set(identifiers(question))
+    named = []
+    for citation in citations:
+        if _KEY.match((citation.get("title") or "").strip()):
+            continue
+        text = f"{citation.get('relation', '')} {citation.get('quote', '')}"
+        own = own_names({"title": citation.get("title", ""), "excerpt": citation.get("quote", "")})
+        for name in identifiers(text):
+            if name not in asked and name not in own and name not in named:
+                named.append(name)
+    return named

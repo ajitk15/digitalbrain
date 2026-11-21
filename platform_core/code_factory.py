@@ -418,12 +418,18 @@ def evidence_for(app_id, question, version, user=None):
     nothing returns an empty list -- so letting it raise fails exactly the case
     that should fail, and no other.
     """
-    from .graph_ai import MAX_REFERENCED, graph_citations
+    from .graph_ai import MAX_FOLLOWED, MAX_REFERENCED, graph_citations
 
     # The eight chat would cite, then the documents the ticket's own references
-    # point at: the control matrix row behind "C-09", the risk behind an incident.
+    # point at: the control matrix row behind "C-09", the risk behind an incident;
+    # then one the evidence points at in turn - the finding behind that control.
     return graph_citations(
-        app_id, question, version=version, user=user, references=MAX_REFERENCED
+        app_id,
+        question,
+        version=version,
+        user=user,
+        references=MAX_REFERENCED,
+        follow=MAX_FOLLOWED,
     )
 
 

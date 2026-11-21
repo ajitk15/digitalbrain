@@ -555,7 +555,7 @@ def ticket_question(ticket):
 
 def agentic(ws, revision):
     """What Code Factory is handed for each ticket with a planted bug, scored by the answer key."""
-    from .graph_ai import MAX_REFERENCED, citations_from
+    from .graph_ai import MAX_FOLLOWED, MAX_REFERENCED, citations_from
 
     key = json.loads((BENCH / "seeded-evidence.json").read_text(encoding="utf-8"))["tickets"]
     found = expected = self_cited = 0
@@ -563,7 +563,8 @@ def agentic(ws, revision):
     for care, identifiers in key.items():
         ticket = ws.tickets[care]
         question = ticket_question(ticket)
-        # As `code_factory.evidence_for` asks: the eight, then cross-references.
+        # As `code_factory.evidence_for` asks: the eight, then cross-references,
+        # then what the evidence's own references lead to.
         cited = citations_from(
             ws.app.pk,
             revision.data,
@@ -571,6 +572,7 @@ def agentic(ws, revision):
             question,
             viewer=ws.people["owner"],
             references=MAX_REFERENCED,
+            follow=MAX_FOLLOWED,
         )
         text = "\n".join(f"{c['title']}\n{c['excerpt']}" for c in cited)
         hits = [i for i in identifiers if re.search(rf"(?<![\w-]){re.escape(i)}(?![\w-])", text)]
@@ -687,7 +689,7 @@ def graph_rows(ws, revision, questions):
     citations in the same order, or switching `graph_candidates` would change
     what people are told.
     """
-    from .graph_ai import MAX_REFERENCED, citations_from, prepare
+    from .graph_ai import MAX_FOLLOWED, MAX_REFERENCED, citations_from, prepare
     from .graph_store import RowsGraph
 
     ready = prepare(revision.data)
@@ -708,6 +710,7 @@ def graph_rows(ws, revision, questions):
             ready,
             viewer=owner,
             references=references,
+            follow=MAX_FOLLOWED if references else 0,
         )
         start = time.perf_counter()
         rows = citations_from(
@@ -717,6 +720,7 @@ def graph_rows(ws, revision, questions):
             question,
             viewer=owner,
             references=references,
+            follow=MAX_FOLLOWED if references else 0,
             graph=RowsGraph(revision),
         )
         timings.append((time.perf_counter() - start) * 1000)

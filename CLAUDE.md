@@ -1230,14 +1230,29 @@ question's references, read from the whole passage rather than its label (a tabl
 label stops at its first cell), a source not yet cited breaking ties. A source naming its
 own key is not a reference to it. Each is verified like any other citation and says
 "Reached by: names C-09". A question naming no reference gets nothing extra, so chat and
-the benchmark are untouched. Planted-bug evidence recall is 92%. The 96% once recorded
-was measured with a question no run sends; the scorecard now asks with Code Factory's
-own `evidence_question`, which asks an imported ticket **without its title and connector
-header** (`connector_kinds.record_text`) - with them a run found 76%, because the
-header's labels and dates outranked what the ticket says. Triage still reads the whole
-record. The misses: F-03 is named only by evidence (C-08), not by the ticket - following
-references from the evidence is the next step, and would need measuring for noise
-first - and R-02 for CARE-425.
+the benchmark are untouched. The 96% once recorded was measured with a question no run
+sends; the scorecard asks with Code Factory's own `evidence_question`, which asks an
+imported ticket **without its title and connector header** (`connector_kinds.record_text`) -
+with them a run found 76%, because the header's labels and dates outranked what the
+ticket says. Triage still reads the whole record.
+
+**Then one reference the evidence names** (`graph_ai.evidence_references`,
+`MAX_FOLLOWED`, `follow=` on `citations_from`/`graph_citations`, Code Factory only;
+Phase 2 of the agentic plan, by rule - no model). F-03 is named only by the control
+matrix row for C-08, never by CARE-431, and R-02 only by the risk-register row for T-04;
+92% found missed both. After the cross-references, each reference the cited evidence
+names and the question does not is followed on its own, in the order the evidence names
+them, taking the best passage naming it that is not already in front of the model - a
+table row is several edges with one quote, and the row that *is* C-08 names C-08 in each.
+A source titled by its own key (another ticket, an incident) lends none of its
+references: it is cited for its likeness. Each is verified like any other citation and
+says "Reached by: evidence names F-01". Measured on the planted bugs: one took recall
+92% -> 100% for six more passages, two of them (both `SEV-2`, a severity label) carrying
+no planted identifier; two found nothing more and added three more such passages; asked
+as one combined query, BR-05 - which fifteen sources name - tied with C-08 and won.
+Source counts do not separate a label from a reference (SEV-2 and T-04 are both named by
+four sources), so no stoplist was added. Chat and the benchmark ask for none, and the
+scorecard holds rows and memory to identical citations with it on.
 
 **Published graphs are prepared once per process** (`graph_ai.prepared`, LRU of
 `CACHE_SIZE`): parsed data, relationship texts and the BM25 index. Safe because a
