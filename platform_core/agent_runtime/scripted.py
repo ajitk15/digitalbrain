@@ -14,14 +14,14 @@ coroutine, because the real runtimes' hop to a thread-sensitive executor would p
 the tools on a connection a test's transaction cannot be seen from. As
 the provider SDKs do, a tool's exception becomes text for the model and the run
 carries on, a tool the run was not given is refused without running, and a run
-that needs more turns than it was allowed fails.
+that needs more turns than it was allowed ends with `TurnLimit`.
 """
 
 import uuid
 
 from .runtime import ANSWER_TOKENS
 from .tools import run_tool
-from .usage import TurnUsage
+from .usage import TurnLimit, TurnUsage
 
 #: What a tool the run was not given answers, as the CLI's `dontAsk` refuses it.
 NOT_GIVEN = "That tool is not available."
@@ -33,13 +33,17 @@ class TurnsExceeded(RuntimeError):
 
 
 class Script:
-    def __init__(self, *turns, usage=(100, 20)):
+    def __init__(self, *turns, usage=(100, 20), then=()):
         self.turns = list(turns)
+        #: The turns of the call after the first - the harness's wrap-up.
+        self.then = list(then)
         self.usage = usage
         self.seen = []
         self.given = None
         self.max_turns = None
         self.tool_text = []
+        #: Each call as it was made: tools given, turns allowed, question, evidence.
+        self.calls = []
 
     def run(
         self,
@@ -60,13 +64,24 @@ class Script:
         final_only=False,
     ):
         given = {spec.name: spec for spec in (tools or [])}
-        self.given = sorted(given)
-        self.max_turns = max_turns
-        self.instructions = instructions
+        first = not self.calls
+        self.calls.append(
+            {
+                "given": sorted(given),
+                "max_turns": max_turns,
+                "question": question,
+                "evidence": [c.get("id") for c in citations or []],
+            }
+        )
+        if first:
+            self.given = sorted(given)
+            self.max_turns = max_turns
+            self.instructions = instructions
         usages = []
-        for number, turn in enumerate(self.turns, 1):
+        for number, turn in enumerate(self.turns if first else self.then, 1):
             if number > max_turns:
-                raise TurnsExceeded(f"Needed turn {number} of {max_turns}.")
+                # As the real runtimes report it: the turns sent, each billed.
+                raise TurnLimit(usages, "")
             usages.append(
                 TurnUsage(f"scripted-{uuid.uuid4()}", self.usage[0], self.usage[1])
             )

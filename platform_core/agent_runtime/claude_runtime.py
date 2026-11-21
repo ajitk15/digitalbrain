@@ -42,7 +42,7 @@ from .prompts import TOOL_INSTRUCTIONS
 from .registry import for_scope
 from .runtime import ANSWER_TOKENS, evidence_payload, recent_turns
 from .tools import run_tool
-from .usage import TurnUsage, checked_answer, claude_usage
+from .usage import TurnLimit, TurnUsage, checked_answer, claude_usage
 
 SERVER_NAME = "brain"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
@@ -173,6 +173,11 @@ def stream_text(message):
     return piece if isinstance(piece, str) else ""
 
 
+def out_of_turns(result):
+    """Whether the CLI's result says the run used every turn it was allowed."""
+    return result is not None and getattr(result, "subtype", "") == "error_max_turns"
+
+
 async def run(
     model,
     question,
@@ -232,39 +237,51 @@ async def run(
         result = None
         stopped_at = None
         prompt = build_prompt(question, citations, history)
-        async with asyncio.timeout(wall):
-            async with contextlib.aclosing(query(prompt=prompt, options=options)) as stream:
-                async for message in stream:
-                    if isinstance(message, StreamEvent):
-                        if final_only and starts_message(message):
-                            pieces.clear()
-                        piece = stream_text(message)
-                        if piece and stopped_at is None:
-                            pieces.append(piece)
-                            emit("delta", {"t": piece})
-                    elif isinstance(message, AssistantMessage):
-                        for block in message.content:
-                            if isinstance(block, TextBlock) and not pieces:
-                                fallback.append(block.text)
-                            elif isinstance(block, ToolUseBlock):
-                                emit("tool", {"name": block.name, "detail": ""})
-                    elif isinstance(message, ResultMessage):
-                        # Keep draining: leaving here strands the CLI subprocess,
-                        # which on Windows keeps a handle on the working directory.
-                        result = message
-                    if cancel is not None and cancel.is_set() and stopped_at is None:
-                        # query() offers no interrupt, and leaving early forfeits the
-                        # ResultMessage and therefore the usage record. Stop showing
-                        # tokens, but keep draining briefly so the call is still billed
-                        # honestly.
-                        stopped_at = asyncio.get_running_loop().time()
-                    if (
-                        stopped_at is not None
-                        and asyncio.get_running_loop().time() - stopped_at > DRAIN_AFTER_STOP
-                    ):
-                        break
+        try:
+            async with asyncio.timeout(wall):
+                async with contextlib.aclosing(
+                    query(prompt=prompt, options=options)
+                ) as stream:
+                    async for message in stream:
+                        if isinstance(message, StreamEvent):
+                            if final_only and starts_message(message):
+                                pieces.clear()
+                            piece = stream_text(message)
+                            if piece and stopped_at is None:
+                                pieces.append(piece)
+                                emit("delta", {"t": piece})
+                        elif isinstance(message, AssistantMessage):
+                            for block in message.content:
+                                if isinstance(block, TextBlock) and not pieces:
+                                    fallback.append(block.text)
+                                elif isinstance(block, ToolUseBlock):
+                                    emit("tool", {"name": block.name, "detail": ""})
+                        elif isinstance(message, ResultMessage):
+                            # Keep draining: leaving here strands the CLI subprocess,
+                            # which on Windows keeps a handle on the working directory.
+                            result = message
+                        if cancel is not None and cancel.is_set() and stopped_at is None:
+                            # query() offers no interrupt, and leaving early forfeits the
+                            # ResultMessage and therefore the usage record. Stop showing
+                            # tokens, but keep draining briefly so the call is still billed
+                            # honestly.
+                            stopped_at = asyncio.get_running_loop().time()
+                        if (
+                            stopped_at is not None
+                            and asyncio.get_running_loop().time() - stopped_at > DRAIN_AFTER_STOP
+                        ):
+                            break
+        except claude_agent_sdk.ProcessError:
+            # The CLI ends a run at its turn limit with an error result and then
+            # exits non-zero, which the SDK raises after handing over the result.
+            # That result carries the run's usage, so it is kept, not lost.
+            if not out_of_turns(result):
+                raise
     stopped = stopped_at is not None
     text = ("".join(pieces) or "".join(fallback)).strip()
+    if out_of_turns(result) and not stopped:
+        inputs, outputs = claude_usage(result.usage)
+        raise TurnLimit([TurnUsage(f"claude-{uuid.uuid4()}", inputs, outputs)], text)
     if result is None or result.is_error:
         if not (stopped and text):
             raise ValueError("No successful result")

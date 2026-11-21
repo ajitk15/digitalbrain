@@ -16,10 +16,12 @@ Two details worth knowing before editing:
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 from agents import (
     Agent,
     FunctionTool,
+    MaxTurnsExceeded,
     ModelSettings,
     OpenAIChatCompletionsModel,
     OpenAIResponsesModel,
@@ -33,7 +35,7 @@ from .prompts import TOOL_INSTRUCTIONS
 from .registry import for_scope
 from .runtime import ANSWER_TOKENS, RESPONSES_MODELS, evidence_payload, recent_turns
 from .tools import run_tool
-from .usage import TurnUsage, checked_answer, checked_request_id, openai_usage
+from .usage import TurnLimit, TurnUsage, checked_answer, checked_request_id, openai_usage
 
 MAX_TURNS = 4
 RUN_TIMEOUT = 120
@@ -216,6 +218,7 @@ async def run(
             run_config=RunConfig(tracing_disabled=True, trace_include_sensitive_data=False),
         )
         watcher = asyncio.ensure_future(_watch_cancel(result, cancel))
+        out_of_turns = None
         try:
             async with asyncio.timeout(timeout or RUN_TIMEOUT):
                 async for event in result.stream_events():
@@ -227,9 +230,17 @@ async def run(
                         if isinstance(piece, str) and piece:
                             pieces.append(piece)
                             emit("delta", {"t": piece})
+        except MaxTurnsExceeded as error:
+            out_of_turns = error
         finally:
             watcher.cancel()
     stopped = bool(cancel is not None and cancel.is_set())
     text = "".join(pieces).strip()
+    if out_of_turns is not None:
+        # Every turn it sent was billed: its responses are on the error's run
+        # data, or on the streamed result, which collects each as it ends.
+        responses = getattr(getattr(out_of_turns, "run_data", None), "raw_responses", None)
+        sent = SimpleNamespace(raw_responses=responses or result.raw_responses)
+        raise TurnLimit(collect_usage(sent, model), text)
     answer = text if stopped and text else checked_answer(result.final_output)
     return collect_usage(result, model), answer

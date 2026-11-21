@@ -24,6 +24,13 @@ reservation and the checks. What `run_agent` holds every run to:
   the run reads is raised by the tool; a provider SDK turns that into text and
   carries on, so the harness raises it again after the receipts are written. The
   answer is lost, the bill is kept - the gateway's rule.
+* **Out of turns is an answer, not a lost bill.** Every runtime ends a run that
+  used every turn without answering with `TurnLimit`, carrying the usage of the
+  turns it sent, which get their receipts. A run asked for with `wrap_up` keeps
+  its last turn back: run out, it is asked once more with no tools, over the
+  evidence that still verifies (`WRAP_UP`), so the person gets an answer from
+  what was read rather than "unavailable". Without it, or with no turn kept
+  back, the run fails as before - its receipts kept.
 * **Stop is honoured between turns.** Once the answer's cancel event is set no
   further tool runs (`tools.STOPPED`); the provider call that is running is
   drained and billed, as the runtimes always have.
@@ -48,12 +55,25 @@ from django.http import Http404
 
 from .registry import for_scope
 from .tools import MAX_TOOL_CALLS, RESULT_CHARACTERS, CitationRecorder
+from .usage import TurnLimit
 
 logger = logging.getLogger(__name__)
 
 #: Turns a chat answer may take, as `claude_runtime.MAX_TURNS` and
 #: `openai_runtime.MAX_TURNS` always allowed.
 TURNS = 4
+
+#: The fewest turns a run must be allowed before one is kept back to answer in:
+#: with two, the one tool turn and its answer are all there is.
+WRAP_UP_FROM = 3
+
+#: What the turn kept back is asked, after the question. The run has nothing
+#: left to search with; it answers from what it was handed and what its tools
+#: found that still verifies, and says what that does not cover.
+WRAP_UP = (
+    "You have used every search this answer may make. Answer now from the "
+    "evidence above, citing it as usual, and say plainly what it does not cover."
+)
 
 
 class AgentFailure(Exception):
@@ -173,8 +193,13 @@ def run_agent(
     phase="",
     triage_id=None,
     review_id=None,
+    wrap_up=False,
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
+
+    `wrap_up` asks for one turn more than `turns` and keeps it back for an
+    answer from the evidence should the agent use all of its own; the agent
+    itself is given `turns`, and the tool budget they pay for, as without it.
 
     `instructions` and `timeout` replace chat's for an agent that is not chat
     (Code Factory); `tool_calls` is the most tool calls its whole run may make,
@@ -197,8 +222,54 @@ def run_agent(
     # Evidence computed before the run seeds the answer, so a single-turn reply is
     # never worse than the non-agentic path.
     recorder.seed(citations)
-    asked = turns if tools else 1
+    asked = (turns + 1 if wrap_up else turns) if tools else 1
     allowed = 1
+
+    def attempt(given, max_turns, evidence, asking):
+        # The provider runtimes are coroutines, run here on the caller's thread;
+        # the scripted model is plain code, so its tools run on this thread too.
+        pending = runtime.run(
+            config.model,
+            asking,
+            evidence,
+            token,
+            history,
+            scope,
+            recorder,
+            emit,
+            cancel,
+            max_tokens=max_tokens,
+            tools=given,
+            max_turns=max_turns,
+            # Only when set, so chat's runtimes are called as they were.
+            **({"instructions": instructions} if instructions else {}),
+            **({"timeout": timeout} if timeout else {}),
+            # An agent given its own instructions answers in its last turn; the
+            # Claude runtime joins every turn's text unless told, the OpenAI
+            # runtime's answer is always its final output.
+            **({"final_only": True} if instructions and runtime is claude_runtime else {}),
+        )
+        return asyncio.run(pending) if inspect.isawaitable(pending) else pending
+
+    def wrapped_up(limit, kept, attempt):
+        """What a run that used every turn answers with: the turn kept back, over
+        the evidence that still verifies - or nothing, raised again, when no turn
+        was kept, access ended, or the person pressed Stop (who keeps the text)."""
+        stopped = cancel is not None and cancel.is_set()
+        if stopped and limit.text:
+            return [], limit.text
+        if recorder.revoked is not None:
+            raise recorder.revoked
+        if not kept or stopped:
+            raise limit
+        if limit.text:
+            emit("delta", {"t": "\n\n"})
+        more, answer = attempt([], 1, recorder.verified_citations(), f"{question}\n\n{WRAP_UP}")
+        if limit.text and not (instructions and runtime is claude_runtime):
+            # As it was streamed: what the turns wrote, then this.
+            answer = f"{limit.text}\n\n{answer}"
+        return more, answer
+
     try:
         with gateway.admitted(
             user,
@@ -211,41 +282,26 @@ def run_agent(
             tool_characters=tool_calls * RESULT_CHARACTERS if tools else 0,
         ) as admission:
             allowed = getattr(admission, "turns", None) or asked
-            recorder.budget = tool_budget(allowed, asked, tool_calls)
-            given = tools if allowed > 1 else []
+            # The turn kept back, when there is room for one beside a tool turn.
+            kept = 1 if wrap_up and tools and allowed >= WRAP_UP_FROM else 0
+            agent_turns = allowed - kept
+            recorder.budget = tool_budget(agent_turns, asked - (1 if wrap_up else 0), tool_calls)
+            given = tools if agent_turns > 1 else []
+            recorded = []
             try:
-                # The provider runtimes are coroutines, run here on the caller's
-                # thread; the scripted model is plain code, so its tools run on
-                # this thread as well.
-                pending = runtime.run(
-                    config.model,
-                    question,
-                    citations,
-                    token,
-                    history,
-                    scope,
-                    recorder,
-                    emit,
-                    cancel,
-                    max_tokens=max_tokens,
-                    tools=given,
-                    max_turns=allowed,
-                    # Only when set, so chat's runtimes are called as they were.
-                    **({"instructions": instructions} if instructions else {}),
-                    **({"timeout": timeout} if timeout else {}),
-                    # An agent given its own instructions answers in its last turn;
-                    # the Claude runtime joins every turn's text unless told, the
-                    # OpenAI runtime's answer is always its final output.
-                    **({"final_only": True} if instructions and runtime is claude_runtime else {}),
-                )
-                usages, answer = (
-                    asyncio.run(pending) if inspect.isawaitable(pending) else pending
-                )
+                try:
+                    usages, answer = attempt(given, agent_turns, citations, question)
+                except TurnLimit as limit:
+                    # Each turn it sent was billed: receipts first, whatever follows.
+                    ai.record_turns(user, app, config, purpose, limit.usages)
+                    recorded = list(limit.usages)
+                    usages, answer = wrapped_up(limit, kept, attempt)
             except (PermissionDenied, Http404):
                 raise
             except Exception as failure:
                 raise AgentFailure(failure) from None
             ai.record_turns(user, app, config, purpose, usages)
+            usages = [*recorded, *usages]
     finally:
         keep_steps(
             app, purpose, recorder.steps, message_id, run_id, phase, triage_id, review_id

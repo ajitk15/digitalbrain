@@ -175,8 +175,16 @@ the receipts kept) and authorizes once more. After Stop no further tool runs
 tool, the **shape** of its arguments (`tools.shape`: numbers, ids and lengths, never a
 string), outcome, result size, duration - never what was asked or read; it goes with its
 message, whose link carries no database constraint so the release before can still delete
-messages. A run that needs more turns than it was allowed fails as the SDK fails it; there
-is no clean stop at the turn limit yet. A provider failure is `AgentFailure`, its class
+messages. **Out of turns is not a lost bill** (Phase 5): every runtime ends a run that used
+every turn without answering with `usage.TurnLimit`, carrying the usage of the turns it
+sent - the CLI's `error_max_turns` result before its non-zero exit, the OpenAI SDK's
+`MaxTurnsExceeded` - so each gets its receipt; it used to fail as the SDK failed it, the
+answer and the receipts lost. Chat asks for `wrap_up`: one turn more is reserved and kept
+back (`WRAP_UP_FROM`, three or more allowed), the agent itself still given `TURNS` and their
+tool budget, and out of turns it is asked once more with no tools over
+`verified_citations()` (`WRAP_UP`), so the person gets an answer from what was read. Stop,
+a refusal or no turn to spare fail as before, receipts kept. Background agents do not ask
+for it: their evidence is not only citations. A provider failure is `AgentFailure`, its class
 name only. `agent_runtime/scripted.py` is a model that follows a script, never selectable
 by configuration, so every guardrail is tested with no provider; the scorecard's "Agent
 guardrail probes passing" must stay 100%. A new tool is one registry entry with its

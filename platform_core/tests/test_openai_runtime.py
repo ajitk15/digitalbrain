@@ -17,6 +17,7 @@ from openai import DefaultAsyncHttpxClient
 
 from platform_core.agent_runtime import openai_runtime
 from platform_core.agent_runtime.tools import ToolScope
+from platform_core.agent_runtime.usage import TurnLimit
 
 
 def sse(*chunks):
@@ -203,6 +204,40 @@ class StreamingRuntimeTests(SimpleTestCase):
         self.assertEqual(answer, "Three servers.")
         # One receipt per model turn: the tool turn and the answering turn.
         self.assertEqual(len(turns), 2)
+
+    def test_out_of_turns_hands_back_a_receipt_for_every_turn_sent(self):
+        class Recorder:
+            exhausted = False
+            calls = 0
+
+            def record(self, result):
+                pass
+
+        tool_chunk = {
+            "index": 0,
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "search_knowledge", "arguments": '{"query":"NODE1"}'},
+        }
+        asking = sse(chunk(tool=tool_chunk), chunk(finish="tool_calls"), chunk(usage=USAGE))
+        with patch(
+            "platform_core.agent_runtime.openai_runtime._call",
+            return_value="one matching passage",
+        ), self.transport(asking, asking, asking):
+            with self.assertRaises(TurnLimit) as limit:
+                asyncio.run(
+                    openai_runtime.run(
+                        "configured-model", "q", [], "application-key", [], self.scope,
+                        Recorder(), self.emit, None, max_turns=2,
+                    )
+                )
+        # Two turns were sent and billed; the SDK refused the third before sending it.
+        self.assertEqual(len(self.requests), 2)
+        self.assertEqual(str(limit.exception), "TurnLimit")
+        self.assertEqual(
+            [(u.prompt_tokens, u.completion_tokens) for u in limit.exception.usages],
+            [(120, 18), (120, 18)],
+        )
 
     def test_a_provider_failure_propagates_for_the_caller_to_sanitise(self):
         """The runtime is an internal boundary: it raises the provider's own error.

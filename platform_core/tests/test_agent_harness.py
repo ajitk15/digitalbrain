@@ -37,6 +37,7 @@ from platform_core.agent_runtime.tools import (
     run_tool,
     shape,
 )
+from platform_core.agent_runtime.usage import TurnLimit
 from platform_core.models import (
     AgentStep,
     AIAdmission,
@@ -279,8 +280,10 @@ class HarnessTests(TestCase):
         with patch.object(harness, "runtime_for", return_value=script):
             yield script
 
-    def run_script(self, *turns, cancel=None, user=None, message=True, turns_asked=4):
-        script = Script(*turns)
+    def run_script(
+        self, *turns, cancel=None, user=None, message=True, turns_asked=4, wrap_up=False, then=()
+    ):
+        script = Script(*turns, then=then)
         with self.scripted(script):
             result = run_agent(
                 user=user or self.owner,
@@ -298,6 +301,7 @@ class HarnessTests(TestCase):
                 prompt_characters=200,
                 turns=turns_asked,
                 message_id=self.message.pk if message else None,
+                wrap_up=wrap_up,
             )
         return script, result
 
@@ -473,7 +477,7 @@ class HarnessTests(TestCase):
         script, result = self.run_script("From the evidence alone.")
         self.assertEqual((script.given, script.max_turns, result.turns), ([], 1, 1))
 
-    def test_a_run_that_needs_more_turns_than_it_was_allowed_fails_as_the_sdk_does(self):
+    def test_a_run_that_needs_more_turns_than_it_was_allowed_fails_and_keeps_its_bill(self):
         with self.assertRaises(AgentFailure) as failed:
             self.run_script(
                 [("search_knowledge", {"query": "refund"})],
@@ -481,10 +485,104 @@ class HarnessTests(TestCase):
                 "Too late.",
                 turns_asked=2,
             )
-        self.assertEqual(failed.exception.kind, "TurnsExceeded")
-        # What it did before failing is still kept.
+        self.assertEqual(failed.exception.kind, "TurnLimit")
+        # What it did before failing is still kept, and both turns it sent are
+        # billed: the receipts used to be lost with the answer.
         self.assertEqual(len(self.steps()), 2)
+        self.assertEqual(AIUsage.objects.filter(application=self.app, purpose="chat").count(), 2)
         self.assertFalse(AIAdmission.objects.exists())
+
+    def searches(self, count):
+        return [[("search_knowledge", {"query": "refund"})] for _ in range(count)]
+
+    def test_out_of_turns_a_wrap_up_answers_from_what_was_read(self):
+        script, result = self.run_script(
+            *self.searches(5), wrap_up=True, then=["Thirty days, from what was read."]
+        )
+        first, last = script.calls
+        # The agent was given every turn it had before; one more was kept back.
+        self.assertEqual(first["max_turns"], 4)
+        self.assertEqual(first["given"], ["fetch_source", "search_knowledge"])
+        self.assertEqual((last["given"], last["max_turns"]), ([], 1))
+        self.assertEqual(last["question"], f"How long do refunds take?\n\n{harness.WRAP_UP}")
+        # It answers over what the tools found that still verifies.
+        self.assertEqual(last["evidence"], [str(self.source.pk)])
+        self.assertEqual(result.answer, "Thirty days, from what was read.")
+        self.assertEqual([c["id"] for c in result.citations], [str(self.source.pk)])
+        # Four turns out of turns and the one kept back: five receipts.
+        self.assertEqual(len(result.usages), 5)
+        self.assertEqual(AIUsage.objects.filter(application=self.app, purpose="chat").count(), 5)
+        self.assertEqual([s.outcome for s in self.steps()], ["found"] * 4)
+        self.assertFalse(AIAdmission.objects.exists())
+
+    def test_a_wrap_up_changes_nothing_for_an_answer_inside_its_turns(self):
+        searches = [("search_knowledge", {"query": "refund"})] * (MAX_TOOL_CALLS + 2)
+        script, result = self.run_script(searches, "Enough.", wrap_up=True, then=["never"])
+        self.assertEqual((len(script.calls), script.max_turns, result.answer), (1, 4, "Enough."))
+        # The same tool budget as a run of four turns without one.
+        self.assertEqual([s.outcome for s in self.steps()].count("found"), MAX_TOOL_CALLS)
+        self.assertEqual(AIUsage.objects.filter(application=self.app, purpose="chat").count(), 2)
+
+    def test_a_wrap_up_is_reserved_with_the_turns(self):
+        AIBudget.objects.create(application=self.app, monthly_limit=Decimal("100"))
+        held = []
+
+        def look():
+            held.append(AIAdmission.objects.get().reserved)
+
+        self.run_script([look], "Answer.", wrap_up=True)
+        costs = gateway.turn_costs(
+            self.config, 200, 1024, turns=5, tool_characters=MAX_TOOL_CALLS * RESULT_CHARACTERS
+        )
+        # The turn kept back is paid for before the first is sent, like every other.
+        self.assertEqual(held, [costs[-1]])
+
+    def test_with_no_turn_to_spare_out_of_turns_fails_as_before(self):
+        costs = gateway.turn_costs(
+            self.config, 200, 1024, turns=5, tool_characters=MAX_TOOL_CALLS * RESULT_CHARACTERS
+        )
+        # Headroom for two turns: a tool turn and its answer, nothing to keep back.
+        AIBudget.objects.create(application=self.app, monthly_limit=(costs[1] + costs[2]) / 2)
+        with self.assertRaises(AgentFailure) as failed:
+            self.run_script(*self.searches(3), wrap_up=True, then=["never"])
+        self.assertEqual(failed.exception.kind, "TurnLimit")
+        self.assertEqual(AIUsage.objects.filter(application=self.app, purpose="chat").count(), 2)
+
+    def test_access_ended_on_the_way_is_the_refusal_not_a_wrap_up(self):
+        def revoke():
+            ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
+
+        with self.assertRaises(Http404):
+            self.run_script(
+                [("search_knowledge", {"query": "refund"}), revoke], *self.searches(4),
+                wrap_up=True, then=["An answer that must not be asked for."],
+            )
+        # The four turns sent are billed, and nothing more was asked.
+        self.assertEqual(AIUsage.objects.filter(application=self.app).count(), 4)
+
+    def test_stop_while_out_of_turns_asks_nothing_more(self):
+        cancel = threading.Event()
+        with self.assertRaises(AgentFailure):
+            self.run_script(
+                [("search_knowledge", {"query": "refund"}), cancel.set], *self.searches(4),
+                cancel=cancel, wrap_up=True, then=["never"],
+            )
+        self.assertEqual(AIUsage.objects.filter(application=self.app).count(), 4)
+
+    def test_the_chat_answer_keeps_a_turn_back(self):
+        from platform_core.ai import stream_chat_answer
+
+        script = Script(*self.searches(5), then=["From what was read."])
+        session = SimpleNamespace(
+            emit=lambda *a: None, cancel=threading.Event(), message_id=self.message.pk
+        )
+        with self.scripted(script):
+            answer, citations = stream_chat_answer(
+                self.owner, self.app, self.config, "unused", "How long?", [], [], session
+            )
+        self.assertEqual(answer, "From what was read.")
+        self.assertEqual([c["id"] for c in citations], [str(self.source.pk)])
+        self.assertEqual([call["max_turns"] for call in script.calls], [harness.TURNS, 1])
 
     def test_a_provider_failure_names_only_its_class(self):
         class Leaky:
@@ -603,6 +701,42 @@ class RuntimeWiringTests(SimpleTestCase):
                 self.assertEqual(options.tools, [])
                 self.assertEqual(answer, "From evidence.")
 
+    def test_claude_out_of_turns_hands_back_what_its_turns_cost(self):
+        import asyncio
+
+        from claude_agent_sdk import ProcessError, ResultMessage
+
+        def ending(subtype):
+            async def query(prompt, options):
+                yield ResultMessage(
+                    subtype=subtype, duration_ms=1, duration_api_ms=1, is_error=True,
+                    num_turns=3, session_id="s", total_cost_usd=0,
+                    usage={"input_tokens": 300, "output_tokens": 40}, result=None,
+                )
+                # As the CLI does: an error result, then a non-zero exit.
+                raise ProcessError("exit", exit_code=1)
+
+            return query
+
+        def run():
+            return asyncio.run(
+                claude_runtime.run(
+                    "claude-sonnet-5", "q", [], "sk-ant-test", [], self.scope,
+                    CitationRecorder(self.scope), lambda *a: None, max_turns=3,
+                )
+            )
+
+        with patch.object(claude_runtime, "query", ending("error_max_turns")):
+            with self.assertRaises(TurnLimit) as limit:
+                run()
+        self.assertEqual(str(limit.exception), "TurnLimit")
+        usage = limit.exception.usages
+        self.assertEqual([(u.prompt_tokens, u.completion_tokens) for u in usage], [(300, 40)])
+        # Any other error result still fails as it did.
+        with patch.object(claude_runtime, "query", ending("error_during_execution")):
+            with self.assertRaises(ProcessError):
+                run()
+
     def test_openai_with_no_tools_is_sent_none_and_one_turn(self):
         from platform_core.agent_runtime.openai_runtime import build_tools
 
@@ -654,7 +788,7 @@ class ScorecardProbeTests(TestCase):
 
         values, probes = agent_guardrails(self.ws)
         self.assertEqual(values, {"agent_probes_passed": 100.0}, probes)
-        self.assertEqual(len(probes), 22)
+        self.assertEqual(len(probes), 23)
         self.assertFalse(AgentStep.objects.exists())
         self.assertFalse(AIUsage.objects.exists())
         self.assertFalse(AIBudget.objects.exists())

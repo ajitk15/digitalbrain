@@ -53,7 +53,7 @@ what counts as evidence.**
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` | **Done by rule** - 92% -> 100%; agent not needed |
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **Built, off** - waiting on a paid `triage_pack` run |
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **Built, off** - waiting on a paid `review_pack` run |
-| 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | On where it is measured equal or better |
+| 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | **Turn limit done** (answers and receipts no longer lost); graph tool deferred until measured |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | Off |
 
 Phases 0-2 (rules) are **about 16-21 days** and make the largest difference on the
@@ -327,7 +327,7 @@ GitHub. Cache key: the digest of everything the agent read, not just the diff.
 **Measurement:** a labelled review pack (diffs with known problems in dependent
 files) - findings recalled, findings with no label (noise), cost.
 
-## Phase 5 - Chat deepening
+## Phase 5 - Chat deepening (turn limit done, graph tool deferred)
 
 Chat is already an agent; this widens it carefully.
 
@@ -342,6 +342,42 @@ Chat is already an agent; this widens it carefully.
 **Measurement:** benchmark questions through the agent path, scored on found / top 3
 / MRR against the current path, plus `llm_drift` (the drift pack is frozen; a change
 of tools is exactly what drift exists to measure).
+
+### Status: the turn limit done; the graph tool deliberately not built
+
+Looking at where chat actually fails came first, and the clearest failure was not on
+this list: **a chat answer that used every turn ended as "AI response unavailable", and
+the turns it had already sent - each billed by the provider - got no receipt.** The
+Claude CLI ends such a run with an `error_max_turns` result and a non-zero exit, the
+OpenAI SDK with `MaxTurnsExceeded`; both became `AgentFailure` with the usage dropped,
+against "Usage is never silently zero".
+
+- **Every runtime raises `usage.TurnLimit` with the usage of the turns sent**, and the
+  harness writes their receipts first, whatever follows. True for every agent, chat or
+  background.
+- **Chat keeps one turn back** (`run_agent(wrap_up=True)`): admission reserves `TURNS + 1`,
+  the agent is given `TURNS` and the same tool budget as before, and when it runs out it
+  is asked once more with no tools over the evidence that still verifies (`WRAP_UP`).
+  Only with three or more turns allowed (`WRAP_UP_FROM`); Stop, a refusal and a budget
+  with no turn to spare fail as before, receipts kept. The final answer and its
+  citations are verified as any other; the answer is still rendered through `chat_text`.
+- **Cost:** an answer that finishes inside its turns is sent exactly as before - same
+  turns, tools, prompt, one call. The reservation is one turn larger (about a quarter
+  more held while it runs), which only matters within a turn's cost of the monthly cap:
+  there such an answer may be allowed one turn fewer for its tools. An answer that runs
+  out costs one call more than before - and is an answer rather than a bill for nothing.
+- The scorecard probe "out of turns, a chat answer is made from what was read" holds it.
+
+**`MAX_TURNS` from the budget** was already Phase 0's admission: the run gets as many
+turns as the headroom pays for, never above the fixed ceiling.
+
+**`graph_walk` is not built, on purpose.** It changes what the chat model reads and
+chooses, so its worth is a measurement - benchmark questions through the agent path and
+`llm_drift` - and both are paid calls. The rule-based walk already gives every chat
+answer two typed hops after the direct matches (`graph_ai.walk`), which took the
+benchmark to 15/16 on an AI-enriched version without displacing a direct match; a tool
+the model may call adds choice, not reach, and nothing measured shows that choice helps.
+Build it when a drift and benchmark run can show it does.
 
 ## Phase 6 - Knowledge upkeep agent
 

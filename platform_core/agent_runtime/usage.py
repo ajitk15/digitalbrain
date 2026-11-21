@@ -32,6 +32,21 @@ class TurnUsage:
     completion_tokens: int
 
 
+class TurnLimit(RuntimeError):
+    """A run used every turn it was allowed and never answered.
+
+    Raised by every runtime in place of its SDK's own error, carrying the usage
+    of the turns that were sent - each was billed, so each gets a receipt - and
+    whatever text the model wrote on the way (`text`). The message is the class
+    name alone, as `AgentFailure` reports it: an SDK's message can quote the run.
+    """
+
+    def __init__(self, usages, text=""):
+        super().__init__("TurnLimit")
+        self.usages = list(usages)
+        self.text = text
+
+
 def checked_count(value, label="Invalid usage"):
     # `type(...) is int` on purpose: bool is an int subclass and True must not pass.
     if type(value) is not int or not 0 <= value <= TOKEN_LIMIT:

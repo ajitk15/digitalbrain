@@ -807,6 +807,8 @@ def stream_chat_answer(user, app, config, token, question, citations, history, s
             max_tokens=reply_cap(app.pk, purpose, config),
             prompt_characters=prompt_size(question, citations, history),
             message_id=getattr(session, "message_id", None),
+            # Out of turns, a chat answer is still an answer, from what was read.
+            wrap_up=True,
         )
     except AgentFailure as failure:
         # The class name only: a provider's message can carry the prompt.

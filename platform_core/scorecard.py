@@ -1510,15 +1510,15 @@ def agent_guardrails(ws):
             with patch.object(harness, "runtime_for", return_value=script):
                 yield
 
-        def run(*turns, user=viewer, cancel=None, steps=True):
-            script = Script(*turns)
+        def run(*turns, user=viewer, cancel=None, steps=True, then=()):
+            script = Script(*turns, then=then)
             with scripted(script):
                 result = harness.run_agent(
                     user=user, app=ws.app, config=config, token="unused", purpose="chat",
                     scope=ToolScope(user_id=user.pk, app_id=ws.app.pk), question="q",
                     citations=[], history=[], emit=lambda *a: None, cancel=cancel,
                     max_tokens=1024, prompt_characters=200,
-                    message_id=message.pk if steps else None,
+                    message_id=message.pk if steps else None, wrap_up=bool(then),
                 )
             return script, result
 
@@ -1575,6 +1575,23 @@ def agent_guardrails(ws):
         AgentStep.objects.filter(message=message).delete()
         run([("search_knowledge", {"query": "consent"})] * (MAX_TOOL_CALLS + 1), "Enough.")
         probes["the tool budget holds"] = outcomes()[-1] == "budget"
+
+        AgentStep.objects.filter(message=message).delete()
+        # Out of turns (Phase 5): every turn sent keeps its receipt, and a chat
+        # answer is asked once more, with no tools, over what still verifies.
+        receipts = AIUsage.objects.filter(application=ws.app).count()
+        searching = [[("search_knowledge", {"query": "consent export"})]] * (harness.TURNS + 1)
+        try:
+            script, result = run(*searching, then=["From what was read."])
+            probes["out of turns, a chat answer is made from what was read"] = (
+                result.answer == "From what was read."
+                and [call["given"] for call in script.calls][1:] == [[]]
+                and bool(result.citations)
+                and AIUsage.objects.filter(application=ws.app).count() - receipts
+                == harness.TURNS + 1
+            )
+        except harness.AgentFailure:
+            probes["out of turns, a chat answer is made from what was read"] = False
 
         AgentStep.objects.filter(message=message).delete()
 
