@@ -23,6 +23,7 @@ into text for the model and carries on; the harness raises it again once the run
 ends, so the answer is never kept.
 """
 
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -318,6 +319,12 @@ class CitationRecorder:
             self._citations.append(citation)
         self.seeded = len(self._citations)
 
+    def read_citations(self):
+        """What the tools returned beyond the seeded evidence, unverified, in the
+        order read - for a caller that verifies its own kinds of evidence (a code
+        review's diffs and snapshot files, which are not knowledge sources)."""
+        return list(self._citations[self.seeded :])
+
     def found_citations(self, limit=24):
         """What the tools found, beyond the evidence the run was seeded with,
         verified against live sources: an agent's own reading, in the order read."""
@@ -437,18 +444,31 @@ def _step(recorder, spec, args, outcome, started, text="", citations=0):
     )
 
 
+#: A record id as the tools write it. Not personal data, and the one thing a model
+#: must be able to repeat exactly: it is how a citation names its source.
+RECORD_ID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+
+
 def shown_to_model(purpose, text):
     """A tool's text as the model may read it.
 
     Triage minimizes identifiers and secret shapes in everything it hands a model
     (`serviceops_triage.redact`), its evidence pack included, so what its tools
-    read is minimized the same way. The citations keep the source's own words:
-    they are verified against it, never shown.
+    read is minimized the same way - everything but the record ids between it,
+    which the pack hands over outside the redacted text: `redact` reads a run of
+    digits and hyphens as a telephone number, and some ids hold one, so an id
+    came back as "a8dd5e5f-[phone]-d180b776055d" and could not be cited. The
+    citations keep the source's own words: they are verified against it, never
+    shown.
     """
     if purpose == "serviceops_triage":
         from ..serviceops_triage import redact
 
-        return redact(text)
+        pieces, last = [], 0
+        for match in RECORD_ID.finditer(text):
+            pieces += [redact(text[last : match.start()]), match.group()]
+            last = match.end()
+        return "".join([*pieces, redact(text[last:])])
     return text
 
 

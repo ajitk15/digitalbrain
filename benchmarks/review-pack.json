@@ -1,0 +1,76 @@
+{
+  "about": "Changes to the CarePath code (documentation/demo/carepath) that `manage.py review_pack` hands a code review's AI step, once with tools and once without. Each introduces one problem a reviewer should find, and most of them only show in a file the change does not touch: a renamed function its caller still uses, a new required argument every caller now omits, parameters swapped under a caller that passes them in the old order. One breaks a requirement instead (NFR-06's page-size bound), which needs the requirement quoted. Each change is a find-and-replace on one file; `expect` names the files a finding must quote (as a diff or as code) to count, and `uses` the call each of them makes that the change breaks, or the category a finding must be. Labelled by hand from the code, never from a model's output, and tested against the code so a label cannot describe a problem that is not there. A new pack starts a new reference: never rebuild it casually.",
+  "repository": "documentation/demo/carepath",
+  "changes": {
+    "rename-consent-current": {
+      "title": "Rename consent.current to is_current",
+      "edits": [
+        {
+          "path": "src/carepath/services/consent.py",
+          "find": "def current(connection: sqlite3.Connection, patient_id: str, purpose: str) -> bool:",
+          "replace": "def is_current(connection: sqlite3.Connection, patient_id: str, purpose: str) -> bool:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/api/routes_fhir.py"
+        ],
+        "uses": "consent.current("
+      },
+      "because": "routes_fhir.export_everything still calls consent.current, which no longer exists."
+    },
+    "audit-reason-required": {
+      "title": "Require a reason on every audit record",
+      "edits": [
+        {
+          "path": "src/carepath/security/audit.py",
+          "find": "    purpose: str,\n) -> str:",
+          "replace": "    purpose: str,\n    reason: str,\n) -> str:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/services/referrals.py",
+          "src/carepath/services/patients.py",
+          "src/carepath/services/encounters.py",
+          "src/carepath/services/risk.py",
+          "src/carepath/services/consent.py",
+          "src/carepath/api/routes_fhir.py"
+        ],
+        "uses": "record("
+      },
+      "because": "Every caller of record passes six arguments, and the seventh is now required."
+    },
+    "abnormal-arguments-swapped": {
+      "title": "Take the value first in is_abnormal",
+      "edits": [
+        {
+          "path": "src/carepath/domain/risk.py",
+          "find": "def is_abnormal(code: str, value: float) -> bool:",
+          "replace": "def is_abnormal(value: float, code: str) -> bool:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/services/risk.py"
+        ],
+        "uses": "is_abnormal(item"
+      },
+      "because": "services/risk.score_for still calls is_abnormal(item[\"code\"], item[\"value\"])."
+    },
+    "consent-history-unbounded": {
+      "title": "Let consent history return any number of decisions",
+      "edits": [
+        {
+          "path": "src/carepath/api/routes_consent.py",
+          "find": "    limit: int = Query(default=50, le=settings.max_page_size),\n    connection=Depends(unit_of_work),\n    principal: Principal = Depends(require(Permission.CONSENT_READ)),",
+          "replace": "    limit: int = Query(default=50),\n    connection=Depends(unit_of_work),\n    principal: Principal = Depends(require(Permission.CONSENT_READ)),"
+        }
+      ],
+      "expect": {
+        "category": "requirement"
+      },
+      "because": "NFR-06 bounds every list endpoint at the configured page size; this removes the bound."
+    }
+  }
+}

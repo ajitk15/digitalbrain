@@ -73,6 +73,8 @@ class AgentResult:
     steps: list = field(default_factory=list)
     #: What the tools found beyond the seeded evidence, verified (`found_citations`).
     found: list = field(default_factory=list)
+    #: Everything the tools returned beyond it, unverified (`read_citations`).
+    read: list = field(default_factory=list)
 
 
 def runtime_for(provider):
@@ -94,11 +96,13 @@ def tool_budget(allowed, requested, calls=MAX_TOOL_CALLS):
     return max(1, math.ceil(calls * (allowed - 1) / (requested - 1)))
 
 
-def keep_steps(app, purpose, steps, message_id=None, run_id=None, phase="", triage_id=None):
+def keep_steps(
+    app, purpose, steps, message_id=None, run_id=None, phase="", triage_id=None, review_id=None
+):
     """Write a run's steps as `AgentStep` rows, for the chat message, the Code
     Factory run (and phase) or the triage run they belong to; a failure here
     never fails the run."""
-    from ..models import AgentStep, ChatMessage, FactoryRun, TriageRun
+    from ..models import AgentStep, ChatMessage, CodeReview, FactoryRun, TriageRun
 
     owners = [
         (model, pk, field)
@@ -106,6 +110,7 @@ def keep_steps(app, purpose, steps, message_id=None, run_id=None, phase="", tria
             (ChatMessage, message_id, "message_id"),
             (FactoryRun, run_id, "run_id"),
             (TriageRun, triage_id, "triage_id"),
+            (CodeReview, review_id, "review_id"),
         )
         if pk is not None
     ]
@@ -167,6 +172,7 @@ def run_agent(
     run_id=None,
     phase="",
     triage_id=None,
+    review_id=None,
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
 
@@ -241,7 +247,9 @@ def run_agent(
                 raise AgentFailure(failure) from None
             ai.record_turns(user, app, config, purpose, usages)
     finally:
-        keep_steps(app, purpose, recorder.steps, message_id, run_id, phase, triage_id)
+        keep_steps(
+            app, purpose, recorder.steps, message_id, run_id, phase, triage_id, review_id
+        )
     if recorder.revoked is not None:
         raise recorder.revoked
     gateway.authorize(user, app.pk, purpose)
@@ -252,4 +260,5 @@ def run_agent(
         turns=allowed,
         steps=list(recorder.steps),
         found=recorder.found_citations(),
+        read=recorder.read_citations(),
     )

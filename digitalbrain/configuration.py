@@ -65,6 +65,7 @@ def load_config():
         "code_factory_local_tests",
         "code_factory_agent_tools",
         "serviceops_triage_agent_tools",
+        "code_review_agent_tools",
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
@@ -140,6 +141,10 @@ def load_config():
         # Accepted in production for the same reason: more turns through the
         # same budget and receipts, reading only this application's records.
         raise ImproperlyConfigured("serviceops_triage_agent_tools must be a boolean.")
+    if type(config.get("code_review_agent_tools", False)) is not bool:
+        # Accepted in production too: it reads only the review's own snapshot
+        # and change, and spends through the same budget and receipts.
+        raise ImproperlyConfigured("code_review_agent_tools must be a boolean.")
     if web_server(config) not in {"waitress", "uvicorn"}:
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:

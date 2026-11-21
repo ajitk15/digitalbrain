@@ -1608,9 +1608,76 @@ def agent_guardrails(ws):
         AIBudget.objects.filter(application=ws.app).delete()
         probes.update(code_tool_probes(ws, owner, config))
         probes.update(triage_tool_probes(ws, owner, viewer))
+        probes.update(review_tool_probes(ws, owner, config))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
+def review_tool_probes(ws, owner, chat_config):
+    """A code review's tools (agentic plan, Phase 4), inside the caller's savepoint:
+    whose change they read, and that a quote is held to what was really read."""
+    from django.test.utils import override_settings
+
+    from . import code_review, review_pack
+    from .agent_runtime import code_tools, harness
+    from .agent_runtime.scripted import Script
+    from .agent_runtime.tools import CitationRecorder, ToolScope, run_tool
+    from .models import AIConfiguration, CodeSnapshot
+
+    snapshot = (
+        CodeSnapshot.objects.filter(repository__application=ws.app).order_by("-created_at").first()
+        or code_snapshot(ws)
+    )
+    change = review_pack.load_pack()["changes"]["rename-consent-current"]
+    review = review_pack.build(owner, ws.app, snapshot, change)
+    changed = change["edits"][0]["path"]
+    caller = snapshot.files.get(path=change["expect"]["paths"][0])
+    call = next(line.strip() for line in caller.content.splitlines() if "consent.current(" in line)
+
+    def scope(app=ws.app):
+        return ToolScope(owner.pk, app.pk, "code_review", run_id=review.pk, snapshot_id=snapshot.pk)
+
+    probes = {}
+    mine = CitationRecorder(scope())
+    theirs = CitationRecorder(scope(ws.other))
+    run_tool(code_tools.READ_DIFF, mine.scope, {"path": changed}, mine)
+    run_tool(code_tools.READ_DIFF, theirs.scope, {"path": changed}, theirs)
+    probes["a review reads its own change alone"] = (
+        [item["id"] for item in mine.read_citations()] == [f"diff:{changed}"]
+        and theirs.read_citations() == []
+    )
+    run_tool(code_tools.READ_FILE, mine.scope, {"path": caller.path, "start_line": 1,
+                                                "end_line": 0}, mine)
+    read = mine.read_citations()[-1]
+    probes["what a review reads is the file's own text"] = (
+        read["id"] == f"code:{caller.pk}" and read["excerpt"] in caller.content
+    )
+
+    AIConfiguration.objects.create(
+        application=ws.app, purpose="code_review", provider="claude", model="claude-sonnet-5",
+        input_rate=chat_config.input_rate, output_rate=chat_config.output_rate,
+        configured_by=owner,
+    )
+    answer = json.dumps({"findings": [{
+        "severity": "high", "category": "correctness", "title": "Caller left behind",
+        "explanation": "e", "quotes": [{"source": f"code:{caller.pk}", "text": call}],
+    }]})
+    citations, _ = code_review.material(review, owner)
+    kept = {}
+    for label, turns in (("never read", [answer]), ("read", [
+        [("read_file", {"path": caller.path, "start_line": 1, "end_line": 0})], answer
+    ])):
+        with (
+            override_settings(CODE_REVIEW_AGENT_TOOLS=True),
+            patch.object(harness, "runtime_for", return_value=Script(*turns)),
+            patch("platform_core.ai.provider_credential", return_value="unused"),
+        ):
+            kept[label] = code_review.review_answer(
+                review, owner, citations, agent=True, steps=False
+            )["findings"]
+    probes["a review quotes only what it read"] = not kept["never read"] and len(kept["read"]) == 1
+    return probes
 
 
 def triage_tool_probes(ws, owner, viewer):

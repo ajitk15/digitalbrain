@@ -94,6 +94,11 @@ CODE_FACTORY_AGENT_TOOLS = bool(CONFIG.get("code_factory_agent_tools", False))
 # (`manage.py triage_pack`) shows it beats the one-shot call; Phase 3 of
 # documentation/engineering/agentic-ai-plan.md.
 SERVICEOPS_TRIAGE_AGENT_TOOLS = bool(CONFIG.get("serviceops_triage_agent_tools", False))
+# Let a code review's AI step read the base snapshot, the whole of each changed
+# file's diff and the published requirements with tools, instead of only the
+# excerpts chosen for it. Off unless written down, until the paid review pack
+# (`manage.py review_pack`) shows it finds more; Phase 4 of the agentic plan.
+CODE_REVIEW_AGENT_TOOLS = bool(CONFIG.get("code_review_agent_tools", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

@@ -216,8 +216,10 @@ read-only tools: `incident_context` (another incident's neighbourhood, through t
 published graph, `spend=False`), and `search_knowledge`/`fetch_source`, which serve triage
 too (`tools.SOURCE_PURPOSES`) - each call held to the `serviceops_triage` rule, not
 chat's. **Everything a triage tool shows the model is `redact`ed** (`tools.shown_to_model`),
-as the pack always was; the citations keep the source's words, since they are verified,
-never shown. What the tools found (`CitationRecorder.found_citations`, verified) joins the
+as the pack always was - every word but the record ids, which the pack hands over outside
+the redacted text too: `redact` read a run of digits in a UUID as a telephone number, so an
+id came back half `[phone]` and could not be cited; PostgreSQL's random ids caught it. The
+citations keep the source's words, since they are verified, never shown. What the tools found (`CitationRecorder.found_citations`, verified) joins the
 pack as `agent_read` rows, so a hypothesis may cite it and `run_still_verified` re-checks
 it on every read; a quote the model never read is still refused, the next-step rule and
 the band are unchanged (an agent-read source alone is one uncorroborated source, and the
@@ -230,6 +232,29 @@ rows with `triage` (migration 0109). **Turn it on only after `manage.py triage_p
 incident, asked one-shot and with tools over its pack without that confirmation, scored by
 whether and where a kept hypothesis cites the confirmed cause, and cost) clears the same
 bar as Phase 1. The scorecard's agent probes include the triage tools.
+
+**A code review's AI step may read further with tools - off until measured**
+(`code_review.review_answer`/`agent_review`, Phase 4). With `code_review_agent_tools = true`
+(a boolean, off by default, accepted in production), "Ask AI to review" becomes a harness run
+over the same material with Phase 1's snapshot tools - the review's **base** snapshot, the
+code before the change - plus `read_diff` (the whole stored diff of a file this review
+touches, `code_review` only, scoped by `ToolScope.run_id` to the review and its
+application) and `search_published_knowledge`; each call held to the `code_review` rule.
+For a review only, `read_file` hands back its window as evidence `code:<file id>` and says
+so (`code_tools.QUOTING`); Code Factory reads the same file and is handed nothing to
+quote. What was read (`AgentResult.read`, a knowledge passage only once verified) joins the
+material, so a finding may quote it, and `judge` checks every quote against `live_texts` as
+before - a quote the model never read is still refused, a requirement finding still needs
+both quotes, and the page checks each again when drawn. The cached result's rubric says
+which way it was made (`-agent`). Steps are `AgentStep` rows with `review` (migration
+0110). **Turn it on only after `manage.py review_pack <app> --as <user> [--record]`** (paid:
+each `benchmarks/review-pack.json` change - a rename, a new required argument, swapped
+parameters, a requirement's bound removed, each a find-and-replace whose label is tested
+against CarePath - applied to the application's CarePath snapshot as a temporary review,
+asked one-shot and with tools, scored by whether a kept finding quotes a file the label names
+or is the category it names, findings that do neither counted as noise; the review is removed
+after) clears Phase 1's bar, with no more noise. The scorecard's agent probes include the
+review tools.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...

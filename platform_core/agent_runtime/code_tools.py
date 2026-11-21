@@ -27,8 +27,12 @@ import re
 
 from .tools import ToolResult, ToolSpec
 
-#: The purposes these tools serve: Code Factory's implementation chain.
-CODE_PURPOSES = frozenset({"plan_drafting"})
+#: The purposes these tools serve: Code Factory's implementation chain, and the
+#: AI step of a code review (Phase 4), which reads the review's base snapshot.
+CODE_PURPOSES = frozenset({"plan_drafting", "code_review"})
+#: The purposes whose answers quote what the tools read, so a read is evidence
+#: with an id the model is told, and the answer is checked against its live text.
+QUOTING = frozenset({"code_review"})
 MAX_LISTED = 200
 MAX_LINES = 400
 LINE_CHARACTERS = 400
@@ -89,7 +93,7 @@ def read_file(scope, args):
     if files is None:
         return ToolResult(NO_SNAPSHOT)
     path = clean_path(args.get("path"))
-    found = files.filter(path=path).only("path", "content").first() if path else None
+    found = files.filter(path=path).only("id", "path", "content").first() if path else None
     if found is None:
         return ToolResult(NO_FILE, found=False)
     text = found.content.splitlines()
@@ -104,13 +108,54 @@ def read_file(scope, args):
         f"{number:>5} | {line[:LINE_CHARACTERS]}"
         for number, line in enumerate(text[start - 1 : end], start=start)
     ]
-    head = f"{path} (lines {start}-{end} of {len(text)}, as indexed):"
+    quoting = scope.purpose in QUOTING
+    head = (
+        (f"Evidence id code:{found.pk} - " if quoting else "")
+        + f"{path} (lines {start}-{end} of {len(text)}, as indexed):"
+    )
     tail = (
         [f"[{len(text) - end} more lines; read again from start_line={end + 1}]"]
         if end < len(text)
         else []
     )
-    return ToolResult("\n".join([head, *shown, *tail]), found=True)
+    # The window as it stands in the file, without the line numbers the model is
+    # shown: what a quote must match, and `code_review.live_texts` checks again.
+    citations = (
+        [
+            {
+                "id": f"code:{found.pk}",
+                "title": f"{path} lines {start}-{end} (read by the reviewer)",
+                "excerpt": "\n".join(text[start - 1 : end]),
+            }
+        ]
+        if quoting
+        else []
+    )
+    return ToolResult("\n".join([head, *shown, *tail]), citations, found=True)
+
+
+def read_diff(scope, args):
+    """The whole diff of one file the review's change touches, as stored."""
+    from ..models import CodeReviewFile
+
+    files = _files(scope)
+    if files is None or scope.run_id is None:
+        return ToolResult(NO_SNAPSHOT)
+    path = clean_path(args.get("path"))
+    row = (
+        CodeReviewFile.objects.filter(
+            review_id=scope.run_id, review__application_id=scope.app_id, path=path
+        ).first()
+        if path
+        else None
+    )
+    if row is None or not row.diff:
+        return ToolResult("That file is not one this change touches.", found=False)
+    return ToolResult(
+        f"Evidence id diff:{row.path} - the change to {row.path} ({row.change}):\n{row.diff}",
+        [{"id": f"diff:{row.path}", "title": f"Change to {row.path}", "excerpt": row.diff}],
+        found=True,
+    )
 
 
 def terms_of(query):
@@ -307,4 +352,16 @@ TESTS_FOR = ToolSpec(
     purposes=CODE_PURPOSES,
 )
 
-CODE_TOOLS = (LIST_FILES, READ_FILE, SEARCH_CODE, FIND_SYMBOL, CALLERS, TESTS_FOR)
+READ_DIFF = ToolSpec(
+    name="read_diff",
+    description=(
+        "The whole unified diff of one file this change touches - the evidence shows "
+        "each diff cut at a length; this is all of it."
+    ),
+    run=read_diff,
+    schema=_schema(path=("string", "The changed file's path.")),
+    detail=("path", 160),
+    purposes=frozenset({"code_review"}),
+)
+
+CODE_TOOLS = (LIST_FILES, READ_FILE, SEARCH_CODE, FIND_SYMBOL, CALLERS, TESTS_FOR, READ_DIFF)

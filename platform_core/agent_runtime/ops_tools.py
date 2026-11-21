@@ -141,7 +141,8 @@ SEARCH_PUBLISHED = ToolSpec(
     run=search_published_knowledge,
     schema=_schema(query=("string", "A component, service or symptom to look up.")),
     detail=("query", 120),
-    purposes=TRIAGE_PURPOSES,
+    # A code review looks up requirements the same way (Phase 4).
+    purposes=TRIAGE_PURPOSES | {"code_review"},
 )
 
 OPS_TOOLS = (INCIDENT_CONTEXT, SEARCH_PUBLISHED)

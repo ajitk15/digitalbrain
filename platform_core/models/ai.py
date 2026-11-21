@@ -184,6 +184,15 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the code review whose AI step it served (Phase 4), the same way.
+    review = models.ForeignKey(
+        "platform_core.CodeReview",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
     phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
@@ -201,4 +210,5 @@ class AgentStep(models.Model):
             models.Index(fields=["message", "sequence"], name="agent_step_message"),
             models.Index(fields=["run", "phase", "sequence"], name="agent_step_run"),
             models.Index(fields=["triage", "sequence"], name="agent_step_triage"),
+            models.Index(fields=["review", "sequence"], name="agent_step_review"),
         ]

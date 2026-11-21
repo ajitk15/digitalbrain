@@ -52,7 +52,7 @@ what counts as evidence.**
 | 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **Built, off** - waiting on a paid `factory_pack` run |
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` | **Done by rule** - 92% -> 100%; agent not needed |
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **Built, off** - waiting on a paid `triage_pack` run |
-| 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | Labelled review pack (new) | Off |
+| 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **Built, off** - waiting on a paid `review_pack` run |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | On where it is measured equal or better |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | Off |
 
@@ -290,7 +290,31 @@ makes a `confirmed` edge.
 confirmed cause among the hypotheses, and at what rank - agent against one-shot,
 plus cost.
 
-## Phase 4 - Code review agent
+## Phase 4 - Code review agent (built, switched off until measured)
+
+**What shipped:** `code_review.review_answer` and `agent_review`, which send "Ask AI to
+review" through `run_agent` when `code_review_agent_tools = true`; Phase 1's code tools
+serving `code_review` over the review's base snapshot, with `read_file` handing back a
+quotable `code:` window for a review only; `read_diff`; `search_published_knowledge`
+serving reviews; what was read joining the material `judge` checks; `AgentStep.review`
+(migration 0110); `benchmarks/review-pack.json` (four labelled CarePath changes) and
+`manage.py review_pack`; three more scorecard probes (22 in all, 100%);
+`tests/test_review_tools.py`.
+
+**What differs from the plan below:**
+
+- **The cache key is the material plus the way it was asked**, not "everything the agent
+  read": the agent's reads are not known until it has been paid for, and an answer to the
+  same material by the same way is the answer to keep.
+- **The snapshot is the code before the change.** The tools say so, and the whole change is
+  `read_diff`; reading a changed file's new text is the diff.
+- **Noise is scored, not only recall.** A finding that quotes none of the labelled files is
+  counted against the agent, so it cannot clear the bar by saying more.
+
+No paid run has been made; it needs an application with the CarePath code indexed, a Code
+review model and its credential, and your go-ahead.
+
+The original plan for this phase follows.
 
 The rule checks stay as they are (reach, routes, symbols, source with no test,
 requirement passages). The AI review (purpose `code_review`, on a button) gets Phase

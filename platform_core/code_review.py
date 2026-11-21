@@ -808,8 +808,7 @@ def live_texts(review, citations):
 
 def ai_review(review, user):
     """Ask once for this exact material; keep and return the checked findings."""
-    from .ai import invoke_ai
-    from .document_ai import keep, parse, stored
+    from .document_ai import keep, stored
 
     citations, version = material(review, user)
     if not citations:
@@ -820,34 +819,14 @@ def ai_review(review, user):
             separators=(",", ":"),
         )
     )
-    rubric = f"code-review-{REVIEW_VERSION}"
+    agent = uses_agent()
+    # An answer that read further is not the answer to this material alone.
+    rubric = f"code-review-{REVIEW_VERSION}" + ("-agent" if agent else "")
     found = stored(review.application_id, "change", digest, rubric)
     if found and not found.get("unreadable"):
         return found
-    receipt = {}
-    answer = invoke_ai(
-        user,
-        review.application_id,
-        "code_review",
-        "Review this change.",
-        citations,
-        instructions=INSTRUCTIONS,
-        max_tokens=REVIEW_TOKENS,
-        timeout=REVIEW_TIMEOUT,
-        receipt=receipt,
-    )
-    findings, dropped = judge(parse(answer), citations, live_texts(review, citations))
-    result = {
-        "findings": findings,
-        "dropped": sum(dropped.values()),
-        "dropped_reasons": dict(dropped),
-        "unreadable": "reply could not be read" in dropped,
-        "graph_version": version,
-        "evidence": len(citations),
-        "model": receipt.get("model", ""),
-        "provider": receipt.get("provider", ""),
-        "asked_at": timezone.now().isoformat(),
-    }
+    result = review_answer(review, user, citations, agent=agent)
+    result["graph_version"] = version
     return keep(
         SimpleNamespace(application_id=review.application_id, digest=digest),
         user,
@@ -855,6 +834,146 @@ def ai_review(review, user):
         rubric,
         result,
     )
+
+
+#: The review agent's turns and tool calls, when `code_review_agent_tools` is on;
+#: each turn is reserved before the first is sent.
+TOOL_TURNS = 6
+TOOL_CALLS = 12
+TOOL_GUIDANCE = (
+    " You may read further with the tools you are given: the code as it was before "
+    "this change (list, read by line, search, find a symbol, what depends on a file, "
+    "which tests cover it), the whole diff of any file the change touches, and the "
+    "published requirements. Each read says its evidence id; a quote from it is checked "
+    "like any other. The snapshot is the code before the change, so the diff is what "
+    "it becomes. Reading changes nothing. Answer, in your last turn, with the JSON "
+    "object you were asked for and nothing else."
+)
+
+
+def uses_agent():
+    from django.conf import settings
+
+    return settings.CODE_REVIEW_AGENT_TOOLS
+
+
+def review_answer(review, user, citations, agent=False, steps=True):
+    """Ask about this material - once, or as an agent with the review tools - and
+    judge the answer. Returns the stored result's fields, without the version.
+
+    What the agent read joins the material: a snapshot window (`code:`), a whole
+    diff (`diff:`), a requirement passage (verified, and never derived from code),
+    so a finding may quote it, and `judge` checks every quote against its live text
+    exactly as it checks the material's.
+    """
+    from .ai import invoke_ai
+    from .document_ai import parse
+
+    receipt, read = {}, []
+    if not agent:
+        answer = invoke_ai(
+            user,
+            review.application_id,
+            "code_review",
+            "Review this change.",
+            citations,
+            instructions=INSTRUCTIONS,
+            max_tokens=REVIEW_TOKENS,
+            timeout=REVIEW_TIMEOUT,
+            receipt=receipt,
+        )
+    else:
+        answer, read = agent_review(review, user, citations, receipt, steps)
+    evidence = citations + read
+    findings, dropped = judge(parse(answer), evidence, live_texts(review, evidence))
+    return {
+        "findings": findings,
+        "dropped": sum(dropped.values()),
+        "dropped_reasons": dict(dropped),
+        "unreadable": "reply could not be read" in dropped,
+        "evidence": len(citations),
+        "read": len(read),
+        "turns": receipt.get("turns", 1 if receipt else 0),
+        "tool_calls": receipt.get("tool_calls", 0),
+        "prompt_tokens": receipt.get("prompt_tokens", 0),
+        "completion_tokens": receipt.get("completion_tokens", 0),
+        "model": receipt.get("model", ""),
+        "provider": receipt.get("provider", ""),
+        "asked_at": timezone.now().isoformat(),
+    }
+
+
+def agent_review(review, user, citations, receipt, steps=True):
+    """(answer, evidence it read) through the harness with the review tools."""
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
+    from .ai import agent_configuration, prompt_size
+
+    app, config, token = agent_configuration(user, review.application_id, "code_review")
+    told = INSTRUCTIONS + TOOL_GUIDANCE
+    question = "Review this change."
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose="code_review",
+            scope=ToolScope(
+                user_id=user.pk,
+                app_id=app.pk,
+                purpose="code_review",
+                run_id=review.pk,
+                snapshot_id=review.snapshot_id,
+            ),
+            question=question,
+            citations=citations,
+            history=[],
+            emit=lambda event, data: None,
+            max_tokens=REVIEW_TOKENS,
+            prompt_characters=prompt_size(question, citations, None, {"instructions": told}),
+            turns=TOOL_TURNS,
+            tool_calls=TOOL_CALLS,
+            instructions=told,
+            timeout=REVIEW_TIMEOUT,
+            review_id=review.pk if steps else None,
+        )
+    except AgentFailure as failure:
+        raise ValidationError(
+            f"The review's model call failed ({failure.kind}). It may have been billed by "
+            "the provider; it is not retried automatically."
+        ) from None
+    receipt.update(
+        {
+            "provider": config.provider,
+            "model": config.model,
+            "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
+            "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
+            "turns": len(result.usages),
+            "tool_calls": len(result.steps),
+        }
+    )
+    held = {(item["id"], item["excerpt"]) for item in citations}
+    read = []
+    knowledge = {item["id"] for item in result.found}
+    for item in result.read:
+        kind = kind_of(item["id"])
+        if (item["id"], item["excerpt"]) in held:
+            continue
+        if kind == "knowledge" and item["id"] not in knowledge:
+            continue
+        held.add((item["id"], item["excerpt"]))
+        read.append(
+            {
+                "id": item["id"],
+                "title": (
+                    f"Requirement source: {item['title']}" if kind == "knowledge"
+                    else item["title"]
+                ),
+                "excerpt": item["excerpt"],
+            }
+        )
+    return result.answer, read
 
 
 def run_ai(review):

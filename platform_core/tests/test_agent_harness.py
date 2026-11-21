@@ -66,7 +66,7 @@ class RegistryTests(SimpleTestCase):
         self.assertEqual(
             list(registry.TOOLS),
             ["search_knowledge", "fetch_source", "list_files", "read_file", "search_code",
-             "find_symbol", "callers", "tests_for", "incident_context",
+             "find_symbol", "callers", "tests_for", "read_diff", "incident_context",
              "search_published_knowledge"],
         )
         for name, spec in registry.TOOLS.items():
@@ -98,7 +98,13 @@ class RegistryTests(SimpleTestCase):
             [spec.name for spec in registry.for_scope(triage)],
             ["search_knowledge", "fetch_source", "incident_context", "search_published_knowledge"],
         )
-        for purpose in ("code_review", "nonsense"):
+        review = ToolScope(user_id="u", app_id="a", purpose="code_review")
+        self.assertEqual(
+            [spec.name for spec in registry.for_scope(review)],
+            ["list_files", "read_file", "search_code", "find_symbol", "callers", "tests_for",
+             "read_diff", "search_published_knowledge"],
+        )
+        for purpose in ("nonsense",):
             with self.subTest(purpose=purpose):
                 self.assertEqual(registry.for_scope(ToolScope("u", "a", purpose)), [])
 
@@ -648,7 +654,7 @@ class ScorecardProbeTests(TestCase):
 
         values, probes = agent_guardrails(self.ws)
         self.assertEqual(values, {"agent_probes_passed": 100.0}, probes)
-        self.assertEqual(len(probes), 19)
+        self.assertEqual(len(probes), 22)
         self.assertFalse(AgentStep.objects.exists())
         self.assertFalse(AIUsage.objects.exists())
         self.assertFalse(AIBudget.objects.exists())

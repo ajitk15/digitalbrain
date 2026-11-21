@@ -164,6 +164,17 @@ class OpsToolTests(Fixture):
         chat, _ = self.call(FETCH_SOURCE, {"source_id": str(secret.pk)}, self.scope(purpose="chat"))
         self.assertIn("on-call@example.com", chat)
 
+    def test_a_record_id_is_never_redacted_as_a_telephone_number(self):
+        """An id holding a run of digits read as a phone number, and could not be cited."""
+        from platform_core.agent_runtime.tools import shown_to_model
+
+        text = "id=a8dd5e5f-6133-4336-8417-d180b776055d call +44 118 496 0142 now"
+        shown = shown_to_model("serviceops_triage", text)
+        self.assertIn("id=a8dd5e5f-6133-4336-8417-d180b776055d", shown)
+        self.assertNotIn("496 0142", shown)
+        self.assertIn("[phone]", shown)
+        self.assertEqual(shown_to_model("chat", text), text)
+
     def test_triage_tools_are_held_to_triages_rule(self):
         """A viewer may read knowledge in chat but may not triage, so may not read
         through triage's tools either."""

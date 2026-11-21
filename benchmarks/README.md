@@ -17,6 +17,8 @@ What the platform is measured against, and what it measured.
 | `drift/` | Recorded drift runs, one file per run, named by model. |
 | `factory-pack.json` | CarePath tickets with planted code bugs as approved plan items, hand-labelled with what the fix must and must not say, that `manage.py factory_pack` sends to Code Factory's implementation agent one-shot and with tools. |
 | `factory/` | Recorded factory-pack runs, one file per run, named by model. |
+| `review-pack.json` | CarePath changes that each break something - a caller, every caller, a requirement - labelled with the files a finding must quote, that `manage.py review_pack` hands a code review's AI step one-shot and with tools. |
+| `review/` | Recorded review-pack runs, one file per run, named by model. |
 | `triage/` | Recorded `manage.py triage_pack` runs: ServiceOps triage one-shot and with tools, against the causes people confirmed. The cases are the application's own verdicts, so there is no pack file. |
 
 The benchmark questions themselves are `documentation/demo/demo-kit/benchmark-questions.json`.
