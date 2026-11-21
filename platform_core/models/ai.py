@@ -145,8 +145,9 @@ class AgentStep(models.Model):
     lengths - `agent_runtime.tools.shape`), what came of it, how much text came
     back, how many citations and how long it took. Never the query, the result
     or anything a model or a person wrote: it says how an answer was reached,
-    not what it read. It belongs to the message it answered and goes with it,
-    whatever removes the message - its owner, chat retention, a reset.
+    not what it read. It belongs to the message it answered, or to the Code
+    Factory run and phase it served, and goes with it, whatever removes that -
+    its owner, chat retention, a reset, the application's deletion.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -164,6 +165,17 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the Code Factory run, and the phase of it, that the step served. No
+    # constraint for the same reason as `message`.
+    run = models.ForeignKey(
+        "platform_core.FactoryRun",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
+    phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
     tool = models.CharField(max_length=64)
@@ -175,5 +187,8 @@ class AgentStep(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["message_id", "sequence"]
-        indexes = [models.Index(fields=["message", "sequence"], name="agent_step_message")]
+        ordering = ["message_id", "run_id", "sequence"]
+        indexes = [
+            models.Index(fields=["message", "sequence"], name="agent_step_message"),
+            models.Index(fields=["run", "phase", "sequence"], name="agent_step_run"),
+        ]

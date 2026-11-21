@@ -55,10 +55,14 @@ class Script:
         max_tokens=ANSWER_TOKENS,
         tools=None,
         max_turns=4,
+        instructions=None,
+        timeout=None,
+        final_only=False,
     ):
         given = {spec.name: spec for spec in (tools or [])}
         self.given = sorted(given)
         self.max_turns = max_turns
+        self.instructions = instructions
         usages = []
         for number, turn in enumerate(self.turns, 1):
             if number > max_turns:

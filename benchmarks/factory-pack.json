@@ -1,0 +1,45 @@
+{
+  "about": "What `manage.py factory_pack` hands Code Factory's implementation agent, once with tools and once without, for each CarePath ticket with a planted code bug (documentation/demo/demo-kit/seeded-gaps.md). Each ticket is an approved plan item as a reviewer would approve it, the files it may change, the files a correct fix depends on but does not change (`needs`), and what the fixed code must and must not say inside a named symbol (`expect`, `forbid`, as [file, symbol, text]). Labelled by hand from the gaps document and the CarePath code, never from a model's output. `expect` and `forbid` are a proxy for a correct fix, not proof: CarePath's own test suite is the proof, and is not run here. CARE-401's consent check has since been written, and CARE-437's missing rate limit has no location, so neither is in the pack. A new pack starts a new reference: never rebuild it casually.",
+  "repository": "documentation/demo/carepath",
+  "tickets": {
+    "CARE-412": {
+      "title": "Clamp the page size on patient search",
+      "change": "GET /patients passes limit to the database unclamped. Bound it the way the sibling list endpoints do, at the configured maximum page size (NFR-06).",
+      "targets": ["src/carepath/api/routes_patients.py"],
+      "needs": ["src/carepath/api/routes_consent.py", "src/carepath/config.py"],
+      "expect": [["src/carepath/api/routes_patients.py", "search_patients", "max_page_size"]],
+      "forbid": []
+    },
+    "CARE-425": {
+      "title": "Audit every referral status change",
+      "change": "referrals.transition changes a referral's status and writes no audit event; every other write path does. Record the transition in the audit trail as the other services do (NFR-03, control C-03).",
+      "targets": ["src/carepath/services/referrals.py"],
+      "needs": ["src/carepath/security/audit.py", "src/carepath/services/consent.py"],
+      "expect": [["src/carepath/services/referrals.py", "transition", "record("]],
+      "forbid": []
+    },
+    "CARE-418": {
+      "title": "Keep patient identity out of the scoring log",
+      "change": "The readmission scoring log line writes the patient's name and birth date. Log the patient by id only (NFR-04, test plan TC-3).",
+      "targets": ["src/carepath/services/risk.py"],
+      "needs": ["src/carepath/logging_setup.py", "src/carepath/security/phi.py"],
+      "expect": [],
+      "forbid": [
+        ["src/carepath/services/risk.py", "score_for", "given_name"],
+        ["src/carepath/services/risk.py", "score_for", "born %s"]
+      ]
+    },
+    "CARE-431": {
+      "title": "Give auditors the masked summary, not the full record",
+      "change": "PatientSummary and mask_mrn are written and tested but unreachable, so an auditor receives the full patient record. Return the masked summary to the auditor role on patient reads (REG-03, control C-08).",
+      "targets": ["src/carepath/api/routes_patients.py"],
+      "needs": [
+        "src/carepath/schemas.py",
+        "src/carepath/security/phi.py",
+        "src/carepath/security/rbac.py"
+      ],
+      "expect": [["src/carepath/api/routes_patients.py", "read_patient", "PatientSummary"]],
+      "forbid": []
+    }
+  }
+}

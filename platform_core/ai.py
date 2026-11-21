@@ -730,6 +730,29 @@ def chat_configuration(user, app_id, mode="ai"):
     return app, config, token
 
 
+def agent_configuration(user, app_id, purpose):
+    """(application, configuration, credential) for an agent run of `purpose`.
+
+    What `invoke_ai` checks before a one-shot call, for a caller that hands the
+    run to `agent_runtime.harness.run_agent` instead: the purpose's rule, a
+    configured model, a provider the agent runtimes speak, the budget, and the
+    application's own credential.
+    """
+    from . import gateway
+    from .budget import check as check_budget
+
+    app, _ = gateway.authorize(user, app_id, purpose)
+    config = AIConfiguration.objects.filter(application=app, purpose=purpose, enabled=True).first()
+    if not config:
+        raise ValidationError(
+            f"An application owner must configure {dict(AI_PURPOSES)[purpose]} first."
+        )
+    if config.provider not in {"openai", "claude"}:
+        raise ValidationError("Unsupported AI provider.")
+    check_budget(app.pk)
+    return app, config, provider_credential(config, app)
+
+
 def record_turns(user, app, config, purpose, turns):
     """One accounting receipt per model turn.
 

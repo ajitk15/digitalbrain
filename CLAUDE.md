@@ -158,7 +158,7 @@ run starts. Model arguments may only narrow an already-scoped queryset. A foreig
 read as "not found", never raise and never leak.
 
 **Every agent runs through the harness** (`agent_runtime/harness.py`, Phase 0 of
-`documentation/engineering/agentic-ai-plan.md`; chat is the only agent today). An agent
+`documentation/engineering/agentic-ai-plan.md`; chat, and Code Factory when switched on). An agent
 chooses what it reads, never what it writes, who it acts as or what counts as evidence.
 Its tools are a closed registry (`agent_runtime/registry.py`: a tool serves the purposes it
 names and no others, and every one is read-only) that both provider runtimes build from -
@@ -182,6 +182,30 @@ by configuration, so every guardrail is tested with no provider; the scorecard's
 guardrail probes passing" must stay 100%. A new tool is one registry entry with its
 purposes, read-only, scoped by `ToolScope` (`run_id`/`snapshot_id` for a run pinned to
 one snapshot) - never a write.
+
+**Code Factory's agents may read the snapshot with tools - off until measured**
+(`agent_runtime/code_tools.py`, `code_factory_agents.consult`, Phase 1). With
+`code_factory_agent_tools = true` (a boolean, off by default, accepted in production: it
+spends more through the same budget and receipts and reads only the run's own snapshot),
+the implementation, test and review agents of a run with a pinned `CodeSnapshot` go
+through `run_agent` with six tools - list files, read a file by line window, search,
+find a symbol, what depends on a file, which tests cover it - each a lookup among that
+snapshot's `CodeFile` rows *of a repository of this application*: nothing opens a file,
+so no path a model writes reaches the disk, and another application's snapshot reads as
+no files. Each call re-authorizes `plan_drafting`. **What a run may change is unchanged**:
+the same numbered files, the same `collect_changes`, the same instructions plus
+`TOOL_GUIDANCE`; the work order, verification and delivery never take tools. Each read is
+a note on the run under its phase and an `AgentStep` with `run` and `phase` (migration
+0108); the phase's receipt is the turns' totals. The Claude runtime keeps only the last
+turn's text for such an agent (`final_only`), since prose before a tool call is not the
+JSON asked for. **Turn it on only after `manage.py factory_pack <app> --as <user>
+[--record]`** (paid: each `benchmarks/factory-pack.json` ticket one-shot and with tools,
+asked exactly what a run asks - `implementation_question` over `reference_files` - and
+scored by rules: changed a target, each hand-labelled `expect`/`forbid` inside a symbol,
+dependencies in front of the model, cost) says it clears the plan's bar: no fewer fixed,
+no fewer checks met, at most `COST_BAR` (2x) the cost. The labels are tested against the
+CarePath code, so a check cannot describe a bug that is not there; they are a proxy, and
+CarePath's own suite is the proof. The scorecard's agent probes include the code tools.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
@@ -1282,9 +1306,9 @@ the client is given the key and base URL explicitly, takes no proxy from the env
 and drops `ANTHROPIC_CUSTOM_HEADERS`; `test_claude_messages` plants all four and checks
 the request. No retries. Tests run with it off (`digitalbrain/test_runner.py`) because
 they mount made-up keys and patch the CLI adapter; a test of this path turns it on.
-Chat on Claude is the one agentic run, and it still needs the CLI's tools. Code
-Factory's "agents" are not agents: each is one `ask()` → `invoke_ai` call with
-`max_turns=1` and no tools, over files Python chose beforehand.
+Chat on Claude is an agentic run, and it still needs the CLI's tools. Code Factory's
+agents are one `ask()` → `invoke_ai` call each, with no tools, over files Python chose
+beforehand - unless `code_factory_agent_tools` is on (below).
 
 **Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
 used to list document typing, embeddings and reranking, so a new application had AI

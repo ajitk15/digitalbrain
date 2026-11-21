@@ -67,8 +67,12 @@ class ToolScope:
 
 @dataclass(frozen=True)
 class ToolResult:
+    """What a tool hands back. `found` says whether it found anything, for a tool
+    whose findings are not citations (code); unset, citations decide."""
+
     text: str
     citations: list = field(default_factory=list)
+    found: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -446,7 +450,8 @@ def run_tool(spec, scope, args, recorder):
         if len(text) > RESULT_CHARACTERS:
             text = text[: RESULT_CHARACTERS - len(CUT)] + CUT
         recorder.record(result)
-        outcome = "found" if result.citations else "nothing"
+        found = bool(result.citations) if result.found is None else result.found
+        outcome = "found" if found else "nothing"
         traced.set(outcome=outcome)
         _step(recorder, spec, args, outcome, started, text, len(result.citations))
     return text

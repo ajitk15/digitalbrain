@@ -15,5 +15,7 @@ What the platform is measured against, and what it measured.
 | `typing-pack.json` | Documents the rules leave as Other, labelled by a person, that `manage.py typing_pack` sends to the Document typing model. |
 | `typing/` | Recorded typing-pack runs, one file per run, named by model. |
 | `drift/` | Recorded drift runs, one file per run, named by model. |
+| `factory-pack.json` | CarePath tickets with planted code bugs as approved plan items, hand-labelled with what the fix must and must not say, that `manage.py factory_pack` sends to Code Factory's implementation agent one-shot and with tools. |
+| `factory/` | Recorded factory-pack runs, one file per run, named by model. |
 
 The benchmark questions themselves are `documentation/demo/demo-kit/benchmark-questions.json`.

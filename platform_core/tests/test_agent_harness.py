@@ -63,7 +63,11 @@ GATEWAY = {
 
 class RegistryTests(SimpleTestCase):
     def test_every_tool_is_named_once_and_serves_known_purposes(self):
-        self.assertEqual(list(registry.TOOLS), ["search_knowledge", "fetch_source"])
+        self.assertEqual(
+            list(registry.TOOLS),
+            ["search_knowledge", "fetch_source", "list_files", "read_file", "search_code",
+             "find_symbol", "callers", "tests_for"],
+        )
         for name, spec in registry.TOOLS.items():
             with self.subTest(tool=name):
                 self.assertEqual(spec.name, name)
@@ -78,12 +82,17 @@ class RegistryTests(SimpleTestCase):
                 _, strict = spec.wire("openai")
                 self.assertIs(strict["additionalProperties"], False)
                 self.assertEqual(set(strict["required"]), set(strict["properties"]))
-                self.assertEqual(spec.detail[0] in spec.schema["properties"], True)
+                self.assertIn(spec.detail[0], spec.schema["properties"])
 
     def test_a_scope_is_given_its_purposes_tools_and_no_others(self):
         chat = ToolScope(user_id="u", app_id="a", purpose="chat")
         self.assertEqual(registry.for_scope(chat), [SEARCH_KNOWLEDGE, FETCH_SOURCE])
-        for purpose in ("plan_drafting", "serviceops_triage", "code_review", "nonsense"):
+        factory = ToolScope(user_id="u", app_id="a", purpose="plan_drafting")
+        self.assertEqual(
+            [spec.name for spec in registry.for_scope(factory)],
+            ["list_files", "read_file", "search_code", "find_symbol", "callers", "tests_for"],
+        )
+        for purpose in ("serviceops_triage", "code_review", "nonsense"):
             with self.subTest(purpose=purpose):
                 self.assertEqual(registry.for_scope(ToolScope("u", "a", purpose)), [])
 
@@ -633,7 +642,7 @@ class ScorecardProbeTests(TestCase):
 
         values, probes = agent_guardrails(self.ws)
         self.assertEqual(values, {"agent_probes_passed": 100.0}, probes)
-        self.assertEqual(len(probes), 11)
+        self.assertEqual(len(probes), 15)
         self.assertFalse(AgentStep.objects.exists())
         self.assertFalse(AIUsage.objects.exists())
         self.assertFalse(AIBudget.objects.exists())

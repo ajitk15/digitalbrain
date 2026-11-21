@@ -11,9 +11,10 @@ a verdict, a published version - happens in code after a person approves it,
 never as a tool (`documentation/engineering/agentic-ai-plan.md`).
 """
 
+from .code_tools import CODE_TOOLS
 from .tools import FETCH_SOURCE, SEARCH_KNOWLEDGE
 
-TOOLS = {spec.name: spec for spec in (SEARCH_KNOWLEDGE, FETCH_SOURCE)}
+TOOLS = {spec.name: spec for spec in (SEARCH_KNOWLEDGE, FETCH_SOURCE, *CODE_TOOLS)}
 
 
 def for_scope(scope):

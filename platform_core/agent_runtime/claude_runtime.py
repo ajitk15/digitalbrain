@@ -102,7 +102,7 @@ def build_server(scope, recorder, emit, tools=None):
     )
 
 
-def build_environment(directory, token, max_tokens):
+def build_environment(directory, token, max_tokens, request_seconds=30):
     # The CLI gets an empty workspace/settings home; it cannot inherit another
     # application's session or a host credential.
     host_login = host_login_enabled() and not str(token or "").strip()
@@ -120,7 +120,7 @@ def build_environment(directory, token, max_tokens):
             "TRACEPARENT": "",
             "TRACESTATE": "",
             "CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(max_tokens),
-            "API_TIMEOUT_MS": "30000",
+            "API_TIMEOUT_MS": str(request_seconds * 1000),
             "CLAUDE_CODE_MAX_RETRIES": "0",
         }
     )
@@ -149,6 +149,12 @@ def build_prompt(question, citations, history):
             "evidence": evidence_payload(citations),
         }
     )
+
+
+def starts_message(message):
+    """Whether a partial message opens a new model turn."""
+    event = getattr(message, "event", None)
+    return isinstance(event, dict) and event.get("type") == "message_start"
 
 
 def stream_text(message):
@@ -180,20 +186,29 @@ async def run(
     max_tokens=ANSWER_TOKENS,
     tools=None,
     max_turns=MAX_TURNS,
+    instructions=None,
+    timeout=None,
+    final_only=False,
 ):
     """Stream one answer, returning (turn usages, answer text).
 
     `tools` are registry specs (the scope's own when not given); with none, the
-    model answers from the evidence it was handed, in one turn.
+    model answers from the evidence it was handed, in one turn. `instructions`
+    replace chat's own, and `timeout` its two minutes, for an agent that writes
+    more than a chat answer (Code Factory); each request may then take as long.
+    `final_only` keeps the text of the last model turn alone: chat shows what the
+    model said before each tool call, but an agent asked for JSON is answered by
+    its last turn, and the words before it are not part of that answer.
     """
     tools = for_scope(scope) if tools is None else list(tools)
+    wall = timeout or RUN_TIMEOUT
     with tempfile.TemporaryDirectory(
         prefix="digital-brain-agent-", ignore_cleanup_errors=True
     ) as directory:
         options = ClaudeAgentOptions(
             cli_path=bundled_cli(),
             model=model,
-            system_prompt=TOOL_INSTRUCTIONS,
+            system_prompt=instructions or TOOL_INSTRUCTIONS,
             tools=[],
             allowed_tools=[f"{TOOL_PREFIX}{spec.name}" for spec in tools],
             permission_mode="dontAsk",
@@ -205,7 +220,7 @@ async def run(
             skills=[],
             plugins=[],
             cwd=directory,
-            env=build_environment(directory, token, max_tokens),
+            env=build_environment(directory, token, max_tokens, timeout or 30),
             max_turns=max_turns if tools else 1,
             max_buffer_size=MAX_BUFFER,
             include_partial_messages=True,
@@ -217,10 +232,12 @@ async def run(
         result = None
         stopped_at = None
         prompt = build_prompt(question, citations, history)
-        async with asyncio.timeout(RUN_TIMEOUT):
+        async with asyncio.timeout(wall):
             async with contextlib.aclosing(query(prompt=prompt, options=options)) as stream:
                 async for message in stream:
                     if isinstance(message, StreamEvent):
+                        if final_only and starts_message(message):
+                            pieces.clear()
                         piece = stream_text(message)
                         if piece and stopped_at is None:
                             pieces.append(piece)

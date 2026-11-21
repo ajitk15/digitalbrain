@@ -49,7 +49,7 @@ what counts as evidence.**
 | Phase | What | Effort | Model cost | Measured by | Default |
 |---|---|---|---|---|---|
 | 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | **Done** - chat runs on it |
-| 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | Off, then on once it beats one-shot |
+| 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **Built, off** - waiting on a paid `factory_pack` run |
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` (92% today) | Rules on; agent off |
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | Triage replay + `idea_confidence` against confirmed verdicts | Off |
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | Labelled review pack (new) | Off |
@@ -125,7 +125,36 @@ the sandbox, the receipts and the limits.
 **Done when:** chat runs on the harness with byte-identical citations on the
 benchmark, and the probes pass on SQLite and PostgreSQL.
 
-## Phase 1 - Code Factory repository tools
+## Phase 1 - Code Factory repository tools (built, switched off until measured)
+
+**What shipped:** `agent_runtime/code_tools.py` (six tools: `list_files`, `read_file`,
+`search_code`, `find_symbol`, `callers`, `tests_for`), registered for `plan_drafting`
+only; `code_factory_agents.consult`, which sends the implementation, test and review
+agents through `run_agent` when `code_factory_agent_tools = true` and the run has a
+pinned snapshot, and through the one-shot `ask` otherwise; the harness and both runtimes
+taking an agent's own instructions, timeout and tool-call limit; `AgentStep.run` and
+`.phase` (migration 0108) and a note on the run per read; `benchmarks/factory-pack.json`
+(four CarePath tickets, hand-labelled) and `manage.py factory_pack`; four more scorecard
+probes (15 in all, 100%); `tests/test_code_tools.py` and `tests/test_factory_pack.py`.
+
+**Not done yet, and why:** the paid pack has not been run - it needs an application with
+the CarePath code indexed, a Code Factory model and its credential, and your go-ahead to
+spend (four tickets, each sent both ways, up to 8 turns each with tools). Until it says tools clear the bar,
+the switch stays off and nothing a run does has changed.
+
+**What differs from the plan below:**
+
+- **One snapshot for every run, GitHub or local.** A GitHub run reads its targets from the
+  branch but its tools from the pinned snapshot, as `reference_files` already did; the
+  tool descriptions say "as indexed".
+- **Scoring is by rules, not by running CarePath's tests.** `expect`/`forbid` text inside
+  a named symbol is a proxy, tested against the code so no label describes a bug that is
+  not there. Running the suite per answer would execute model-written code, which needs
+  the local-tests gates; it is the obvious next measure.
+- **Code Factory's turns and tool calls are 8 and 16** (chat's are 4 and 8), each reserved
+  before the first is sent.
+
+The original plan for this phase follows.
 
 Today `reference_files` guesses up to `REFERENCE_FILES` (10) files and 64 KB of
 reference before implementation starts. A live run already missed the consent service

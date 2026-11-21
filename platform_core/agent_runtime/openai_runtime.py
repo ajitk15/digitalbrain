@@ -182,11 +182,15 @@ async def run(
     max_tokens=ANSWER_TOKENS,
     tools=None,
     max_turns=MAX_TURNS,
+    instructions=None,
+    timeout=None,
 ):
     """Stream one answer, returning (turn usages, answer text).
 
     `tools` are registry specs (the scope's own when not given); with none, the
-    model answers from the evidence it was handed, in one turn.
+    model answers from the evidence it was handed, in one turn. `instructions`
+    replace chat's own, and `timeout` its two minutes, for an agent that writes
+    more than a chat answer (Code Factory); each request may then take as long.
     """
     from openai import AsyncOpenAI
 
@@ -200,11 +204,11 @@ async def run(
         organization="",
         project="",
         max_retries=0,
-        timeout=30,
+        timeout=timeout or 30,
         http_client=_http_client(),
     ) as client:
         given = build_tools(scope, recorder, emit, tools)
-        agent = build_agent(model, client, TOOL_INSTRUCTIONS, max_tokens, given)
+        agent = build_agent(model, client, instructions or TOOL_INSTRUCTIONS, max_tokens, given)
         result = Runner.run_streamed(
             agent,
             input=build_input(question, citations, history),
@@ -213,7 +217,7 @@ async def run(
         )
         watcher = asyncio.ensure_future(_watch_cancel(result, cancel))
         try:
-            async with asyncio.timeout(RUN_TIMEOUT):
+            async with asyncio.timeout(timeout or RUN_TIMEOUT):
                 async for event in result.stream_events():
                     # Match the literal event type: the Chat Completions handler
                     # synthesizes the same Responses-shaped delta.

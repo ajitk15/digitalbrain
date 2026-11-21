@@ -82,6 +82,12 @@ CODE_FACTORY_LOCAL_WRITE = (
 CODE_FACTORY_LOCAL_TESTS = (
     bool(CONFIG.get("code_factory_local_tests", False)) and DEMONSTRATION_ALLOWED
 )
+# Let Code Factory's implementation, test and review agents read the run's pinned
+# code snapshot with tools (`agent_runtime/code_tools.py`) instead of only the
+# files chosen for them beforehand. Off unless written down, until the paid
+# factory pack (`manage.py factory_pack`) shows it beats the one-shot path; see
+# documentation/engineering/agentic-ai-plan.md, Phase 1.
+CODE_FACTORY_AGENT_TOOLS = bool(CONFIG.get("code_factory_agent_tools", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

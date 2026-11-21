@@ -63,6 +63,7 @@ def load_config():
         "code_graph_local_roots",
         "code_factory_local_write",
         "code_factory_local_tests",
+        "code_factory_agent_tools",
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
@@ -130,6 +131,10 @@ def load_config():
         raise ImproperlyConfigured("claude_use_host_login must be a boolean.")
     if type(config.get("claude_messages_api", True)) is not bool:
         raise ImproperlyConfigured("claude_messages_api must be a boolean.")
+    if type(config.get("code_factory_agent_tools", False)) is not bool:
+        # Accepted in production: it spends more on a run, through the same
+        # budget and receipts, and reads only the run's own snapshot.
+        raise ImproperlyConfigured("code_factory_agent_tools must be a boolean.")
     if web_server(config) not in {"waitress", "uvicorn"}:
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:

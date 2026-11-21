@@ -92,22 +92,28 @@ def tool_budget(allowed, requested, calls=MAX_TOOL_CALLS):
     return max(1, math.ceil(calls * (allowed - 1) / (requested - 1)))
 
 
-def keep_steps(app, purpose, message_id, steps):
-    """Write a run's steps as `AgentStep` rows; a failure here never fails the run."""
-    if not steps or message_id is None:
+def keep_steps(app, purpose, steps, message_id=None, run_id=None, phase=""):
+    """Write a run's steps as `AgentStep` rows, for the chat message or the Code
+    Factory run (and phase) they belong to; a failure here never fails the run."""
+    if not steps or (message_id is None and run_id is None):
         return 0
-    from ..models import AgentStep, ChatMessage
+    from ..models import AgentStep, ChatMessage, FactoryRun
 
+    owner = ChatMessage if message_id is not None else FactoryRun
     try:
         with transaction.atomic():
-            # A message deleted while it was answered (retention, its owner) takes
-            # its steps with it; there is nothing left to describe.
-            if not ChatMessage.objects.filter(pk=message_id, application_id=app.pk).exists():
+            # What the steps describe may be gone by now - a message removed by
+            # its owner or retention, a run deleted with its application - and
+            # its steps go with it; there is nothing left to describe.
+            pk = message_id if message_id is not None else run_id
+            if not owner.objects.filter(pk=pk, application_id=app.pk).exists():
                 return 0
             AgentStep.objects.bulk_create(
                 AgentStep(
                     application_id=app.pk,
                     message_id=message_id,
+                    run_id=run_id,
+                    phase=phase,
                     purpose=purpose,
                     sequence=step["sequence"],
                     tool=step["tool"],
@@ -144,15 +150,26 @@ def run_agent(
     max_tokens,
     prompt_characters,
     turns=TURNS,
+    tool_calls=MAX_TOOL_CALLS,
+    instructions=None,
+    timeout=None,
     message_id=None,
+    run_id=None,
+    phase="",
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
+
+    `instructions` and `timeout` replace chat's for an agent that is not chat
+    (Code Factory); `tool_calls` is the most tool calls its whole run may make,
+    and so part of what admission reserves. Its steps are kept for the chat
+    message (`message_id`) or the run and phase (`run_id`, `phase`) it served.
 
     Raises what admission raises (busy, over budget, disabled) before anything
     is sent, `AgentFailure` when the provider or runtime fails, and the refusal
     a tool met when access ended during the run.
     """
     from .. import ai, gateway
+    from . import claude_runtime
 
     # The caller has usually authorized already (`ai.chat_configuration`); asking
     # again here means no agent can be started by a caller that forgot.
@@ -174,10 +191,10 @@ def run_agent(
             prompt_characters=prompt_characters,
             max_tokens=max_tokens,
             turns=asked,
-            tool_characters=MAX_TOOL_CALLS * RESULT_CHARACTERS if tools else 0,
+            tool_characters=tool_calls * RESULT_CHARACTERS if tools else 0,
         ) as admission:
             allowed = getattr(admission, "turns", None) or asked
-            recorder.budget = tool_budget(allowed, asked)
+            recorder.budget = tool_budget(allowed, asked, tool_calls)
             given = tools if allowed > 1 else []
             try:
                 # The provider runtimes are coroutines, run here on the caller's
@@ -196,6 +213,13 @@ def run_agent(
                     max_tokens=max_tokens,
                     tools=given,
                     max_turns=allowed,
+                    # Only when set, so chat's runtimes are called as they were.
+                    **({"instructions": instructions} if instructions else {}),
+                    **({"timeout": timeout} if timeout else {}),
+                    # An agent given its own instructions answers in its last turn;
+                    # the Claude runtime joins every turn's text unless told, the
+                    # OpenAI runtime's answer is always its final output.
+                    **({"final_only": True} if instructions and runtime is claude_runtime else {}),
                 )
                 usages, answer = (
                     asyncio.run(pending) if inspect.isawaitable(pending) else pending
@@ -206,7 +230,7 @@ def run_agent(
                 raise AgentFailure(failure) from None
             ai.record_turns(user, app, config, purpose, usages)
     finally:
-        keep_steps(app, purpose, message_id, recorder.steps)
+        keep_steps(app, purpose, recorder.steps, message_id, run_id, phase)
     if recorder.revoked is not None:
         raise recorder.revoked
     gateway.authorize(user, app.pk, purpose)

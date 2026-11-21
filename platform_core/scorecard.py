@@ -1601,9 +1601,111 @@ def agent_guardrails(ws):
         probes["a budget with room for one turn gets no tools"] = (
             script.given == [] and result.turns == 1
         )
+        AIBudget.objects.filter(application=ws.app).delete()
+        probes.update(code_tool_probes(ws, owner, config))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
+def code_tool_probes(ws, owner, chat_config):
+    """Code Factory's code tools (agentic plan, Phase 1), inside the caller's
+    savepoint: what they may read, and what an agent using them may change."""
+    from django.test.utils import override_settings
+
+    from .agent_runtime import code_tools, harness, registry
+    from .agent_runtime.scripted import Script
+    from .agent_runtime.tools import CitationRecorder, ToolScope, run_tool
+    from .code_factory_agents import run_implementation
+    from .models import (
+        AIConfiguration,
+        ChangePlan,
+        CodeFile,
+        CodeRepository,
+        CodeSnapshot,
+        FactoryRun,
+        PlanItem,
+    )
+
+    snapshot = (
+        CodeSnapshot.objects.filter(repository__application=ws.app).order_by("-created_at").first()
+        or code_snapshot(ws)
+    )
+    elsewhere = CodeSnapshot.objects.create(
+        repository=CodeRepository.objects.create(
+            application=ws.other, added_by=owner, provider="local", external_id="probe",
+            name="probe", source_url="https://example.invalid/probe", status="ready",
+        ),
+        number=1, ref="main", commit_sha="probe", manifest_digest="-",
+    )
+    target = snapshot.files.filter(path__endswith=".py").exclude(path__contains="test").first()
+    CodeFile.objects.create(
+        snapshot=elsewhere, path=target.path, language="python", digest="-",
+        content="ELSEWHERE = 'another application'\n", lines=1,
+    )
+    probes = {}
+
+    def read(path, snapshot_id):
+        scope = ToolScope(owner.pk, ws.app.pk, "plan_drafting", snapshot_id=snapshot_id)
+        recorder = CitationRecorder(scope)
+        return run_tool(
+            code_tools.READ_FILE, scope, {"path": path, "start_line": 1, "end_line": 0}, recorder
+        )
+
+    probes["a code tool reads this run's snapshot alone"] = (
+        target.path in read(target.path, snapshot.pk)
+        and read(target.path, elsewhere.pk) == code_tools.NO_FILE
+    )
+    probes["a path outside the snapshot reads as not found"] = all(
+        read(path, snapshot.pk) == code_tools.NO_FILE
+        for path in ("../../etc/passwd", "/etc/hosts", "C:\\Windows\\win.ini", "")
+    )
+    chat = ToolScope(owner.pk, ws.app.pk, "chat")
+    factory = ToolScope(owner.pk, ws.app.pk, "plan_drafting")
+    probes["chat and Code Factory are given only their own tools"] = not (
+        {spec.name for spec in registry.for_scope(chat)}
+        & {spec.name for spec in registry.for_scope(factory)}
+    )
+
+    AIConfiguration.objects.create(
+        application=ws.app, purpose="plan_drafting", provider="claude",
+        model="claude-sonnet-5", input_rate=chat_config.input_rate,
+        output_rate=chat_config.output_rate, configured_by=owner,
+    )
+    plan = ChangePlan.objects.create(
+        application=ws.app, author=owner, title="Probe", proposal="p", validation="v",
+        digest="d", status="approved",
+    )
+    PlanItem.objects.create(
+        plan=plan, sequence=0, category="stated", title="Probe", explanation="e",
+        change_summary="c", targets=[target.path],
+    )
+    run = FactoryRun.objects.create(
+        application=ws.app, requested_by=owner, plan=plan, ticket_external_id="PROBE-1",
+        proposed_repository="probe", repository_confirmed=True, status="preparing",
+        code_snapshot=snapshot,
+    )
+    other = snapshot.files.exclude(pk=target.pk).filter(path__endswith=".py").first()
+    script = Script(
+        [("read_file", {"path": other.path, "start_line": 1, "end_line": 0})],
+        json.dumps({"files": [{"file": "1", "content": target.content + "\n# probe\n"},
+                              {"file": "2", "content": "written elsewhere"}]}),
+    )
+    with (
+        override_settings(CODE_FACTORY_AGENT_TOOLS=True),
+        patch.object(harness, "runtime_for", return_value=script),
+        patch("platform_core.ai.provider_credential", return_value="unused"),
+    ):
+        changes = run_implementation(
+            run, None, [{"path": target.path, "text": target.content, "sha": None}],
+            order={}, references=[],
+        )
+    probes["an agent with tools changes only its numbered files"] = (
+        [change["path"] for change in changes] == [target.path]
+        and CodeFile.objects.get(pk=other.pk).content == other.content
+        and run.agent_steps.filter(phase="implementation", tool="read_file").count() == 1
+    )
+    return probes
 
 
 def speed(ws, revision, questions):

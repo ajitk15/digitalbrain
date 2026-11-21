@@ -49,6 +49,155 @@ IMPLEMENTATION_INSTRUCTIONS = GROUND_RULES + (
 )
 
 
+#: The agents that may read the run's code snapshot with tools, when
+#: `code_factory_agent_tools` is on. The work order splits approved intent and
+#: verification and delivery are rules, so none of them explores.
+TOOL_PHASES = ("implementation", "tests", "review")
+#: An agent's turns and tool calls: more than chat's, because finding how a
+#: change is called and tested takes several reads; each turn is reserved.
+TOOL_TURNS = 8
+TOOL_CALLS = 16
+TOOL_GUIDANCE = (
+    " You may also read the rest of the repository, as it was indexed, with the tools "
+    "you are given: list files, read a file by line, search, find where a symbol is "
+    "defined, see what depends on a file and which tests cover it. Use them to check "
+    "how the code you work on is called and tested before you answer. Reading changes "
+    "nothing, and you can still change only the numbered files. Answer, in your last "
+    "turn, with the JSON object you were asked for and nothing else."
+)
+LABELS = {"implementation": "Implementation", "tests": "Test author", "review": "Review"}
+
+
+def uses_tools(run, phase_name):
+    """Whether this run's agent for `phase_name` reads the snapshot with tools."""
+    from django.conf import settings
+
+    return (
+        settings.CODE_FACTORY_AGENT_TOOLS
+        and phase_name in TOOL_PHASES
+        and run.code_snapshot_id is not None
+    )
+
+
+def consult(run, phase_name, instructions, question, citations, receipt):
+    """One agent's model call: with the snapshot's tools when switched on, else
+    the one-shot `ask` every agent made before.
+
+    Either way it answers the same question over the same numbered files, so what
+    it may change is decided exactly as before - the files are known by their
+    numbers, and the path comes from what was read, never from the model.
+    """
+    if not uses_tools(run, phase_name):
+        return ask(
+            run.requested_by,
+            run.application_id,
+            phase_name,
+            instructions,
+            question,
+            citations,
+            receipt,
+        )
+    return ask_with_tools(run, phase_name, instructions, question, citations, receipt)
+
+
+def agent_answer(
+    user, app_id, snapshot_id, phase_name, instructions, question, citations, receipt,
+    emit=None, run_id=None,
+):
+    """One agent's answer through the harness with Code Factory's code tools.
+
+    Returns the harness's `AgentResult`; `receipt` is filled with the run's
+    totals across its turns, for the phase's record. With `run_id` its steps are
+    kept as that run's; the factory pack passes none.
+    """
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
+    from .ai import agent_configuration, prompt_size
+    from .code_factory import output_limit, phase_timeout
+
+    app, config, token = agent_configuration(user, app_id, "plan_drafting")
+    label = LABELS.get(phase_name, phase_name)
+    told = instructions + TOOL_GUIDANCE
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose="plan_drafting",
+            scope=ToolScope(
+                user_id=user.pk,
+                app_id=app.pk,
+                purpose="plan_drafting",
+                run_id=run_id,
+                snapshot_id=snapshot_id,
+            ),
+            question=question,
+            citations=citations,
+            history=[],
+            emit=emit or (lambda event, data: None),
+            max_tokens=output_limit(app.pk),
+            prompt_characters=prompt_size(question, citations, None, {"instructions": told}),
+            turns=TOOL_TURNS,
+            tool_calls=TOOL_CALLS,
+            instructions=told,
+            timeout=phase_timeout(phase_name),
+            run_id=run_id,
+            phase=phase_name,
+        )
+    except AgentFailure as failure:
+        raise ValidationError(
+            f"{label}: the model call failed ({failure.kind}). It may have been billed by "
+            "the provider; it is not retried automatically."
+        ) from None
+    receipt.update(
+        {
+            "provider": config.provider,
+            "model": config.model,
+            "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
+            "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
+            "request_id": result.usages[-1].request_id if result.usages else "",
+            "turns": len(result.usages),
+            "tool_calls": len(result.steps),
+        }
+    )
+    return result
+
+
+def ask_with_tools(run, phase_name, instructions, question, citations, receipt):
+    """`consult` through the agent harness, with Code Factory's code tools.
+
+    Each tool call is a note on the run, under its phase, so the page shows how
+    the answer was reached; each is also an `AgentStep`.
+    """
+    label = LABELS.get(phase_name, phase_name)
+
+    def emit(event, data):
+        if event == "tool":
+            detail = f" {data['detail']}" if data.get("detail") else ""
+            note(run, f"{label} read: {data['name']}{detail}", phase=phase_name)
+
+    result = agent_answer(
+        run.requested_by,
+        run.application_id,
+        run.code_snapshot_id,
+        phase_name,
+        instructions,
+        question,
+        citations,
+        receipt,
+        emit=emit,
+        run_id=run.pk,
+    )
+    note(
+        run,
+        f"{label}: {len(result.steps)} read(s) of the snapshot over "
+        f"{len(result.usages)} model turn(s).",
+        phase=phase_name,
+    )
+    return result.answer
+
+
 #: A path the design annotated with the symbol it means: "app/views.py (index)".
 #: The prompt asks for files, and naming the function inside one is a reasonable
 #: reading of it - but the annotation is not part of the path, and left on it the
@@ -328,8 +477,11 @@ GENERIC_STEMS = {
 }
 
 
-def reference_files(run, targets):
+def reference_files(run, targets, text=None):
     """Files the change depends on but does not change, from the pinned snapshot.
+
+    `text` is the approved items' words when the caller has no plan rows - the
+    factory pack (`factory_pack.py`) - so it chooses exactly as a run would.
 
     The implementation used to see only the files the design named. A live run
     whose design named the export route but not the consent service it had to
@@ -354,10 +506,12 @@ def reference_files(run, targets):
         return []
     ordered_targets = [item["path"] for item in targets]
     targets = set(ordered_targets)
-    text = " ".join(
-        f"{item.title} {item.explanation} {item.change_summary}"
-        for item in run.plan.items.exclude(status="rejected")
-    ).lower()
+    if text is None:
+        text = " ".join(
+            f"{item.title} {item.explanation} {item.change_summary}"
+            for item in run.plan.items.exclude(status="rejected")
+        )
+    text = text.lower()
     paths = list(snapshot.files.values_list("path", flat=True))
     named = []
     for path in paths:
@@ -553,6 +707,16 @@ def reference_block(snapshot, references):
     return "\n\n".join(parts)
 
 
+def implementation_question(summary, snapshot, references):
+    """What the implementation is asked: the approved changes and its read-only
+    reference. The factory pack asks the same, so it measures what a run sends."""
+    return "\n\n".join(
+        part
+        for part in (f"Approved changes:\n{summary}", reference_block(snapshot, references))
+        if part
+    )
+
+
 def run_implementation(run, token, files, order=None, references=None):
     """Write the new contents of each file, against the intent set for it.
 
@@ -595,19 +759,11 @@ def run_implementation(run, token, files, order=None, references=None):
     )
     receipt = {}
     try:
-        answer = ask(
-            run.requested_by,
-            run.application_id,
+        answer = consult(
+            run,
             "implementation",
             IMPLEMENTATION_INSTRUCTIONS,
-            "\n\n".join(
-                part
-                for part in (
-                    f"Approved changes:\n{approved_summary(run.plan)}",
-                    reference_block(run.code_snapshot, references),
-                )
-                if part
-            ),
+            implementation_question(approved_summary(run.plan), run.code_snapshot, references),
             numbered,
             receipt,
         )
@@ -919,9 +1075,8 @@ def run_tests_agent(run, changes, token, references=None):
     receipt = {}
     payload = None
     try:
-        answer = ask(
-            run.requested_by,
-            run.application_id,
+        answer = consult(
+            run,
             "tests",
             TEST_INSTRUCTIONS,
             "\n\n".join(
@@ -1049,9 +1204,8 @@ def run_review(run, changes, order, references=None):
     ]
     receipt = {}
     try:
-        answer = ask(
-            run.requested_by,
-            run.application_id,
+        answer = consult(
+            run,
             "review",
             REVIEW_INSTRUCTIONS,
             "\n\n".join(
