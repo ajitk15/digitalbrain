@@ -3,6 +3,7 @@ from django.urls import path
 
 from platform_core import (
     administration,
+    agent_catalog,
     ai,
     api,
     authenticator,
@@ -115,6 +116,10 @@ urlpatterns = [
         "applications/<uuid:pk>/sources/<uuid:source_id>/delete/",
         documents.source_delete,
         name="source-delete",
+    ),
+    path("applications/<uuid:pk>/agents/", agent_catalog.agents_view, name="agents"),
+    path(
+        "applications/<uuid:pk>/agents/<slug:key>/", agent_catalog.agent_view, name="agent"
     ),
     path("applications/<uuid:pk>/ai/", ai.ai_settings, name="ai-settings"),
     path("applications/<uuid:pk>/ai/<slug:purpose>/", ai.ai_task, name="ai-task"),

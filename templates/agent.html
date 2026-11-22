@@ -1,0 +1,29 @@
+{% extends 'base.html' %}{% load icons %}{% block title %}{{ agent.name }} · {{ application.name }}{% endblock %}{% block content %}{% comment %}One agent (`agent_catalog.agent_view`): what it does, whether it is on here, where it runs, the tools the harness hands it (read from `registry.for_scope`, never written by hand), its limits and safeguards, and counts of what it did lately - never what it read. Opened as a popup by its badge (`_agent_badge.html`); a page of its own without JavaScript.{% endcomment %}
+<div class="guide agent-page">
+<p class="eyebrow">{{ application.name }} / AGENTS</p>
+<h1><span class="agent-page-icon">{% icon "agent" 22 %}</span>{{ agent.name }}</h1>
+<p class="agent-state agent-state-{{ state }}"><span class="agent-badge agent-badge-{{ state }}">{% icon "agent" 14 %}Agent<span class="agent-badge-state">{{ label }}</span></span> {{ detail }}</p>
+<p class="guide-lead">{{ agent.does }}</p>
+
+<dl class="agent-facts">
+<dt>Starts</dt><dd>{{ agent.trigger }}</dd>
+<dt>Runs</dt><dd>{{ agent.where }}</dd>
+<dt>Limits</dt><dd>Up to {{ agent.turns }} turns and {{ agent.tool_calls }} tool calls{% if agent.kept_back %}, plus one turn kept back to answer in if it runs out{% endif %}, each paid for before the first is sent.</dd>
+{% if agent.measured %}<dt>Measured</dt><dd>{{ agent.measured }}</dd>{% endif %}
+</dl>
+
+<h2 class="panel-label">What it may read</h2>
+<ul class="agent-tools">{% for tool in tools %}<li><code>{{ tool.name }}</code><span>{{ tool.description }}</span></li>{% empty %}<li>No tools.</li>{% endfor %}</ul>
+
+<h2 class="panel-label">What keeps it safe</h2>
+<ul class="agent-safeguards">{% for line in safeguards %}<li>{% icon "check" 14 %}<span>{{ line }}</span></li>{% endfor %}</ul>
+
+<h2 class="panel-label">Here in the last {{ activity.days }} days</h2>
+{% if activity.steps %}<p>{{ activity.runs }} run{{ activity.runs|pluralize }}, {{ activity.steps }} tool call{{ activity.steps|pluralize }}.</p>
+<div class="agent-activity"><table><thead><tr><th>Tool</th><th class="num">Calls</th></tr></thead><tbody>{% for name, count in activity.tools %}<tr><td><code>{{ name }}</code></td><td class="num">{{ count }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>Outcome</th><th class="num">Calls</th></tr></thead><tbody>{% for name, count in activity.outcomes %}<tr><td>{{ name }}</td><td class="num">{{ count }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="muted"><small>Counted from the steps each run records: the tool, what came of it and how much came back. What was asked and what was read are never kept.</small></p>
+{% else %}<p class="muted">No tool calls yet.{% if state == 'one-call' %} It asks once while its tools are off.{% endif %}</p>{% endif %}
+
+<p class="agent-all"><a href="{% url 'agents' application.pk %}">All agents in {{ application.name }} {% icon "arrow-right" 14 %}</a></p>
+</div>{% endblock %}

@@ -280,6 +280,22 @@ config cannot change what the suite asserts; each agent's tests switch it on the
 Run with all three on, the suite's only failures were tests written for the one-shot
 path - a fake of the single call, or the off-by-default behaviour asserted on purpose.
 
+**Where an agent runs is said where it runs** (`agent_catalog.py`, `{% agent_badge %}` in
+`templatetags/agent_badges.py`). A closed registry of the five agents - chat, Knowledge
+upkeep, code review, Code Factory, triage - each naming its gateway purpose, the feature
+its screen needs, the setting that gives it tools, where it runs and its limits (read from
+the modules that hold them). Its tools are **never written there**: they are
+`registry.for_scope` for its purpose, the list the harness hands the model, and
+`test_agent_catalog` holds the two equal. A badge ("Agent · On", "One call" while a
+deployment's switch is off, "Off" when its feature or AI settings task is off) sits beside
+every control that starts one - Chat's heading, Learned, a review's AI review card, Code
+Factory, an incident's triage button - and opens that agent's page (`agent`) as a popup
+(`data-modal`): what it does, when and where it runs, its tools with their own descriptions,
+turns and tool calls, its safeguards, and the last `ACTIVITY_DAYS` of its `AgentStep` rows
+here as counts by tool and outcome - never what was asked or read, which is never kept.
+`agents` lists them all. Anyone who can open the application may look; nothing there starts
+an agent or changes a setting. A new agent is one registry entry and a badge.
+
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
 TO PROGRAM`, drop anything, and is never held to row security - and the platform used to

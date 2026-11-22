@@ -1863,3 +1863,18 @@ class PhoneHeaderTests(BrowserTestCase):
         self.assertEqual(found["focus"], "none", found)
         self.assertFalse(found["pageScrolls"], found)
         self.assertNoScriptErrors()
+
+
+class AgentBadgeTests(BrowserTestCase):
+    """The agent badge opens what that agent does as a popup, from the screen it runs on."""
+
+    def test_the_chat_badge_opens_the_agent_in_a_popup(self):
+        self.open("chat", self.app.pk)
+        self.page.locator("a.agent-badge[data-modal]").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Chat agent").wait_for()
+        dialog.locator("code", has_text="search_knowledge").first.wait_for()
+        dialog.locator("[data-modal-close]").click()
+        dialog.wait_for(state="detached")
+        self.assertNoScriptErrors()
+

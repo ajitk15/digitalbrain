@@ -1,0 +1,1 @@
+{% load icons %}<a class="agent-badge agent-badge-{{ state }}" href="{% url 'agent' application.pk agent.key %}" data-modal title="{{ agent.name }}: {{ detail }}">{% icon "agent" 14 %}Agent<span class="agent-badge-state">{{ label }}</span></a>

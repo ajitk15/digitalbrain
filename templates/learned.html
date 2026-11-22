@@ -2,7 +2,7 @@
 <h1 class="sr-only">{{ application|knowledge_name }}</h1>
 <div class="view-bar">{% include 'knowledge_nav.html' with knowledge_view='learned' %}</div>
 {% comment %}`learning.learned_view`: what using the knowledge taught, as candidates a person accepts or declines. Built by rules from stored records, never by a model; what a model wrote is quoted as what it said. Accepting a change record or an incident learning adds a source under `learned://`, which is never requirement evidence; accepting a question needs the source it should cite and adds it to the benchmark. Every decision is a plain POST form and is audited. Owners and contributors only.{% endcomment %}
-<h2 class="view-title">Learned</h2>
+<h2 class="view-title">Learned {% load agent_badges %}{% agent_badge application "draft-a-fix" %}</h2>
 <p class="view-note">What using this application taught, waiting for you to decide: changes Code Factory delivered after an approved plan, incident causes someone confirmed, questions nothing answered, and answers someone marked wrong. Each is written by rules from the platform's own records. Nothing here is knowledge until you accept it, and an accepted source is never evidence that code meets a requirement. Questions are shown to owners and contributors without who asked them, and leave this list when their conversation is removed.</p>
 {% if error %}<p class="notice notice-error" role="alert">{{ error }}</p>{% endif %}
 <section class="section learned-list" aria-labelledby="learned-waiting"><h3 id="learned-waiting">Waiting <span class="tab-count">{{ waiting|length }}</span></h3>
