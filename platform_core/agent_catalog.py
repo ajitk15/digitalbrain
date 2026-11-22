@@ -203,7 +203,7 @@ def _agents():
         ),
         Agent(
             key="triage",
-            name="ServiceOps triage agent",
+            name="Incident triage agent",
             purpose="serviceops_triage",
             feature="service_ops",
             switch="SERVICEOPS_TRIAGE_AGENT_TOOLS",
@@ -237,6 +237,22 @@ def get(key):
         if agent.key == key:
             return agent
     return None
+
+
+def by_purpose(purpose):
+    for agent in _agents():
+        if agent.purpose == purpose:
+            return agent
+    return None
+
+
+def mark(rows, field, attribute="agent_calls"):
+    """Set `agent_calls` on each row from one count of its `AgentStep` rows."""
+    rows = [row for row in rows if row is not None]
+    found = calls(field, rows)
+    for row in rows:
+        setattr(row, attribute, found.get(row.pk, 0))
+    return rows
 
 
 def tools(agent):

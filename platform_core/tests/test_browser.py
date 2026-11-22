@@ -1709,7 +1709,7 @@ class AISettingsTests(BrowserTestCase):
 
     def test_a_tasks_model_is_changed_in_a_popup(self):
         self.open("ai-settings", self.app.pk)
-        self.page.locator("#task-chat a[data-modal]").click()
+        self.page.locator("#task-chat a.ai-task-model[data-modal]").click()
         dialog = self.page.locator("dialog[open]")
         choice = dialog.locator("select[name='chat-model_choice']")
         choice.wait_for()
@@ -1721,7 +1721,9 @@ class AISettingsTests(BrowserTestCase):
         choice.select_option("claude:claude-opus-5")
         custom.wait_for(state="hidden")
         dialog.get_by_role("button", name="Save").click()
-        self.page.locator("#task-chat a[data-modal]", has_text="Claude Opus 5").wait_for()
+        self.page.locator(
+            "#task-chat a.ai-task-model[data-modal]", has_text="Claude Opus 5"
+        ).wait_for()
         self.config.refresh_from_db()
         self.assertEqual(self.config.model, "claude-opus-5")
         self.assertNoScriptErrors()

@@ -268,7 +268,9 @@ class CatalogTests(TestCase):
         page = self.client.get(
             reverse("chat", args=[self.app.pk]), {"conversation": conversation.pk}
         ).content.decode()
-        self.assertEqual(page.count('class="agent-tag"'), 1)
+        # One on the answer (a link), one on the conversation in the list (text).
+        self.assertEqual(page.count('<a class="agent-tag"'), 1)
+        self.assertEqual(page.count('<span class="agent-tag"'), 1)
         tagged = page[page.index(f'id="message-{read.pk}"'):]
         self.assertIn("2 steps", tagged[: tagged.index("</article>")])
 
@@ -297,3 +299,51 @@ class CatalogTests(TestCase):
         )
         self.assertEqual(agent_catalog.calls("triage", [triage]), {triage: 1})
         self.assertEqual(agent_catalog.calls("triage", []), {})
+
+    # The Agent tag on every list that shows what an agent made ------------------
+
+    def test_mark_counts_each_rows_steps_in_one_query(self):
+        first, second = self.message(self.app), self.message(self.app)
+        AgentStep.objects.create(
+            application=self.app, message=first, purpose="chat", sequence=1,
+            tool="search_knowledge", outcome="found",
+        )
+        with self.assertNumQueries(1):
+            rows = agent_catalog.mark([first, second, None], "message")
+        self.assertEqual([row.agent_calls for row in rows], [1, 0])
+
+    def test_a_conversation_an_agent_read_for_is_tagged_in_the_list_without_a_nested_link(self):
+        message = self.message(self.app)
+        AgentStep.objects.create(
+            application=self.app, message=message, purpose="chat", sequence=1,
+            tool="search_knowledge", outcome="found",
+        )
+        self.message(self.app)  # another conversation, nothing read
+        page = self.client.get(reverse("chat", args=[self.app.pk])).content.decode()
+        sidebar = page[page.index('class="conversation-link"'):page.index("conversation-header")]
+        self.assertEqual(sidebar.count('<span class="agent-tag"'), 1)
+        self.assertNotIn('<a class="agent-tag"', sidebar)
+
+    def test_a_review_an_agent_read_further_for_is_tagged_in_the_review_list(self):
+        from platform_core import review_pack
+
+        change = review_pack.load_pack()["changes"]["rename-consent-current"]
+        review = review_pack.build(self.owner, self.app, self.snapshot, change)
+        review.ai_status = "ready"
+        review.ai_result = {"findings": [], "tool_calls": 4}
+        review.save(update_fields=["ai_status", "ai_result"])
+        page = self.client.get(
+            reverse("code-reviews", args=[self.app.pk]),
+            {"repository": self.snapshot.repository_id},
+        ).content.decode()
+        self.assertIn("4 steps", page)
+        self.assertIn(reverse("agent", args=[self.app.pk, "code-review"]), page)
+
+    def test_ai_settings_shows_the_badge_on_every_task_an_agent_runs(self):
+        page = self.client.get(reverse("ai-settings", args=[self.app.pk])).content.decode()
+        for key in ("chat", "draft-a-fix", "code-review", "code-factory", "triage"):
+            with self.subTest(agent=key):
+                self.assertIn(reverse("agent", args=[self.app.pk, key]), page)
+        row = page[page.index('id="task-conversation_title"'):]
+        self.assertNotIn("agent-badge", row[: row.index("</div>")])
+

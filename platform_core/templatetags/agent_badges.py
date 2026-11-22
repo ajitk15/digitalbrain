@@ -10,7 +10,7 @@ Both open that agent's page as a popup (`data-modal`)."""
 from django import template
 from django.template.loader import render_to_string
 
-from ..agent_catalog import get, status
+from ..agent_catalog import by_purpose, get, status
 
 register = template.Library()
 
@@ -29,12 +29,24 @@ def agent_badge(application, key):
 
 
 @register.simple_tag
-def agent_tag(application, key, calls):
+def agent_tag(application, key, calls, link=True):
+    """`calls` is a count, or a row carrying `agent_calls` (set by its list view
+    in one query). `link=False` inside a row that is itself a link."""
     agent = get(key)
     if agent is None:
         raise template.TemplateSyntaxError(f"No agent named {key!r}.")
+    if not isinstance(calls, int):
+        calls = getattr(calls, "agent_calls", 0)
     if not isinstance(calls, int) or isinstance(calls, bool) or calls <= 0:
         return ""
     return render_to_string(
-        "_agent_tag.html", {"application": application, "agent": agent, "calls": calls}
+        "_agent_tag.html",
+        {"application": application, "agent": agent, "calls": calls, "link": link},
     )
+
+
+@register.simple_tag
+def agent_badge_for(application, purpose):
+    """The badge of the agent that runs under an AI settings task, or nothing."""
+    agent = by_purpose(purpose)
+    return agent_badge(application, agent.key) if agent else ""

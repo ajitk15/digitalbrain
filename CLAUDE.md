@@ -308,7 +308,13 @@ a chat answer, a drafted fix, a review's AI result, a Code Factory step and a tr
 "Agent · N steps" when their agent made N tool calls to produce them, counted from their
 `AgentStep` rows in one query per page (`agent_catalog.calls`, `factory_views.agent_calls_by_phase`)
 or from the result's own count (`draft["steps"]`, a review's `tool_calls`), and nothing when it
-made none - a single call to the model is not an agent at work. While chat's agent is searching,
+made none - a single call to the model is not an agent at work. **Every list that shows such
+a result carries it too**: Chat's conversation list (as text, `link=False`, since each row is
+a link), Code Repos → Reviews, Code Factory's run rows on its home and history, ServiceOps'
+incident list and runs list, Learned's decided table; and AI settings puts each agent's badge
+on the task it runs under (`agent_badge_for`). A list view counts its rows' steps in one query
+with `agent_catalog.mark(rows, field)`, which sets `agent_calls`, and the tag reads it from the
+row. While chat's agent is searching,
 its "Searching sources" line is labelled Agent by CSS alone (`.chat-tool::before`), so
 `chat.js` is unchanged. Class names are checked against the stylesheet first: `.agent-facts`
 and `.agent-list` were Code Factory's already, which is why these pages use

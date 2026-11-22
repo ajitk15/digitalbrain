@@ -24,6 +24,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from . import agent_catalog
 from .model_catalog import MODEL_CHOICES
 from .models import (
     AIConfiguration,
@@ -109,7 +110,7 @@ def plans(request, pk):
             )
             .exclude(model="")
             .exists(),
-            "runs": runs_shown,
+            "runs": agent_catalog.mark(list(runs_shown), "run"),
             "more_runs": FactoryRun.objects.filter(application=app).count() > len(runs_shown),
             "active": any(run.in_flight for run in runs_shown),
             "tickets": tickets,
@@ -428,7 +429,7 @@ def runs(request, pk):
             "application": app,
             "grant": grant,
             "page": page,
-            "active": any(run.in_flight for run in page),
+            "active": any(run.in_flight for run in agent_catalog.mark(page, "run")),
         },
     )
 

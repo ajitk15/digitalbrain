@@ -221,6 +221,10 @@ def chat(request, pk):
         if conversation
         else ChatMessage.objects.none()
     )
+    history = Paginator(conversations, 20).get_page(request.GET.get("history"))
+    history.object_list = list(history.object_list)
+    # Which conversations an agent read further for, for their Agent tag.
+    agent_catalog.mark(history.object_list, "message__conversation")
     message_pages = Paginator(history_messages, 60)
     message_page = message_pages.get_page(request.GET.get("messages", message_pages.num_pages))
     message_page.object_list = list(message_page.object_list)
@@ -243,7 +247,7 @@ def chat(request, pk):
             "application": app,
             "form": form,
             "conversation": conversation,
-            "conversations": Paginator(conversations, 20).get_page(request.GET.get("history")),
+            "conversations": history,
             "message_page": message_page,
             "ai_enabled": ai_enabled,
             "chat_config": chat_config,

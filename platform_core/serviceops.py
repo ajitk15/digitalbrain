@@ -763,6 +763,8 @@ def serviceops(request, pk):
                 verdicts__isnull=True,
             ).values_list("run__incident_id", flat=True)
         )
+        # Which latest runs an agent read further for, for their Agent tag.
+        agent_catalog.mark(latest.values(), "triage")
         incidents = []
         for entry in incident_queryset(app).order_by("-created_at")[:INCIDENT_LIMIT]:
             incident_fields, _ = fields_and_description(entry)
@@ -1026,6 +1028,7 @@ def serviceops_runs(request, pk):
                 "hypotheses": len(run.hypotheses.all()),
             }
         )
+    agent_catalog.mark([row["run"] for row in rows], "triage")
     return render(
         request,
         "serviceops_runs.html",
