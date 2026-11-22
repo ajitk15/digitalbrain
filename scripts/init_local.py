@@ -167,6 +167,12 @@ def development(root):
             "# production until `manage.py document_review_pack` shows it clears the bar.",
         ),
         (
+            "claude_messages_agents",
+            "true",
+            "Run Claude agents with an API key through the Messages API, not the CLI.\n"
+            "# Off in production until `manage.py chat_pack` and `llm_drift` say so.",
+        ),
+        (
             "ocr",
             "true",
             "Read scanned PDF pages and images with a local Tesseract. Nothing is read by\n"

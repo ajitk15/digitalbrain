@@ -108,6 +108,11 @@ CODE_DOCS_AGENT_TOOLS = bool(CONFIG.get("code_docs_agent_tools", False))
 #: alone. Off unless written down, until the paid document review pack
 #: (`manage.py document_review_pack`) shows it finds more.
 DOCUMENT_REVIEW_AGENT_TOOLS = bool(CONFIG.get("document_review_agent_tools", False))
+#: A Claude agent run with an API key goes through the Messages API in this
+#: process (`agent_runtime.messages_runtime`) instead of the CLI subprocess: no
+#: start-up per run, and a receipt per turn under the provider's message id. Off
+#: unless written down until `chat_pack` and `llm_drift` show it answers as well.
+CLAUDE_MESSAGES_AGENTS = bool(CONFIG.get("claude_messages_agents", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

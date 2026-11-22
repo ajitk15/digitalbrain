@@ -61,7 +61,7 @@ from django.http import Http404
 
 from .registry import for_scope
 from .tools import KNOWLEDGE_PURPOSES, MAX_TOOL_CALLS, RESULT_CHARACTERS, CitationRecorder
-from .usage import TurnLimit
+from .usage import Billed, TurnLimit
 
 logger = logging.getLogger(__name__)
 
@@ -109,11 +109,31 @@ class AgentResult:
     read: list = field(default_factory=list)
 
 
-def runtime_for(provider):
-    """The provider runtime, looked up when called so a test can replace it."""
-    from . import claude_runtime, openai_runtime
+def runtime_for(provider, token=None):
+    """The provider runtime, looked up when called so a test can replace it.
 
-    return openai_runtime if provider == "openai" else claude_runtime
+    Claude with an API key runs through the Messages API (`messages_runtime`) when
+    `claude_messages_agents` says so; an OAuth token or the development host login
+    still needs the CLI (`claude_runtime`).
+    """
+    from django.conf import settings
+
+    from ..claude_messages import uses_messages_api
+    from . import claude_runtime, messages_runtime, openai_runtime
+
+    if provider == "openai":
+        return openai_runtime
+    if settings.CLAUDE_MESSAGES_AGENTS and uses_messages_api(token):
+        return messages_runtime
+    return claude_runtime
+
+
+def joins_turns(runtime):
+    """Whether `runtime` joins every turn's text unless told to keep the last turn's
+    alone - the Claude runtimes; the OpenAI runtime's answer is its final output."""
+    from . import claude_runtime, messages_runtime
+
+    return runtime in (claude_runtime, messages_runtime)
 
 
 def tool_budget(allowed, requested, calls=MAX_TOOL_CALLS):
@@ -280,12 +300,11 @@ def run_agent(
     a tool met when access ended during the run.
     """
     from .. import ai, gateway
-    from . import claude_runtime
 
     # The caller has usually authorized already (`ai.chat_configuration`); asking
     # again here means no agent can be started by a caller that forgot.
     gateway.authorize(user, app.pk, purpose)
-    runtime = runtime_for(config.provider)
+    runtime = runtime_for(config.provider, token)
     tools = for_scope(scope)
     recorder = CitationRecorder(scope, cancel=cancel)
     # Evidence computed before the run seeds the answer, so a single-turn reply is
@@ -316,7 +335,7 @@ def run_agent(
             # An agent given its own instructions answers in its last turn; the
             # Claude runtime joins every turn's text unless told, the OpenAI
             # runtime's answer is always its final output.
-            **({"final_only": True} if instructions and runtime is claude_runtime else {}),
+            **({"final_only": True} if instructions and joins_turns(runtime) else {}),
         )
         return asyncio.run(pending) if inspect.isawaitable(pending) else pending
 
@@ -349,7 +368,7 @@ def run_agent(
             written, evidence = recorder.numbered(limit.text)
             final["citations"] = evidence
         more, answer = attempt([], 1, evidence, f"{question}\n\n{WRAP_UP}")
-        if written and not (instructions and runtime is claude_runtime):
+        if written and not (instructions and joins_turns(runtime)):
             # As it was streamed: what the turns wrote, then this.
             answer = f"{written}\n\n{answer}"
         return more, answer
@@ -391,6 +410,15 @@ def run_agent(
                 except (PermissionDenied, Http404):
                     run["outcome"] = "refused"
                     raise
+                except Billed as billed:
+                    # Turns that completed before the failure were billed: receipts
+                    # first, then the run fails as any provider failure does.
+                    ai.record_turns(user, app, config, purpose, billed.usages)
+                    run["turns"] = len(recorded) + len(billed.usages)
+                    run["outcome"] = (
+                        "stopped" if cancel is not None and cancel.is_set() else "failed"
+                    )
+                    raise AgentFailure(billed.cause) from None
                 except Exception as failure:
                     run["outcome"] = (
                         "stopped" if cancel is not None and cancel.is_set()

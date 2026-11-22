@@ -172,6 +172,7 @@ else
                 echo 'code_review_agent_tools = true'
                 echo 'code_docs_agent_tools = true'
                 echo 'document_review_agent_tools = true'
+                echo 'claude_messages_agents = true'
             fi
         fi
         echo "hosts = [${hosts%, }]"

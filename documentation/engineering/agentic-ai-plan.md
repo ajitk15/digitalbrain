@@ -450,6 +450,19 @@ the files - found when a kept contradiction quotes the planted text, linked when
 side is one of them. One call can find a planted line only from inside the document, and
 can never link one.
 
+## The Messages API runtime (built, switched off until measured)
+
+Every Claude agent ran through the bundled CLI, even with an API key: a subprocess per run
+before the first token (a live chat run's first delta took about 8.7 seconds), and one
+receipt for the whole run, summed, under an id made here. With `claude_messages_agents` a
+run whose credential is an API key is the same tool loop in this process
+(`agent_runtime/messages_runtime.py`): the same system prompt, user turn, tool names and
+schemas the CLI shows, a receipt per turn under the provider's message id, and the receipts
+of turns already sent kept when a later one fails (`usage.Billed`). OAuth tokens and the
+host login still go through the CLI. It changes how a run is carried rather than what it
+reads, and is measured anyway: `chat_pack` (answers, cost and seconds) and `llm_drift`, with
+the switch off and then on.
+
 ## Switched on in development and the demo
 
 Code Factory's, triage's, code review's, code documentation's and document review's tools

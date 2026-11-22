@@ -47,6 +47,20 @@ class TurnLimit(RuntimeError):
         self.text = text
 
 
+class Billed(RuntimeError):
+    """A run failed after turns that were sent and billed.
+
+    Carries their usage, so the harness writes each one's receipt before it fails
+    the run, and the failure itself (`cause`), whose class name is all the
+    harness reports - a provider's message can quote the run.
+    """
+
+    def __init__(self, usages, cause):
+        super().__init__(type(cause).__name__)
+        self.usages = list(usages)
+        self.cause = cause
+
+
 def checked_count(value, label="Invalid usage"):
     # `type(...) is int` on purpose: bool is an int subclass and True must not pass.
     if type(value) is not int or not 0 <= value <= TOKEN_LIMIT:

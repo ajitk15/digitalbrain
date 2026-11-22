@@ -131,8 +131,9 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, the five agents' tools (accepted in production,
-where they stay off), `ocr` and `tesseract_path` where Tesseract is
+drive root), `managed_secret_directory`, the five agents' tools and
+`claude_messages_agents` (accepted in production, where they stay off), `ocr` and
+`tesseract_path` where Tesseract is
 installed - above the first table, so no table swallows it. A key written down, true or
 false, is never changed. `load_config`'s production refusals are untouched, and
 `test_setup` checks each one is still refused. Onboarding's connector question starts
@@ -1548,9 +1549,29 @@ the client is given the key and base URL explicitly, takes no proxy from the env
 and drops `ANTHROPIC_CUSTOM_HEADERS`; `test_claude_messages` plants all four and checks
 the request. No retries. Tests run with it off (`digitalbrain/test_runner.py`) because
 they mount made-up keys and patch the CLI adapter; a test of this path turns it on.
-Chat on Claude is an agentic run, and it still needs the CLI's tools. Code Factory's
-agents are one `ask()` → `invoke_ai` call each, with no tools, over files Python chose
-beforehand - unless `code_factory_agent_tools` is on (below).
+Code Factory's agents are one `ask()` → `invoke_ai` call each, with no tools, over files
+Python chose beforehand - unless `code_factory_agent_tools` is on (below).
+
+**A Claude agent run with an API key may skip the CLI too** (`agent_runtime/messages_runtime.py`,
+`claude_messages_agents`, a boolean, off unless written down, on in development and the
+demo, accepted in production). `harness.runtime_for(provider, token)` picks it for Claude
+when the switch and `claude_messages_api` are on and the credential is an API key
+(`uses_messages_api`); an OAuth token and the host login still need the CLI
+(`claude_runtime`). It is the same loop in this process: `client_for`'s client (explicit key
+and base URL, nothing from the environment, no retries), the CLI path's system prompt and
+user turn (`prompt_for`), the tools under the names the CLI gives them
+(`mcp__brain__<tool>`, `wire("claude")`), each call through `run_tool` on the caller's
+thread, a tool the run was not given answered `NOT_GIVEN` and a tool's failure as text, as
+the SDKs do. What it adds: no subprocess before the first token; **one receipt per turn
+under the provider's message id**, where the CLI reports a run's usage once, summed, under
+an id made here; and **a failure keeps the bill** - turns that completed before a later
+one failed are raised with it (`usage.Billed`), and the harness writes their receipts
+before it fails the run. A refusal a tool met ends the loop with the bill so far and the
+harness raises it after the receipts; Stop runs no further tool; out of turns is
+`TurnLimit` as everywhere. `harness.joins_turns` holds both Claude runtimes to the same
+`final_only` and wrap-up joining. It changes how a run is carried, not what the model is
+shown, but it is measured as any such change is - `chat_pack` (its seconds and cost too)
+and `llm_drift` with the switch off and on - before production relies on it.
 
 **Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
 used to list document typing, embeddings and reranking, so a new application had AI
@@ -1826,7 +1847,8 @@ and a test holds the two lists to `LANES` with no lane in both. Each service's h
 check names only its own lanes (`queue_status --check --lanes`). A container that waits
 for migrations only reads `/run/secrets`; only the one that applies them must write it.
 Still not in a sandbox: chat on Claude starts the CLI on the web container's stream
-thread.
+thread - unless `claude_messages_agents` is on and the application's credential is an API
+key, when it is a Messages request from that thread and nothing is started.
 
 **Each container is given only the secrets its role reads** (`deploy/runtime_secrets.py`).
 In the split, `platform-secrets` is the store and holds the owner's database password, so
@@ -2048,7 +2070,9 @@ mocked HTTP transport; Claude's `query` is replaced outright, so the bundled CLI
 subprocess and the environment scrub are never executed in CI. The OpenAI streaming
 runtime has not been run against a live account at all — only its non-streaming sibling
 has, through the mocked transport. The Claude Messages adapter is the real `anthropic` SDK
-over a mocked transport and has not been run against a live API key.
+over a mocked transport and has not been run against a live API key, and neither has the
+Messages agent runtime built on it (`messages_runtime`, tested the same way inside the real
+harness).
 
 Run live, read-only, on 2026-10-19: a scheduled changes-since read through
 `jira_records` against the CarePathDev Jira (7 issues full, 1 inside the overlap, the
