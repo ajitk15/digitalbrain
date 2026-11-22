@@ -16,7 +16,8 @@ operator set - `claude_use_host_login`, `hosts`, `fetch_allow_hosts` - survives.
 Every start also adds what a development machine switches on (`DEVELOPMENT`),
 but only where the file does not mention the key: a key written down, true or
 false, is the developer's. Each of them is refused by `load_config` under
-production, or harmless there.
+production, harmless there, or - the agents' tools - accepted there but left off
+until their paid comparison says otherwise.
 
 `--services` points the file at docker-compose.dev.yaml's services once.
 `--no-services` is the start without Docker: when local.toml names those
@@ -133,6 +134,25 @@ def development(root):
             "true",
             "Development only: let an approver run that folder's own pytest suite after\n"
             "# Code Factory wrote into it. Refused in production, where CI runs tests.",
+        ),
+        (
+            "code_factory_agent_tools",
+            "true",
+            "Let Code Factory's implementation, test and review agents read the run's\n"
+            "# code snapshot with tools. Off in production until `manage.py factory_pack`\n"
+            "# shows it clears the bar; it spends more through the same budget.",
+        ),
+        (
+            "serviceops_triage_agent_tools",
+            "true",
+            "Let ServiceOps triage look past its evidence pack with tools. Off in\n"
+            "# production until `manage.py triage_pack` shows it clears the bar.",
+        ),
+        (
+            "code_review_agent_tools",
+            "true",
+            "Let a code review's AI step read further with tools. Off in production\n"
+            "# until `manage.py review_pack` shows it clears the bar.",
         ),
         (
             "ocr",

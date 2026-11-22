@@ -24,6 +24,11 @@ def hermetic(settings_holder):
     settings_holder.OTEL = {}
     settings_holder.SHARED_STREAMS = False
     settings_holder.WEB_SERVER = "waitress"
+    # Development switches the agents' tools on; a test asks for the path it
+    # means with override_settings, so the suite reads the same on every machine.
+    settings_holder.CODE_FACTORY_AGENT_TOOLS = False
+    settings_holder.SERVICEOPS_TRIAGE_AGENT_TOOLS = False
+    settings_holder.CODE_REVIEW_AGENT_TOOLS = False
     settings_holder.CONFIG = {
         key: value for key, value in settings_holder.CONFIG.items()
         if key not in {"clamd", "scanner", "redis", "otel", "originals", "web_server"}

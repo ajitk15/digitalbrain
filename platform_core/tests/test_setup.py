@@ -177,6 +177,34 @@ class DevelopmentDefaultsTests(TestCase):
         self.assertIsNone(self.module.without_services(self.config))
         self.assertFalse(stale.exists())
 
+    def test_development_turns_every_agent_on_and_production_leaves_them_off(self):
+        written = {key: value for key, value, _ in self.module.development(self.root)}
+        agents = ACCEPTED_IN_PRODUCTION - {"ocr"}
+        self.assertEqual({key: written.get(key) for key in agents}, dict.fromkeys(agents, "true"))
+        settings_source = (ROOT / "digitalbrain" / "settings.py").read_text(encoding="utf-8")
+        for key in agents:
+            # A configuration that does not mention it - production's - reads it as off.
+            self.assertIn(f'CONFIG.get("{key}", False)', settings_source)
+
+    def test_the_suite_reads_the_agents_as_off_whatever_the_machine_says(self):
+        from types import SimpleNamespace
+
+        from digitalbrain.test_runner import hermetic
+
+        developer = SimpleNamespace(
+            CONFIG={}, CODE_FACTORY_AGENT_TOOLS=True, SERVICEOPS_TRIAGE_AGENT_TOOLS=True,
+            CODE_REVIEW_AGENT_TOOLS=True,
+        )
+        hermetic(developer)
+        self.assertEqual(
+            (
+                developer.CODE_FACTORY_AGENT_TOOLS,
+                developer.SERVICEOPS_TRIAGE_AGENT_TOOLS,
+                developer.CODE_REVIEW_AGENT_TOOLS,
+            ),
+            (False, False, False),
+        )
+
     def test_production_still_refuses_what_development_switches_on(self):
         import os
         from unittest import mock
@@ -188,7 +216,7 @@ class DevelopmentDefaultsTests(TestCase):
         for key, value, _ in self.module.development(self.root):
             if value != "true":
                 continue
-            if key == "ocr":
+            if key in ACCEPTED_IN_PRODUCTION:
                 continue
             self.config.write_text(
                 f'mode = "production"\nsecret_directory = "C:/s"\n{key} = true\n',
@@ -197,6 +225,17 @@ class DevelopmentDefaultsTests(TestCase):
             with mock.patch.dict(os.environ, {"DIGITAL_BRAIN_CONFIG": str(self.config)}):
                 with self.assertRaisesMessage(ImproperlyConfigured, key):
                     load_config()
+
+
+#: What development switches on that production accepts too: OCR, and the
+#: agents' tools, which spend through the same budget and receipts and are left
+#: off there until their paid comparison clears the bar.
+ACCEPTED_IN_PRODUCTION = {
+    "ocr",
+    "code_factory_agent_tools",
+    "serviceops_triage_agent_tools",
+    "code_review_agent_tools",
+}
 
 
 class HostLoginFlagTests(TestCase):

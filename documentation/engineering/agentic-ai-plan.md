@@ -49,10 +49,10 @@ what counts as evidence.**
 | Phase | What | Effort | Model cost | Measured by | Default |
 |---|---|---|---|---|---|
 | 0 Agent harness | Shared tool registry, per-turn reservation, trajectory log, guardrail probes | 5-7 d | None | Scorecard "Agent guardrail probes" 100% | **Done** - chat runs on it |
-| 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **Built, off** - waiting on a paid `factory_pack` run |
+| 1 Code Factory repository tools | Implementation, tests and review read the pinned snapshot themselves | 8-10 d | Yes, more turns per run | New `factory-pack.json` (paid) + planted-bug key | **On in development and the demo; off in production** - waiting on a paid `factory_pack` run |
 | 2 Evidence follow-through | Follow references from the evidence (F-03 via C-08): rules first, agent only if rules stall | 3-4 d rules, +4-5 d agent | None (rules), Yes (agent) | Scorecard `seeded_evidence_recall` | **Done by rule** - 92% -> 100%; agent not needed |
-| 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **Built, off** - waiting on a paid `triage_pack` run |
-| 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **Built, off** - waiting on a paid `review_pack` run |
+| 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **On in development and the demo; off in production** - waiting on a paid `triage_pack` run |
+| 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **On in development and the demo; off in production** - waiting on a paid `review_pack` run |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | **Turn limit done** (answers and receipts no longer lost); graph tool deferred until measured |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | **Built, on a button** - measured by `learning_upkeep` as it is used |
 
@@ -418,6 +418,18 @@ rules alone.
   settings, and the Learned page says so in place of the button; a new application is
   seeded with it on, like every task.
 - The scorecard's agent probes include three for it.
+
+## Switched on in development and the demo
+
+Code Factory's, triage's and code review's tools are on wherever the money is the
+developer's or the demo's - `init_local` writes the three switches into `local.toml`
+and the entrypoint into the demonstration's configuration
+(`DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0` to leave them off) - so every agent can be seen at
+work before it is measured. Production is unchanged: a configuration that does not
+name them reads them as off, and each is switched on there only once its pack
+(`factory_pack`, `triage_pack`, `review_pack`) clears the bar. The suite pins them
+off; run with all three on, its only failures were tests written for the one-shot
+path.
 
 ## Future enhancements
 

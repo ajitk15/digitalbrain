@@ -9,7 +9,13 @@ the Dockerfile's `demo` target and set `DIGITAL_BRAIN_DEMONSTRATION=1` on every
 application service. The entrypoint renders `mode = "production"` with
 `demonstration = true`: demo reset, local Code Factory delivery/tests and the
 ServiceOps test workbench are enabled while TLS, secure cookies, scanning and
-the restricted database role remain enabled. A mounted configuration wins;
+the restricted database role remain enabled. Code Factory, ServiceOps triage
+and code review also read further with their read-only tools
+(`code_factory_agent_tools`, `serviceops_triage_agent_tools`,
+`code_review_agent_tools`), which spends more per run through the same budget;
+`DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0` leaves them off. A plain production deployment
+leaves them off until `factory_pack`, `triage_pack` and `review_pack` show they
+clear the bar. A mounted configuration wins;
 update an existing mounted file using `production.example.toml` if applicable.
 
 The image contains the demo documents, CarePath source, a locked Linux

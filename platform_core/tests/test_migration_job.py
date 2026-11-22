@@ -234,6 +234,17 @@ class DeploymentTests(SimpleTestCase):
                       self.entrypoint)
         self.assertNotIn("> /run/secrets/django_secret_key", self.entrypoint)
 
+    def test_only_the_demonstration_switches_the_agents_tools_on(self):
+        start = self.entrypoint.index('if [ "$DEMONSTRATION" = "1" ]; then\n            echo')
+        block = self.entrypoint[start : self.entrypoint.index("\n        fi\n", start)]
+        for key in (
+            "code_factory_agent_tools", "serviceops_triage_agent_tools", "code_review_agent_tools",
+        ):
+            self.assertIn(f"echo '{key} = true'", block)
+            # Written nowhere else: production reads them as off.
+            self.assertEqual(self.entrypoint.count(f"{key} = true"), 1)
+        self.assertIn('"${DIGITAL_BRAIN_DEMO_AGENT_TOOLS:-1}" = "1"', block)
+
     def test_the_entrypoint_keeps_unix_line_endings(self):
         for name in ("deploy/entrypoint.sh", "docker-compose.yaml", "docker-compose.scale.yaml",
                      "docker-compose.observability.yaml",

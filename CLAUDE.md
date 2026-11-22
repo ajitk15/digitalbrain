@@ -131,7 +131,8 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, `ocr` and `tesseract_path` where Tesseract is
+drive root), `managed_secret_directory`, the three agents' tools (accepted in production,
+where they stay off), `ocr` and `tesseract_path` where Tesseract is
 installed - above the first table, so no table swallows it. A key written down, true or
 false, is never changed. `load_config`'s production refusals are untouched, and
 `test_setup` checks each one is still refused. Onboarding's connector question starts
@@ -191,9 +192,10 @@ guardrail probes passing" must stay 100%. A new tool is one registry entry with 
 purposes, read-only, scoped by `ToolScope` (`run_id`/`snapshot_id` for a run pinned to
 one snapshot) - never a write.
 
-**Code Factory's agents may read the snapshot with tools - off until measured**
+**Code Factory's agents may read the snapshot with tools - off in production until measured**
 (`agent_runtime/code_tools.py`, `code_factory_agents.consult`, Phase 1). With
-`code_factory_agent_tools = true` (a boolean, off by default, accepted in production: it
+`code_factory_agent_tools = true` (a boolean, off unless written down - development and the
+hosted demo write it on, see below - accepted in production: it
 spends more through the same budget and receipts and reads only the run's own snapshot),
 the implementation, test and review agents of a run with a pinned `CodeSnapshot` go
 through `run_agent` with six tools - list files, read a file by line window, search,
@@ -215,10 +217,10 @@ no fewer checks met, at most `COST_BAR` (2x) the cost. The labels are tested aga
 CarePath code, so a check cannot describe a bug that is not there; they are a proxy, and
 CarePath's own suite is the proof. The scorecard's agent probes include the code tools.
 
-**ServiceOps triage may look past its pack with tools - off until measured**
+**ServiceOps triage may look past its pack with tools - off in production until measured**
 (`agent_runtime/ops_tools.py`, `serviceops_triage.ask_model`, Phase 3). With
-`serviceops_triage_agent_tools = true` (a boolean, off by default, accepted in
-production), triage's one call over its evidence pack becomes a harness run with four
+`serviceops_triage_agent_tools = true` (a boolean, off unless written down, on in development
+and the demo, accepted in production), triage's one call over its evidence pack becomes a harness run with four
 read-only tools: `incident_context` (another incident's neighbourhood, through the same
 `evidence_pack` and `neighbourhood` the page uses), `search_published_knowledge` (the
 published graph, `spend=False`), and `search_knowledge`/`fetch_source`, which serve triage
@@ -241,9 +243,10 @@ incident, asked one-shot and with tools over its pack without that confirmation,
 whether and where a kept hypothesis cites the confirmed cause, and cost) clears the same
 bar as Phase 1. The scorecard's agent probes include the triage tools.
 
-**A code review's AI step may read further with tools - off until measured**
+**A code review's AI step may read further with tools - off in production until measured**
 (`code_review.review_answer`/`agent_review`, Phase 4). With `code_review_agent_tools = true`
-(a boolean, off by default, accepted in production), "Ask AI to review" becomes a harness run
+(a boolean, off unless written down, on in development and the demo, accepted in production),
+"Ask AI to review" becomes a harness run
 over the same material with Phase 1's snapshot tools - the review's **base** snapshot, the
 code before the change - plus `read_diff` (the whole stored diff of a file this review
 touches, `code_review` only, scoped by `ToolScope.run_id` to the review and its
@@ -263,6 +266,19 @@ asked one-shot and with tools, scored by whether a kept finding quotes a file th
 or is the category it names, findings that do neither counted as noise; the review is removed
 after) clears Phase 1's bar, with no more noise. The scorecard's agent probes include the
 review tools.
+
+**Development and the hosted demo switch the three agents on; production does not.**
+`init_local.development` writes `code_factory_agent_tools`, `serviceops_triage_agent_tools`
+and `code_review_agent_tools` as true into `local.toml` where it does not mention them (a
+key written down, true or false, is the developer's), and the entrypoint writes them in its
+demonstration block unless `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`. A configuration that names
+none of them - production's - reads all three as off, so a deployment spends more only once
+its own comparison cleared the bar or an operator wrote them down. That is a deliberate
+trade for seeing every agent at work where the money is the developer's or the demo's,
+before it is measured. `digitalbrain/test_runner.py` pins all three off, so a developer's
+config cannot change what the suite asserts; each agent's tests switch it on themselves.
+Run with all three on, the suite's only failures were tests written for the one-shot
+path - a fake of the single call, or the off-by-default behaviour asserted on purpose.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
