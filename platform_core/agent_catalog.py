@@ -89,7 +89,14 @@ class Agent:
 
 
 def _limits():
-    from . import code_docs, code_factory_agents, code_review, learning_draft, serviceops_triage
+    from . import (
+        code_docs,
+        code_factory_agents,
+        code_review,
+        document_ai,
+        learning_draft,
+        serviceops_triage,
+    )
     from .agent_runtime.harness import TURNS
     from .agent_runtime.tools import MAX_TOOL_CALLS
 
@@ -98,6 +105,7 @@ def _limits():
         "knowledge_upkeep": (learning_draft.TOOL_TURNS, learning_draft.TOOL_CALLS),
         "code_review": (code_review.TOOL_TURNS, code_review.TOOL_CALLS),
         "code_docs": (code_docs.TOOL_TURNS, code_docs.TOOL_CALLS),
+        "document_review": (document_ai.TOOL_TURNS, document_ai.TOOL_CALLS),
         "plan_drafting": (code_factory_agents.TOOL_TURNS, code_factory_agents.TOOL_CALLS),
         "serviceops_triage": (serviceops_triage.TOOL_TURNS, serviceops_triage.TOOL_CALLS),
     }
@@ -211,6 +219,42 @@ def _agents():
             measured="manage.py review_pack (paid) runs labelled CarePath changes with "
             "tools and without, before it is switched on in production.",
             one_call="Asks once over the diff and excerpts chosen for it beforehand.",
+        ),
+        Agent(
+            key="document-review",
+            name="Document review agent",
+            purpose="document_review",
+            feature="knowledge",
+            switch="DOCUMENT_REVIEW_AGENT_TOOLS",
+            trigger="“Ask AI to review it” on a document's page, pressed by an owner.",
+            where="On the web server, while the page waits, as the owner who pressed it.",
+            does="Reviews one document for clarity, testability, gaps and contradictions. "
+            "It searches the application's other sources for what they say about the "
+            "facts the document states, reads past the document's opening, and reports "
+            "where the document and another source cannot both hold.",
+            turns=limits["document_review"][0],
+            tool_calls=limits["document_review"][1],
+            steps_field="entry",
+            prompt_estimate=30000,
+            reply_tokens=3000,
+            screen="documents",
+            screen_label="Knowledge → Documents",
+            writers_only=True,
+            shown=(
+                "A document's page: in its AI review, beside the button that asks for one, "
+                "and on a review that read further.",
+            ),
+            safeguards=(
+                "Reads only sources AI may read and the owner who asked may open; a "
+                "restricted source is never searched or quoted.",
+                "Every finding quotes the document exactly; one that names another source "
+                "must quote that source exactly from what it read, or it is dropped, and "
+                "both quotes are checked again whenever the page is shown.",
+                "It advises: the document's content check and its score never change.",
+            ),
+            measured="manage.py document_review_pack (paid) plants contradictions between "
+            "CarePath documents and asks for a review with tools and without.",
+            one_call="Asks once over the opening of the document alone.",
         ),
         Agent(
             key="code-docs",

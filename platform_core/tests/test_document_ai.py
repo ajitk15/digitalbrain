@@ -424,3 +424,138 @@ class TypingPackTests(SimpleTestCase):
         self.assertEqual((metrics["recall"], metrics["precision"]), (33.3, 33.3))
         self.assertEqual((metrics["wrong_type"], metrics["false_positive_on_other"],
                           metrics["quote_refused"]), (1, 1, 1))
+
+
+POLICY = """# Audit policy
+
+Audit events are kept for two years, then deleted by the nightly job.
+"""
+RETENTION = "Audit records are immutable and retained for six years."
+
+
+@override_settings(DOCUMENT_REVIEW_AGENT_TOOLS=True)
+class DocumentReviewAgentTests(TestCase):
+    """With `document_review_agent_tools` on, a review searches the other sources
+    and may report what one says against the document - kept only when that side
+    is quoted, exactly, from a source the review was shown."""
+
+    setUp = DocumentAITests.setUp
+    configure = DocumentAITests.configure
+    document = DocumentAITests.document
+
+    def answer(self, source, quote, mine="Audit events are kept for two years"):
+        return json.dumps({"findings": [{
+            "aspect": "contradiction", "quote": mine,
+            "finding": "The requirements keep audit records for six years.",
+            "suggestion": "Keep them six years.",
+            "other": {"source": str(source), "quote": quote},
+        }]})
+
+    def reviewed(self, *turns, entry=None):
+        from platform_core.agent_runtime import harness
+        from platform_core.agent_runtime.scripted import Script
+
+        entry = entry or self.entry
+        script = Script(*turns)
+        with (
+            patch.object(harness, "runtime_for", return_value=script),
+            patch("platform_core.ai.provider_credential", return_value="unused"),
+        ):
+            return script, document_ai.review(self.owner, entry)
+
+    def ready(self):
+        self.configure("document_review")
+        self.entry = self.document(POLICY, "audit-policy.md")
+        self.requirements = add_knowledge(
+            self.owner, self.app.pk, "Non-functional requirements", RETENTION
+        )
+
+    def test_a_contradiction_with_a_source_it_read_is_kept_with_both_quotes(self):
+        from platform_core.models import AgentStep, DocumentAIResult
+
+        self.ready()
+        script, found = self.reviewed(
+            [("search_knowledge", {"query": "audit retention years"})],
+            self.answer(self.requirements.pk, "retained for six years"),
+        )
+        self.assertEqual(script.given, ["fetch_source", "search_knowledge"])
+        (finding,) = found["findings"]
+        self.assertEqual(finding["other"], {
+            "id": str(self.requirements.pk), "title": "Non-functional requirements",
+            "quote": "retained for six years", "line": 1,
+        })
+        self.assertEqual((found["tool_calls"], found["read"], found["partial"]), (1, 1, False))
+        step = AgentStep.objects.get()
+        self.assertEqual((step.entry_id, step.purpose), (self.entry.pk, "document_review"))
+        self.assertTrue(DocumentAIResult.objects.get().rubric.endswith("-agent"))
+
+    def test_a_source_it_never_read_or_the_document_itself_is_no_other_side(self):
+        self.ready()
+        _, found = self.reviewed(self.answer(self.requirements.pk, "retained for six years"))
+        self.assertEqual(found["findings"], [])
+        self.assertEqual(found["dropped_reasons"], {"other source not verified": 1})
+        from platform_core.models import DocumentAIResult
+
+        DocumentAIResult.objects.all().delete()
+        _, found = self.reviewed(
+            [("fetch_source", {"source_id": str(self.entry.pk)})],
+            self.answer(self.entry.pk, "then deleted by the nightly job"),
+        )
+        self.assertEqual(found["dropped_reasons"], {"other source not verified": 1})
+
+    def test_a_quote_not_in_what_it_read_is_dropped(self):
+        self.ready()
+        _, found = self.reviewed(
+            [("search_knowledge", {"query": "audit retention years"})],
+            self.answer(self.requirements.pk, "retained for ten years"),
+        )
+        self.assertEqual(found["findings"], [])
+
+    def test_a_restricted_source_is_never_found_so_never_the_other_side(self):
+        self.ready()
+        from platform_core.models import KnowledgeEntry
+
+        KnowledgeEntry.objects.filter(pk=self.requirements.pk).update(
+            sensitivity="restricted"
+        )
+        _, found = self.reviewed(
+            [("search_knowledge", {"query": "audit retention years"})],
+            self.answer(self.requirements.pk, "retained for six years"),
+        )
+        self.assertEqual(found["findings"], [])
+
+    def test_the_page_shows_the_other_side_and_drops_it_when_that_source_changes(self):
+        from platform_core.models import KnowledgeEntry
+
+        self.ready()
+        self.reviewed(
+            [("search_knowledge", {"query": "audit retention years"})],
+            self.answer(self.requirements.pk, "retained for six years"),
+        )
+        url = reverse("document-detail", args=[self.app.pk, self.entry.document_id])
+        page = self.client.get(url)
+        self.assertContains(page, "Non-functional requirements</a>, line 1:")
+        self.assertContains(page, "retained for six years")
+        self.assertContains(page, 'agent-tag')
+        KnowledgeEntry.objects.filter(pk=self.requirements.pk).update(
+            content="Audit records are immutable and retained for seven years."
+        )
+        page = self.client.get(url)
+        self.assertNotContains(page, "retained for six years")
+        self.assertContains(page, "0 findings")
+
+    def test_off_it_asks_once_and_an_agents_answer_is_not_reused(self):
+        self.ready()
+        self.reviewed(
+            [("search_knowledge", {"query": "audit retention years"})],
+            self.answer(self.requirements.pk, "retained for six years"),
+        )
+        plain = json.dumps({"findings": []})
+        with (
+            override_settings(DOCUMENT_REVIEW_AGENT_TOOLS=False),
+            DocumentAITests.model(self, plain) as call,
+        ):
+            found = document_ai.review(self.owner, self.entry)
+        call.assert_called_once()
+        self.assertEqual(found["findings"], [])
+        self.assertNotIn("tool_calls", found)

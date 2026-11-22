@@ -1627,6 +1627,7 @@ def agent_guardrails(ws):
         probes.update(triage_tool_probes(ws, owner, viewer))
         probes.update(review_tool_probes(ws, owner, config))
         probes.update(docs_tool_probes(ws, owner, config))
+        probes.update(document_review_probes(ws, owner, config, source, hidden, foreign))
         probes.update(upkeep_probes(ws, owner, viewer, source, foreign))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
@@ -1753,6 +1754,64 @@ def review_tool_probes(ws, owner, chat_config):
                 review, owner, citations, agent=True, steps=False
             )["findings"]
     probes["a review quotes only what it read"] = not kept["never read"] and len(kept["read"]) == 1
+    return probes
+
+
+def document_review_probes(ws, owner, chat_config, source, hidden, foreign):
+    """A document's AI review with the source tools, inside the caller's savepoint:
+    the other side of a contradiction is kept only from a source it read, quoted
+    exactly - never another application's, never a restricted one."""
+    from django.test.utils import override_settings
+
+    from . import document_ai
+    from .agent_runtime import harness
+    from .agent_runtime.scripted import Script
+    from .models import AIConfiguration, KnowledgeEntry
+
+    def line_of(entry, limit=None):
+        return next(
+            text.strip() for text in entry.content[:limit].splitlines()
+            if 20 <= len(text.strip()) <= document_ai.MAX_QUOTE
+        )
+
+    subject = (
+        KnowledgeEntry.objects.filter(application=ws.app).answerable()
+        .exclude(pk__in=[source.pk, hidden.pk]).order_by("id").first()
+    )
+    AIConfiguration.objects.create(
+        application=ws.app, purpose="document_review", provider="claude",
+        model="claude-sonnet-5", input_rate=chat_config.input_rate,
+        output_rate=chat_config.output_rate, configured_by=owner,
+    )
+    kind = document_ai.current_kind(subject)
+
+    def reviewed(other, quote, turns):
+        answer = json.dumps({"findings": [{
+            "aspect": "contradiction", "quote": line_of(subject), "finding": "f",
+            "suggestion": "s", "other": {"source": str(other.pk), "quote": quote},
+        }]})
+        with (
+            override_settings(DOCUMENT_REVIEW_AGENT_TOOLS=True),
+            patch.object(harness, "runtime_for", return_value=Script(*turns, answer)),
+            patch("platform_core.ai.provider_credential", return_value="unused"),
+        ):
+            return document_ai.review_answer(owner, subject, kind, agent=True,
+                                             steps=False)["findings"]
+
+    window = document_ai.MAX_CHARACTERS
+    quote = line_of(source, 4000)
+    unread = reviewed(source, quote, [])
+    read = reviewed(source, quote, [[("fetch_source", {"source_id": str(source.pk)})]])
+    probes = {
+        "a document review cites another source only once it read it": (
+            not unread and len(read) == 1 and read[0]["other"]["id"] == str(source.pk)
+        ),
+        "a document review never takes another application's or a restricted source": all(
+            not reviewed(other, line_of(other, window),
+                         [[("fetch_source", {"source_id": str(other.pk)})]])
+            for other in (foreign, hidden)
+        ),
+    }
     return probes
 
 

@@ -212,6 +212,15 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the knowledge source whose AI review it served, the same way.
+    entry = models.ForeignKey(
+        "platform_core.KnowledgeEntry",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
     phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
@@ -232,6 +241,7 @@ class AgentStep(models.Model):
             models.Index(fields=["review", "sequence"], name="agent_step_review"),
             models.Index(fields=["candidate", "sequence"], name="agent_step_candidate"),
             models.Index(fields=["docs", "sequence"], name="agent_step_docs"),
+            models.Index(fields=["entry", "sequence"], name="agent_step_entry"),
         ]
 
 

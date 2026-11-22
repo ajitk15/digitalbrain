@@ -161,6 +161,12 @@ def development(root):
             "# production until `manage.py docs_pack` shows it clears the bar.",
         ),
         (
+            "document_review_agent_tools",
+            "true",
+            "Let a document's AI review search the other sources with tools. Off in\n"
+            "# production until `manage.py document_review_pack` shows it clears the bar.",
+        ),
+        (
             "ocr",
             "true",
             "Read scanned PDF pages and images with a local Tesseract. Nothing is read by\n"

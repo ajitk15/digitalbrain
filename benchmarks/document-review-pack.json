@@ -1,0 +1,45 @@
+{
+  "about": "Contradictions planted in plain-text CarePath documents for manage.py document_review_pack. Each item replaces one line of one document, in memory only, with a value another CarePath document contradicts. A review finds it when a kept contradiction finding quotes the planted text, and links it when that finding's other side is quoted from a source named in others. The path is the file under documentation/demo/docs/ the label is tested against; document is its upload name, which is the source's title. Frozen: a new pack starts a new reference.",
+  "items": {
+    "audit-retention-shortened": {
+      "path": "02-design/data-model.md",
+      "document": "data-model.md",
+      "find": "| Audit events | Six years minimum, never deleted by application code |",
+      "replace": "| Audit events | Two years minimum, never deleted by application code |",
+      "planted": "Two years minimum",
+      "others": ["non-functional-requirements", "operations-runbook", "regulatory-requirements"]
+    },
+    "sev1-paged-late": {
+      "path": "06-operate/operations-runbook.txt",
+      "document": "operations-runbook.txt",
+      "find": "Page the on-call platform engineer | 15 minutes",
+      "replace": "Page the on-call platform engineer | 4 hours",
+      "planted": "4 hours",
+      "others": ["escalation-policy", "service-level-objectives"]
+    },
+    "token-rotation-stretched": {
+      "path": "06-operate/operations-runbook.txt",
+      "document": "operations-runbook.txt",
+      "find": "rotation is 90 days (ADR-0002)",
+      "replace": "rotation is 365 days (ADR-0002)",
+      "planted": "365 days",
+      "others": ["0002-static-token"]
+    },
+    "limits-passed-through": {
+      "path": "03-build/coding-standards.md",
+      "document": "coding-standards.md",
+      "find": "Every endpoint returning a list takes a limit **and clamps it** to",
+      "replace": "Every endpoint returning a list takes a limit **and passes it through** to",
+      "planted": "passes it through",
+      "others": ["non-functional-requirements", "api-specification"]
+    },
+    "consent-escalation-slow": {
+      "path": "08-quality-samples/escalation-policy.md",
+      "document": "escalation-policy.md",
+      "find": "| Consent missing before export | Information Governance | Same day | BR-05 |",
+      "replace": "| Consent missing before export | Information Governance | 30 working days | BR-05 |",
+      "planted": "30 working days",
+      "others": ["operations-runbook", "escalation-policy-copy"]
+    }
+  }
+}

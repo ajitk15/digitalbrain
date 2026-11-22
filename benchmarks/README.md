@@ -19,10 +19,12 @@ What the platform is measured against, and what it measured.
 | `factory/` | Recorded factory-pack runs, one file per run, named by model. |
 | `review-pack.json` | CarePath changes that each break something - a caller, every caller, a requirement - labelled with the files a finding must quote, that `manage.py review_pack` hands a code review's AI step one-shot and with tools. |
 | `review/` | Recorded review-pack runs, one file per run, named by model. |
+| `document-review-pack.json` | Contradictions planted in plain-text CarePath documents - one line each, replaced in memory only - labelled with the sources that contradict them and tested against the files, that `manage.py document_review_pack` hands a document's AI review one-shot and with tools. |
+| `document-review/` | Recorded document-review-pack runs, one file per run, named by model. |
 | `docs/` | Recorded `manage.py docs_pack` runs: code documentation's AI step with tools and with one call, on the application's newest documentation. Its snapshot is the reference, so there is no pack file. |
 | `chat/` | Recorded `manage.py chat_pack` runs: the chat agent with tools and with one call over the same evidence, against the application's benchmark questions. The questions are the application's own, so there is no pack file; their digest is the reference. |
 | `triage/` | Recorded `manage.py triage_pack` runs: ServiceOps triage one-shot and with tools, against the causes people confirmed. The cases are the application's own verdicts, so there is no pack file. |
 
-A recorded `factory/`, `review/`, `triage/`, `chat/` or `docs/` run is also kept in the application's database as an agent measurement and drawn on that agent's page (Settings → AI → Agents). `manage.py agent_measurements <application id> --load <file>` keeps one recorded on another machine.
+A recorded `factory/`, `review/`, `triage/`, `chat/`, `docs/` or `document-review/` run is also kept in the application's database as an agent measurement and drawn on that agent's page (Settings → AI → Agents). `manage.py agent_measurements <application id> --load <file>` keeps one recorded on another machine.
 
 The benchmark questions themselves are `documentation/demo/demo-kit/benchmark-questions.json`.

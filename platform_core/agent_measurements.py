@@ -3,7 +3,8 @@
 Two readings, neither calling a model:
 
 - **Measurements.** What a pack command recorded with `--record` - `factory_pack`,
-  `review_pack`, `triage_pack`, `chat_pack`, `docs_pack` (paid) and `learning_upkeep`
+  `review_pack`, `triage_pack`, `chat_pack`, `docs_pack`, `document_review_pack` (paid)
+  and `learning_upkeep`
   (free) - kept as one `AgentMeasurement` row each beside the JSON file the command
   already writes under `benchmarks/`. Numbers only: each way's totals as the pack's
   own `metrics` worked them out, the verdict its own `verdict` gave, the model
@@ -162,6 +163,23 @@ PACKS = {
             folder="docs",
         ),
         Pack(
+            "document_review_pack",
+            "document-review",
+            "manage.py document_review_pack <application id> --as <user> --record",
+            AGAINST,
+            (
+                Figure("found", "Planted contradictions found", "higher", of="items"),
+                Figure("linked", "Linked to a source that contradicts them", "higher",
+                       of="items"),
+                Figure("findings", "Findings kept", ""),
+                Figure("failed", "Items unanswered", "lower"),
+                *TIMING,
+            ),
+            "Planted contradictions found",
+            judge="document_review_pack",
+            folder="document-review",
+        ),
+        Pack(
             "learning_upkeep",
             "draft-a-fix",
             "manage.py learning_upkeep <application id> --record",
@@ -199,6 +217,8 @@ def main_share(pack, totals):
         return _share(totals.get("cited_expected"), totals.get("questions"))
     if pack.key == "docs_pack":
         return _share(totals.get("components"), totals.get("asked"))
+    if pack.key == "document_review_pack":
+        return _share(totals.get("found"), totals.get("items"))
     return _number(totals.get("accept_rate")) / 100
 
 

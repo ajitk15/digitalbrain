@@ -111,6 +111,8 @@ class RegistryTests(SimpleTestCase):
             [spec.name for spec in registry.for_scope(docs)],
             ["list_files", "read_file", "search_code", "find_symbol", "callers", "tests_for"],
         )
+        review = ToolScope(user_id="u", app_id="a", purpose="document_review")
+        self.assertEqual(registry.for_scope(review), [SEARCH_KNOWLEDGE, FETCH_SOURCE])
         for purpose in ("nonsense",):
             with self.subTest(purpose=purpose):
                 self.assertEqual(registry.for_scope(ToolScope("u", "a", purpose)), [])
@@ -794,7 +796,7 @@ class ScorecardProbeTests(TestCase):
 
         values, probes = agent_guardrails(self.ws)
         self.assertEqual(values, {"agent_probes_passed": 100.0}, probes)
-        self.assertEqual(len(probes), 28)
+        self.assertEqual(len(probes), 30)
         self.assertFalse(AgentStep.objects.exists())
         self.assertFalse(AIUsage.objects.exists())
         self.assertFalse(AIBudget.objects.exists())

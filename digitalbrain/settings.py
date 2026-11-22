@@ -103,6 +103,11 @@ CODE_REVIEW_AGENT_TOOLS = bool(CONFIG.get("code_review_agent_tools", False))
 #: only the opening lines of a few files per component. Off unless written down,
 #: until the paid docs pack (`manage.py docs_pack`) shows it describes more.
 CODE_DOCS_AGENT_TOOLS = bool(CONFIG.get("code_docs_agent_tools", False))
+#: A document's AI review searches this application's other sources for what the
+#: document contradicts, and reads past its opening, instead of reading the opening
+#: alone. Off unless written down, until the paid document review pack
+#: (`manage.py document_review_pack`) shows it finds more.
+DOCUMENT_REVIEW_AGENT_TOOLS = bool(CONFIG.get("document_review_agent_tools", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

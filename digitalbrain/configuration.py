@@ -67,6 +67,7 @@ def load_config():
         "serviceops_triage_agent_tools",
         "code_review_agent_tools",
         "code_docs_agent_tools",
+        "document_review_agent_tools",
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
@@ -150,6 +151,10 @@ def load_config():
         # Accepted in production too: it reads only the documented snapshot and
         # spends through the same budget and receipts.
         raise ImproperlyConfigured("code_docs_agent_tools must be a boolean.")
+    if type(config.get("document_review_agent_tools", False)) is not bool:
+        # Accepted in production too: it reads only this application's sources,
+        # as the person who asked may, through the same budget and receipts.
+        raise ImproperlyConfigured("document_review_agent_tools must be a boolean.")
     if web_server(config) not in {"waitress", "uvicorn"}:
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:

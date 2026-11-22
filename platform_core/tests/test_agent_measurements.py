@@ -128,6 +128,11 @@ class MeasurementTests(TestCase):
              "seconds": 1.0}
             for components in (3, 5, 3, 2)
         )
+        cases["document_review_pack"] = tuple(
+            {"items": 5, "found": found, "linked": linked, "findings": 6, "dropped": 0,
+             "failed": 0, "cost": "0.1", "turns": 5, "seconds": 1.0}
+            for found, linked in ((2, 0), (3, 2), (2, 0), (1, 1))
+        )
         for key, (base, better, same, worse) in cases.items():
             pack = agent_measurements.PACKS[key]
             with self.subTest(pack=key):

@@ -131,7 +131,7 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, the four agents' tools (accepted in production,
+drive root), `managed_secret_directory`, the five agents' tools (accepted in production,
 where they stay off), `ocr` and `tesseract_path` where Tesseract is
 installed - above the first table, so no table swallows it. A key written down, true or
 false, is never changed. `load_config`'s production refusals are untouched, and
@@ -286,30 +286,54 @@ with tools through `describe` itself, nothing stored on the documentation; score
 their quotes, cost) clears the same bar. The documentation's snapshot is the pack's
 reference. The scorecard's agent probes include two for it.
 
-**Development and the hosted demo switch the four agents on; production does not.**
+**A document's AI review may search the other sources - off in production until measured**
+(`document_ai.review_answer`/`agent_review`). With `document_review_agent_tools = true` (a
+boolean, off unless written down, on in development and the demo, accepted in production),
+"Ask AI to review it" becomes a harness run under `document_review` (owner-only, its rule
+held on every call) with `search_knowledge` and `fetch_source` (`tools.SOURCE_PURPOSES`),
+so it can find what other sources say about the facts a document states, and read past
+`MAX_CHARACTERS` by fetching the document itself. A finding still quotes the document
+exactly; one may name **another source it contradicts** (`other`: source id and quote), and
+`judge_other` keeps that side only when the source is one the run read and verified
+(`AgentResult.found`: active, unchanged, not restricted, permitted to the owner), is not the
+document itself, and the quote is in what was read and in the source exactly - otherwise
+the finding is dropped (`other source not verified`), since it rests on it. The page checks
+both quotes again (`still_holding`), and shows the other side as a link. The cached
+review's rubric says which way it was made (`-agent`), and `panel` shows whichever is kept.
+Steps are `AgentStep` rows with `entry` (migration 0114). **Turn it on only after
+`manage.py document_review_pack <app> --as <user> [--record]`** (paid: each
+`benchmarks/document-review-pack.json` item replaces one line of a plain-text CarePath
+document **in memory only** with a value another document contradicts - audit retention, a
+Sev-1 page time, a token's rotation - each label tested against the file under
+`documentation/demo/docs/`; reviewed one-shot and with tools through `review_answer`;
+scored on found, a kept contradiction quoting the planted text, and linked, its other side a
+source the item names) clears the same bar. One call can never link. The scorecard's agent
+probes include two for it.
+
+**Development and the hosted demo switch the five agents on; production does not.**
 `init_local.development` writes `code_factory_agent_tools`, `serviceops_triage_agent_tools`,
-`code_review_agent_tools` and `code_docs_agent_tools` as true into `local.toml` where it
-does not mention them (a key written down, true or false, is the developer's), and the
+`code_review_agent_tools`, `code_docs_agent_tools` and `document_review_agent_tools` as
+true into `local.toml` where it does not mention them (a key written down, true or false, is the developer's), and the
 entrypoint writes them in its demonstration block unless `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`.
-A configuration that names none of them - production's - reads all four as off, so a
+A configuration that names none of them - production's - reads all five as off, so a
 deployment spends more only once its own comparison cleared the bar or an operator wrote
 them down. That is a deliberate trade for seeing every agent at work where the money is the
 developer's or the demo's, before it is measured. `digitalbrain/test_runner.py` pins all
-four off, so a developer's config cannot change what the suite asserts; each agent's tests
+five off, so a developer's config cannot change what the suite asserts; each agent's tests
 switch it on themselves. Run with the first three on, the suite's only failures were tests
 written for the one-shot path - a fake of the single call, or the off-by-default behaviour
 asserted on purpose.
 
 **Where an agent runs is said where it runs** (`agent_catalog.py`, `{% agent_badge %}` in
-`templatetags/agent_badges.py`). A closed registry of the six agents - chat, Knowledge
-upkeep, code review, code documentation, Code Factory, triage - each naming its gateway purpose, the feature
+`templatetags/agent_badges.py`). A closed registry of the seven agents - chat, Knowledge
+upkeep, code review, document review, code documentation, Code Factory, triage - each naming its gateway purpose, the feature
 its screen needs, the setting that gives it tools, where it runs and its limits (read from
 the modules that hold them). Its tools are **never written there**: they are
 `registry.for_scope` for its purpose, the list the harness hands the model, and
 `test_agent_catalog` holds the two equal. A badge sits beside
 every control that starts one - Chat's heading, Learned, a review's AI review card, a
-repository's "Ask AI to describe components", Code Factory, an incident's triage button -
-and opens that agent's page (`agent`) as a popup
+document's AI review, a repository's "Ask AI to describe components", Code Factory, an
+incident's triage button - and opens that agent's page (`agent`) as a popup
 (`data-modal`): what it does, when and where it runs, its tools with their own descriptions,
 turns and tool calls, its safeguards, and the last `ACTIVITY_DAYS` of its `AgentStep` rows
 here as counts by tool and outcome - never what was asked or read, which is never kept.

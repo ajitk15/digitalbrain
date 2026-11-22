@@ -37,7 +37,7 @@ from . import test_documents
 
 SWITCHES = dict.fromkeys(
     ("CODE_FACTORY_AGENT_TOOLS", "SERVICEOPS_TRIAGE_AGENT_TOOLS", "CODE_REVIEW_AGENT_TOOLS",
-     "CODE_DOCS_AGENT_TOOLS"), True
+     "CODE_DOCS_AGENT_TOOLS", "DOCUMENT_REVIEW_AGENT_TOOLS"), True
 )
 
 
@@ -48,7 +48,7 @@ class CatalogTests(TestCase):
     def setUp(self):
         test_documents.DocumentTests.setUp(self)
         for purpose in ("chat", "knowledge_upkeep", "code_review", "plan_drafting",
-                        "serviceops_triage", "code_docs"):
+                        "serviceops_triage", "code_docs", "document_review"):
             AIConfiguration.objects.create(
                 application=self.app, purpose=purpose, provider="claude",
                 model="claude-sonnet-5", input_rate=Decimal("3"), output_rate=Decimal("15"),

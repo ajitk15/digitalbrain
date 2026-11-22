@@ -56,6 +56,7 @@ what counts as evidence.**
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | **Turn limit done** (answers and receipts no longer lost); graph tool deferred until measured |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | **Built, on a button** - measured by `learning_upkeep` as it is used |
 | 7 Code documentation agent | "Ask AI to describe components" reads the documented snapshot with Phase 1's tools | 2-3 d | Yes, on a button | `docs_pack` (paid): components, paragraphs and files quoted against one call | **On in development and the demo; off in production** - waiting on a paid `docs_pack` run |
+| 8 Document review agent | A document's AI review searches the other sources for what contradicts it | 2-3 d | Yes, on a button | `document_review_pack` (paid): planted contradictions found and linked, against one call | **On in development and the demo; off in production** - waiting on a paid `document_review_pack` run |
 
 Phases 0-2 (rules) are **about 16-21 days** and make the largest difference on the
 platform's main pipeline. With 3-6, **about 37-48 days**.
@@ -434,21 +435,38 @@ the badge sits beside the button and the Agent tag on what it described. Measure
 `docs_pack` (paid) on the application's newest documentation, against one call, on the
 same bar. The scorecard's agent probes include two for it.
 
+## Phase 8 - Document review agent (built, switched off until measured)
+
+A document's AI review read the first 24,000 characters of that document and nothing else,
+so a "contradiction" could only be one within it. With `document_review_agent_tools` it is
+a harness run with the two source tools: it searches the other sources for what they say
+about the facts the document states, and reads past the opening by fetching the document.
+A finding may name another source it contradicts, quoting it; that side holds only when the
+run read and verified that source and the quote is in it exactly, and a finding whose other
+side does not hold is dropped. Steps are `AgentStep` rows with `entry` (migration 0114).
+Measured by `document_review_pack`: five contradictions planted, in memory, into plain-text
+CarePath documents, each labelled with the sources that contradict it and tested against
+the files - found when a kept contradiction quotes the planted text, linked when its other
+side is one of them. One call can find a planted line only from inside the document, and
+can never link one.
+
 ## Switched on in development and the demo
 
-Code Factory's, triage's, code review's and code documentation's tools are on wherever the
-money is the developer's or the demo's - `init_local` writes the four switches into `local.toml`
+Code Factory's, triage's, code review's, code documentation's and document review's tools
+are on wherever the money is the developer's or the demo's - `init_local` writes the five
+switches into `local.toml`
 and the entrypoint into the demonstration's configuration
 (`DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0` to leave them off) - so every agent can be seen at
 work before it is measured. Production is unchanged: a configuration that does not
 name them reads them as off, and each is switched on there only once its pack
-(`factory_pack`, `triage_pack`, `review_pack`, `docs_pack`) clears the bar. The suite
+(`factory_pack`, `triage_pack`, `review_pack`, `docs_pack`, `document_review_pack`) clears
+the bar. The suite
 pins them off; run with the first three on, its only failures were tests written for the
 one-shot path.
 
 ## Measuring what is built
 
-The four tool switches wait on their packs, and Knowledge upkeep on use. Each recorded run
+The five tool switches wait on their packs, and Knowledge upkeep on use. Each recorded run
 (`--record`, and `learning_upkeep --record`) is kept as an `AgentMeasurement` and drawn on
 the agent's page: the newest run as one call against with tools, figure by figure, every
 run's main figure as a trend that marks a new model or pack as a new reference, and the
