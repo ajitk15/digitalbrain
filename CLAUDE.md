@@ -909,6 +909,12 @@ errors and durations of requests (until the view returns, the route *pattern*, a
 marked `streamed`), lane steps that did work, admission waits, admitted calls, answers
 (question to end, by mode and outcome), receipt tokens and spend; gauges for each lane's
 waiting work, oldest age, dead jobs and heartbeat age, calls in flight, answers streaming.
+**Every admitted agent run is measured by the harness** (`harness.measured`): its duration
+by purpose, provider, mode (`tools` or `one_call`) and outcome (`harness.OUTCOMES` -
+answered, wrapped_up, turn_limit, refused, stopped, failed; a person's Stop is `stopped`
+even with text kept), the turns it sent, and each tool call by its registry name and step
+outcome. A run admission turned away reports nothing here - admission's own metric does -
+and a metric that cannot be recorded is logged, never fails the run.
 **What an instrument may carry is the closed registry `metrics.INSTRUMENTS`**, a subset of
 `telemetry.ATTRIBUTES` with two more rules: nothing new on every call is a label (request
 id, response id, token counts - those are trace attributes), and only spend carries an
@@ -945,8 +951,9 @@ job ends done rather than dead - are counted from rows the platform keeps, over
 fewer than `MIN_EVENTS` is reported, never failed. The maintenance lane counts them every
 `READ_SECONDS` for the `digitalbrain.slo.events` gauge and a `slo_status` log line.
 *Metrics* objectives - no server error on a non-streamed request, a page under
-`PAGE_SECONDS`, a paid call admitted rather than busy, intake, graph and import work
-fresher than `QUEUE_SECONDS` - are Prometheus rules with multi-window burn-rate alerts,
+`PAGE_SECONDS`, a paid call admitted rather than busy, an agent run that ends with an
+answer rather than failed or out of turns (`agents_answer`, 95%; a Stop and access that
+ended are neither), intake, graph and import work fresher than `QUEUE_SECONDS` - are Prometheus rules with multi-window burn-rate alerts,
 generated from the registry and committed as `deploy/slo-rules.yml`; `test_slo` fails when
 the two differ, so change the registry and regenerate, never edit the file. The synchronous
 chat path writes its answer when it ends, so it reads as instant in `answers_in_time`.

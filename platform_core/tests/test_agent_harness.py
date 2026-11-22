@@ -53,6 +53,7 @@ from platform_core.models import (
 from platform_core.workbench import add_knowledge
 
 from . import test_documents
+from .test_metrics import Measured
 
 GATEWAY = {
     "max_calls_per_application": 4,
@@ -811,3 +812,110 @@ _RECORDER_INIT = CitationRecorder.__init__
 
 def _ignoring_cancel(self, scope, budget=MAX_TOOL_CALLS, cancel=None):
     _RECORDER_INIT(self, scope, budget=budget, cancel=None)
+
+
+class HarnessMetricTests(Measured, TestCase):
+    """Every admitted run reports how it ended (`harness.measured`), with registry
+    names and counts only; a run never admitted reports nothing."""
+
+    # HarnessTests' own setting up and script runner, without its tests again.
+    scripted = HarnessTests.scripted
+    run_script = HarnessTests.run_script
+    searches = HarnessTests.searches
+
+    def setUp(self):
+        HarnessTests.setUp(self)
+        self.start_measuring()
+
+    def runs(self):
+        return {
+            (p.attributes["gen_ai.operation.name"], p.attributes["digitalbrain.mode"],
+             p.attributes["digitalbrain.outcome"]): p.count
+            for p in self.points("digitalbrain.agent.run.duration")
+        }
+
+    def counted(self, name, *keys):
+        return {
+            tuple(p.attributes[key] for key in keys): p.value
+            for p in self.points(name)
+        }
+
+    def test_an_answer_reports_its_run_turns_and_each_tool_call(self):
+        self.run_script(
+            [("search_knowledge", {"query": "refund"})],
+            [("fetch_source", {"source_id": str(self.source.pk)})],
+            "Thirty days.",
+        )
+        self.assertEqual(self.runs(), {("chat", "tools", "answered"): 1})
+        self.assertEqual(
+            self.counted("digitalbrain.agent.turns", "gen_ai.operation.name", "digitalbrain.mode"),
+            {("chat", "tools"): 3},
+        )
+        self.assertEqual(
+            self.counted("digitalbrain.agent.tool.calls", "gen_ai.tool.name",
+                         "digitalbrain.outcome"),
+            {("search_knowledge", "found"): 1, ("fetch_source", "found"): 1},
+        )
+        self.assertOnlyRegistered()
+
+    def test_each_way_a_run_ends_is_named(self):
+        self.run_script(*self.searches(5), wrap_up=True, then=["From what was read."])
+        with self.assertRaises(AgentFailure):
+            self.run_script(*self.searches(3), turns_asked=2)
+        cancel = threading.Event()
+        self.run_script([("search_knowledge", {"query": "refund"}), cancel.set], "Partial.",
+                        cancel=cancel)
+
+        def revoke():
+            ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
+
+        with self.assertRaises(Http404):
+            self.run_script([("search_knowledge", {"query": "refund"}), revoke], "Never kept.")
+        self.assertEqual(self.runs(), {
+            ("chat", "tools", "wrapped_up"): 1,
+            ("chat", "tools", "turn_limit"): 1,
+            ("chat", "tools", "stopped"): 1,
+            ("chat", "tools", "refused"): 1,
+        })
+        self.assertEqual(set(harness.OUTCOMES) >= {o for *_, o in self.runs()}, True)
+
+    def test_a_provider_failure_is_failed_and_one_turn_is_one_call(self):
+        class Broken:
+            async def run(self, *args, **kwargs):
+                raise RuntimeError("down")
+
+        with patch.object(harness, "runtime_for", return_value=Broken()):
+            with self.assertRaises(AgentFailure):
+                run_agent(
+                    user=self.owner, app=self.app, config=self.config, token="unused",
+                    purpose="chat", scope=ToolScope(user_id=self.owner.pk, app_id=self.app.pk),
+                    question="q", citations=[], history=[], emit=lambda *a: None,
+                    max_tokens=1024, prompt_characters=1,
+                )
+        self.run_script("From the evidence.", turns_asked=1)
+        self.assertEqual(self.runs(), {
+            ("chat", "tools", "failed"): 1, ("chat", "one_call", "answered"): 1,
+        })
+
+    def test_a_run_never_admitted_reports_nothing(self):
+        with self.assertRaises(Http404):
+            self.run_script("never", user=self.admin)
+        self.assertEqual(self.runs(), {})
+
+    def test_metrics_that_break_never_fail_the_run(self):
+        from platform_core import metrics
+
+        recorded = metrics.record
+
+        def breaks(name, *args, **kwargs):
+            if name.startswith("digitalbrain.agent."):
+                raise RuntimeError("exporter gone")
+            return recorded(name, *args, **kwargs)
+
+        with (
+            patch.object(metrics, "record", side_effect=breaks),
+            self.assertLogs("platform_core.agent_runtime.harness", "WARNING") as logged,
+        ):
+            _, result = self.run_script("Fine.")
+        self.assertEqual(result.answer, "Fine.")
+        self.assertEqual(logged.records[0].event, "agent_metrics_failed")

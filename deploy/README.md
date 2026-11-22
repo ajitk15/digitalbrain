@@ -263,8 +263,8 @@ production; its credential, if any, is the mounted file `otel_authorization`).
 Traces carry ids and timings only; metrics carry rates, errors, durations and
 queue figures, and only spend is by application. `metrics = false` keeps the
 traces alone. `deploy/slo-rules.yml` is the Prometheus rule file for the other
-four service levels (server errors, page speed, paid calls admitted, queue age),
-with burn-rate alerts - load it where the collector's metrics land. It is
+five service levels (server errors, page speed, paid calls admitted, agent runs
+that end with an answer, queue age), with burn-rate alerts - load it where the collector's metrics land. It is
 generated from `platform_core/slo.py`; regenerate it, never edit it.
 
 To run a collector and Prometheus beside the platform:
@@ -282,6 +282,35 @@ report too. Traces go to the collector's log until its traces pipeline
 (`deploy/observability/collector.yaml`) names a backend, and alerts stay in
 Prometheus until an Alertmanager is added. `deploy/observability/compose.local.yaml`
 is the same pair for a development machine, over plain http.
+
+**Watching the agents.** Every agent run through the harness reports how long it
+took, whether it had tools (`digitalbrain_mode`: `tools` or `one_call`) and how it
+ended (`digitalbrain_outcome`: `answered`, `wrapped_up`, `turn_limit`, `refused`,
+`stopped`, `failed`), the turns it sent and each tool call by tool and outcome -
+names and counts, never what was asked or read. The agent is `gen_ai_operation_name`
+(its AI task: `chat`, `plan_drafting`, `serviceops_triage`, `code_review`,
+`knowledge_upkeep`). In Prometheus (http://127.0.0.1:9090, Graph):
+
+```promql
+# Runs per hour by agent and how they ended
+sum by (gen_ai_operation_name, digitalbrain_outcome) (increase(digitalbrain_agent_run_duration_seconds_count[1h]))
+
+# Share of runs that failed or ran out of turns (the agents_answer objective)
+digitalbrain:slo_errors:ratio_rate1h{objective="agents_answer"}
+
+# p95 run time by agent, with tools against one call
+histogram_quantile(0.95, sum by (le, gen_ai_operation_name, digitalbrain_mode) (rate(digitalbrain_agent_run_duration_seconds_bucket[1h])))
+
+# Turns a run, by agent
+sum by (gen_ai_operation_name) (increase(digitalbrain_agent_turns_total[1h])) / sum by (gen_ai_operation_name) (increase(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome!="refused"}[1h]))
+
+# Tool calls by tool and outcome - a rising "budget" or "failed" share is worth a look
+sum by (gen_ai_tool_name, digitalbrain_outcome) (increase(digitalbrain_agent_tool_calls_total[1h]))
+```
+
+Spend by agent is `digitalbrain_ai_cost_total` by `gen_ai_operation_name`, as for
+every paid call. How an agent compares with one call on its frozen pack is not a
+metric: it is drawn on the agent's own page (Settings → AI → Agents).
 
 ## What is not covered here
 

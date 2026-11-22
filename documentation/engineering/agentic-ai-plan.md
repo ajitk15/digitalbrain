@@ -442,6 +442,11 @@ each three times on one model and switch tools on only when two of three clear t
 Triage needs incidents whose cause people confirmed; a fresh demo has none. Chat's agent
 path has no pack yet: `llm_drift` asks its questions as single calls.
 
+In operation every run is measured as it goes (`harness.measured`): duration, mode and
+outcome, turns sent and tool calls by tool, exported with the platform's other metrics,
+and the `agents_answer` objective alerts when runs fail or run out of turns faster than
+5% of a 28-day budget allows. `deploy/README.md` has the Prometheus queries.
+
 ## Future enhancements
 
 Not in scope for the phases above. Each is listed with the invariant it touches, so
@@ -475,7 +480,7 @@ reason a person can trust the output.
 | A tool leaks across applications | `ToolScope` closed over; row security under it on PostgreSQL; guardrail probes with foreign ids |
 | A tool reads a restricted source | Tools read only through `answerable()` and `permissions.permitted`; a probe for each |
 | Prompt injection from a source or repository file | Tools are read-only and writes are fixed by an approved plan, so injected text can at worst make the agent read more or answer worse - which the packs catch. Never add a write tool |
-| Slower runs | Trajectory durations on the run page; `slo` objectives for agent runs; Stop between turns |
+| Slower runs | Trajectory durations on the run page; run durations by agent and mode in the metrics, and the `agents_answer` objective; Stop between turns |
 | A dead worker strands a run | Lane steps keep their `keepalive`; a lost claim writes nothing |
 
 ## Open decisions

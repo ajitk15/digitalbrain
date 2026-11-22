@@ -93,6 +93,43 @@ tests:
             exp_annotations:
               summary: 'A paid call is admitted rather than turned away busy - burning 14.4x over 1h'
 
+  # Nine agent runs in ten fail or run out of turns: past 14.4x a 5% budget.
+  # A Stop and an answer from the turn kept back are counted as before.
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="failed",gen_ai_operation_name="plan_drafting",gen_ai_provider_name="claude"}'
+        values: '0+6x90'
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="turn_limit",gen_ai_operation_name="serviceops_triage",gen_ai_provider_name="claude"}'
+        values: '0+3x90'
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="wrapped_up",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+1x90'
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="stopped",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+50x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOAgentsAnswerPage
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              objective: agents_answer
+            exp_annotations:
+              summary: 'An agent run ends with an answer, not a failure or out of turns - burning 14.4x over 1h'
+
+  # Every run that did not answer was stopped by a person or lost its access:
+  # neither is the platform failing, so nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="stopped",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+10x90'
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="tools",digitalbrain_outcome="refused",gen_ai_operation_name="code_review",gen_ai_provider_name="claude"}'
+        values: '0+10x90'
+      - series: 'digitalbrain_agent_run_duration_seconds_count{digitalbrain_mode="one_call",digitalbrain_outcome="answered",gen_ai_operation_name="chat",gen_ai_provider_name="claude"}'
+        values: '0+1x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: SLOAgentsAnswerPage
+        exp_alerts: []
+
   # Intake has waited fifteen minutes for over an hour; a late Code Factory
   # run is not one of the queues this objective promises.
   - interval: 1m

@@ -106,6 +106,19 @@ INSTRUMENTS = {
     "digitalbrain.answers.streaming": instrument(
         "gauge", "{answer}", "Answers this process is streaming.",
     ),
+    # Agent runs (`agent_runtime.harness.measured`): mode is "tools" or "one_call",
+    # outcome one of `harness.OUTCOMES`, a tool its registry name - all written by code.
+    "digitalbrain.agent.run.duration": instrument(
+        "histogram", "s", "From an agent run's admission to its end, by how it ended.",
+        "purpose", "provider", "mode", "outcome",
+    ),
+    "digitalbrain.agent.turns": instrument(
+        "counter", "{turn}", "Model turns agent runs sent.", "purpose", "mode",
+    ),
+    "digitalbrain.agent.tool.calls": instrument(
+        "counter", "{call}", "Tool calls agent runs made, by tool and what came of it.",
+        "purpose", "tool", "outcome",
+    ),
     "digitalbrain.slo.events": instrument(
         "gauge", "{event}", "Good and bad events in each records objective's window.",
         "objective", "outcome",

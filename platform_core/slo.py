@@ -124,6 +124,7 @@ STREAMED = f'{label("streamed")}="false"'
 OUTCOME = label("outcome")
 REQUESTS = "http_server_request_duration_seconds"
 ADMISSIONS = "digitalbrain_ai_admission_wait_seconds"
+AGENT_RUNS = "digitalbrain_agent_run_duration_seconds"
 
 #: Everything promised. Adding one here adds it to `manage.py slo`, the gauge,
 #: the log and the rules file.
@@ -170,6 +171,15 @@ OBJECTIVES = (
         errors=f'sum(rate({ADMISSIONS}_count{{{OUTCOME}="busy"}}[{{w}}]))',
         total=f"sum(rate({ADMISSIONS}_count[{{w}}]))",
         notes="Turned away means nothing was sent and nothing was charged.",
+    ),
+    Objective(
+        "agents_answer",
+        "An agent run ends with an answer, not a failure or out of turns.", 0.95, "metrics",
+        errors=(f'sum(rate({AGENT_RUNS}_count{{{OUTCOME}=~"failed|turn_limit"}}'
+                "[{w}]))"),
+        total=f'sum(rate({AGENT_RUNS}_count{{{OUTCOME}!~"stopped|refused"}}[{{w}}]))',
+        notes="Every agent through the harness. A person's Stop and access that ended "
+        "mid-run are neither; an answer from the turn kept back is an answer.",
     ),
     Objective(
         "queues_fresh",

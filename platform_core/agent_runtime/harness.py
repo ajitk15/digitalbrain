@@ -39,6 +39,11 @@ reservation and the checks. What `run_agent` holds every run to:
   back and how long it took. Written after the run on the thread that owns the
   run's writes, and only for a run that names what it belongs to.
 
+* **Measured as it runs** (`measured`): every admitted run records how long it
+  took, whether it had tools and how it ended (`OUTCOMES`), the turns it sent and
+  each tool call by tool and outcome - registry names and counts, never text -
+  to `metrics.INSTRUMENTS`, for the agent objective in `slo.py`.
+
 A provider failure is raised as `AgentFailure`, carrying only the original's
 class name for the caller's log: a provider's message can quote the prompt.
 """
@@ -47,6 +52,7 @@ import asyncio
 import inspect
 import logging
 import math
+import time
 from dataclasses import dataclass, field
 
 from django.core.exceptions import PermissionDenied
@@ -74,6 +80,12 @@ WRAP_UP = (
     "You have used every search this answer may make. Answer now from the "
     "evidence above, citing it as usual, and say plainly what it does not cover."
 )
+
+
+#: How an admitted run ended, as its metrics say: an answer; an answer from the
+#: turn kept back; out of turns with none kept; access ended; the person's Stop;
+#: the provider or runtime failed.
+OUTCOMES = ("answered", "wrapped_up", "turn_limit", "refused", "stopped", "failed")
 
 
 class AgentFailure(Exception):
@@ -114,6 +126,37 @@ def tool_budget(allowed, requested, calls=MAX_TOOL_CALLS):
     if allowed >= requested:
         return calls
     return max(1, math.ceil(calls * (allowed - 1) / (requested - 1)))
+
+
+def measured(purpose, provider, run, steps):
+    """Report one admitted run to `metrics`: how long it took and how it ended, by
+    mode; the turns it sent; each tool call by tool and outcome. Registry names
+    and counts only. A run never admitted reports nothing here: admission's own
+    metric says it was turned away, and nothing was sent."""
+    if run["started"] is None:
+        return
+    from .. import metrics
+
+    try:
+        metrics.record(
+            "digitalbrain.agent.run.duration",
+            time.monotonic() - run["started"],
+            purpose=purpose,
+            provider=provider,
+            mode=run["mode"],
+            outcome=run["outcome"],
+        )
+        if run["turns"]:
+            metrics.record("digitalbrain.agent.turns", run["turns"], purpose=purpose,
+                           mode=run["mode"])
+        for step in steps:
+            metrics.record("digitalbrain.agent.tool.calls", 1, purpose=purpose,
+                           tool=step["tool"], outcome=step["outcome"])
+    except Exception as failure:  # measuring never fails the run it measures
+        logger.warning(
+            "agent metrics not recorded",
+            extra={"event": "agent_metrics_failed", "exception_type": type(failure).__name__},
+        )
 
 
 def keep_steps(
@@ -268,6 +311,9 @@ def run_agent(
         )
         return asyncio.run(pending) if inspect.isawaitable(pending) else pending
 
+    # What `measured` reports once the run ends; `started` is set only once admitted.
+    run = {"started": None, "mode": "one_call", "outcome": "failed", "turns": 0}
+
     def wrapped_up(limit, kept, attempt):
         """What a run that used every turn answers with: the turn kept back, over
         the evidence that still verifies - or nothing, raised again, when no turn
@@ -288,52 +334,77 @@ def run_agent(
         return more, answer
 
     try:
-        with gateway.admitted(
-            user,
-            app,
-            config,
-            purpose,
-            prompt_characters=prompt_characters,
-            max_tokens=max_tokens,
-            turns=asked,
-            tool_characters=tool_calls * RESULT_CHARACTERS if tools else 0,
-        ) as admission:
-            allowed = getattr(admission, "turns", None) or asked
-            # The turn kept back, when there is room for one beside a tool turn.
-            kept = 1 if wrap_up and tools and allowed >= WRAP_UP_FROM else 0
-            agent_turns = allowed - kept
-            recorder.budget = tool_budget(agent_turns, asked - (1 if wrap_up else 0), tool_calls)
-            given = tools if agent_turns > 1 else []
-            recorded = []
-            try:
+        try:
+            with gateway.admitted(
+                user,
+                app,
+                config,
+                purpose,
+                prompt_characters=prompt_characters,
+                max_tokens=max_tokens,
+                turns=asked,
+                tool_characters=tool_calls * RESULT_CHARACTERS if tools else 0,
+            ) as admission:
+                run["started"] = time.monotonic()
+                allowed = getattr(admission, "turns", None) or asked
+                # The turn kept back, when there is room for one beside a tool turn.
+                kept = 1 if wrap_up and tools and allowed >= WRAP_UP_FROM else 0
+                agent_turns = allowed - kept
+                recorder.budget = tool_budget(
+                    agent_turns, asked - (1 if wrap_up else 0), tool_calls
+                )
+                given = tools if agent_turns > 1 else []
+                run["mode"] = "tools" if given else "one_call"
+                recorded = []
                 try:
-                    usages, answer = attempt(given, agent_turns, citations, question)
-                except TurnLimit as limit:
-                    # Each turn it sent was billed: receipts first, whatever follows.
-                    ai.record_turns(user, app, config, purpose, limit.usages)
-                    recorded = list(limit.usages)
-                    usages, answer = wrapped_up(limit, kept, attempt)
-            except (PermissionDenied, Http404):
-                raise
-            except Exception as failure:
-                raise AgentFailure(failure) from None
-            ai.record_turns(user, app, config, purpose, usages)
-            usages = [*recorded, *usages]
+                    try:
+                        usages, answer = attempt(given, agent_turns, citations, question)
+                        run["outcome"] = "answered"
+                    except TurnLimit as limit:
+                        # Each turn it sent was billed: receipts first, whatever follows.
+                        ai.record_turns(user, app, config, purpose, limit.usages)
+                        recorded = list(limit.usages)
+                        run["turns"] = len(recorded)
+                        usages, answer = wrapped_up(limit, kept, attempt)
+                        run["outcome"] = "wrapped_up"
+                except (PermissionDenied, Http404):
+                    run["outcome"] = "refused"
+                    raise
+                except Exception as failure:
+                    run["outcome"] = (
+                        "stopped" if cancel is not None and cancel.is_set()
+                        else "turn_limit" if isinstance(failure, TurnLimit)
+                        else "failed"
+                    )
+                    raise AgentFailure(failure) from None
+                ai.record_turns(user, app, config, purpose, usages)
+                usages = [*recorded, *usages]
+                run["turns"] = len(usages)
+                if cancel is not None and cancel.is_set():
+                    # What it wrote before the person's Stop, kept; neither good nor bad.
+                    run["outcome"] = "stopped"
+        finally:
+            keep_steps(
+                app,
+                purpose,
+                recorder.steps,
+                message_id,
+                run_id,
+                phase,
+                triage_id,
+                review_id,
+                candidate_id,
+            )
+        if recorder.revoked is not None:
+            run["outcome"] = "refused"
+            raise recorder.revoked
+        try:
+            gateway.authorize(user, app.pk, purpose)
+        except (PermissionDenied, Http404):
+            run["outcome"] = "refused"
+            raise
     finally:
-        keep_steps(
-            app,
-            purpose,
-            recorder.steps,
-            message_id,
-            run_id,
-            phase,
-            triage_id,
-            review_id,
-            candidate_id,
-        )
-    if recorder.revoked is not None:
-        raise recorder.revoked
-    gateway.authorize(user, app.pk, purpose)
+        measured(purpose, config.provider, run, recorder.steps)
     return AgentResult(
         answer=answer,
         citations=recorder.verified_citations(),

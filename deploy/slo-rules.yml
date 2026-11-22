@@ -51,6 +51,22 @@ groups:
         labels:
           objective: ai_admitted
       - record: digitalbrain:slo_errors:ratio_rate1h
+        expr: '(sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome=~"failed|turn_limit"}[1h]))) / (sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome!~"stopped|refused"}[1h])))'
+        labels:
+          objective: agents_answer
+      - record: digitalbrain:slo_errors:ratio_rate6h
+        expr: '(sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome=~"failed|turn_limit"}[6h]))) / (sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome!~"stopped|refused"}[6h])))'
+        labels:
+          objective: agents_answer
+      - record: digitalbrain:slo_errors:ratio_rate5m
+        expr: '(sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome=~"failed|turn_limit"}[5m]))) / (sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome!~"stopped|refused"}[5m])))'
+        labels:
+          objective: agents_answer
+      - record: digitalbrain:slo_errors:ratio_rate30m
+        expr: '(sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome=~"failed|turn_limit"}[30m]))) / (sum(rate(digitalbrain_agent_run_duration_seconds_count{digitalbrain_outcome!~"stopped|refused"}[30m])))'
+        labels:
+          objective: agents_answer
+      - record: digitalbrain:slo_errors:ratio_rate1h
         expr: '(max(avg_over_time((max(digitalbrain_queue_oldest_age_seconds{digitalbrain_lane=~"intake|graph|connectors"}) > bool 600)[1h:1m]))) / (vector(1))'
         labels:
           objective: queues_fresh
@@ -148,6 +164,22 @@ groups:
           objective: ai_admitted
         annotations:
           summary: 'A paid call is admitted rather than turned away busy - burning 6x over 6h'
+      - alert: SLOAgentsAnswerPage
+        expr: 'digitalbrain:slo_errors:ratio_rate1h{objective="agents_answer"} > 0.72 and digitalbrain:slo_errors:ratio_rate5m{objective="agents_answer"} > 0.72'
+        for: 2m
+        labels:
+          severity: page
+          objective: agents_answer
+        annotations:
+          summary: 'An agent run ends with an answer, not a failure or out of turns - burning 14.4x over 1h'
+      - alert: SLOAgentsAnswerTicket
+        expr: 'digitalbrain:slo_errors:ratio_rate6h{objective="agents_answer"} > 0.3 and digitalbrain:slo_errors:ratio_rate30m{objective="agents_answer"} > 0.3'
+        for: 15m
+        labels:
+          severity: ticket
+          objective: agents_answer
+        annotations:
+          summary: 'An agent run ends with an answer, not a failure or out of turns - burning 6x over 6h'
       - alert: SLOQueuesFreshPage
         expr: 'digitalbrain:slo_errors:ratio_rate1h{objective="queues_fresh"} > 0.144 and digitalbrain:slo_errors:ratio_rate5m{objective="queues_fresh"} > 0.144'
         for: 2m
