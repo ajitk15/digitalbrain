@@ -7,9 +7,12 @@ What it may read is never written here - it is `registry.for_scope` for its
 purpose, the list the harness itself hands the model - so the popup cannot
 describe a tool the agent does not have, or miss one it does.
 
-Two readers: `{% agent_badge %}` (`templatetags/agents.py`), drawn beside every
-control that starts an agent, and the pages `agents` and `agent`, which the badge
-opens as a popup (`data-modal`) and which render and work on their own. Nothing
+Two readers: `{% agent_badge %}` (`templatetags/agent_badges.py`), drawn beside
+every control that starts an agent, and the pages `agents` (Settings → AI →
+Agents, for every member) and `agent`, which the badge opens as a popup
+(`data-modal`) and which render and work on their own. Each agent names the
+screen it is started from and every place it is shown, so the index answers
+"where are the agents in this application". Nothing
 here starts an agent, changes a setting or shows what an agent read: activity is
 `AgentStep` counts by tool and outcome, the shape the trajectory already keeps.
 """
@@ -72,6 +75,16 @@ class Agent:
     prompt_estimate: int = 6000
     #: Its reply cap when AI settings has none for its task.
     reply_tokens: int = 1024
+    #: The screen it is started from (a route taking the application id), and
+    #: what that screen is called.
+    screen: str = ""
+    screen_label: str = ""
+    #: Only owners and contributors reach that screen.
+    writers_only: bool = False
+    #: Every place its badge or Agent tag is drawn, besides AI settings and
+    #: Features, which carry every agent. `test_agent_catalog` holds each screen
+    #: here to a template that draws this agent.
+    shown: tuple = ()
     extra: dict = field(default_factory=dict)
 
 
@@ -108,6 +121,13 @@ def _agents():
             tool_calls=limits["chat"][1],
             steps_field="message",
             kept_back=True,
+            screen="chat",
+            screen_label="Chat",
+            shown=(
+                "Chat: beside its heading, on each answer it read for, and on that "
+                "conversation in the list.",
+                "Settings → API access → Chat: the chat endpoint answers through it.",
+            ),
             safeguards=(
                 "An answer cites only sources that are still active, unchanged and hold "
                 "the quoted passage; anything else is dropped before it is shown.",
@@ -135,6 +155,13 @@ def _agents():
             steps_field="candidate",
             reply_tokens=800,
             kept_back=True,
+            screen="learned",
+            screen_label="Knowledge → Learned",
+            writers_only=True,
+            shown=(
+                "Knowledge → Learned: beside its heading, on each draft it made, and on "
+                "drafted questions in the decided table.",
+            ),
             safeguards=(
                 "A proposal counts only for a source it was shown, which you can see, "
                 "and whose text holds the quote word for word; naming a source it never "
@@ -163,6 +190,13 @@ def _agents():
             steps_field="review",
             prompt_estimate=30000,
             reply_tokens=4000,
+            screen="code-repositories",
+            screen_label="Knowledge → Code Repos",
+            shown=(
+                "A code review's AI review card: beside its heading, and on the result "
+                "when it read further.",
+                "Knowledge → Code Repos → Reviews: on each review whose AI result it made.",
+            ),
             safeguards=(
                 "Reads only this review's change and the code snapshot it is based on.",
                 "Every finding must quote what it read exactly; a finding with a quote "
@@ -191,6 +225,14 @@ def _agents():
             tool_calls=limits["plan_drafting"][1],
             steps_field="run",
             prompt_estimate=60000,
+            screen="plans",
+            screen_label="Code Factory",
+            shown=(
+                "Code Factory: beside its heading, and on each run it worked on, there "
+                "and in Pipeline runs.",
+                "A plan's “Implement and open a draft pull request” button.",
+                "A run's steps, and each step's own page.",
+            ),
             safeguards=(
                 "Reads only the run's own code snapshot, by looking files up among its "
                 "indexed rows: no path it writes reaches the disk.",
@@ -216,6 +258,13 @@ def _agents():
             tool_calls=limits["serviceops_triage"][1],
             steps_field="triage",
             prompt_estimate=20000,
+            screen="serviceops",
+            screen_label="ServiceOps",
+            shown=(
+                "An incident: beside “Triage this incident”, and on the triage it shows.",
+                "ServiceOps: on each incident's last run in the list, and in Runs.",
+                "A triage run's own page.",
+            ),
             safeguards=(
                 "Everything its tools show the model has personal data redacted.",
                 "An incident's own confirmed cause is never shown to it.",
@@ -244,6 +293,26 @@ def by_purpose(purpose):
         if agent.purpose == purpose:
             return agent
     return None
+
+
+def for_feature(feature):
+    """The agents a feature's screens run, in registry order."""
+    return [agent for agent in _agents() if agent.feature == feature]
+
+
+def screen_url(agent, app, grant):
+    """Where this person starts the agent, or "" when they cannot open that screen."""
+    from django.urls import reverse
+
+    from .services import feature_enabled
+
+    if not agent.screen or not feature_enabled(agent.feature, app):
+        return ""
+    if agent.screen == "code-repositories" and not feature_enabled("code_graph", app):
+        return ""
+    if agent.writers_only and getattr(grant, "role", "viewer") == "viewer":
+        return ""
+    return reverse(agent.screen, args=[app.pk])
 
 
 def mark(rows, field, attribute="agent_calls"):
@@ -431,7 +500,10 @@ def agents_view(request, pk):
     from .policy import application_for
 
     app, grant = application_for(request.user, pk)
-    rows = [described(agent, app) for agent in _agents()]
+    rows = [
+        {**described(agent, app), "screen_url": screen_url(agent, app, grant)}
+        for agent in _agents()
+    ]
     return render(request, "agents.html", {"application": app, "grant": grant, "rows": rows})
 
 
@@ -456,5 +528,6 @@ def agent_view(request, pk, key):
             **described(agent, app),
             "safeguards": (*agent.safeguards, *SHARED_SAFEGUARDS),
             "activity": activity(agent, app),
+            "screen_url": screen_url(agent, app, grant),
         },
     )

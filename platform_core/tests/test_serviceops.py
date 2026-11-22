@@ -714,6 +714,29 @@ class ServiceOpsViewTests(TestCase):
         page = self.client.get(self.url, {"incident": str(current.pk)})
         self.assertContains(page, "Shared symptoms:")
 
+    def test_the_incident_tags_the_triage_its_agent_read_further_for(self):
+        from platform_core.models import AgentStep
+
+        current = self.incident("Queue timeout", number="INC0010011")
+        run = TriageRun.objects.create(
+            application=self.app, incident=current, requested_by=self.owner,
+            status="completed", incident_digest=current.digest, pack_digest="p",
+            evidence=[], band="medium",
+        )
+        agent = reverse("agent", args=[self.app.pk, "triage"])
+        page = self.client.get(self.url, {"incident": str(current.pk)}).content.decode()
+        triage = page[page.index('data-live="triage-run"'):]
+        self.assertNotIn(f'<a class="agent-tag" href="{agent}"', triage)
+        for sequence, tool in enumerate(("incident_context", "search_knowledge"), 1):
+            AgentStep.objects.create(
+                application=self.app, triage=run, purpose="serviceops_triage",
+                sequence=sequence, tool=tool, outcome="found",
+            )
+        page = self.client.get(self.url, {"incident": str(current.pk)}).content.decode()
+        triage = page[page.index('data-live="triage-run"'):]
+        self.assertIn(f'<a class="agent-tag" href="{agent}"', triage)
+        self.assertIn("2 steps", triage[: triage.index("</section>")])
+
     def test_a_citation_is_named_by_its_ticket_not_its_id(self):
         current = self.incident("Queue timeout", number="INC0010009")
         prior = self.incident(

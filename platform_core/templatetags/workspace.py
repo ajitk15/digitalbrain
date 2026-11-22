@@ -99,6 +99,9 @@ def settings_sections(app, grant):
         sections.append(("Credentials", "credentials", {"credentials"}, "lock"))
         sections.append(("People & access", "application-access", {"application-access"}, "people"))
     if grant:
+        # Where each agent runs and how it stands here. Any member may look: the
+        # page shows names, states and counts, and starts nothing.
+        sections.append(("Agents", "agents", {"agents"}, "agent"))
         # Any member with application access may hold a token; it can never do
         # more than they can.
         sections.append(("API access", "api-tokens", {"api-tokens"}, "key"))
@@ -276,6 +279,7 @@ SETTINGS_GROUPS = {
     "chat-settings": "Application",
     "ai-settings": "AI",
     "usage": "AI",
+    "agents": "AI",
     "connectors": "Integrations",
     "credentials": "Integrations",
     "api-tokens": "Integrations",

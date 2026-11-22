@@ -17,7 +17,7 @@
 {% comment %}2. Triage, simple first: the outcome - confidence and the idea to try first - then the ideas, each with its own confidence. The steps show only while a run works; every step, and how the score was reached, open in Run details. Followed live by static/documents.js; the Refresh link is the same page without script.{% endcomment %}
 <section class="section triage-run" data-live="triage-run"{% if run_live %} data-live-pending{% endif %}>
   <div class="triage-head"><h2>Triage</h2>
-    {% if run %}<span class="run-number">Run #{{ run.number }}</span>{% include "_run_state.html" with r=run count=hypotheses|length %}{% endif %}
+    {% if run %}<span class="run-number">Run #{{ run.number }}</span>{% include "_run_state.html" with r=run count=hypotheses|length %}{% agent_tag application "triage" agent_calls %}{% endif %}
     <span class="triage-links">{% if run %}<a href="{% url 'serviceops-run' application.pk run.pk %}" data-modal>{% icon "info" 13 %}Run details</a>{% endif %}{% if run_count > 1 %}<a href="{% url 'serviceops-runs' application.pk %}?incident={{ selected.pk }}">{% icon "history" 13 %}All runs ({{ run_count }})</a>{% endif %}</span>
   </div>
   {% if run %}

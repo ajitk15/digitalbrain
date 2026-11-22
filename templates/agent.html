@@ -9,6 +9,7 @@
 <dt>Starts</dt><dd>{{ agent.trigger }}</dd>
 <dt>Runs</dt><dd>{{ agent.where }}</dd>
 <dt>Limits</dt><dd>Up to {{ agent.turns }} turns and {{ agent.tool_calls }} tool calls{% if agent.kept_back %}, plus one turn kept back to answer in if it runs out{% endif %}, each paid for before the first is sent.</dd>
+{% if agent.shown %}<dt>Shown</dt><dd><ul class="agent-shown">{% for line in agent.shown %}<li>{{ line }}</li>{% endfor %}</ul></dd>{% endif %}
 {% if agent.measured %}<dt>Measured</dt><dd>{{ agent.measured }}</dd>{% endif %}
 </dl>
 
@@ -25,5 +26,5 @@
 <p class="muted"><small>Counted from the steps each run records: the tool, what came of it and how much came back. What was asked and what was read are never kept.</small></p>
 {% else %}<p class="muted">No tool calls yet.{% if state == 'one-call' %} It asks once while its tools are off.{% endif %}</p>{% endif %}
 
-<p class="agent-all"><a href="{% url 'agents' application.pk %}">All agents in {{ application.name }} {% icon "arrow-right" 14 %}</a></p>
+<p class="agent-all">{% if screen_url %}<a href="{{ screen_url }}">Open {{ agent.screen_label }} {% icon "arrow-right" 14 %}</a> · {% endif %}<a href="{% url 'agents' application.pk %}">All agents in {{ application.name }} {% icon "arrow-right" 14 %}</a></p>
 </div>{% endblock %}

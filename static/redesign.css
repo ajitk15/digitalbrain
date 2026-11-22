@@ -3478,9 +3478,15 @@
   .agent-activity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--s-3); align-items: start; margin-bottom: var(--s-2); }
   .agent-activity table { border: 1px solid var(--c-line-soft); border-radius: var(--r-md); }
   .agent-activity .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .agents-index a { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--s-3); align-items: center; padding: var(--s-2) var(--s-3); border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-surface); color: var(--c-ink); }
-  .agents-index a:hover { text-decoration: none; border-color: var(--c-brand-border); }
-  .agents-index .muted { grid-column: 2; font-size: var(--t-12); }
+  .agents-index > li { border: 1px solid var(--c-line-soft); border-radius: var(--r-md); background: var(--c-surface); }
+  .agents-index > li:hover { border-color: var(--c-brand-border); }
+  .agents-index > li > a { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--s-3); align-items: center; padding: var(--s-2) var(--s-3); color: var(--c-ink); }
+  .agents-index > li > a:hover { text-decoration: none; }
+  .agents-index > li > a .muted { grid-column: 2; font-size: var(--t-12); }
+  .agent-where { padding: var(--s-2) var(--s-3); border-top: 1px solid var(--c-line-soft); font-size: var(--t-13); }
+  .agent-where .panel-label { margin: 0 0 var(--s-1); }
+  .agent-where ul, .agent-shown { margin: 0 0 var(--s-1); padding-left: var(--s-4); color: var(--c-ink-2); }
+  .agent-shown { padding-left: var(--s-3); }
   .agent-all { margin-top: var(--s-4); }
   @media (max-width: 600px) {
     .agent-tools li, .agent-activity, .agent-page-facts { grid-template-columns: 1fr; }

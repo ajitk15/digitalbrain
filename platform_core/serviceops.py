@@ -971,6 +971,8 @@ def run_context(app, run, verified_brief=True):
         "score": score_breakdown(run) if finished else None,
         "outcome": triage_outcome(run, hypotheses) if finished else None,
         "model_label": step_model_label(app, run),
+        # How much the triage agent read past its pack, for the Agent tag.
+        "agent_calls": agent_catalog.calls("triage", [run]).get(run.pk, 0) if run else 0,
     }
 
 
@@ -1062,8 +1064,6 @@ def serviceops_run(request, pk, run_id):
             "incident": run.incident,
             "incident_number": incident_fields.get("Number", ""),
             "stale": stale,
-            # How much the triage agent read past its pack, for the Agent tag.
-            "agent_calls": agent_catalog.calls("triage", [run]).get(run.pk, 0),
             **run_context(app, run, verified_brief=not stale),
         },
     )

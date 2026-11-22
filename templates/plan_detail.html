@@ -39,7 +39,7 @@
 
 {% if can_deliver and run.repository_confirmed and write_credential %}
 <form method="post" data-confirm="Open a draft pull request against {{ run.proposed_repository }}? This writes to that repository.">{% csrf_token %}<input type="hidden" name="action" value="deliver">
-<button class="button" type="submit">{% icon "publish" %}Implement and open a draft pull request</button>
+<button class="button" type="submit">{% icon "publish" %}Implement and open a draft pull request</button>{% load agent_badges %}{% agent_badge application "code-factory" %}
 <small class="muted">Runs implementation, checks what is about to be written, then opens a draft. No build or test suite is run — this platform holds knowledge about the application, not a checkout of it.</small></form>
 {% elif plan.status != 'approved' %}<p class="muted">Approve the plan first. Approving describes the work; opening a pull request writes to a repository, and that is a separate decision.</p>{% endif %}
 {% endif %}

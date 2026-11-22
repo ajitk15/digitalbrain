@@ -182,6 +182,7 @@ print(response.json())</pre>
 </div>
 </section>
 <section class="tab-panel" aria-label="Chat endpoint">
+{% if chat_api_enabled %}<p class="muted">{% load agent_badges %}{% agent_badge application "chat" %} Answers through the chat agent, the same run Chat makes.</p>{% endif %}
 <div class="copy-row"><code class="copy-url" id="chat-url">{{ base }}{% url 'api-chat' application.slug %}</code><button type="button" class="copy-button" data-copy-target="#chat-url" aria-label="Copy the chat endpoint URL" hidden>Copy</button></div>
 {% if chat_api_enabled %}<div class="copy-head"><span class="panel-label">Example request</span><button type="button" class="copy-button" data-copy-target="#chat-example" aria-label="Copy the example request" hidden>Copy</button></div>
 <pre class="source-text" id="chat-example">curl -X POST "{{ base }}{% url 'api-chat' application.slug %}"   -H "Authorization: Bearer YOUR_TOKEN"   -H "Content-Type: application/json"   -d '{"question": "which servers run under NODE1?"}'</pre>

@@ -14,6 +14,7 @@ from unittest.mock import patch
 from django.conf import settings
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils.html import escape
 
 from platform_core import agent_catalog, gateway
 from platform_core.agent_runtime.registry import for_scope
@@ -347,3 +348,58 @@ class CatalogTests(TestCase):
         row = page[page.index('id="task-conversation_title"'):]
         self.assertNotIn("agent-badge", row[: row.index("</div>")])
 
+    # Where every agent is -----------------------------------------------------
+
+    def test_settings_leads_every_member_to_the_agents_and_where_each_shows(self):
+        self.client.force_login(self.viewer, backend="django.contrib.auth.backends.ModelBackend")
+        index = reverse("agents", args=[self.app.pk])
+        # Settings → AI → Agents, from any settings screen a viewer can open.
+        self.assertContains(self.client.get(reverse("api-tokens", args=[self.app.pk])), index)
+        page = self.client.get(index)
+        self.assertContains(page, 'class="settings-sidebar"')
+        for agent in agent_catalog.agents():
+            with self.subTest(agent=agent.key):
+                for line in agent.shown:
+                    self.assertContains(page, escape(line))
+        # A viewer is led to every screen it may open, and not to Learned.
+        self.assertContains(page, reverse("chat", args=[self.app.pk]))
+        self.assertNotContains(page, reverse("learned", args=[self.app.pk]))
+        self.client.force_login(self.owner, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertContains(self.client.get(index), reverse("learned", args=[self.app.pk]))
+
+    def test_every_agent_is_drawn_on_its_screens_and_names_one_that_exists(self):
+        import re
+        from pathlib import Path
+
+        templates = Path(__file__).resolve().parents[2] / "templates"
+        drawn = {}
+        for path in templates.glob("*.html"):
+            pattern = r'agent_(badge|tag) application "([a-z-]+)"'
+            for kind, key in re.findall(pattern, path.read_text(encoding="utf-8")):
+                drawn.setdefault(key, set()).add(kind)
+        for agent in agent_catalog.agents():
+            with self.subTest(agent=agent.key):
+                self.assertTrue(agent.shown)
+                self.assertTrue(agent.screen_label)
+                reverse(agent.screen, args=[self.app.pk])
+                # Its badge where it starts, and its tag on what it made.
+                self.assertEqual(drawn.get(agent.key), {"badge", "tag"})
+        self.assertEqual(set(drawn) - {agent.key for agent in agent_catalog.agents()}, set())
+
+    def test_a_feature_screen_switch_shows_the_badge_of_each_agent_it_runs(self):
+        page = self.client.get(reverse("application-features", args=[self.app.pk])).content
+        page = page.decode()
+        for agent in agent_catalog.agents():
+            with self.subTest(agent=agent.key):
+                row = page[page.index(f'name="feature_{agent.feature}"'):]
+                row = row[: row.index('class="list-row"') if 'class="list-row"' in row else None]
+                self.assertIn(reverse("agent", args=[self.app.pk, agent.key]), row)
+
+    def test_api_access_says_the_chat_endpoint_answers_through_the_chat_agent(self):
+        page = self.client.get(reverse("api-tokens", args=[self.app.pk]))
+        self.assertContains(page, reverse("agent", args=[self.app.pk, "chat"]))
+        ApplicationFeature.objects.update_or_create(
+            application=self.app, key="chat_api", defaults={"enabled": False}
+        )
+        page = self.client.get(reverse("api-tokens", args=[self.app.pk]))
+        self.assertNotContains(page, reverse("agent", args=[self.app.pk, "chat"]))
