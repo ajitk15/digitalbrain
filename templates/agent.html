@@ -5,7 +5,7 @@
 <p class="agent-state agent-state-{{ state }}"><span class="agent-badge agent-badge-{{ state }}">{% icon "agent" 14 %}Agent<span class="agent-badge-state">{{ label }}</span></span> {{ detail }}</p>
 <p class="guide-lead">{{ agent.does }}</p>
 
-<dl class="agent-facts">
+<dl class="agent-page-facts">
 <dt>Starts</dt><dd>{{ agent.trigger }}</dd>
 <dt>Runs</dt><dd>{{ agent.where }}</dd>
 <dt>Limits</dt><dd>Up to {{ agent.turns }} turns and {{ agent.tool_calls }} tool calls{% if agent.kept_back %}, plus one turn kept back to answer in if it runs out{% endif %}, each paid for before the first is sent.</dd>

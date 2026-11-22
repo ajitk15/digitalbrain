@@ -24,7 +24,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from . import metrics
+from . import agent_catalog, metrics
 from .agent_runtime import streaming
 from .models import AIConfiguration, ChatConversation, ChatMessage
 from .services import audit
@@ -224,7 +224,9 @@ def chat(request, pk):
     message_pages = Paginator(history_messages, 60)
     message_page = message_pages.get_page(request.GET.get("messages", message_pages.num_pages))
     message_page.object_list = list(message_page.object_list)
+    agent_calls = agent_catalog.calls("message", message_page.object_list)
     for message in message_page.object_list:
+        message.agent_calls = agent_calls.get(message.pk, 0)
         # An answer still marked streaming that no stream in this process is
         # producing: its request was lost, or the server restarted mid-answer.
         # chat.js resumes it; without script, Regenerate is offered.
@@ -684,6 +686,7 @@ def chat_message(request, pk, message_id):
     """
     app, _ = access(request.user, pk, "chat")
     message = get_object_or_404(ChatMessage, pk=message_id, application=app, user=request.user)
+    message.agent_calls = agent_catalog.calls("message", [message]).get(message.pk, 0)
     return render(request, "_chat_message.html", {"message": message, "application": app})
 
 

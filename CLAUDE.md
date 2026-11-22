@@ -303,7 +303,16 @@ one indexed repository, else the ticket must name one), or when the budget's hea
 for one turn at the agent's usual size (`prompt_estimate`), since the harness gives a
 one-turn run no tools; else On. The turn count is admission's own rule
 (`gateway.affordable`, which `try_admit` calls) over `gateway.headroom`, a read without the
-lock - a forecast, which admission works out again, exactly, when a call starts.
+lock - a forecast, which admission works out again, exactly, when a call starts. **What an agent made carries an Agent tag** (`{% agent_tag application key calls %}`):
+a chat answer, a drafted fix, a review's AI result, a Code Factory step and a triage run show
+"Agent · N steps" when their agent made N tool calls to produce them, counted from their
+`AgentStep` rows in one query per page (`agent_catalog.calls`, `factory_views.agent_calls_by_phase`)
+or from the result's own count (`draft["steps"]`, a review's `tool_calls`), and nothing when it
+made none - a single call to the model is not an agent at work. While chat's agent is searching,
+its "Searching sources" line is labelled Agent by CSS alone (`.chat-tool::before`), so
+`chat.js` is unchanged. Class names are checked against the stylesheet first: `.agent-facts`
+and `.agent-list` were Code Factory's already, which is why these pages use
+`.agent-page-facts` and `.agents-index`.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...

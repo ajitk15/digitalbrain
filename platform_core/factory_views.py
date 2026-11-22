@@ -803,6 +803,17 @@ def agent_report(name, label, waiting, phase, run, configured=None):
     }
 
 
+def agent_calls_by_phase(run):
+    """{phase name: tool calls} its agent made reading the run's snapshot."""
+    from django.db.models import Count
+
+    from .models import AgentStep
+
+    return dict(
+        AgentStep.objects.filter(run_id=run.pk).values_list("phase").annotate(n=Count("id"))
+    )
+
+
 @login_required
 @require_http_methods(["GET", "POST"])
 def run_agent(request, pk, run_id, name):
@@ -856,6 +867,7 @@ def run_agent(request, pk, run_id, name):
             "application": app,
             "run": run,
             "name": name,
+            "agent_calls": agent_calls_by_phase(run).get(name, 0),
             "label": labels[name],
             "explained": AGENT_EXPLAINED[name],
             "phase": phase,
@@ -1006,6 +1018,10 @@ def run_detail(request, pk, run_id):
         agent_report(name, label, waiting, phases_by_name.get(name), run, configured)
         for name, label, waiting in AGENT_ROW
     ]
+    # Which of them read the run's code with tools, and how much: the Agent tag.
+    calls = agent_calls_by_phase(run)
+    for agent in agents:
+        agent["agent_calls"] = calls.get(agent["name"], 0)
     # How long since the run last said anything. A working run that has gone
     # quiet is worth showing before the reclaimer decides it is dead: a spinner
     # that means nothing is worse than a number that means something.

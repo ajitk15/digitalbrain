@@ -3,7 +3,7 @@
 {% block content %}{% comment %}One run on a page of its own, and the popup behind "Run details": every step and what it found, then why the run got its band. With JavaScript off it is this page.{% endcomment %}
 <div class="run-detail">
 <p class="eyebrow">{{ application.name }} / SERVICEOPS</p>
-<div class="triage-head"><h1>Triage run #{{ run.number }}</h1>{% include "_run_state.html" with r=run count=hypotheses|length long=True %}</div>
+<div class="triage-head"><h1>Triage run #{{ run.number }} {% load agent_badges %}{% agent_tag application "triage" agent_calls %}</h1>{% include "_run_state.html" with r=run count=hypotheses|length long=True %}</div>
 <p class="muted"><a href="{% url 'serviceops' application.pk %}?incident={{ incident.pk }}&amp;run={{ run.pk }}">{% if incident_number %}{{ incident_number }} · {% endif %}{{ incident.title }}</a> · run by {{ run.requested_by.username }} · <time datetime="{{ run.created_at|date:'c' }}" data-local>{{ run.created_at|date:"M d, Y H:i" }} UTC</time>{% if run.fingerprint %} · <span title="A short code for this incident's symptoms. Incidents with the same code describe the same symptoms.">symptom code <code>{{ run.fingerprint }}</code></span>{% endif %}</p>
 {% if stale %}<p class="notice notice-warning">A source this run quoted has changed since, so its brief is no longer shown. Triage the incident again.</p>{% endif %}
 

@@ -17,7 +17,7 @@
 {% elif revision %}<p class="muted">No published source names these files, or the identifiers on the changed lines.</p>{% else %}<p class="muted">Publish a knowledge version to see the requirements these files rest on.</p>{% endif %}
 {% if summary.named %}<p class="muted"><small>Identifiers on changed lines: {% for item in summary.named %}<code>{{ item.identifier }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</small></p>{% endif %}
 </section>
-<section class="card"><div class="card-heading"><h2>AI review {% load agent_badges %}{% agent_badge application "code-review" %}</h2>{% if result.model %}<span class="origin-tag origin-system">{{ result.model }}</span>{% endif %}</div>
+<section class="card"><div class="card-heading"><h2>AI review {% load agent_badges %}{% agent_badge application "code-review" %}</h2>{% agent_tag application "code-review" result.tool_calls %}{% if result.model %}<span class="origin-tag origin-system">{{ result.model }}</span>{% endif %}</div>
 {% if review.ai_status == 'queued' or review.ai_status == 'running' %}<p class="notice" role="status">{% icon "info" %}<span>The AI review is {{ review.get_ai_status_display|lower }}. This page refreshes on its own.</span></p>{% endif %}
 {% if review.ai_status == 'failed' %}<p class="notice notice-error" role="alert">{% icon "warning" %}<span>{{ review.ai_error }}</span></p>{% endif %}
 {% if review.ai_status == 'ready' %}

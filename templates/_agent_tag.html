@@ -1,0 +1,1 @@
+{% load icons %}<a class="agent-tag" href="{% url 'agent' application.pk agent.key %}" data-modal title="Made by the {{ agent.name|lower }}, which made {{ calls }} tool call{{ calls|pluralize }} to read what it needed">{% icon "agent" 13 %}Agent<span class="agent-tag-count">{{ calls }} step{{ calls|pluralize }}</span></a>

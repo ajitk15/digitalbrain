@@ -378,6 +378,24 @@ def activity(agent, app, days=ACTIVITY_DAYS):
     }
 
 
+def calls(field, owners, phase=None):
+    """{owner id: tool calls} from `AgentStep` rows linked by `field` - how much an
+    agent did to make each of `owners`, in one query."""
+    from django.db.models import Count
+
+    from .models import AgentStep
+
+    ids = [getattr(owner, "pk", owner) for owner in owners]
+    if not ids:
+        return {}
+    steps = AgentStep.objects.filter(**{f"{field}__in": ids})
+    if phase is not None:
+        steps = steps.filter(phase=phase)
+    return dict(
+        steps.values_list(f"{field}_id").annotate(n=Count("id")).values_list(f"{field}_id", "n")
+    )
+
+
 def described(agent, app):
     state, label, detail = status(agent, app)
     return {

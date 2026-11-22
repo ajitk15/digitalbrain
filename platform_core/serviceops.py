@@ -17,7 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_POST
 
-from . import sorting
+from . import agent_catalog, sorting
 from .models import (
     AutomationRun,
     Connector,
@@ -1059,6 +1059,8 @@ def serviceops_run(request, pk, run_id):
             "incident": run.incident,
             "incident_number": incident_fields.get("Number", ""),
             "stale": stale,
+            # How much the triage agent read past its pack, for the Agent tag.
+            "agent_calls": agent_catalog.calls("triage", [run]).get(run.pk, 0),
             **run_context(app, run, verified_brief=not stale),
         },
     )

@@ -232,3 +232,68 @@ class CatalogTests(TestCase):
                 link = reverse("agent", args=[self.app.pk, key])
                 self.assertIn('class="agent-badge agent-badge-', page)
                 self.assertRegex(page, rf'href="{link}" data-modal')
+
+    # The Agent tag on what an agent made ------------------------------------
+
+    def test_the_tag_shows_only_when_an_agent_made_tool_calls(self):
+        from django.template import Context, Template
+
+        page = Template('{% load agent_badges %}{% agent_tag application "chat" calls %}')
+        for calls in (0, None, "", True):
+            self.assertEqual(page.render(Context({"application": self.app, "calls": calls})), "")
+        shown = page.render(Context({"application": self.app, "calls": 3}))
+        self.assertIn('class="agent-tag"', shown)
+        self.assertIn("3 steps", shown)
+        self.assertIn(f'href="{reverse("agent", args=[self.app.pk, "chat"])}" data-modal', shown)
+
+    def test_a_chat_answer_an_agent_read_for_is_tagged_and_one_that_did_not_is_not(self):
+        conversation = ChatConversation.objects.create(
+            application=self.app, user=self.owner, title="t"
+        )
+        for sequence, body in ((1, "Read for this"), (3, "Answered from what it was handed")):
+            ChatMessage.objects.create(
+                application=self.app, user=self.owner, conversation=conversation, role="user",
+                body="q", sequence=sequence,
+            )
+            ChatMessage.objects.create(
+                application=self.app, user=self.owner, conversation=conversation,
+                role="assistant", body=body, status="complete", mode="ai", sequence=sequence + 1,
+            )
+        read = ChatMessage.objects.get(body="Read for this")
+        for sequence, tool in enumerate(("search_knowledge", "fetch_source"), 1):
+            AgentStep.objects.create(
+                application=self.app, message=read, purpose="chat", sequence=sequence, tool=tool,
+                outcome="found",
+            )
+        page = self.client.get(
+            reverse("chat", args=[self.app.pk]), {"conversation": conversation.pk}
+        ).content.decode()
+        self.assertEqual(page.count('class="agent-tag"'), 1)
+        tagged = page[page.index(f'id="message-{read.pk}"'):]
+        self.assertIn("2 steps", tagged[: tagged.index("</article>")])
+
+    def test_a_triage_run_and_a_factory_step_are_counted_from_their_own_steps(self):
+        import uuid
+
+        from platform_core import factory_views
+
+        # Step links carry no database constraint, so ids stand in for the rows.
+        run, other, triage = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        rows = (
+            {"run_id": run, "phase": "implementation", "purpose": "plan_drafting"},
+            {"run_id": run, "phase": "implementation", "purpose": "plan_drafting"},
+            {"run_id": run, "phase": "tests", "purpose": "plan_drafting"},
+            {"run_id": other, "phase": "implementation", "purpose": "plan_drafting"},
+            {"triage_id": triage, "purpose": "serviceops_triage"},
+        )
+        for sequence, fields in enumerate(rows, 1):
+            AgentStep.objects.create(
+                application=self.app, sequence=sequence, tool="read_file", outcome="found",
+                **fields,
+            )
+        self.assertEqual(
+            factory_views.agent_calls_by_phase(SimpleNamespace(pk=run)),
+            {"implementation": 2, "tests": 1},
+        )
+        self.assertEqual(agent_catalog.calls("triage", [triage]), {triage: 1})
+        self.assertEqual(agent_catalog.calls("triage", []), {})

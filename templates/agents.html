@@ -3,5 +3,5 @@
 <p class="eyebrow">{{ application.name }} / AGENTS</p>
 <h1>Agents</h1>
 <p class="guide-lead">An agent is AI that chooses what to read before it answers: it calls read-only tools, looks at what they return and decides what to read next. Each one runs on the server, inside the same harness, which checks access on every call, verifies what comes back and records every step.</p>
-<ul class="agent-list">{% for row in rows %}<li><a href="{% url 'agent' application.pk row.agent.key %}"><span class="agent-badge agent-badge-{{ row.state }}">{% icon "agent" 14 %}Agent<span class="agent-badge-state">{{ row.label }}</span></span><strong>{{ row.agent.name }}</strong><span class="muted">{{ row.agent.trigger }}</span></a></li>{% endfor %}</ul>
+<ul class="agents-index">{% for row in rows %}<li><a href="{% url 'agent' application.pk row.agent.key %}"><span class="agent-badge agent-badge-{{ row.state }}">{% icon "agent" 14 %}Agent<span class="agent-badge-state">{{ row.label }}</span></span><strong>{{ row.agent.name }}</strong><span class="muted">{{ row.agent.trigger }}</span></a></li>{% endfor %}</ul>
 </div>{% endblock %}
