@@ -1989,11 +1989,17 @@ other way round (use a string reference instead). Import every model from
 `platform_core.models`, which re-exports all of them; a new model goes in its area's
 module and in `__init__`. Moving a model between them changes no migration.
 
-Code Factory after approval is four modules: `code_factory_build` (the gates, the
+Code Factory after approval is five modules: `code_factory_build` (the gates, the
 preparation queue, `prepare`, `publish`, the stall and checks sweeps, the refresh),
 `code_factory_agents` (each agent, and delivery to GitHub - checks no grant, so call it
-only behind `gate`), `code_factory_local` (delivery into a folder, its tests) and
-`code_factory_picture`. The agents module imports nothing from the build module. A test
+only behind `gate`), `code_factory_checks` (verification's checks by rule, pure: a change
+that does not parse, or newly imports a module or name of this repository that neither the
+change nor the snapshot holds, is refused - parsed with `ast`, never run), `code_factory_local`
+(delivery into a folder, its tests) and `code_factory_picture`. **An agent changes only a
+file it was shown whole** (`WHOLE_FILE_CHARACTERS`): a longer target is marked too large
+and any answer for it dropped, a run whose every target is too large stops before a paid
+call, and a changed file the review cannot be shown whole is not offered - a target cut at
+that length used to come back without its end, and the review was shown the same cut. The agents module imports nothing from the build module. A test
 that patches an agent the build module calls - `run_work_order`, `run_implementation` -
 patches it on `code_factory_build`, where `prepare` looks it up; one that patches what an
 agent calls patches it on `code_factory_agents`.
