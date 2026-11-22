@@ -345,11 +345,20 @@ read into the run's verified citations exactly as `chat_text.source_chips` numbe
 expected source (`benchmark.matches`) cited, cited first, in front of the model at all, and
 markers to nothing; cost and turns from the receipts the case wrote, so a run out of turns
 still counts. The questions' digest is the pack, so a changed list is a new reference.
-**What it exposes, unfixed:** a search reply numbers its passages from [1] in each call
-(`tools.search_knowledge`), while the page numbers the run's whole list, seeded evidence
-first - so an answer citing a passage it searched for can be shown beside another source.
-Fixing it changes what the model reads, so measure it first: `chat_pack` before and after,
-and `llm_drift`.
+**A chat answer's [n] names one source everywhere** (`tools.CitationRecorder.record`/
+`numbered`). The page numbers the run's whole list, seeded evidence first; a search reply
+used to number its passages from [1] on every call, so an answer citing a passage it searched
+for was shown beside another source. Now `record` gives each citation its place in the run's
+list (one already held keeps its number), `search_knowledge` and `fetch_source` write their
+replies with those numbers (`ToolResult.numbered`), and a prose answer - `KNOWLEDGE_PURPOSES`
+with no `instructions` - ends through `numbered`: what still verifies, every cited source
+first up to `MAX_CITED`, then the rest up to `MAX_CITATIONS`, kept in the run's order and
+numbered from 1, the answer's markers moved onto the new numbers and a marker to a source not
+kept taken out. The turn kept back is asked over that same list, with the turns' text already
+moved onto it. Agents that cite by id (triage, upkeep, review, Code Factory - whose JSON may
+hold code) keep `verified_citations` and their text untouched. It changed what the model
+reads - the reply numbers, and a fetched window's `[n]` prefix - so measure it the way every
+such change is: `chat_pack` and `llm_drift`.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...

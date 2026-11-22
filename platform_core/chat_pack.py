@@ -28,12 +28,12 @@ whether a citation marker (`[n]`) the answer wrote points there to the expected
 source (`benchmark.matches`), whether its first marker
 does, whether that source was in front of the model at all, and markers that
 point at nothing. A marker is read as the page reads it, never as the model may
-have meant it: a search result is numbered from 1 in each tool's own reply, while
-the page numbers the run's whole list - seeded evidence first - so where the two
-differ the page shows a different source, and the pack counts what was shown.
-"Expected source in front of it" says whether the model could have cited it at
-all. Cost and turns are read from the receipts the case wrote, so a
-run that failed out of turns is still counted. Nothing is written but receipts:
+have meant it: search replies number passages by the run's list and the answer ends
+numbered as the page shows it (`CitationRecorder.numbered`), which takes a marker to
+nothing out - so "citations to nothing" counts what that missed. "Expected source in
+front of it" says whether the model could have cited it at all. Cost and turns are
+read from the receipts the case wrote, so a run that failed out of turns is still
+counted. Nothing is written but receipts:
 no conversation, no message, no step.
 """
 

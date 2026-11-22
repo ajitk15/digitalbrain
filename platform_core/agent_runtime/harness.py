@@ -60,7 +60,7 @@ from django.db import DatabaseError, transaction
 from django.http import Http404
 
 from .registry import for_scope
-from .tools import MAX_TOOL_CALLS, RESULT_CHARACTERS, CitationRecorder
+from .tools import KNOWLEDGE_PURPOSES, MAX_TOOL_CALLS, RESULT_CHARACTERS, CitationRecorder
 from .usage import TurnLimit
 
 logger = logging.getLogger(__name__)
@@ -313,6 +313,11 @@ def run_agent(
 
     # What `measured` reports once the run ends; `started` is set only once admitted.
     run = {"started": None, "mode": "one_call", "outcome": "failed", "turns": 0}
+    # A prose answer (chat) cites by number, so it ends numbered as the page shows
+    # it (`CitationRecorder.numbered`); every other agent cites by id. `final` is
+    # that list once the turn kept back was asked over it, already numbered.
+    prose = purpose in KNOWLEDGE_PURPOSES and not instructions
+    final = {"citations": None}
 
     def wrapped_up(limit, kept, attempt):
         """What a run that used every turn answers with: the turn kept back, over
@@ -327,10 +332,17 @@ def run_agent(
             raise limit
         if limit.text:
             emit("delta", {"t": "\n\n"})
-        more, answer = attempt([], 1, recorder.verified_citations(), f"{question}\n\n{WRAP_UP}")
-        if limit.text and not (instructions and runtime is claude_runtime):
+        written, evidence = limit.text, recorder.verified_citations()
+        if prose:
+            # Asked over the list the page will show, numbered as it shows it, with
+            # what the turns wrote moved onto those numbers first - so the turns'
+            # [n] and this turn's [n] name the same sources.
+            written, evidence = recorder.numbered(limit.text)
+            final["citations"] = evidence
+        more, answer = attempt([], 1, evidence, f"{question}\n\n{WRAP_UP}")
+        if written and not (instructions and runtime is claude_runtime):
             # As it was streamed: what the turns wrote, then this.
-            answer = f"{limit.text}\n\n{answer}"
+            answer = f"{written}\n\n{answer}"
         return more, answer
 
     try:
@@ -405,9 +417,15 @@ def run_agent(
             raise
     finally:
         measured(purpose, config.provider, run, recorder.steps)
+    if not prose:
+        citations = recorder.verified_citations()
+    elif final["citations"] is not None:
+        citations = final["citations"]
+    else:
+        answer, citations = recorder.numbered(answer)
     return AgentResult(
         answer=answer,
-        citations=recorder.verified_citations(),
+        citations=citations,
         usages=usages,
         turns=allowed,
         steps=list(recorder.steps),

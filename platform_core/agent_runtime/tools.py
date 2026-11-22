@@ -34,6 +34,11 @@ from django.http import Http404
 
 MAX_RESULTS = 8
 MAX_CITATIONS = 8
+#: Sources a prose answer keeps when it cites more than `MAX_CITATIONS`: every one
+#: it cites, up to this, before any it read and did not cite.
+MAX_CITED = 16
+#: An answer's [n] or [2, 3] citation markers, as `chat_text` reads them.
+MARKER = re.compile(r"\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]")
 MAX_TOOL_CALLS = 8
 SOURCE_WINDOW = 4000
 #: The most text one tool call hands back to a model. Above anything today's tools
@@ -69,11 +74,19 @@ class ToolScope:
 @dataclass(frozen=True)
 class ToolResult:
     """What a tool hands back. `found` says whether it found anything, for a tool
-    whose findings are not citations (code); unset, citations decide."""
+    whose findings are not citations (code); unset, citations decide.
+
+    `numbered`, when set, writes the text again with each citation under the
+    number the run gives it (`CitationRecorder.record`): its place in the run's
+    whole list, seeded evidence first - the number the page shows beside the
+    answer. A reply numbered from 1 on every call let an answer cite a passage
+    it searched for as [1] and be shown beside the run's first source instead.
+    """
 
     text: str
     citations: list = field(default_factory=list)
     found: bool | None = None
+    numbered: Callable | None = None
 
 
 @dataclass(frozen=True)
@@ -149,12 +162,16 @@ def search_knowledge(scope, args):
     citations = lexical_citations(app, query, User.objects.get(pk=scope.user_id))[:limit]
     if not citations:
         return ToolResult(f"No sources in this application matched {query!r}.", [])
-    lines = [f"{len(citations)} matching passage(s) for {query!r}:"]
-    for index, citation in enumerate(citations, 1):
-        lines.append(
-            f"[{index}] id={citation['id']} title={citation['title']}\n{citation['excerpt']}"
-        )
-    return ToolResult("\n\n".join(lines), citations)
+
+    def text(numbers):
+        lines = [f"{len(citations)} matching passage(s) for {query!r}:"]
+        for number, citation in zip(numbers, citations, strict=True):
+            lines.append(
+                f"[{number}] id={citation['id']} title={citation['title']}\n{citation['excerpt']}"
+            )
+        return "\n\n".join(lines)
+
+    return ToolResult(text(range(1, len(citations) + 1)), citations, numbered=text)
 
 
 def fetch_source(scope, args):
@@ -190,7 +207,8 @@ def fetch_source(scope, args):
     text = f"{entry.title} (characters {offset}-{offset + len(excerpt)}):\n{excerpt}"
     if remaining:
         text += f"\n\n[{remaining} more characters; call again with offset={offset + len(excerpt)}]"
-    return ToolResult(text, [citation])
+    # Cited by the number the run gives this window, as a searched passage is.
+    return ToolResult(text, [citation], numbered=lambda numbers: f"[{numbers[0]}] {text}")
 
 
 SEARCH_SCHEMA = {
@@ -309,11 +327,19 @@ class CitationRecorder:
         return self.calls >= self.budget
 
     def record(self, result):
+        """Keep a tool's citations; returns the number each has in the run's list
+        (from 1, seeded evidence first) - one already kept keeps its number."""
         self.calls += 1
+        numbers = []
         for citation in result.citations:
             key = (citation.get("id"), citation.get("excerpt"))
-            if key not in {(c.get("id"), c.get("excerpt")) for c in self._citations}:
-                self._citations.append(citation)
+            kept = [(c.get("id"), c.get("excerpt")) for c in self._citations]
+            if key in kept:
+                numbers.append(kept.index(key) + 1)
+                continue
+            self._citations.append(citation)
+            numbers.append(len(self._citations))
+        return numbers
 
     def seed(self, citations):
         """Pre-load evidence computed before the run, without spending budget."""
@@ -343,6 +369,43 @@ class CitationRecorder:
 
         viewer = User.objects.filter(pk=self.scope.user_id).first()
         return verify_citations(self.scope.app_id, self._citations, viewer)[:MAX_CITATIONS]
+
+    def numbered(self, answer):
+        """(answer, citations) as the page will show them, for a prose answer.
+
+        The answer cites by the run's numbers (`record`). What it ends with is
+        what still verifies, at most `MAX_CITATIONS` - every source the answer
+        cites first (up to `MAX_CITED`), then the rest in the run's order - and
+        a source that is dropped renumbers every one after it. So the list is
+        kept in the run's order, numbered from 1, and each `[n]` the answer wrote
+        is moved onto its source's new number; one to a source not kept (no
+        longer verifying, or past the cap) is taken out rather than left to
+        point at another source.
+        """
+        from ..models import User
+
+        viewer = User.objects.filter(pk=self.scope.user_id).first()
+        good = {
+            (citation["id"], citation["excerpt"]): citation
+            for citation in verify_citations(self.scope.app_id, self._citations, viewer)
+        }
+        held, seen = [], set()
+        for number, candidate in enumerate(self._citations, 1):
+            key = (str(candidate.get("id")), candidate.get("excerpt") or "")
+            if key in good and key not in seen:
+                seen.add(key)
+                held.append((number, good[key]))
+        cited = {int(n) for group in MARKER.findall(answer or "") for n in group.split(",")}
+        keep = [pair for pair in held if pair[0] in cited][:MAX_CITED]
+        keep += [pair for pair in held if pair[0] not in cited][: max(MAX_CITATIONS - len(keep), 0)]
+        keep.sort(key=lambda pair: pair[0])
+        moved = {number: index for index, (number, _) in enumerate(keep, 1)}
+
+        def renumber(match):
+            numbers = [moved[int(n)] for n in match[1].split(",") if int(n) in moved]
+            return "[" + ", ".join(str(n) for n in numbers) + "]" if numbers else ""
+
+        return MARKER.sub(renumber, answer or ""), [citation for _, citation in keep]
 
 
 def verify_citations(app_id, candidates, viewer=None):
@@ -509,10 +572,13 @@ def run_tool(spec, scope, args, recorder):
         except Exception:
             _step(recorder, spec, args, "failed", started)
             raise
-        text = shown_to_model(getattr(scope, "purpose", "chat"), result.text)
+        numbers = recorder.record(result)
+        text = result.text
+        if result.numbered is not None and numbers and len(numbers) == len(result.citations):
+            text = result.numbered(numbers)
+        text = shown_to_model(getattr(scope, "purpose", "chat"), text)
         if len(text) > RESULT_CHARACTERS:
             text = text[: RESULT_CHARACTERS - len(CUT)] + CUT
-        recorder.record(result)
         found = bool(result.citations) if result.found is None else result.found
         outcome = "found" if found else "nothing"
         traced.set(outcome=outcome)

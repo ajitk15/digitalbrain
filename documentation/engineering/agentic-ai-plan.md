@@ -443,9 +443,11 @@ Triage needs incidents whose cause people confirmed; a fresh demo has none. Chat
 which `llm_drift` never measured (it asks as single calls), has `chat_pack`: the application's
 benchmark questions asked with tools and with one call over the same evidence, scored on
 whether the answer's markers - read as the page numbers them - cite the expected source. It
-was built against a known flaw it will show the size of: a search reply numbers passages from
-[1] each time, the page numbers the run's whole list, so a cited search result can be shown
-beside the wrong source. Fix that with a `chat_pack` and `llm_drift` run either side.
+was built against a flaw since fixed: a search reply numbered its passages from [1] each
+time while the page numbers the run's whole list, so a cited search result could be shown
+beside the wrong source. Replies now number by the run's list and the answer ends numbered
+as the page shows it (`CitationRecorder.numbered`); `chat_pack` and `llm_drift` are how the
+change is measured on a live model.
 
 In operation every run is measured as it goes (`harness.measured`): duration, mode and
 outcome, turns sent and tool calls by tool, exported with the platform's other metrics,

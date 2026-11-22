@@ -35,9 +35,11 @@ class Model:
 
     def __init__(self, alone, searching):
         self.alone, self.searching = alone, searching
+        self.scripts = []
 
     def run(self, *args, tools=None, **kwargs):
         script = Script(*(self.searching if tools else [self.alone]))
+        self.scripts.append(script)
         return script.run(*args, tools=tools, **kwargs)
 
 
@@ -95,26 +97,27 @@ class ChatPackTests(TestCase):
                          "Tools clear the bar")
         self.assertEqual(record["pack"], chat_pack.pack_digest(chat_pack.questions(self.app)))
 
-    def test_a_marker_is_read_as_the_page_numbers_it_not_as_a_search_reply_did(self):
-        """A search reply numbers its passages from [1]; the page numbers the run's
-        whole list, seeded evidence first. An answer citing the search reply's [1]
-        is shown beside the seeded source, and the pack counts what is shown."""
+    def test_a_search_reply_numbers_passages_as_the_page_will(self):
+        """The seeded source is [1]; a passage the agent searched for comes after it,
+        as [2], in its reply and beside the answer alike - so citing what it read
+        cites what it read."""
         search = [("search_knowledge", {"query": "refund requests expire"})]
-        record = self.measured(
-            Model("The rota [1].", [search, "Thirty days [1]."]),
-            self.evidence(self.other_doc),
-        )
+        model = Model("The rota [1].", [search, "Thirty days [2]."])
+        record = self.measured(model, self.evidence(self.other_doc))
+        replies = [text for script in model.scripts for text in script.tool_text]
+        self.assertIn(f"[2] id={self.policy.pk} title=Refund policy", replies[0])
         tools = record["metrics"]["tools"]
-        self.assertEqual((tools["shown_expected"], tools["cited_expected"]), (1, 0))
+        self.assertEqual((tools["cited_expected"], tools["cited_first"]), (1, 1))
 
-    def test_a_marker_to_nothing_is_counted_and_a_wrong_first_citation_is_not_first(self):
+    def test_a_marker_to_nothing_is_taken_out_and_a_wrong_first_citation_is_not_first(self):
         record = self.measured(
             Model("See [3] and [1].", ["The rota [2], and thirty days [1]."]),
             self.evidence(self.policy, self.other_doc),
         )
         alone, tools = record["metrics"]["one_shot"], record["metrics"]["tools"]
+        # [3] named nothing the page lists, so the answer no longer shows it.
         self.assertEqual((alone["invented"], alone["cited_expected"], alone["cited_first"]),
-                         (1, 1, 1))
+                         (0, 1, 1))
         self.assertEqual((tools["invented"], tools["cited_expected"], tools["cited_first"]),
                          (0, 1, 0))
 

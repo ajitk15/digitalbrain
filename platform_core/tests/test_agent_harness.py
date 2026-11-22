@@ -919,3 +919,115 @@ class HarnessMetricTests(Measured, TestCase):
             _, result = self.run_script("Fine.")
         self.assertEqual(result.answer, "Fine.")
         self.assertEqual(logged.records[0].event, "agent_metrics_failed")
+
+
+class CitationNumberTests(TestCase):
+    """A chat answer cites by number, and the page numbers the run's list: a tool's
+    reply numbers its passages by that list, and the answer ends numbered as the
+    page will show it (`CitationRecorder.numbered`)."""
+
+    scripted = HarnessTests.scripted
+
+    def setUp(self):
+        HarnessTests.setUp(self)
+        self.policy = self.source
+        self.rota = add_knowledge(
+            self.owner, self.app.pk, "Holiday rota", "The refund desk rota for the holidays."
+        )
+        self.other = add_knowledge(
+            self.owner, self.app.pk, "Escalations", "Refund escalations go to the duty manager."
+        )
+
+    def seed(self, *entries):
+        return [
+            {"id": str(e.pk), "title": e.title, "digest": e.digest, "excerpt": e.content}
+            for e in entries
+        ]
+
+    def run_script(self, *turns, seed=(), then=(), wrap_up=False, instructions=None,
+                   purpose="chat"):
+        script = Script(*turns, then=then)
+        with self.scripted(script):
+            result = run_agent(
+                user=self.owner, app=self.app, config=self.config, token="unused",
+                purpose=purpose,
+                scope=ToolScope(user_id=self.owner.pk, app_id=self.app.pk, purpose="chat"),
+                question="How long do refunds take?", citations=self.seed(*seed), history=[],
+                emit=lambda *a: None, max_tokens=1024, prompt_characters=200,
+                wrap_up=wrap_up, instructions=instructions,
+            )
+        return script, result
+
+    def titles(self, result):
+        return [c["title"] for c in result.citations]
+
+    def test_a_searched_passage_is_numbered_after_the_seeded_evidence(self):
+        script, result = self.run_script(
+            [("search_knowledge", {"query": "refund requests expire"})],
+            "Thirty days [2].",
+            seed=[self.rota],
+        )
+        self.assertIn(f"[2] id={self.policy.pk} title=Refund policy", script.tool_text[0])
+        self.assertEqual(result.answer, "Thirty days [2].")
+        self.assertEqual(self.titles(result)[1], "Refund policy")
+
+    def test_a_passage_already_held_keeps_its_number(self):
+        script, _ = self.run_script(
+            [("search_knowledge", {"query": "refund requests expire"})], "A.",
+            seed=[self.policy],
+        )
+        self.assertIn(f"[1] id={self.policy.pk} title=Refund policy", script.tool_text[0])
+
+    def test_a_fetched_window_is_numbered_too(self):
+        script, result = self.run_script(
+            [("fetch_source", {"source_id": str(self.policy.pk)})], "Thirty days [2].",
+            seed=[self.rota],
+        )
+        self.assertTrue(script.tool_text[0].startswith("[2] Refund policy (characters"))
+        self.assertEqual(self.titles(result), ["Holiday rota", "Refund policy"])
+
+    def test_a_source_that_stops_verifying_moves_every_later_marker_onto_its_source(self):
+        def change_rota():
+            KnowledgeEntry.objects.filter(pk=self.rota.pk).update(digest="changed")
+
+        _, result = self.run_script(
+            [("search_knowledge", {"query": "refund requests expire"}), change_rota],
+            "Thirty days [3], escalate [1], rota [2].",
+            seed=[self.other, self.rota],
+        )
+        # The rota was [2] and no longer verifies: the policy, [3], is shown as [2],
+        # and the marker to the rota is taken out rather than left on the policy.
+        self.assertEqual(self.titles(result), ["Escalations", "Refund policy"])
+        self.assertEqual(result.answer, "Thirty days [2], escalate [1], rota .")
+
+    def test_a_marker_group_keeps_what_it_can(self):
+        _, result = self.run_script("Both [1, 9] and [9].", seed=[self.policy])
+        self.assertEqual(result.answer, "Both [1] and .")
+
+    def test_cited_sources_are_kept_past_the_cap_and_uncited_ones_fill_it(self):
+        from platform_core.agent_runtime import tools as tool_module
+
+        with patch.object(tool_module, "MAX_CITATIONS", 2):
+            _, result = self.run_script(
+                "Rota [2] and escalations [3].", seed=[self.policy, self.rota, self.other]
+            )
+        self.assertEqual(self.titles(result), ["Holiday rota", "Escalations"])
+        self.assertEqual(result.answer, "Rota [1] and escalations [2].")
+
+    def test_out_of_turns_the_turn_kept_back_shares_the_turns_numbers(self):
+        searches = [[("search_knowledge", {"query": "refund requests expire"})]] * 5
+        script, result = self.run_script(
+            *searches, seed=[self.other], wrap_up=True, then=["Escalate [1]; thirty days [2]."]
+        )
+        _, last = script.calls
+        # The turn kept back is shown the list the page will show, in the same order.
+        self.assertEqual(last["evidence"], [c["id"] for c in result.citations])
+        self.assertEqual(self.titles(result)[:2], ["Escalations", "Refund policy"])
+        self.assertEqual(result.answer, "Escalate [1]; thirty days [2].")
+
+    def test_an_agent_that_cites_by_id_is_left_as_it_wrote(self):
+        _, result = self.run_script(
+            '{"note": "see [7]"}', seed=[self.policy], instructions="Answer in JSON."
+        )
+        self.assertEqual(result.answer, '{"note": "see [7]"}')
+        self.assertEqual(self.titles(result), ["Refund policy"])
