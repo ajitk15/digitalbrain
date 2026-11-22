@@ -334,8 +334,22 @@ share that met a limit or a refusal, median call). Spend and the Cost row are sh
 where `usage_reports` is on, the rule AI costs already follows; the index carries a
 "Measured" chip. Server-drawn SVG like `graph_trend.chart`. `manage.py agent_measurements
 <app> --load <file>` keeps a record made on another machine (the folder under `benchmarks/`
-names its pack). A measurement switches nothing on: tools stay an operator's setting. Chat
-has no pack yet and says so.
+names its pack). A measurement switches nothing on: tools stay an operator's setting.
+
+**Chat's agent is measured by `chat_pack`** (`chat_pack.py`, `manage.py chat_pack <app> --as
+<user> [--record]`, paid): each of the application's own `BenchmarkQuestion`s, its evidence
+found once as chat finds it (`seeded`, reranked where reranking is on) and asked twice through
+`run_agent` - one turn, which the harness gives no tools, and chat's own turns with the turn
+kept back - so only the tools differ. Scored by rules on what the page shows: a `[n]` marker
+read into the run's verified citations exactly as `chat_text.source_chips` numbers them, the
+expected source (`benchmark.matches`) cited, cited first, in front of the model at all, and
+markers to nothing; cost and turns from the receipts the case wrote, so a run out of turns
+still counts. The questions' digest is the pack, so a changed list is a new reference.
+**What it exposes, unfixed:** a search reply numbers its passages from [1] in each call
+(`tools.search_knowledge`), while the page numbers the run's whole list, seeded evidence
+first - so an answer citing a passage it searched for can be shown beside another source.
+Fixing it changes what the model reads, so measure it first: `chat_pack` before and after,
+and `llm_drift`.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...

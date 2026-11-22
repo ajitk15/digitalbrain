@@ -439,8 +439,13 @@ the agent's page: the newest run as one call against with tools, figure by figur
 run's main figure as a trend that marks a new model or pack as a new reference, and the
 last thirty days of the agent's steps. Packs are small - four tickets, four changes - so run
 each three times on one model and switch tools on only when two of three clear the bar.
-Triage needs incidents whose cause people confirmed; a fresh demo has none. Chat's agent
-path has no pack yet: `llm_drift` asks its questions as single calls.
+Triage needs incidents whose cause people confirmed; a fresh demo has none. Chat's agent,
+which `llm_drift` never measured (it asks as single calls), has `chat_pack`: the application's
+benchmark questions asked with tools and with one call over the same evidence, scored on
+whether the answer's markers - read as the page numbers them - cite the expected source. It
+was built against a known flaw it will show the size of: a search reply numbers passages from
+[1] each time, the page numbers the run's whole list, so a cited search result can be shown
+beside the wrong source. Fix that with a `chat_pack` and `llm_drift` run either side.
 
 In operation every run is measured as it goes (`harness.measured`): duration, mode and
 outcome, turns sent and tool calls by tool, exported with the platform's other metrics,

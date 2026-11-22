@@ -88,7 +88,8 @@ class MeasurementTests(TestCase):
         keys = {agent.key for agent in agent_catalog.agents()}
         measured = [pack.agent for pack in agent_measurements.PACKS.values()]
         self.assertEqual(len(measured), len(set(measured)))
-        self.assertLessEqual(set(measured), keys)
+        # Every agent has a pack now: chat's was the last (chat_pack).
+        self.assertEqual(set(measured), keys)
         states = {key for key, _ in MEASUREMENT_VERDICTS}
         for pack in agent_measurements.PACKS.values():
             self.assertEqual(len(pack.modes), 2)
@@ -114,6 +115,12 @@ class MeasurementTests(TestCase):
                 for cited, mrr in ((5, 0.4), (6, 0.5), (5, 0.4), (4, 0.3))
             ),
         }
+        cases["chat_pack"] = tuple(
+            {"questions": 16, "cited_expected": cited, "cited_first": cited, "shown_expected": 16,
+             "with_citation": 16, "invented": 0, "failed": 0, "cost": "0.1", "turns": 16,
+             "tool_calls": 0, "seconds": 1.0}
+            for cited in (10, 12, 10, 8)
+        )
         for key, (base, better, same, worse) in cases.items():
             pack = agent_measurements.PACKS[key]
             with self.subTest(pack=key):
@@ -277,7 +284,7 @@ class MeasurementTests(TestCase):
         page = self.page("code-factory")
         self.assertContains(page, "Not measured here yet")
         self.assertContains(page, "manage.py factory_pack &lt;application id&gt;")
-        self.assertContains(self.page("chat"), "No pack measures this agent yet")
+        self.assertContains(self.page("chat"), "manage.py chat_pack &lt;application id&gt;")
         self.assertContains(self.page("draft-a-fix"), "manage.py learning_upkeep")
 
     def test_a_measured_agent_draws_its_verdict_bars_and_trend_for_this_application_only(self):
@@ -293,7 +300,7 @@ class MeasurementTests(TestCase):
         self.assertNotContains(page, "style=")
         index = self.client.get(reverse("agents", args=[self.app.pk]))
         self.assertContains(index, "Measured: Clears the bar")
-        self.assertContains(index, "No pack yet")
+        self.assertNotContains(index, "No pack yet")
         self.assertContains(index, "Not measured yet")
 
     def test_spend_is_shown_only_where_usage_reports_are_on(self):

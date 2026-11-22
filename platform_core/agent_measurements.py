@@ -3,7 +3,7 @@
 Two readings, neither calling a model:
 
 - **Measurements.** What a pack command recorded with `--record` - `factory_pack`,
-  `review_pack`, `triage_pack` (paid) and `learning_upkeep` (free) - kept as one
+  `review_pack`, `triage_pack`, `chat_pack` (paid) and `learning_upkeep` (free) - kept as one
   `AgentMeasurement` row each beside the JSON file the command already writes under
   `benchmarks/`. Numbers only: each way's totals as the pack's own `metrics` worked
   them out, the verdict its own `verdict` gave, the model measured. `comparison` is
@@ -128,6 +128,24 @@ PACKS = {
             folder="triage",
         ),
         Pack(
+            "chat_pack",
+            "chat",
+            "manage.py chat_pack <application id> --as <user> --record",
+            AGAINST,
+            (
+                Figure("cited_expected", "Expected source cited", "higher", of="questions"),
+                Figure("cited_first", "Cited first", "higher", of="questions"),
+                Figure("shown_expected", "Expected source in front of it", "higher",
+                       of="questions"),
+                Figure("invented", "Citations to nothing", "lower"),
+                Figure("failed", "Questions unanswered", "lower"),
+                *TIMING,
+            ),
+            "Expected source cited",
+            judge="chat_pack",
+            folder="chat",
+        ),
+        Pack(
             "learning_upkeep",
             "draft-a-fix",
             "manage.py learning_upkeep <application id> --record",
@@ -161,6 +179,8 @@ def main_share(pack, totals):
         return _share(totals.get("found"), totals.get("changes"))
     if pack.key == "triage_pack":
         return _number(totals.get("mrr"))
+    if pack.key == "chat_pack":
+        return _share(totals.get("cited_expected"), totals.get("questions"))
     return _number(totals.get("accept_rate")) / 100
 
 
@@ -320,9 +340,9 @@ def load(app, path, user=None):
     folders = {pack.folder: pack for pack in PACKS.values() if pack.folder}
     pack = folders.get(path.resolve().parent.name)
     if pack is None:
+        named = ", ".join(f"benchmarks/{folder}" for folder in sorted(folders))
         raise ValidationError(
-            f"{path.name} is not under benchmarks/factory, benchmarks/review or "
-            "benchmarks/triage, so which pack made it is unknown."
+            f"{path.name} is not under one of {named}, so which pack made it is unknown."
         )
     try:
         found = json.loads(path.read_text(encoding="utf-8"))

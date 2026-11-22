@@ -121,6 +121,9 @@ def _agents():
             tool_calls=limits["chat"][1],
             steps_field="message",
             kept_back=True,
+            measured="manage.py chat_pack (paid) asks the application's benchmark "
+            "questions with tools and with one call, and counts which cites the "
+            "expected source.",
             screen="chat",
             screen_label="Chat",
             shown=(
