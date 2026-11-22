@@ -21,4 +21,6 @@ What the platform is measured against, and what it measured.
 | `review/` | Recorded review-pack runs, one file per run, named by model. |
 | `triage/` | Recorded `manage.py triage_pack` runs: ServiceOps triage one-shot and with tools, against the causes people confirmed. The cases are the application's own verdicts, so there is no pack file. |
 
+A recorded `factory/`, `review/` or `triage/` run is also kept in the application's database as an agent measurement and drawn on that agent's page (Settings → AI → Agents). `manage.py agent_measurements <application id> --load <file>` keeps one recorded on another machine.
+
 The benchmark questions themselves are `documentation/demo/demo-kit/benchmark-questions.json`.

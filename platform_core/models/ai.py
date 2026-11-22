@@ -223,3 +223,60 @@ class AgentStep(models.Model):
             models.Index(fields=["review", "sequence"], name="agent_step_review"),
             models.Index(fields=["candidate", "sequence"], name="agent_step_candidate"),
         ]
+
+
+#: What a measurement of an agent concluded (`agent_measurements.state_of`).
+MEASUREMENT_VERDICTS = [
+    ("clears", "Clears the bar"),
+    ("no_better", "No better"),
+    ("fails", "Does not clear"),
+    ("incomplete", "Not compared"),
+    ("too_few", "Too few to judge"),
+]
+
+
+class AgentMeasurement(models.Model):
+    """One recorded comparison of an agent with tools against one call without
+    (`agent_measurements`, written by a pack command's `--record`).
+
+    Numbers only: the per-way totals the pack's own `metrics` worked out, the
+    verdict its own `verdict` gave and the model that was measured - never a
+    ticket, an incident, a finding or anything a model or a person wrote. The
+    full record stays in the JSON file `file` names, under `benchmarks/`.
+    Kept with its application, through a demonstration reset: it says how an
+    agent did, not what the demo held.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    application = models.ForeignKey(Application, on_delete=models.CASCADE)
+    #: The pack that measured it (`agent_measurements.PACKS`) and the agent
+    #: catalog key it measured.
+    pack = models.CharField(max_length=24)
+    agent = models.CharField(max_length=24)
+    provider = models.CharField(max_length=80, blank=True, default="")
+    model = models.CharField(max_length=160, blank=True, default="")
+    #: The frozen pack's digest, so a new pack reads as a new reference.
+    pack_digest = models.CharField(max_length=64, blank=True, default="")
+    metrics = models.JSONField(default=dict, blank=True)
+    verdict = models.CharField(max_length=12, choices=MEASUREMENT_VERDICTS)
+    verdict_text = models.CharField(max_length=300, blank=True, default="")
+    recorded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL
+    )
+    file = models.CharField(max_length=200, blank=True, default="")
+    generated_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["generated_at"]
+        indexes = [
+            models.Index(
+                fields=["application", "agent", "generated_at"], name="agent_measurement_by_agent"
+            )
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "pack", "generated_at", "model"],
+                name="agent_measurement_once",
+            )
+        ]

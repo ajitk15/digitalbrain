@@ -1880,3 +1880,26 @@ class AgentBadgeTests(BrowserTestCase):
         dialog.wait_for(state="detached")
         self.assertNoScriptErrors()
 
+
+    def test_a_measured_agents_popup_draws_its_comparison(self):
+        from datetime import UTC, datetime
+
+        from platform_core import agent_measurements
+
+        totals = {"tickets": 4, "answered": 4, "needs_seen": 50.0, "cost": "0.1",
+                  "turns": 4, "tool_calls": 0, "seconds": 10.0}
+        agent_measurements.record(self.app, "factory_pack", {
+            "generated_at": datetime(2026, 11, 1, tzinfo=UTC).isoformat(),
+            "model": "claude-sonnet-5",
+            "metrics": {"one_shot": {**totals, "fixed": 1, "checks_met": 50.0},
+                        "tools": {**totals, "fixed": 2, "checks_met": 60.0}},
+        })
+        self.open("plans", self.app.pk)
+        self.page.locator("a.agent-badge[data-modal]").first.click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Code Factory agent").wait_for()
+        dialog.locator("svg rect.measure-bar.measure-agent").first.wait_for()
+        dialog.get_by_text("Clears the bar.").wait_for()
+        dialog.locator("[data-modal-close]").click()
+        dialog.wait_for(state="detached")
+        self.assertNoScriptErrors()

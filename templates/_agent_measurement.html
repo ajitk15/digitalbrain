@@ -1,0 +1,43 @@
+{% load icons %}{% comment %}How an agent measured against one call (`agent_measurements.page`): the latest recorded pack run as paired bars, every recorded run's main figure as a trend, both drawn on the server - points, lengths and classes, no script, no style attribute - so the popup works with JavaScript off and under the CSP. Numbers only; the full record stays in its JSON file under benchmarks/.{% endcomment %}{% with m=measurement %}
+<h2 class="panel-label">How it measured</h2>
+{% if not m.pack %}<p class="muted">No pack measures this agent yet, so whether its tools help is not known.</p>
+{% elif not m.latest %}<p class="measure-verdict measure-none">{% icon "info" 14 %}<span>Not measured here yet. {% if m.pack.paid %}A run of <code>{{ m.pack.command }}</code> compares it with one call on a frozen pack - charges apply - and appears here.{% else %}<code>{{ m.pack.command }}</code> counts how its drafts were decided - free - and appears here.{% endif %}</span></p>
+{% else %}
+<p class="measure-verdict measure-{{ m.latest.verdict }}">{% if m.latest.verdict == 'clears' %}{% icon "check" 14 %}{% elif m.latest.verdict == 'fails' %}{% icon "warning" 14 %}{% else %}{% icon "info" 14 %}{% endif %}<span><strong>{{ m.latest.get_verdict_display }}.</strong> {{ m.latest.verdict_text }}</span></p>
+<p class="muted measure-meta"><small>{{ m.latest.generated_at|date:"M j, Y H:i" }}{% if m.latest.model %} · {{ m.latest.model }}{% endif %} · {{ m.count }} recorded run{{ m.count|pluralize }}{% if m.latest.file %} · <code>{{ m.latest.file }}</code>{% endif %}</small></p>
+{% if m.comparison %}<figure class="measure-chart">
+<svg viewBox="0 0 {{ m.comparison.width }} {{ m.comparison.height }}" role="img" aria-labelledby="measure-bars-title measure-bars-desc" focusable="false">
+<title id="measure-bars-title">{{ m.comparison.first }} against {{ m.comparison.second|lower }}, latest run</title>
+<desc id="measure-bars-desc">{{ m.comparison.description }}.</desc>
+{% for row in m.comparison.rows %}<text class="measure-label" x="{{ m.comparison.label_x }}" y="{{ row.label_y }}" text-anchor="end">{{ row.label }}</text>{% for bar in row.bars %}<rect class="measure-bar measure-{{ bar.mode }}" x="{{ m.comparison.bar_x }}" y="{{ bar.y }}" width="{{ bar.length }}" height="{{ m.comparison.bar_height }}" rx="2"/><text class="measure-value{% if bar.mode == 'agent' and row.direction %} measure-{{ row.direction }}{% endif %}" x="{{ bar.text_x }}" y="{{ bar.text_y }}">{{ bar.shown }}</text>{% endfor %}<line class="measure-rule" x1="0" x2="{{ m.comparison.width }}" y1="{{ row.line_y }}" y2="{{ row.line_y }}"/>{% endfor %}
+</svg>
+<figcaption><span class="measure-key measure-base"></span>{{ m.comparison.first }} <span class="measure-key measure-agent"></span>{{ m.comparison.second }} <span class="muted">· figures in green are better than {{ m.comparison.first|lower }}, in red worse</span></figcaption>
+</figure>{% endif %}
+{% if m.trend %}<figure class="trend-chart measure-trend">
+<svg viewBox="0 0 {{ m.trend.width }} {{ m.trend.height }}" role="img" aria-labelledby="measure-trend-title measure-trend-desc" focusable="false">
+<title id="measure-trend-title">{{ m.trend.main_label }} by recorded run</title>
+<desc id="measure-trend-desc">{% for point in m.trend.base.points %}{{ point.when|date:"M j" }}: {{ point.value }} {{ m.trend.base.label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}. {% for point in m.trend.agent.points %}{{ point.when|date:"M j" }}: {{ point.value }} {{ m.trend.agent.label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}.</desc>
+{% for line in m.trend.grid %}<line class="trend-grid" x1="{{ m.trend.left }}" x2="{{ m.trend.right }}" y1="{{ line.y }}" y2="{{ line.y }}"/><text class="trend-axis" x="{{ m.trend.left|add:'-8' }}" y="{{ line.y }}" text-anchor="end" dominant-baseline="middle">{{ line.label }}</text>{% endfor %}
+{% for tick in m.trend.ticks %}<text class="trend-axis" x="{{ tick.x }}" y="{{ m.trend.label_y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>{% endfor %}
+{% for ref in m.trend.references %}<line class="measure-reference" x1="{{ ref.x }}" x2="{{ ref.x }}" y1="{{ m.trend.top }}" y2="{{ m.trend.bottom }}"><title>A different model or pack from here on: a new reference</title></line>{% endfor %}
+{% if m.trend.base.points|length > 1 %}<polyline class="trend-line measure-base" points="{{ m.trend.base.path }}"/>{% endif %}
+{% for point in m.trend.base.points %}<circle class="trend-dot measure-base" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5"><title>{{ point.when|date:"M j, Y" }} {{ m.trend.base.label|lower }}: {{ point.value }}{% if point.model %} ({{ point.model }}){% endif %}</title></circle>{% endfor %}
+{% if m.trend.agent.points|length > 1 %}<polyline class="trend-line measure-agent" points="{{ m.trend.agent.path }}"/>{% endif %}
+{% for point in m.trend.agent.points %}<circle class="trend-dot measure-agent" cx="{{ point.x }}" cy="{{ point.y }}" r="4"><title>{{ point.when|date:"M j, Y" }} {{ m.trend.agent.label|lower }}: {{ point.value }}{% if point.model %} ({{ point.model }}){% endif %}</title></circle>{% endfor %}
+</svg>
+<figcaption><span class="measure-key measure-base"></span>{{ m.trend.base.label }} <span class="measure-key measure-agent"></span>{{ m.trend.agent.label }} <span class="muted">· {{ m.trend.main_label|lower }} as a share, 1.00 the best{% if m.trend.references %}; a dashed line is a new model or pack, and runs either side of it are not comparable{% endif %}</span></figcaption>
+</figure>{% endif %}
+{% endif %}
+<h2 class="panel-label">Here in the last {{ activity.days }} days</h2>
+{% if activity.steps %}<dl class="measure-use">
+<div><dt>Runs with tools</dt><dd>{{ m.use.runs }}</dd></div>
+<div><dt>Tool calls a run</dt><dd>{{ m.use.calls_per_run }}</dd></div>
+<div><dt>Calls that met a limit or a refusal</dt><dd>{{ m.use.problem_share }}%</dd></div>
+<div><dt>Median tool call</dt><dd>{{ m.use.median_ms }} ms</dd></div>
+</dl>
+<div class="agent-activity"><table><thead><tr><th>Tool</th><th class="num">Calls</th></tr></thead><tbody>{% for name, count in activity.tools %}<tr><td><code>{{ name }}</code></td><td class="num">{{ count }}</td></tr>{% endfor %}</tbody></table>
+<table><thead><tr><th>Outcome</th><th class="num">Calls</th></tr></thead><tbody>{% for name, count in activity.outcomes %}<tr><td>{{ name }}</td><td class="num">{{ count }}</td></tr>{% endfor %}</tbody></table></div>
+<p class="muted"><small>Counted from the steps each run records: the tool, what came of it and how much came back. What was asked and what was read are never kept.</small></p>
+{% else %}<p class="muted">No tool calls yet.{% if state == 'one-call' %} It asks once while its tools are off.{% endif %}</p>{% endif %}
+{% if m.show_cost %}{% if m.use.spend %}<p class="muted"><small>Spent on its AI task in these days, with tools or without: {% for row in m.use.spend %}{% if row.currency == "USD" %}${% else %}{{ row.currency }} {% endif %}{{ row.amount|floatformat:4 }} over {{ row.calls }} receipt{{ row.calls|pluralize }}{% if not forloop.last %}; {% endif %}{% endfor %}.</small></p>{% else %}<p class="muted"><small>Nothing spent on its AI task in these days.</small></p>{% endif %}{% endif %}
+{% endwith %}

@@ -13,7 +13,7 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.management.base import BaseCommand, CommandError
 from django.http import Http404
 
-from platform_core import review_pack
+from platform_core import agent_measurements, review_pack
 from platform_core.models import Application, User
 
 
@@ -52,4 +52,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(review_pack.verdict(record["metrics"]))
         if options["record"]:
-            self.stdout.write(f"Recorded {review_pack.save(record)}")
+            path = review_pack.save(record)
+            self.stdout.write(f"Recorded {path}")
+            agent_measurements.record(app, "review_pack", record, user, path)
+            self.stdout.write("Kept for its agent's page (Settings → AI → Agents).")

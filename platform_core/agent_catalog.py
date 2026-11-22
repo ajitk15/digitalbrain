@@ -500,8 +500,16 @@ def agents_view(request, pk):
     from .policy import application_for
 
     app, grant = application_for(request.user, pk)
+    from .agent_measurements import latest_by_agent, pack_for
+
+    latest = latest_by_agent(app)
     rows = [
-        {**described(agent, app), "screen_url": screen_url(agent, app, grant)}
+        {
+            **described(agent, app),
+            "screen_url": screen_url(agent, app, grant),
+            "measured": latest.get(agent.key),
+            "measurable": pack_for(agent.key) is not None,
+        }
         for agent in _agents()
     ]
     return render(request, "agents.html", {"application": app, "grant": grant, "rows": rows})
@@ -513,7 +521,9 @@ def agent_view(request, pk, key):
     """One agent: what it does, where it runs, its tools, limits, safeguards and
     recent activity. Opened as a popup by its badge; a page of its own without
     JavaScript."""
+    from . import agent_measurements
     from .policy import application_for
+    from .services import feature_enabled
 
     app, grant = application_for(request.user, pk)
     agent = get(key)
@@ -528,6 +538,9 @@ def agent_view(request, pk, key):
             **described(agent, app),
             "safeguards": (*agent.safeguards, *SHARED_SAFEGUARDS),
             "activity": activity(agent, app),
+            "measurement": agent_measurements.page(
+                agent, app, feature_enabled("usage_reports", app), ACTIVITY_DAYS
+            ),
             "screen_url": screen_url(agent, app, grant),
         },
     )

@@ -320,6 +320,23 @@ its "Searching sources" line is labelled Agent by CSS alone (`.chat-tool::before
 and `.agent-list` were Code Factory's already, which is why these pages use
 `.agent-page-facts` and `.agents-index`.
 
+**How an agent measured is shown on its page** (`agent_measurements.py`, `AgentMeasurement`,
+migration 0112, `_agent_measurement.html`). `factory_pack`, `review_pack` and `triage_pack`
+with `--record`, and `learning_upkeep --record` (free, by use: drafted questions accepted
+against undrafted, `MIN_DECIDED` before it judges), keep one row each beside their JSON
+file: each way's totals as **numbers only** (`numbers_only` - no ticket, finding or text)
+and the state the pack's **own** `verdict` gave (`state_of`), so the page never re-judges.
+The popup draws the newest as paired bars (one call against with tools, a figure judged
+better or worse by its `Figure.better`), every recorded run of the pack's main figure as a
+trend with a dashed line where the model or pack digest changed - a new reference, not a
+comparison - and the last `ACTIVITY_DAYS` of use from `AgentStep` (runs, calls a run, the
+share that met a limit or a refusal, median call). Spend and the Cost row are shown only
+where `usage_reports` is on, the rule AI costs already follows; the index carries a
+"Measured" chip. Server-drawn SVG like `graph_trend.chart`. `manage.py agent_measurements
+<app> --load <file>` keeps a record made on another machine (the folder under `benchmarks/`
+names its pack). A measurement switches nothing on: tools stay an operator's setting. Chat
+has no pack yet and says so.
+
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...
 TO PROGRAM`, drop anything, and is never held to row security - and the platform used to

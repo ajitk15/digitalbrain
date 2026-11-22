@@ -13,7 +13,7 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.management.base import BaseCommand, CommandError
 from django.http import Http404
 
-from platform_core import factory_pack
+from platform_core import agent_measurements, factory_pack
 from platform_core.models import Application, User
 
 
@@ -56,4 +56,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(factory_pack.verdict(record["metrics"]))
         if options["record"]:
-            self.stdout.write(f"Recorded {factory_pack.save(record)}")
+            path = factory_pack.save(record)
+            self.stdout.write(f"Recorded {path}")
+            agent_measurements.record(app, "factory_pack", record, user, path)
+            self.stdout.write("Kept for its agent's page (Settings → AI → Agents).")

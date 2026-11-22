@@ -12,7 +12,7 @@ from django.core.exceptions import ImproperlyConfigured, PermissionDenied, Valid
 from django.core.management.base import BaseCommand, CommandError
 from django.http import Http404
 
-from platform_core import triage_pack
+from platform_core import agent_measurements, triage_pack
 from platform_core.models import Application, User
 
 
@@ -55,4 +55,7 @@ class Command(BaseCommand):
             )
         self.stdout.write(triage_pack.verdict(record["metrics"]))
         if options["record"]:
-            self.stdout.write(f"Recorded {triage_pack.save(record)}")
+            path = triage_pack.save(record)
+            self.stdout.write(f"Recorded {path}")
+            agent_measurements.record(app, "triage_pack", record, user, path)
+            self.stdout.write("Kept for its agent's page (Settings → AI → Agents).")

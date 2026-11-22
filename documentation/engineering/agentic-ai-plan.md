@@ -431,6 +431,17 @@ name them reads them as off, and each is switched on there only once its pack
 off; run with all three on, its only failures were tests written for the one-shot
 path.
 
+## Measuring what is built
+
+The three tool switches wait on their packs, and Knowledge upkeep on use. Each recorded run
+(`--record`, and `learning_upkeep --record`) is kept as an `AgentMeasurement` and drawn on
+the agent's page: the newest run as one call against with tools, figure by figure, every
+run's main figure as a trend that marks a new model or pack as a new reference, and the
+last thirty days of the agent's steps. Packs are small - four tickets, four changes - so run
+each three times on one model and switch tools on only when two of three clear the bar.
+Triage needs incidents whose cause people confirmed; a fresh demo has none. Chat's agent
+path has no pack yet: `llm_drift` asks its questions as single calls.
+
 ## Future enhancements
 
 Not in scope for the phases above. Each is listed with the invariant it touches, so
