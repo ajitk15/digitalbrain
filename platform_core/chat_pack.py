@@ -1,6 +1,6 @@
 """The chat agent with tools and without, against the application's benchmark questions.
 
-    manage.py chat_pack <application id> --as <username> [--record] [--only tools]
+    manage.py chat_pack <application id> --as <username> [--record] [--only tools] [--routed]
 
 Step 4 of measuring the agents (`documentation/engineering/agentic-ai-plan.md`):
 the one agent no pack measured. `llm_drift` asks its answer questions as single
@@ -35,6 +35,16 @@ front of it" says whether the model could have cited it at all. Cost and turns a
 read from the receipts the case wrote, so a run that failed out of turns is still
 counted. Nothing is written but receipts:
 no conversation, no message, no step.
+
+**Model routing** (`--routed`, `ai.routing_config`). With Chat searching set up and
+switched on, a third way asks each question as chat then does: the searches on that
+cheaper model, and the answer on Chat conversation's model over what they found. The
+tools way is asked with routing off (`run_agent(routing=False)`), so it is the one
+model doing both, and `routing_verdict` holds the routed way to it: no fewer expected
+sources cited, or cited first, no more citations to nothing or failures, and cheaper.
+Its receipts are read under both tasks (`RECEIPT_PURPOSES`), each at its own model's
+price. The measurement kept on the agent's page is the first two ways; the routed
+totals stay in the record's file.
 """
 
 import hashlib
@@ -50,6 +60,10 @@ from django.core.exceptions import ImproperlyConfigured, ValidationError
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS = ROOT / "benchmarks" / "chat"
 MODES = ("one_shot", "tools")
+#: The third way, asked only when told to (`--routed`).
+ROUTED = "routed"
+#: Chat's receipts, and those of its searches when they were routed.
+RECEIPT_PURPOSES = ("chat", "chat_search")
 #: Tools are worth their cost only at no more than this many times one call, and
 #: no worse on what is scored - the bar every agent's pack holds.
 COST_BAR = 2
@@ -119,8 +133,10 @@ def ask(user, app, config, token, question, evidence, mode):
             max_tokens=reply_cap(app.pk, config.purpose, config),
             prompt_characters=prompt_size(question, evidence, []),
             # One turn is how the harness asks with no tools, over the evidence alone.
-            turns=TURNS if mode == "tools" else 1,
-            wrap_up=mode == "tools",
+            turns=1 if mode == "one_shot" else TURNS,
+            wrap_up=mode != "one_shot",
+            # Only the routed way is routed: the tools way is the one model doing both.
+            routing=mode == ROUTED,
         )
     except AgentFailure as failure:
         return "", [], 0, failure.kind
@@ -136,7 +152,7 @@ def receipts(app, user, since):
     from .models import AIUsage
 
     found = AIUsage.objects.filter(
-        application=app, actor=user, purpose="chat", created_at__gte=since
+        application=app, actor=user, purpose__in=RECEIPT_PURPOSES, created_at__gte=since
     ).aggregate(
         turns=Count("id"), prompt=Sum("input_tokens"), completion=Sum("output_tokens"),
         amount=Sum("amount"),
@@ -149,7 +165,7 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
     """Every question every way. Returns the record `save` writes."""
     from django.utils import timezone
 
-    from .ai import chat_configuration
+    from .ai import chat_configuration, routing_config, routing_problem
     from .models import KnowledgeEntry
 
     found = questions(app, limit)
@@ -159,6 +175,12 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
             "Quality → Benchmark first: the pack measures chat against them."
         )
     app, config, token = chat_configuration(user, app.pk, mode="ai")
+    route = routing_config(app, config)
+    if ROUTED in modes and route is None:
+        raise ValidationError(
+            routing_problem(app).replace("It routes", "Chat searching routes")
+            or "Set up Chat searching in AI settings and switch it on to measure routing."
+        )
     details = []
     for item in found:
         # Found once, as chat finds it, and handed to both ways alike.
@@ -194,6 +216,7 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "provider": config.provider,
         "model": config.model,
+        "routing_model": route.model if route is not None and ROUTED in modes else "",
         "pack": pack_digest(found),
         "metrics": metrics(details, modes),
         "details": details,
@@ -246,6 +269,29 @@ def verdict(found):
     ):
         return "Tools are no better than one call on these questions."
     return "Tools clear the bar: chat's searches find what one call misses."
+
+
+def routing_verdict(found):
+    """Whether routing chat's searches to the cheaper model holds up against one
+    model doing both, and why not if it does not; empty when it was not asked."""
+    if not {"tools", ROUTED} <= set(found):
+        return ""
+    alone, routed = found["tools"], found[ROUTED]
+    reasons = []
+    for key, said in (("cited_expected", "cited the expected source"),
+                      ("cited_first", "cited it first")):
+        if routed[key] < alone[key]:
+            reasons.append(f"{said} {routed[key]} times against {alone[key]}")
+    if routed["invented"] > alone["invented"]:
+        reasons.append(f"{routed['invented']} citations to nothing against {alone['invented']}")
+    if routed["failed"] > alone["failed"]:
+        reasons.append(f"{routed['failed']} questions unanswered against {alone['failed']}")
+    if Decimal(routed["cost"]) >= Decimal(alone["cost"]):
+        reasons.append(f"cost ${routed['cost']} against ${alone['cost']}, no saving")
+    if reasons:
+        return "Routing does not clear the bar: " + "; ".join(reasons) + "."
+    return (f"Routing clears the bar: as good for ${routed['cost']} against "
+            f"${alone['cost']}. Chat searching can stay on.")
 
 
 def save(record):

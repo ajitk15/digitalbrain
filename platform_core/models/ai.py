@@ -43,6 +43,7 @@ class AIUsage(models.Model):
 #: then the graph's own tasks, then the small housekeeping call.
 AI_PURPOSES = [
     ("chat", "Chat conversation"),
+    ("chat_search", "Chat searching"),
     ("plan_drafting", "Code Factory"),
     ("serviceops_triage", "ServiceOps"),
     ("graph_generation", "Graph generation"),

@@ -258,9 +258,13 @@ class AISettingsListTests(TestCase):
             self.url, {"purpose": "all", "all-model_choice": "claude:claude-opus-5"}
         )
         self.assertEqual(response.status_code, 302)
-        configs = AIConfiguration.objects.filter(application=self.app).exclude(purpose="embeddings")
+        # Not embeddings, and not Chat searching, whose point is another model.
+        configs = AIConfiguration.objects.filter(application=self.app).exclude(
+            purpose__in=["embeddings", "chat_search"]
+        )
         self.assertEqual(set(configs.values_list("model", flat=True)), {"claude-opus-5"})
-        self.assertEqual(configs.count(), len(AI_PURPOSES) - 1)
+        self.assertEqual(configs.count(), len(AI_PURPOSES) - 2)
+        self.assertFalse(AIConfiguration.objects.filter(purpose="chat_search").exists())
         self.assertEqual(set(configs.values_list("input_rate", flat=True)), {Decimal("5")})
         embeddings.refresh_from_db()
         self.assertEqual(embeddings.model, "text-embedding-3-small")

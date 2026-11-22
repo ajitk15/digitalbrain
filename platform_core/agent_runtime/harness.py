@@ -107,6 +107,8 @@ class AgentResult:
     found: list = field(default_factory=list)
     #: Everything the tools returned beyond it, unverified (`read_citations`).
     read: list = field(default_factory=list)
+    #: The model that chose the searches when the run was routed, else "".
+    routed: str = ""
 
 
 def runtime_for(provider, token=None):
@@ -283,8 +285,13 @@ def run_agent(
     docs_id=None,
     entry_id=None,
     wrap_up=False,
+    routing=True,
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
+
+    `routing` lets chat's run be routed when an owner set up Chat searching
+    (`ai.routing_config`): its tool turns on that model, the answer on chat's.
+    `chat_pack` turns it off to measure the one model against the two.
 
     `wrap_up` asks for one turn more than `turns` and keeps it back for an
     answer from the evidence should the agent use all of its own; the agent
@@ -310,21 +317,33 @@ def run_agent(
     # Evidence computed before the run seeds the answer, so a single-turn reply is
     # never worse than the non-agentic path.
     recorder.seed(citations)
-    asked = (turns + 1 if wrap_up else turns) if tools else 1
+    # A prose answer (chat) cites by number, so it ends numbered as the page shows
+    # it (`CitationRecorder.numbered`); every other agent cites by id.
+    prose = purpose in KNOWLEDGE_PURPOSES and not instructions
+    # Routed: the searching on a cheaper model, then one turn more - kept back
+    # like the wrap-up turn - in which chat's own model answers from what verified.
+    route = ai.routing_config(app, config) if routing and prose and tools else None
+    keeps = wrap_up or route is not None
+    asked = (turns + 1 if keeps else turns) if tools else 1
     allowed = 1
 
-    def attempt(given, max_turns, evidence, asking):
+    def quiet(event, data):
+        # The searching model's text is never shown: the answer is the other model's.
+        if event != "delta":
+            emit(event, data)
+
+    def attempt(given, max_turns, evidence, asking, model=None, shown=True):
         # The provider runtimes are coroutines, run here on the caller's thread;
         # the scripted model is plain code, so its tools run on this thread too.
         pending = runtime.run(
-            config.model,
+            model or config.model,
             asking,
             evidence,
             token,
             history,
             scope,
             recorder,
-            emit,
+            emit if shown else quiet,
             cancel,
             max_tokens=max_tokens,
             tools=given,
@@ -341,13 +360,13 @@ def run_agent(
 
     # What `measured` reports once the run ends; `started` is set only once admitted.
     run = {"started": None, "mode": "one_call", "outcome": "failed", "turns": 0}
-    # A prose answer (chat) cites by number, so it ends numbered as the page shows
-    # it (`CitationRecorder.numbered`); every other agent cites by id. `final` is
-    # that list once the turn kept back was asked over it, already numbered.
-    prose = purpose in KNOWLEDGE_PURPOSES and not instructions
+    # `final` is the prose list once the turn kept back was asked over it,
+    # already numbered.
     final = {"citations": None}
+    # Whose model a failed turn's receipts are priced and filed under.
+    paying = {"config": config, "purpose": purpose}
 
-    def wrapped_up(limit, kept, attempt):
+    def wrapped_up(limit, kept, attempt, ask=None):
         """What a run that used every turn answers with: the turn kept back, over
         the evidence that still verifies - or nothing, raised again, when no turn
         was kept, access ended, or the person pressed Stop (who keeps the text)."""
@@ -367,7 +386,7 @@ def run_agent(
             # [n] and this turn's [n] name the same sources.
             written, evidence = recorder.numbered(limit.text)
             final["citations"] = evidence
-        more, answer = attempt([], 1, evidence, f"{question}\n\n{WRAP_UP}")
+        more, answer = attempt([], 1, evidence, ask or f"{question}\n\n{WRAP_UP}")
         if written and not (instructions and joins_turns(runtime)):
             # As it was streamed: what the turns wrote, then this.
             answer = f"{written}\n\n{answer}"
@@ -378,7 +397,8 @@ def run_agent(
             with gateway.admitted(
                 user,
                 app,
-                config,
+                # Each turn may run on either model: reserved at the dearer rates.
+                ai.dearer(config, route) if route else config,
                 purpose,
                 prompt_characters=prompt_characters,
                 max_tokens=max_tokens,
@@ -388,32 +408,57 @@ def run_agent(
                 run["started"] = time.monotonic()
                 allowed = getattr(admission, "turns", None) or asked
                 # The turn kept back, when there is room for one beside a tool turn.
-                kept = 1 if wrap_up and tools and allowed >= WRAP_UP_FROM else 0
+                kept = 1 if keeps and tools and allowed >= WRAP_UP_FROM else 0
                 agent_turns = allowed - kept
                 recorder.budget = tool_budget(
-                    agent_turns, asked - (1 if wrap_up else 0), tool_calls
+                    agent_turns, asked - (1 if keeps else 0), tool_calls
                 )
                 given = tools if agent_turns > 1 else []
                 run["mode"] = "tools" if given else "one_call"
+                # Routed only with a turn kept for the answer and tools to search with;
+                # with less, chat's model does both, as it always did.
+                routed = route if kept and given else None
                 recorded = []
-                try:
+
+                def searched_then_answered():
+                    paying.update(config=routed, purpose="chat_search")
                     try:
-                        usages, answer = attempt(given, agent_turns, citations, question)
-                        run["outcome"] = "answered"
+                        searches, _ = attempt(given, agent_turns, citations, question,
+                                              model=routed.model, shown=False)
                     except TurnLimit as limit:
-                        # Each turn it sent was billed: receipts first, whatever follows.
-                        ai.record_turns(user, app, config, purpose, limit.usages)
-                        recorded = list(limit.usages)
-                        run["turns"] = len(recorded)
-                        usages, answer = wrapped_up(limit, kept, attempt)
-                        run["outcome"] = "wrapped_up"
+                        searches = limit.usages
+                    # Priced at the searching model's rates, filed under its task.
+                    ai.record_turns(user, app, routed, "chat_search", searches)
+                    recorded.extend(searches)
+                    run["turns"] = len(recorded)
+                    paying.update(config=config, purpose=purpose)
+                    # Its words are dropped; the answer is asked over what verified.
+                    found = wrapped_up(TurnLimit(searches), kept, attempt, ask=question)
+                    run["outcome"] = "answered"
+                    return found
+
+                try:
+                    if routed:
+                        usages, answer = searched_then_answered()
+                    else:
+                        try:
+                            usages, answer = attempt(given, agent_turns, citations, question)
+                            run["outcome"] = "answered"
+                        except TurnLimit as limit:
+                            # Each turn it sent was billed: receipts first, whatever follows.
+                            ai.record_turns(user, app, config, purpose, limit.usages)
+                            recorded.extend(limit.usages)
+                            run["turns"] = len(recorded)
+                            usages, answer = wrapped_up(limit, kept, attempt)
+                            run["outcome"] = "wrapped_up"
                 except (PermissionDenied, Http404):
                     run["outcome"] = "refused"
                     raise
                 except Billed as billed:
                     # Turns that completed before the failure were billed: receipts
                     # first, then the run fails as any provider failure does.
-                    ai.record_turns(user, app, config, purpose, billed.usages)
+                    ai.record_turns(user, app, paying["config"], paying["purpose"],
+                                    billed.usages)
                     run["turns"] = len(recorded) + len(billed.usages)
                     run["outcome"] = (
                         "stopped" if cancel is not None and cancel.is_set() else "failed"
@@ -470,4 +515,5 @@ def run_agent(
         steps=list(recorder.steps),
         found=recorder.found_citations(),
         read=recorder.read_citations(),
+        routed=routed.model if routed else "",
     )

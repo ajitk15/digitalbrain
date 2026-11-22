@@ -268,6 +268,8 @@ class StreamingRuntimeTests(SimpleTestCase):
             patch.object(ai, "record_turns"),
             patch("platform_core.gateway.authorize"),
             patch("platform_core.gateway.admitted", return_value=nullcontext()),
+            # No database here: Chat searching is not set up, so nothing is routed.
+            patch.object(ai, "routing_config", return_value=None),
         ):
             with self.assertRaises(ValidationError) as raised:
                 ai.stream_chat_answer(user, app, config, "key", "q", [], [], session)

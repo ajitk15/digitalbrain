@@ -392,6 +392,8 @@ read into the run's verified citations exactly as `chat_text.source_chips` numbe
 expected source (`benchmark.matches`) cited, cited first, in front of the model at all, and
 markers to nothing; cost and turns from the receipts the case wrote, so a run out of turns
 still counts. The questions' digest is the pack, so a changed list is a new reference.
+With `--routed` it asks a third way, with Chat searching's model choosing the searches (see
+model routing); the agent's page keeps the first two, the routed totals stay in the file.
 **A chat answer's [n] names one source everywhere** (`tools.CitationRecorder.record`/
 `numbered`). The page numbers the run's whole list, seeded evidence first; a search reply
 used to number its passages from [1] on every call, so an answer citing a passage it searched
@@ -1605,7 +1607,7 @@ bill, receipted as above, so it is switched on in production once `chat_pack`'s 
 so. One-shot calls (`claude_messages._call`) mark nothing: their prompt is their evidence,
 new each call.
 
-**Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
+**Every AI task starts on** (`ai.SEEDED_DISABLED` holds only Chat searching, below). It
 used to list document typing, embeddings and reranking, so a new application had AI
 features nobody knew to switch on. **That was traded, deliberately, for an application
 that uses its model from the first day**: typing runs after conversion and reranking on
@@ -1614,8 +1616,29 @@ a credential: embeddings start on only where the application has its own OpenAI 
 (`ai.has_embeddings_credential`), because Anthropic has no embeddings endpoint and a task
 that could only fail is not "on". `seed_application_ai` copies `openai_default` like
 `<provider>_default` - a template, never read at request time - and `rebuild_demo.py`
-switches on whatever an older demo left off. The budget and the per-task switches in AI
-settings are how an owner says otherwise.
+switches on whatever an older demo left off, Chat searching excepted. The budget and the
+per-task switches in AI settings are how an owner says otherwise.
+
+**Chat's searches may run on a cheaper model** (model routing; `ai.routing_config`, the
+`chat_search` task "Chat searching", migration 0116). It is a task like any other - a
+model, a switch, a row in Prices, its own spend - and the one in `SEEDED_DISABLED`: seeded
+off on the provider's small model (`ROUTING_MODELS`), because it is not a feature but a
+choice of which model reads the evidence, measured first. "One model for every task" leaves
+it alone. Switched on, on Chat conversation's provider (the run holds that credential) and
+with another model (else `routing_problem` says why on its page), chat's run in `run_agent`
+sends its tool turns to that model with their text never streamed (`quiet`), then asks Chat
+conversation's model once more, with no tools, the question as asked, over the evidence that
+still verifies, numbered as the page shows it - the turn kept back, as `wrap_up` keeps it.
+So the answer is always the larger model's, from what was read; what the searching model
+wrote is dropped. Each turn's receipt is priced at its own model's rates and filed under its
+own task (`chat_search` for the searches, `paying` for a failure mid-run); admission
+reserves every turn at the dearer of the two models' rates (`ai.dearer`), and the agent page
+forecasts with the same rule and says which model searches. Only prose answers are routed:
+an agent with its own instructions answers in JSON from evidence that is not only
+citations. Too few turns for a kept turn means one model does both, as before. Measure it
+with `chat_pack --routed` (a third way, the tools way then asked with `routing=False`;
+`routing_verdict`: no fewer expected sources cited or cited first, no more citations to
+nothing or failures, and cheaper).
 
 **A price belongs to a model; a reply cap to only four tasks** (AI settings, `ai.py`). The
 page is one list - a row per task with its model, this month's spend and a switch that is a

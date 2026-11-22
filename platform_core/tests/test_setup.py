@@ -7,6 +7,7 @@ application with no credential and no AI configuration at all.
 
 import importlib.util
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 from django.test import TestCase, override_settings
@@ -15,6 +16,7 @@ from django.urls import reverse
 from platform_core.ai import (
     DEFAULT_CREDENTIAL_NAMES,
     DEFAULT_MODELS,
+    ROUTING_MODELS,
     SEEDED_DISABLED,
     configured_providers,
     seed_application_ai,
@@ -358,7 +360,13 @@ class CredentialSeedingTests(TestCase):
         # OpenAI credential to call them with.
         embeddings = rows.pop("embeddings")
         self.assertEqual((embeddings.provider, embeddings.enabled), ("openai", False))
-        self.assertEqual(SEEDED_DISABLED, set())
+        # Chat searching alone starts off, on the provider's small model: routing
+        # changes which model reads the evidence, so an owner chooses it.
+        self.assertEqual(SEEDED_DISABLED, {"chat_search"})
+        search = rows.pop("chat_search")
+        self.assertEqual((search.provider, search.model, search.enabled),
+                         ("claude", ROUTING_MODELS["claude"], False))
+        self.assertEqual(search.input_rate, Decimal("0.10"))
         for purpose, row in rows.items():
             self.assertEqual(row.provider, "claude")
             self.assertEqual(row.model, DEFAULT_MODELS["claude"])
@@ -376,7 +384,7 @@ class CredentialSeedingTests(TestCase):
             self.assertEqual(copied.read_text(encoding="utf-8"), "sk-openai-EXAMPLE")
         rows = {row.purpose: row for row in AIConfiguration.objects.filter(application=app)}
         self.assertTrue(rows["embeddings"].enabled)
-        self.assertTrue(all(row.enabled for row in rows.values()))
+        self.assertTrue(all(row.enabled for row in rows.values() if row.purpose != "chat_search"))
 
     def test_host_login_alone_seeds_a_configuration_with_no_file(self):
         with override_settings(SECRET_DIRECTORY=self.secrets.name, CLAUDE_USE_HOST_LOGIN=True):

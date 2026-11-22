@@ -3,6 +3,7 @@
     manage.py chat_pack <application id> --as <username>
     manage.py chat_pack <application id> --as <username> --record
     manage.py chat_pack <application id> --as <username> --only tools --limit 10
+    manage.py chat_pack <application id> --as <username> --routed
 
 Each of the application's benchmark questions is sent through its Chat conversation
 configuration, credential and monthly budget, receipted as usual. See
@@ -27,7 +28,12 @@ class Command(BaseCommand):
             "--record", action="store_true",
             help="Save under benchmarks/chat/ and on the agent's page",
         )
-        parser.add_argument("--only", choices=chat_pack.MODES, help="Run one way only")
+        parser.add_argument("--only", choices=(*chat_pack.MODES, chat_pack.ROUTED),
+                            help="Run one way only")
+        parser.add_argument(
+            "--routed", action="store_true",
+            help="Also ask with Chat searching's model choosing the searches (model routing)",
+        )
         parser.add_argument("--limit", type=int, default=chat_pack.MAX_QUESTIONS)
 
     def handle(self, *args, **options):
@@ -38,6 +44,8 @@ class Command(BaseCommand):
         if not 1 <= options["limit"] <= chat_pack.MAX_QUESTIONS:
             raise CommandError(f"--limit must be between 1 and {chat_pack.MAX_QUESTIONS}.")
         modes = (options["only"],) if options["only"] else chat_pack.MODES
+        if options["routed"] and chat_pack.ROUTED not in modes:
+            modes = (*modes, chat_pack.ROUTED)
         try:
             record = chat_pack.run(user, app, modes, options["limit"])
         except (ValidationError, ImproperlyConfigured) as failure:
@@ -61,6 +69,8 @@ class Command(BaseCommand):
                 f"searches, ${found['cost']}, {found['seconds']} s"
             )
         self.stdout.write(chat_pack.verdict(record["metrics"]))
+        if routing := chat_pack.routing_verdict(record["metrics"]):
+            self.stdout.write(f"Searching with {record['routing_model']}: {routing}")
         if options["record"]:
             path = chat_pack.save(record)
             self.stdout.write(f"Recorded {path}")

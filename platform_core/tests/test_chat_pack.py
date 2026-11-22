@@ -177,3 +177,97 @@ class ChatPackTests(TestCase):
         for args in (["--as", "owner", "--limit", "0"], ["--as", "nobody"]):
             with self.subTest(args=args), self.assertRaises(CommandError):
                 call_command("chat_pack", str(self.app.pk), *args, stdout=StringIO())
+
+
+class RoutedModel:
+    """Searches when given tools; without, answers from whatever it was handed -
+    citing the policy when the searches put it in front of the model."""
+
+    def __init__(self, policy):
+        self.policy = str(policy.pk)
+        self.models = []
+
+    def run(self, model, question, citations, *args, tools=None, **kwargs):
+        self.models.append((model, bool(tools)))
+        ids = [c.get("id") for c in citations]
+        if tools:
+            # Its search puts the policy at [2], after the seeded rota.
+            script = Script([("search_knowledge", {"query": "refund requests expire"})],
+                            "Thirty days [2].")
+        elif self.policy in ids:
+            script = Script(f"Thirty days [{ids.index(self.policy) + 1}].")
+        else:
+            script = Script("The rota does not say [1].")
+        return script.run(model, question, citations, *args, tools=tools, **kwargs)
+
+
+class RoutedPackTests(TestCase):
+    setUp = ChatPackTests.setUp
+    evidence = ChatPackTests.evidence
+
+    def route(self, **values):
+        return AIConfiguration.objects.create(**{
+            "application": self.app, "purpose": "chat_search", "provider": "claude",
+            "model": "claude-haiku-5-5", "input_rate": Decimal("0.10"),
+            "output_rate": Decimal("0.50"), "configured_by": self.owner, **values,
+        })
+
+    def measured(self, model):
+        with (
+            patch.object(harness, "runtime_for", return_value=model),
+            patch.object(chat_pack, "seeded", return_value=self.evidence(self.other_doc)),
+        ):
+            return chat_pack.run(self.owner, self.app, (*chat_pack.MODES, chat_pack.ROUTED))
+
+    def test_routed_searches_as_well_for_less_and_clears_the_bar(self):
+        self.route()
+        model = RoutedModel(self.policy)
+        record = self.measured(model)
+        found = record["metrics"]
+        self.assertEqual(record["routing_model"], "claude-haiku-5-5")
+        # The tools way is the one model doing both; the routed way searches on
+        # Haiku, and Sonnet answers in one turn more with no tools.
+        self.assertEqual(model.models, [
+            ("claude-sonnet-5", False),
+            ("claude-sonnet-5", True),
+            ("claude-haiku-5-5", True), ("claude-sonnet-5", False),
+        ])
+        self.assertEqual((found["tools"]["cited_expected"], found["routed"]["cited_expected"]),
+                         (1, 1))
+        # Two Haiku turns at $0.10/$0.50 and Sonnet's answer at $3/$15, all counted.
+        self.assertEqual(Decimal(found["routed"]["cost"]), Decimal("0.00064000"))
+        self.assertEqual(found["routed"]["turns"], 3)
+        self.assertTrue(chat_pack.routing_verdict(found).startswith("Routing clears the bar"))
+        # The agent's page keeps the first two ways; the routed totals stay in the file.
+        row, _ = agent_measurements.record(self.app, "chat_pack", record, self.owner)
+        self.assertEqual(set(row.metrics), {"one_shot", "tools"})
+
+    def test_a_routed_way_that_cites_less_or_saves_nothing_does_not_clear(self):
+        alike = {"cited_expected": 2, "cited_first": 2, "invented": 0, "failed": 0}
+        verdict = chat_pack.routing_verdict({
+            "tools": {**alike, "cost": "0.010"},
+            "routed": {**alike, "cited_expected": 1, "cost": "0.012"},
+        })
+        self.assertTrue(verdict.startswith("Routing does not clear the bar"))
+        self.assertIn("cited the expected source 1 times against 2", verdict)
+        self.assertIn("no saving", verdict)
+        self.assertEqual(chat_pack.routing_verdict({"tools": alike}), "")
+
+    def test_routing_that_is_not_set_up_is_said_before_anything_is_spent(self):
+        with self.assertRaisesMessage(ValidationError, "Set up Chat searching"):
+            self.measured(RoutedModel(self.policy))
+        self.route(model="claude-sonnet-5")
+        with self.assertRaisesMessage(ValidationError, "Chat searching routes nothing"):
+            self.measured(RoutedModel(self.policy))
+        self.assertFalse(AIUsage.objects.exists())
+
+    def test_the_command_says_how_routing_did(self):
+        self.route()
+        with (
+            patch.object(harness, "runtime_for", return_value=RoutedModel(self.policy)),
+            patch.object(chat_pack, "seeded", return_value=self.evidence(self.other_doc)),
+        ):
+            out = StringIO()
+            call_command("chat_pack", str(self.app.pk), "--as", "owner", "--routed", stdout=out)
+        self.assertIn("routed: cited the expected source 1/1", out.getvalue())
+        self.assertIn("Searching with claude-haiku-5-5: Routing clears the bar", out.getvalue())

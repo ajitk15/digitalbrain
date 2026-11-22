@@ -59,6 +59,12 @@ GRAPH_GENERATION_ADVICE = (
 # three of the five purposes and fell through to the chat wording for the rest.
 PURPOSE_NOTES = {
     "chat": "Answers conversational questions from documents and recent messages.",
+    "chat_search": (
+        "Switched on, Chat's agent chooses its searches with this model - a cheaper one - and "
+        "Chat conversation's model writes the answer from what they found, which still has to "
+        "verify. Use the same provider as Chat conversation. Off, one model does both. Measure "
+        "it first with `manage.py chat_pack --routed`."
+    ),
     "graph_generation": (
         "Adds AI relationships when sources or these settings change. Disabled, the "
         "structural graph is still built locally at no cost. Enabled runs may incur charges."
@@ -140,6 +146,7 @@ PRICING_NOTE = (
 #: When each task spends, in the words an owner decides on/off by.
 SPENDS = {
     "chat": "Each question asked in Chat",
+    "chat_search": "Each search turn of a Chat answer, in place of Chat's model",
     "graph_retrieval": "Each question asked in Graph answer mode",
     "conversation_title": "Once per new conversation",
     "reranking": "A second call on every question",
@@ -162,6 +169,7 @@ TASK_GROUPS = [
         "Answering",
         [
             ("chat", "chat"),
+            ("chat_search", "chat"),
             ("graph_retrieval", "chat"),
             ("conversation_title", "chat"),
             ("reranking", "knowledge"),

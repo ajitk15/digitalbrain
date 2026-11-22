@@ -356,9 +356,13 @@ def application(owner, product, name, purpose, ai_purpose):
     # that, or one somebody switched a task off on, is brought back to it.
     # Embeddings need an OpenAI credential, so without one they stay off and
     # this says where to set it.
-    from platform_core.ai import has_embeddings_credential
+    # Chat searching starts off on a new application too (`SEEDED_DISABLED`): it is
+    # an owner's choice of model, measured first, so it is left as it was.
+    from platform_core.ai import SEEDED_DISABLED, has_embeddings_credential
 
-    for config in AIConfiguration.objects.filter(application=app, enabled=False):
+    for config in AIConfiguration.objects.filter(application=app, enabled=False).exclude(
+        purpose__in=SEEDED_DISABLED
+    ):
         if config.purpose == "embeddings" and not has_embeddings_credential(app):
             print(f"note    {name}: embeddings stay off - set an OpenAI key on its "
                   "Credentials screen and run this again")

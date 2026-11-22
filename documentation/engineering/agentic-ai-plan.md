@@ -463,6 +463,21 @@ host login still go through the CLI. It changes how a run is carried rather than
 reads, and is measured anyway: `chat_pack` (answers, cost and seconds) and `llm_drift`, with
 the switch off and then on.
 
+## Model routing (built, off until an owner chooses it)
+
+Chat's searching turns are most of a run's turns and none of its answer. With the
+"Chat searching" task set up and switched on in AI settings (seeded off, on the
+provider's small model), chat's tool turns run on that model with their text never
+shown, and Chat conversation's model then answers once, with no tools, over the
+evidence that still verifies - the turn the wrap-up keeps back. Each turn is receipted
+at its own model's price under its own task; admission reserves at the dearer rates.
+It is chat only: the background agents answer in JSON from evidence that is not only
+citations, so the model that read is the model that must answer. Measure it with
+`chat_pack --routed`, which holds the routed way to the same questions asked with one
+model doing both: no fewer expected sources cited or cited first, no more citations to
+nothing, and cheaper. `llm_drift` still measures the extraction and graph-answer models;
+the routed pair is measured by `chat_pack`.
+
 ## Prompt caching (built, switched off until measured)
 
 A tool-using run sends its tools, instructions and evidence again on every turn, and
@@ -528,7 +543,6 @@ whoever picks it up knows what has to be decided first.
 | **Scheduled agents** | Nightly knowledge hygiene, stale-runbook detection, weekly access summaries | Runs as the owner who switched it on, re-checked each time, stopped by revocation - the connector-schedule pattern. Budgeted like automatic AI |
 | **Wider MCP and agent-to-agent** | Outside agents (IDE, Slack, other platforms) call more read tools: `code_search`, `incident_neighbourhood` | Token = user, no token roles, `spend=False` unless gated like `chat_api` |
 | **Agent memory** | What an agent learned on one run helps the next | Only as `LearningCandidate`s a person accepted - never a hidden memory a model writes |
-| **Model routing** | A small model picks tools, a large one writes the answer | Each model priced and receipted; drift measured per model |
 | **Trajectory evaluation** | Score *how* an agent got there (wasted calls, loops), not just the result | A frozen trajectory pack, like the drift pack - a new pack starts a new reference |
 | **Agents on other providers** | Gemini, local models through the same harness | Per-application credential, no shared keys, `AIUsage` parsing that fails closed |
 

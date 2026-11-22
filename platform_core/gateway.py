@@ -80,6 +80,9 @@ PURPOSES = {
     purpose.key: purpose
     for purpose in (
         Purpose("chat", (("chat", False),)),
+        # The model chat's agent searches with when an owner routes it
+        # (`ai.routing_config`): part of a chat answer, held to chat's rule.
+        Purpose("chat_search", (("chat", False),)),
         Purpose("graph_retrieval", (("chat", False),)),
         Purpose("conversation_title", (("chat", False),)),
         Purpose(

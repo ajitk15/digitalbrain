@@ -103,6 +103,17 @@ class CatalogTests(TestCase):
         # Chat has no switch: it is always an agent.
         self.assertEqual(agent_catalog.status(self.agent("chat"), self.app)[0], "on")
 
+    def test_a_routed_chat_says_which_model_searches_and_which_answers(self):
+        AIConfiguration.objects.create(
+            application=self.app, purpose="chat_search", provider="claude",
+            model="claude-haiku-5-5", input_rate=Decimal("0.10"), output_rate=Decimal("0.50"),
+            configured_by=self.owner,
+        )
+        state, _, detail = agent_catalog.status(self.agent("chat"), self.app)
+        self.assertEqual(state, "on")
+        self.assertIn("searches with Chat searching's model, claude-haiku-5-5", detail)
+        self.assertIn("claude-sonnet-5, writes the answer", detail)
+
     def test_a_task_off_in_ai_settings_or_a_feature_off_is_off(self):
         AIConfiguration.objects.filter(application=self.app, purpose="chat").update(enabled=False)
         state, _, detail = agent_catalog.status(self.agent("chat"), self.app)

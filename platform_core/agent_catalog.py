@@ -470,6 +470,14 @@ def status(agent, app):
             "its usual size. With one turn the agent is given no tools and answers from "
             "what it was handed.",
         )
+    from .ai import routing_config
+
+    route = routing_config(app, config) if agent.purpose == "chat" else None
+    if route is not None:
+        return "on", "On", (
+            f"Runs as an agent: it searches with Chat searching's model, {route.model}, and "
+            f"{task}'s model, {config.model}, writes the answer."
+        )
     return "on", "On", f"Runs as an agent with {task}'s model, {config.model}."
 
 
@@ -482,8 +490,13 @@ def _headroom(app):
 def _turns(agent, app, config, room):
     """How many turns the budget's headroom pays for, by admission's own rule."""
     from .agent_runtime.tools import RESULT_CHARACTERS
-    from .ai import output_limits, reply_cap
+    from .ai import dearer, output_limits, reply_cap, routing_config
     from .gateway import affordable, turn_costs
+
+    route = routing_config(app, config) if agent.purpose == "chat" else None
+    if route is not None:
+        # A routed run is reserved at the dearer of its two models' rates.
+        config = dearer(config, route)
 
     tokens = (
         reply_cap(app.pk, agent.purpose, config)

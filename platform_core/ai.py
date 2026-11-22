@@ -374,7 +374,14 @@ DEFAULT_MODELS = {"openai": "gpt-5.6-sol", "claude": "claude-sonnet-5"}
 #: which every receipt, the budget and the gateway still govern, and an owner
 #: can still switch any of them off in AI settings. Embeddings start on only for
 #: an application with an OpenAI credential, since no other provider has them.
-SEEDED_DISABLED = set()
+#:
+#: The one task in it is not a feature but a choice: Chat searching routes chat's
+#: tool turns to a cheaper model (`routing_config`), which changes which model
+#: reads the evidence, so it starts off, seeded with that provider's small model,
+#: until an owner switches it on - after `chat_pack --routed` says it holds up.
+SEEDED_DISABLED = {"chat_search"}
+#: Chat searching's seeded model: the provider's small one.
+ROUTING_MODELS = {"claude": "claude-haiku-5-5", "openai": "gpt-5.6-luna"}
 
 #: Chat and graph answers: the range an owner may set their reply cap to. The
 #: default stays `ANSWER_TOKENS`; the ceiling is a guard against a typo.
@@ -485,9 +492,9 @@ def seed_application_ai(user, app, provider=None):
     # Embeddings are OpenAI's whatever setup chose, so its template is copied
     # too: a copy, never a read-time fallback, as for the chosen provider.
     copy_template(app, "openai")
-    model = DEFAULT_MODELS[provider]
-    listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
     for purpose, _ in AI_PURPOSES:
+        model = ROUTING_MODELS[provider] if purpose == "chat_search" else DEFAULT_MODELS[provider]
+        listed = LIST_PRICES.get(f"{provider}:{model}", ("0", "0"))
         if purpose == "embeddings":
             # Always OpenAI, whatever setup chose: on when the application has
             # an OpenAI credential, off when it has none to call it with.
@@ -800,6 +807,48 @@ def agent_configuration(user, app_id, purpose):
     return app, config, provider_credential(config, app)
 
 
+def routing_config(app, config):
+    """Chat searching's configuration when it routes this chat run, else None.
+
+    It routes only while switched on, on chat's own provider - the run has that
+    provider's credential and runtime - and with a model other than chat's: the
+    same model twice would only add a turn.
+    """
+    route = AIConfiguration.objects.filter(
+        application_id=app.pk, purpose="chat_search", enabled=True
+    ).first()
+    if route is None or not route.model or route.provider != config.provider:
+        return None
+    return None if route.model == config.model else route
+
+
+def routing_problem(app):
+    """Why Chat searching, switched on, routes nothing; empty when it does or is off."""
+    route = AIConfiguration.objects.filter(
+        application=app, purpose="chat_search", enabled=True
+    ).first()
+    chat = AIConfiguration.objects.filter(application=app, purpose="chat").first()
+    if route is None or chat is None:
+        return ""
+    if route.provider != chat.provider:
+        return ("It routes nothing: it must use the same provider as Chat conversation, "
+                "whose credential the run holds.")
+    if route.model == chat.model:
+        return "It routes nothing: it uses the same model as Chat conversation."
+    return ""
+
+
+def dearer(config, other):
+    """`config` with the higher of the two input and output rates - what admission
+    reserves a routed run at, whichever model each turn runs on. Never saved."""
+    import copy
+
+    found = copy.copy(config)
+    found.input_rate = max(config.input_rate, other.input_rate)
+    found.output_rate = max(config.output_rate, other.output_rate)
+    return found
+
+
 def record_turns(user, app, config, purpose, turns):
     """One accounting receipt per model turn.
 
@@ -1057,8 +1106,11 @@ def apply_to_all(request, app, groups):
     if not form.is_valid():
         return form
     provider, model = form.cleaned_data["model_choice"].split(":", 1)
+    # Not embeddings, which are OpenAI's; not Chat searching, whose point is a
+    # model other than chat's.
     purposes = [
-        purpose for _, tasks in groups for purpose, _ in tasks if purpose != "embeddings"
+        purpose for _, tasks in groups for purpose, _ in tasks
+        if purpose not in {"embeddings", "chat_search"}
     ]
     with transaction.atomic():
         rates = model_price(app, provider, model)
@@ -1296,5 +1348,6 @@ def ai_task(request, pk, purpose):
             "note": PURPOSE_NOTES.get(purpose, ""),
             "spends": SPENDS[purpose],
             "advice": GRAPH_GENERATION_ADVICE if purpose == "graph_generation" else "",
+            "problem": routing_problem(app) if purpose == "chat_search" else "",
         },
     )

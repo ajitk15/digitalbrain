@@ -196,6 +196,50 @@ class MessagesRuntimeTests(TestCase):
         self.assertEqual(AIUsage.objects.count(), 1)
 
 
+    def route(self):
+        return AIConfiguration.objects.create(
+            application=self.app, purpose="chat_search", provider="claude",
+            model="claude-haiku-5-5", input_rate=Decimal("0.10"), output_rate=Decimal("0.50"),
+            configured_by=self.owner,
+        )
+
+    def test_a_routed_run_searches_on_the_cheaper_model_and_shows_only_the_answer(self):
+        self.route()
+        transport = Transport(
+            turn(1, text="Let me look.", tool=(SEARCH, {"query": "refund deadline"})),
+            turn(2, text="The searcher's answer."),
+            turn(3, text="Thirty days."),
+        )
+        result = self.run_with(transport, wrap_up=True)
+        self.assertEqual(result.answer, "Thirty days.")
+        self.assertEqual([body["model"] for body in self.bodies(transport)],
+                         ["claude-haiku-5-5", "claude-haiku-5-5", "claude-sonnet-5"])
+        # The answer turn is asked with no tools; the searching model's words are
+        # never streamed, its searches are.
+        self.assertNotIn("tools", self.bodies(transport)[2])
+        self.assertEqual([data["t"] for event, data in self.events if event == "delta"],
+                         ["Thirty days."])
+        self.assertIn(("tool", {"name": "search_knowledge", "detail": "refund deadline"}),
+                      self.events)
+        self.assertEqual(
+            sorted(AIUsage.objects.values_list("request_id", "purpose", "model")),
+            [("msg_01", "chat_search", "claude-haiku-5-5"),
+             ("msg_02", "chat_search", "claude-haiku-5-5"),
+             ("msg_03", "chat", "claude-sonnet-5")],
+        )
+
+    def test_a_routed_turn_already_billed_is_filed_under_searching_when_the_next_fails(self):
+        self.route()
+        transport = Transport(
+            turn(1, tool=(SEARCH, {"query": "refund"})),
+            (500, json.dumps({"type": "error", "error": {"type": "api_error", "message": "x"}})),
+        )
+        with self.assertRaises(AgentFailure):
+            self.run_with(transport, wrap_up=True)
+        self.assertEqual(list(AIUsage.objects.values_list("request_id", "purpose", "amount")),
+                         [("msg_01", "chat_search", Decimal("0.00002000"))])
+
+
 def markers(body):
     """Where a request asked the cache to keep what came before."""
     found = []

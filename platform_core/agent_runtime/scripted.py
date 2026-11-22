@@ -42,7 +42,7 @@ class Script:
         self.given = None
         self.max_turns = None
         self.tool_text = []
-        #: Each call as it was made: tools given, turns allowed, question, evidence.
+        #: Each call as it was made: model, tools given, turns allowed, question, evidence.
         self.calls = []
 
     def run(
@@ -67,6 +67,7 @@ class Script:
         first = not self.calls
         self.calls.append(
             {
+                "model": model,
                 "given": sorted(given),
                 "max_turns": max_turns,
                 "question": question,
