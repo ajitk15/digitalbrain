@@ -68,6 +68,10 @@ class Agent:
     kept_back: bool = False
     #: When its tools are off, what it does instead.
     one_call: str = ""
+    #: About how many characters its first turn reads, for the budget forecast.
+    prompt_estimate: int = 6000
+    #: Its reply cap when AI settings has none for its task.
+    reply_tokens: int = 1024
     extra: dict = field(default_factory=dict)
 
 
@@ -129,6 +133,7 @@ def _agents():
             turns=limits["knowledge_upkeep"][0],
             tool_calls=limits["knowledge_upkeep"][1],
             steps_field="candidate",
+            reply_tokens=800,
             kept_back=True,
             safeguards=(
                 "A proposal counts only for a source it was shown, which you can see, "
@@ -156,6 +161,8 @@ def _agents():
             turns=limits["code_review"][0],
             tool_calls=limits["code_review"][1],
             steps_field="review",
+            prompt_estimate=30000,
+            reply_tokens=4000,
             safeguards=(
                 "Reads only this review's change and the code snapshot it is based on.",
                 "Every finding must quote what it read exactly; a finding with a quote "
@@ -183,6 +190,7 @@ def _agents():
             turns=limits["plan_drafting"][0],
             tool_calls=limits["plan_drafting"][1],
             steps_field="run",
+            prompt_estimate=60000,
             safeguards=(
                 "Reads only the run's own code snapshot, by looking files up among its "
                 "indexed rows: no path it writes reaches the disk.",
@@ -207,6 +215,7 @@ def _agents():
             turns=limits["serviceops_triage"][0],
             tool_calls=limits["serviceops_triage"][1],
             steps_field="triage",
+            prompt_estimate=20000,
             safeguards=(
                 "Everything its tools show the model has personal data redacted.",
                 "An incident's own confirmed cause is never shown to it.",
@@ -238,11 +247,16 @@ def tools(agent):
 
 
 def status(agent, app):
-    """(state, label, detail) for this agent in this application, now.
+    """(state, label, detail) for the next run of this agent in this application.
 
-    `on` runs as an agent; `one-call` runs, but asks once with no tools; `off` does
-    not run here.
+    `on` runs as an agent; `one-call` runs, but asks once with no tools; `blocked`
+    would be refused at the button; `off` does not run here. Read from the checks
+    the run itself makes, in the order it meets them: the feature, the AI settings
+    task, the credential, the budget, the tools switch, a Code Factory run's code,
+    and whether the budget's headroom pays for a second turn - with none, the
+    harness gives the agent no tools.
     """
+    from .ai import credential_problem
     from .models import AI_PURPOSES, AIConfiguration
     from .services import FEATURES, feature_enabled
 
@@ -253,6 +267,17 @@ def status(agent, app):
     task = dict(AI_PURPOSES).get(agent.purpose, agent.purpose)
     if config is None or not config.enabled:
         return "off", "Off", f"{task} is off in this application's AI settings."
+    problem = credential_problem(app, config.provider)
+    if problem:
+        return "blocked", "Can't run", problem
+    room = _headroom(app)
+    if room is not None and room <= 0:
+        return (
+            "blocked",
+            "Can't run",
+            "This month's AI budget is used up. An owner can raise it in AI settings; "
+            "it resets on the 1st.",
+        )
     if agent.switch and not getattr(settings, agent.switch, False):
         setting = agent.switch.lower()
         return (
@@ -261,7 +286,78 @@ def status(agent, app):
             f"Its tools are off in this deployment, so it asks once. "
             f"{agent.one_call} An operator turns them on with {setting} = true.",
         )
+    if agent.purpose == "plan_drafting":
+        reason = _no_code(app)
+        if reason:
+            return "one-call", "One call", reason
+    if room is not None and _turns(agent, app, config, room) <= 1:
+        return (
+            "one-call",
+            "One call",
+            f"This month's AI budget has ${room:.2f} left, about one turn of {task} at "
+            "its usual size. With one turn the agent is given no tools and answers from "
+            "what it was handed.",
+        )
     return "on", "On", f"Runs as an agent with {task}'s model, {config.model}."
+
+
+def _headroom(app):
+    from .gateway import headroom
+
+    return headroom(app.pk)
+
+
+def _turns(agent, app, config, room):
+    """How many turns the budget's headroom pays for, by admission's own rule."""
+    from .agent_runtime.tools import RESULT_CHARACTERS
+    from .ai import output_limits, reply_cap
+    from .gateway import affordable, turn_costs
+
+    tokens = (
+        reply_cap(app.pk, agent.purpose, config)
+        if agent.purpose in output_limits()
+        else agent.reply_tokens
+    )
+    costs = turn_costs(
+        config,
+        agent.prompt_estimate,
+        tokens,
+        turns=agent.turns + (1 if agent.kept_back else 0),
+        tool_characters=agent.tool_calls * RESULT_CHARACTERS,
+    )
+    return affordable(costs, room)
+
+
+def _no_code(app):
+    """Why a Code Factory run here would have no code snapshot to read, or "".
+
+    `code_factory.pin_repository`'s rule: Code Graph on, and a registered
+    repository with a snapshot - the only one, or the one the ticket names.
+    """
+    from .models import CodeRepository, CodeSnapshot
+    from .services import feature_enabled
+
+    if not feature_enabled("code_graph", app):
+        return "Code Repos is off here, so a run has no code to read and asks once."
+    registered = CodeRepository.objects.filter(
+        application=app,
+        provider__in=["github", "local"],
+        status__in=["ready", "partial"],
+        retired_at__isnull=True,
+    )
+    indexed = CodeSnapshot.objects.filter(repository__in=registered).values("repository")
+    count = registered.filter(pk__in=indexed).count()
+    if not count:
+        return (
+            "No repository is indexed under Knowledge → Code Repos, so a run has no "
+            "code to read and asks once."
+        )
+    if count > 1:
+        return (
+            f"{count} repositories are indexed, so a run reads code only when its ticket "
+            "names one of them; otherwise it asks once."
+        )
+    return ""
 
 
 def activity(agent, app, days=ACTIVITY_DAYS):

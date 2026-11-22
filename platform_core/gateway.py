@@ -186,6 +186,31 @@ def provider_lock(provider):
             cursor.execute("SELECT pg_advisory_xact_lock(%s)", [key])
 
 
+def affordable(costs, room):
+    """How many turns of `costs` (`turn_costs`' running totals) `room` pays for.
+
+    Admission's rule, shared with what a page forecasts (`agent_catalog.status`), so
+    the two cannot count turns differently.
+    """
+    return sum(1 for cost in costs if cost <= room)
+
+
+def headroom(app_id):
+    """What this month's cap leaves after recorded spend and calls in flight; None
+    with no cap. Read without admission's lock: a forecast for a page, which
+    admission works out again, exactly, when a call starts."""
+    from .budget import spent
+    from .models import AIAdmission, AIBudget
+
+    budget = AIBudget.objects.filter(application_id=app_id).first()
+    if budget is None:
+        return None
+    reserved = AIAdmission.objects.filter(
+        application_id=app_id, expires_at__gt=timezone.now()
+    ).aggregate(total=Sum("reserved"))["total"] or Decimal("0")
+    return budget.monthly_limit - spent(app_id) - reserved
+
+
 def try_admit(app, config, purpose, user, amount, costs=None):
     """An admission row, or None when no slot is free. Raises BudgetExceeded.
 
@@ -232,8 +257,7 @@ def try_admit(app, config, purpose, user, amount, costs=None):
         costs = list(costs or [amount])
         turns = len(costs)
         if budget is not None:
-            headroom = budget.monthly_limit - used - reserved
-            turns = max(1, sum(1 for cost in costs if cost <= headroom))
+            turns = max(1, affordable(costs, budget.monthly_limit - used - reserved))
         admission = AIAdmission.objects.create(
             application_id=app.pk,
             purpose=purpose,

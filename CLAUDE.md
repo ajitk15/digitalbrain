@@ -286,8 +286,7 @@ upkeep, code review, Code Factory, triage - each naming its gateway purpose, the
 its screen needs, the setting that gives it tools, where it runs and its limits (read from
 the modules that hold them). Its tools are **never written there**: they are
 `registry.for_scope` for its purpose, the list the harness hands the model, and
-`test_agent_catalog` holds the two equal. A badge ("Agent · On", "One call" while a
-deployment's switch is off, "Off" when its feature or AI settings task is off) sits beside
+`test_agent_catalog` holds the two equal. A badge sits beside
 every control that starts one - Chat's heading, Learned, a review's AI review card, Code
 Factory, an incident's triage button - and opens that agent's page (`agent`) as a popup
 (`data-modal`): what it does, when and where it runs, its tools with their own descriptions,
@@ -295,6 +294,16 @@ turns and tool calls, its safeguards, and the last `ACTIVITY_DAYS` of its `Agent
 here as counts by tool and outcome - never what was asked or read, which is never kept.
 `agents` lists them all. Anyone who can open the application may look; nothing there starts
 an agent or changes a setting. A new agent is one registry entry and a badge.
+**The badge forecasts the next run from the checks the run itself makes, in its order**
+(`agent_catalog.status`): Off when its feature or AI settings task is off; "Can't run" when
+`ai.credential_problem` names a missing credential or this month's budget is spent (what the
+button would be refused for); "One call" when the deployment's switch is off, when a Code
+Factory run here would have no snapshot (`pin_repository`'s rule: Code Graph on and exactly
+one indexed repository, else the ticket must name one), or when the budget's headroom pays
+for one turn at the agent's usual size (`prompt_estimate`), since the harness gives a
+one-turn run no tools; else On. The turn count is admission's own rule
+(`gateway.affordable`, which `try_admit` calls) over `gateway.headroom`, a read without the
+lock - a forecast, which admission works out again, exactly, when a call starts.
 
 **The platform connects as a role that can only touch rows** (`database_roles.py`). The
 role Postgres's image creates is a superuser - it can read the server's files, `COPY ...

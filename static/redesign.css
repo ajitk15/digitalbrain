@@ -3451,6 +3451,8 @@
   .agent-badge svg { width: 14px; height: 14px; flex: none; }
   .agent-badge-state { padding: 0 7px; border-radius: 999px; background: var(--c-surface); color: var(--c-ok); font-weight: 600; }
   .agent-badge-one-call .agent-badge-state { color: var(--c-warn); }
+  .agent-badge-blocked { border-color: var(--c-warn-line); background: var(--c-warn-bg); color: var(--c-warn); }
+  .agent-badge-blocked .agent-badge-state { color: var(--c-bad); }
   .agent-badge-off { border-color: var(--c-line); background: var(--c-well); color: var(--c-ink-muted); }
   .agent-badge-off .agent-badge-state { color: var(--c-ink-muted); }
   .agent-page h1 { display: flex; align-items: center; gap: var(--s-2); }

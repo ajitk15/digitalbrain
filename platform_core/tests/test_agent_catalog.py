@@ -8,6 +8,8 @@ popup page is held to application access like every screen.
 """
 
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import TestCase, override_settings
@@ -19,12 +21,15 @@ from platform_core.agent_runtime.tools import ToolScope
 from platform_core.models import (
     AI_PURPOSES,
     AgentStep,
+    AIBudget,
     AIConfiguration,
+    AIUsage,
     ApplicationFeature,
     ChatConversation,
     ChatMessage,
     User,
 )
+from platform_core.scorecard import code_snapshot
 from platform_core.services import FEATURES
 
 from . import test_documents
@@ -47,6 +52,13 @@ class CatalogTests(TestCase):
                 model="claude-sonnet-5", input_rate=Decimal("3"), output_rate=Decimal("15"),
                 configured_by=self.owner,
             )
+
+        # Tests mount no credential; one test below takes it away on purpose.
+        reachable = patch("platform_core.ai.credential_problem", return_value=None)
+        reachable.start()
+        self.addCleanup(reachable.stop)
+        # One indexed repository, so a Code Factory run here would be pinned to it.
+        self.snapshot = code_snapshot(SimpleNamespace(app=self.app, people={"owner": self.owner}))
 
     def agent(self, key):
         return agent_catalog.get(key)
@@ -98,6 +110,65 @@ class CatalogTests(TestCase):
         state, _, detail = agent_catalog.status(self.agent("draft-a-fix"), self.app)
         self.assertEqual(state, "off")
         self.assertIn("switched off", detail)
+
+    def test_a_missing_credential_is_cant_run_and_says_why(self):
+        with patch("platform_core.ai.credential_problem", return_value="Add a Claude key."):
+            state, label, detail = agent_catalog.status(self.agent("chat"), self.app)
+        self.assertEqual((state, label, detail), ("blocked", "Can't run", "Add a Claude key."))
+
+    def spend(self, amount):
+        AIUsage.objects.create(
+            application=self.app, actor=self.owner, purpose="chat", provider="claude",
+            model="claude-sonnet-5", request_id="r-1", input_tokens=1, output_tokens=1,
+            amount=amount,
+        )
+
+    def test_a_spent_budget_is_cant_run(self):
+        AIBudget.objects.create(application=self.app, monthly_limit=Decimal("5"))
+        self.spend(Decimal("5"))
+        state, _, detail = agent_catalog.status(self.agent("chat"), self.app)
+        self.assertEqual(state, "blocked")
+        self.assertIn("budget is used up", detail)
+
+    def test_a_budget_with_room_for_one_turn_is_one_call(self):
+        from platform_core import gateway
+        from platform_core.agent_runtime.tools import RESULT_CHARACTERS
+
+        agent = self.agent("chat")
+        config = AIConfiguration.objects.get(application=self.app, purpose="chat")
+        costs = gateway.turn_costs(
+            config, agent.prompt_estimate, 1024, turns=agent.turns + 1,
+            tool_characters=agent.tool_calls * RESULT_CHARACTERS,
+        )
+        # Room for the first turn and not the second: the harness gives no tools.
+        AIBudget.objects.create(application=self.app, monthly_limit=(costs[0] + costs[1]) / 2)
+        state, label, detail = agent_catalog.status(agent, self.app)
+        self.assertEqual((state, label), ("one-call", "One call"))
+        self.assertIn("about one turn", detail)
+        AIBudget.objects.update(monthly_limit=costs[-1] * 2)
+        self.assertEqual(agent_catalog.status(agent, self.app)[0], "on")
+
+    def test_code_factory_with_no_code_to_read_asks_once(self):
+        factory = self.agent("code-factory")
+        with override_settings(CODE_FACTORY_AGENT_TOOLS=True):
+            self.assertEqual(agent_catalog.status(factory, self.app)[0], "on")
+            self.snapshot.repository.__class__.objects.filter(
+                pk=self.snapshot.repository_id
+            ).update(retired_at=self.snapshot.created_at)
+            state, _, detail = agent_catalog.status(factory, self.app)
+        self.assertEqual(state, "one-call")
+        self.assertIn("No repository is indexed", detail)
+
+    def test_the_turn_rule_is_admissions_own(self):
+        from decimal import Decimal as D
+
+        from platform_core import gateway
+
+        self.assertEqual(gateway.affordable([D(1), D(3), D(6)], D(3)), 2)
+        self.assertIsNone(gateway.headroom(self.app.pk))
+        AIBudget.objects.create(application=self.app, monthly_limit=D("10"))
+        self.spend(D("4"))
+        self.assertEqual(gateway.headroom(self.app.pk), D("6"))
 
     # Activity ----------------------------------------------------------------
 
