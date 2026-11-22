@@ -1626,6 +1626,7 @@ def agent_guardrails(ws):
         probes.update(code_tool_probes(ws, owner, config))
         probes.update(triage_tool_probes(ws, owner, viewer))
         probes.update(review_tool_probes(ws, owner, config))
+        probes.update(docs_tool_probes(ws, owner, config))
         probes.update(upkeep_probes(ws, owner, viewer, source, foreign))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
@@ -1752,6 +1753,75 @@ def review_tool_probes(ws, owner, chat_config):
                 review, owner, citations, agent=True, steps=False
             )["findings"]
     probes["a review quotes only what it read"] = not kept["never read"] and len(kept["read"]) == 1
+    return probes
+
+
+def docs_tool_probes(ws, owner, chat_config):
+    """Code documentation's tools, inside the caller's savepoint: whose snapshot they
+    read, and that a paragraph is held to what was really read."""
+    from django.test.utils import override_settings
+
+    from . import code_docs
+    from .agent_runtime import code_tools, harness
+    from .agent_runtime.scripted import Script
+    from .agent_runtime.tools import CitationRecorder, ToolScope, run_tool
+    from .models import AIConfiguration, CodeSnapshot
+
+    snapshot = (
+        CodeSnapshot.objects.filter(repository__application=ws.app).order_by("-created_at").first()
+        or code_snapshot(ws)
+    )
+    doc = code_docs.generate(owner, ws.app.pk, snapshot.repository_id)
+    rows = doc.sections["components"]["rows"][: code_docs.MAX_AI_COMPONENTS]
+    citations, owner_of = code_docs.material(doc)
+    # A line of a described component's file that one call is not shown: only a
+    # reader can quote it.
+    item, line = next(
+        (file, text.strip())
+        for row in rows
+        for file in snapshot.files.filter(pk__in=row["ids"]).order_by("path")
+        # Within what one read_file call shows.
+        for text in file.content.splitlines()[: code_tools.MAX_LINES]
+        if 20 <= len(text.strip()) <= code_docs.MAX_QUOTE
+        and not any(text.strip() in shown["excerpt"] for shown in citations)
+    )
+    name = next(row["name"] for row in rows if str(item.pk) in row["ids"])
+
+    def scope(app=ws.app):
+        return ToolScope(owner.pk, app.pk, "code_docs", snapshot_id=snapshot.pk)
+
+    probes = {}
+    mine, theirs = CitationRecorder(scope()), CitationRecorder(scope(ws.other))
+    read = {"path": item.path, "start_line": 1, "end_line": 0}
+    run_tool(code_tools.READ_FILE, mine.scope, read, mine)
+    run_tool(code_tools.READ_FILE, theirs.scope, read, theirs)
+    probes["documentation reads its own application's snapshot alone"] = (
+        [c["id"] for c in mine.read_citations()] == [f"code:{item.pk}"]
+        and theirs.read_citations() == []
+    )
+    AIConfiguration.objects.create(
+        application=ws.app, purpose="code_docs", provider="claude", model="claude-sonnet-5",
+        input_rate=chat_config.input_rate, output_rate=chat_config.output_rate,
+        configured_by=owner,
+    )
+    answer = json.dumps({"components": [{"name": name, "paragraphs": [
+        {"text": "What it does.", "quotes": [{"source": f"code:{item.pk}", "text": line}]},
+    ]}]})
+    kept = {}
+    for label, turns in (("never read", [answer]), ("read", [
+        [("read_file", read)], answer
+    ])):
+        with (
+            override_settings(CODE_DOCS_AGENT_TOOLS=True),
+            patch.object(harness, "runtime_for", return_value=Script(*turns)),
+            patch("platform_core.ai.provider_credential", return_value="unused"),
+        ):
+            kept[label] = code_docs.describe(
+                doc, owner, citations, owner_of, agent=True, steps=False
+            )["components"]
+    probes["documentation quotes only what it read"] = (
+        not kept["never read"] and len(kept["read"]) == 1
+    )
     return probes
 
 

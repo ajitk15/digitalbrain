@@ -99,6 +99,10 @@ SERVICEOPS_TRIAGE_AGENT_TOOLS = bool(CONFIG.get("serviceops_triage_agent_tools",
 # excerpts chosen for it. Off unless written down, until the paid review pack
 # (`manage.py review_pack`) shows it finds more; Phase 4 of the agentic plan.
 CODE_REVIEW_AGENT_TOOLS = bool(CONFIG.get("code_review_agent_tools", False))
+#: Code documentation's AI step reads the documented snapshot with tools instead of
+#: only the opening lines of a few files per component. Off unless written down,
+#: until the paid docs pack (`manage.py docs_pack`) shows it describes more.
+CODE_DOCS_AGENT_TOOLS = bool(CONFIG.get("code_docs_agent_tools", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

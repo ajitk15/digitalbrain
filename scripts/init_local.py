@@ -155,6 +155,12 @@ def development(root):
             "# until `manage.py review_pack` shows it clears the bar.",
         ),
         (
+            "code_docs_agent_tools",
+            "true",
+            "Let code documentation's AI step read the snapshot with tools. Off in\n"
+            "# production until `manage.py docs_pack` shows it clears the bar.",
+        ),
+        (
             "ocr",
             "true",
             "Read scanned PDF pages and images with a local Tesseract. Nothing is read by\n"

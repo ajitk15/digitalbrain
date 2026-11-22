@@ -169,13 +169,15 @@ def keep_steps(
     triage_id=None,
     review_id=None,
     candidate_id=None,
+    docs_id=None,
 ):
     """Write a run's steps as `AgentStep` rows, for the chat message, the Code
-    Factory run (and phase), the triage run, the review or the Learned question
-    they belong to; a failure here never fails the run."""
+    Factory run (and phase), the triage run, the review, the Learned question or
+    the code documentation they belong to; a failure here never fails the run."""
     from ..models import (
         AgentStep,
         ChatMessage,
+        CodeDocumentation,
         CodeReview,
         FactoryRun,
         LearningCandidate,
@@ -190,6 +192,7 @@ def keep_steps(
             (TriageRun, triage_id, "triage_id"),
             (CodeReview, review_id, "review_id"),
             (LearningCandidate, candidate_id, "candidate_id"),
+            (CodeDocumentation, docs_id, "docs_id"),
         )
         if pk is not None
     ]
@@ -253,6 +256,7 @@ def run_agent(
     triage_id=None,
     review_id=None,
     candidate_id=None,
+    docs_id=None,
     wrap_up=False,
 ):
     """Run one agent to its answer. Returns an `AgentResult`.
@@ -406,6 +410,7 @@ def run_agent(
                 triage_id,
                 review_id,
                 candidate_id,
+                docs_id,
             )
         if recorder.revoked is not None:
             run["outcome"] = "refused"

@@ -298,3 +298,112 @@ class CodeDocsTests(TestCase):
         with self.assertRaises(ValidationError):
             code_docs.request_ai(self.owner, self.generate())
         self.assertFalse(AIUsage.objects.exists())
+
+
+@override_settings(**SETTINGS, CODE_DOCS_AGENT_TOOLS=True)
+class CodeDocsAgentTests(TestCase):
+    """With `code_docs_agent_tools` on, the AI step reads the documented snapshot
+    with the code tools, and what it read is evidence a paragraph may quote - held,
+    as before, to a file of the component it describes, word for word."""
+
+    setUp = CodeDocsTests.setUp
+    publish = CodeDocsTests.publish
+    code = CodeDocsTests.code
+    generate = CodeDocsTests.generate
+    configure = CodeDocsTests.configure
+
+    def component_of(self, doc, item):
+        return next(
+            row["name"] for row in doc.sections["components"]["rows"]
+            if str(item.pk) in row["ids"]
+        )
+
+    def answer(self, name, source, text):
+        return json.dumps({"components": [{"name": name, "paragraphs": [
+            {"text": "What it does.", "quotes": [{"source": f"code:{source.pk}", "text": text}]},
+        ]}]})
+
+    def run_agent(self, doc, *turns):
+        from platform_core.agent_runtime import harness
+        from platform_core.agent_runtime.scripted import Script
+
+        script = Script(*turns)
+        with patch.object(harness, "runtime_for", return_value=script):
+            code_docs.request_ai(self.owner, doc)
+            process_next_docs_ai()
+        doc.refresh_from_db()
+        return script, doc
+
+    @patch.object(code_docs, "AI_LINES_PER_FILE", 2)
+    def test_a_quote_the_agent_read_is_kept_with_its_file_and_line(self):
+        from platform_core.models import AgentStep
+
+        self.configure()
+        doc = self.generate()
+        name = self.component_of(doc, self.export)
+        quote = "Patient.objects.filter(consent_withdrawn=False)"
+        script, doc = self.run_agent(
+            doc,
+            [("read_file", {"path": "care/export.py"})],
+            self.answer(name, self.export, quote),
+        )
+        self.assertEqual(doc.ai_status, "ready", doc.ai_error)
+        self.assertIn("read_file", script.given)
+        self.assertNotIn("read_diff", script.given)
+        self.assertIn(f"Evidence id code:{self.export.pk}", script.tool_text[0])
+        self.assertIn("- " + name + ": ", script.calls[0]["question"])
+        (paragraph,) = doc.ai_result["components"][0]["paragraphs"]
+        self.assertEqual(paragraph["quotes"][0]["path"], "care/export.py")
+        self.assertEqual(paragraph["quotes"][0]["line"], 6)
+        self.assertEqual((doc.ai_result["read"], doc.ai_result["tool_calls"]), (1, 1))
+        step = AgentStep.objects.get()
+        self.assertEqual((step.docs_id, step.purpose, step.tool),
+                         (doc.pk, "code_docs", "read_file"))
+        kept, gone = code_docs.checked_ai(doc)
+        self.assertEqual((len(kept), gone), (1, 0))
+
+    @patch.object(code_docs, "AI_LINES_PER_FILE", 2)
+    def test_the_same_quote_unread_is_dropped(self):
+        self.configure()
+        doc = self.generate()
+        name = self.component_of(doc, self.export)
+        _, doc = self.run_agent(
+            doc, self.answer(name, self.export, "Patient.objects.filter(consent_withdrawn=False)")
+        )
+        self.assertEqual(doc.ai_result["components"], [])
+        self.assertEqual(doc.ai_result["dropped_reasons"], {"quote not found": 1})
+
+    def test_a_quote_from_another_components_file_is_dropped(self):
+        self.configure()
+        doc = self.generate()
+        name = self.component_of(doc, self.export)
+        self.assertNotEqual(self.component_of(doc, self.helper), name)
+        _, doc = self.run_agent(
+            doc,
+            [("read_file", {"path": "tools/helper.py"})],
+            self.answer(name, self.helper, "CARE-512 temporary workaround"),
+        )
+        self.assertEqual(doc.ai_result["components"], [])
+
+    def test_off_it_asks_once_and_an_answer_is_not_reused_across_the_switch(self):
+        self.configure()
+        doc = self.generate()
+        name = self.component_of(doc, self.export)
+        quote = "Patient.objects.filter(consent_withdrawn=False)"
+        _, doc = self.run_agent(doc, self.answer(name, self.export, quote))
+        self.assertEqual(len(doc.ai_result["components"]), 1)
+        calls = []
+
+        def reply(config, question, citations, token, **options):
+            calls.append(question)
+            return ({"id": "one", "usage": {"prompt_tokens": 9, "completion_tokens": 9}},
+                    self.answer(name, self.export, quote))
+
+        with (
+            override_settings(CODE_DOCS_AGENT_TOOLS=False),
+            patch("platform_core.claude_agents.completion", side_effect=reply),
+        ):
+            code_docs.request_ai(self.owner, doc)
+            process_next_docs_ai()
+        # Asked again one-shot: the agent's cached answer is not this one's.
+        self.assertEqual(calls, ["Describe each component."])

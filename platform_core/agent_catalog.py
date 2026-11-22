@@ -89,7 +89,7 @@ class Agent:
 
 
 def _limits():
-    from . import code_factory_agents, code_review, learning_draft, serviceops_triage
+    from . import code_docs, code_factory_agents, code_review, learning_draft, serviceops_triage
     from .agent_runtime.harness import TURNS
     from .agent_runtime.tools import MAX_TOOL_CALLS
 
@@ -97,6 +97,7 @@ def _limits():
         "chat": (TURNS, MAX_TOOL_CALLS),
         "knowledge_upkeep": (learning_draft.TOOL_TURNS, learning_draft.TOOL_CALLS),
         "code_review": (code_review.TOOL_TURNS, code_review.TOOL_CALLS),
+        "code_docs": (code_docs.TOOL_TURNS, code_docs.TOOL_CALLS),
         "plan_drafting": (code_factory_agents.TOOL_TURNS, code_factory_agents.TOOL_CALLS),
         "serviceops_triage": (serviceops_triage.TOOL_TURNS, serviceops_triage.TOOL_CALLS),
     }
@@ -212,6 +213,43 @@ def _agents():
             one_call="Asks once over the diff and excerpts chosen for it beforehand.",
         ),
         Agent(
+            key="code-docs",
+            name="Code documentation agent",
+            purpose="code_docs",
+            feature="code_docs",
+            switch="CODE_DOCS_AGENT_TOOLS",
+            trigger="“Ask AI to describe components” on a repository's Documentation tab.",
+            where="On the code-graph worker lane - the sandbox container in a split "
+            "deployment - as the person who pressed it.",
+            does="Describes the largest components of one repository. It is told each "
+            "component's files, opens the ones that show what the component is for, "
+            "follows what depends on them, and writes a few paragraphs, each quoting the "
+            "code it read.",
+            turns=limits["code_docs"][0],
+            tool_calls=limits["code_docs"][1],
+            steps_field="docs",
+            prompt_estimate=20000,
+            reply_tokens=3000,
+            screen="code-docs",
+            screen_label="Knowledge → Code Repos → Documentation",
+            shown=(
+                "A repository's Documentation tab: beside “Ask AI to describe "
+                "components”, and on the components it described when it read further.",
+            ),
+            safeguards=(
+                "Reads only the code snapshot the documentation was written from.",
+                "Every paragraph must quote a file of the component it describes, word "
+                "for word; a paragraph with a quote that is not there is dropped, and each "
+                "quote is checked again whenever the page is shown.",
+                "What it writes is labelled AI-written, and never counts as evidence that "
+                "the code meets a requirement.",
+            ),
+            measured="manage.py docs_pack (paid) asks for the application's documentation "
+            "with tools and without, and counts the components and paragraphs that keep "
+            "their quotes.",
+            one_call="Asks once over the opening lines of a few files of each component.",
+        ),
+        Agent(
             key="code-factory",
             name="Code Factory agent",
             purpose="plan_drafting",
@@ -311,7 +349,9 @@ def screen_url(agent, app, grant):
 
     if not agent.screen or not feature_enabled(agent.feature, app):
         return ""
-    if agent.screen == "code-repositories" and not feature_enabled("code_graph", app):
+    if agent.screen in {"code-repositories", "code-docs"} and not feature_enabled(
+        "code_graph", app
+    ):
         return ""
     if agent.writers_only and getattr(grant, "role", "viewer") == "viewer":
         return ""

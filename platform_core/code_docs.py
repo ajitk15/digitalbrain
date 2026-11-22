@@ -751,9 +751,48 @@ INSTRUCTIONS = (
 )
 
 
-def judge(payload, citations, owner, contents):
-    """Keep paragraphs whose every quote is in the file it names, in that component."""
-    by_id = {item["id"]: item for item in citations}
+#: The documentation agent's turns and tool calls, when `code_docs_agent_tools` is
+#: on; each turn is reserved before the first is sent.
+TOOL_TURNS = 8
+TOOL_CALLS = 16
+TOOL_GUIDANCE = (
+    " You may read further with the tools you are given, over this repository's indexed "
+    "code: list files, read a file by line, search, find where a symbol is defined, what "
+    "depends on a file and which tests cover it. The question lists each component's "
+    "files; read the ones that show what a component is for rather than describing it "
+    "from its opening lines. Each read says its evidence id; a quote from it is checked "
+    "like any other, and must come from a file of the component it describes. Reading "
+    "changes nothing. Answer, in your last turn, with the JSON object you were asked for "
+    "and nothing else."
+)
+
+
+def uses_agent():
+    from django.conf import settings
+
+    return settings.CODE_DOCS_AGENT_TOOLS
+
+
+def owners(doc):
+    """{evidence id: component name} for every file of the components described."""
+    return {
+        f"code:{file_id}": row["name"]
+        for row in doc.sections["components"]["rows"][:MAX_AI_COMPONENTS]
+        for file_id in row.get("ids", [])
+    }
+
+
+def judge(payload, citations, owner, contents, paths=None):
+    """Keep paragraphs whose every quote is in the file it names, in that component.
+
+    `citations` may hold more than one window of a file - the opening lines handed
+    over and those an agent read - and a quote must be in one of them, and in the
+    file as it stands.
+    """
+    by_id = {}
+    for item in citations:
+        held = by_id.setdefault(item["id"], {**item, "windows": []})
+        held["windows"].append(item["excerpt"])
     if payload is None or not isinstance(payload.get("components"), list):
         return [], Counter({"reply could not be read": 1})
     names = set(owner.values())
@@ -781,7 +820,7 @@ def judge(payload, citations, owner, contents):
                     or owner.get(source) != component["name"]
                     or not isinstance(excerpt, str)
                     or not MIN_QUOTE <= len(excerpt.strip()) <= MAX_QUOTE
-                    or excerpt not in cited["excerpt"]
+                    or not any(excerpt in window for window in cited["windows"])
                     or excerpt not in content
                 ):
                     checked = None
@@ -789,7 +828,7 @@ def judge(payload, citations, owner, contents):
                 at = content.find(excerpt)
                 checked.append({
                     "source": source,
-                    "path": cited["title"].split(": ", 1)[-1],
+                    "path": (paths or {}).get(source) or cited["title"].split(": ", 1)[-1],
                     "line": content.count("\n", 0, at) + 1,
                     "text": excerpt,
                 })
@@ -810,48 +849,154 @@ def contents_for(doc, ids):
     }
 
 
+def paths_for(doc, ids):
+    return {
+        f"code:{pk}": path
+        for pk, path in CodeFile.objects.filter(snapshot=doc.snapshot, pk__in=ids).values_list(
+            "pk", "path"
+        )
+    }
+
+
 def ai_describe(doc, user):
-    from .ai import invoke_ai
-    from .document_ai import keep, parse, stored
+    from .document_ai import keep, stored
 
     citations, owner = material(doc)
     if not citations:
         raise ValidationError("There is no code to describe.")
     digest = digest_of(json.dumps([(c["id"], c["excerpt"]) for c in citations],
                                   separators=(",", ":")))
-    rubric = f"code-docs-{AI_VERSION}"
+    agent = uses_agent()
+    # An answer that read further is not the answer to this material alone.
+    rubric = f"code-docs-{AI_VERSION}" + ("-agent" if agent else "")
     found = stored(doc.application_id, "codedocs", digest, rubric)
     if found and not found.get("unreadable"):
         return found
-    receipt = {}
-    answer = invoke_ai(
-        user,
-        doc.application_id,
-        "code_docs",
-        "Describe each component.",
-        citations,
-        instructions=INSTRUCTIONS,
-        max_tokens=DOCS_TOKENS,
-        timeout=DOCS_TIMEOUT,
-        receipt=receipt,
-    )
-    contents = contents_for(doc, [c["id"][5:] for c in citations])
-    kept, dropped = judge(parse(answer), citations, owner, contents)
     return keep(
         SimpleNamespace(application_id=doc.application_id, digest=digest),
         user,
         "codedocs",
         rubric,
-        {
-            "components": kept,
-            "dropped": sum(dropped.values()),
-            "dropped_reasons": dict(dropped),
-            "unreadable": "reply could not be read" in dropped,
-            "model": receipt.get("model", ""),
-            "provider": receipt.get("provider", ""),
-            "asked_at": timezone.now().isoformat(),
-        },
+        describe(doc, user, citations, owner, agent=agent),
     )
+
+
+def describe(doc, user, citations, owner, agent=False, steps=True):
+    """Ask for the components' paragraphs - once, or as an agent with the snapshot
+    tools - and judge the answer. Returns the stored result's fields.
+
+    What the agent read joins the evidence (`code:` windows of this snapshot's
+    files), so a paragraph may quote it; `judge` still holds every quote to a file
+    of the component it describes, word for word, in the file as it stands.
+    """
+    from .ai import invoke_ai
+    from .document_ai import parse
+
+    receipt, read = {}, []
+    if not agent:
+        answer = invoke_ai(
+            user,
+            doc.application_id,
+            "code_docs",
+            "Describe each component.",
+            citations,
+            instructions=INSTRUCTIONS,
+            max_tokens=DOCS_TOKENS,
+            timeout=DOCS_TIMEOUT,
+            receipt=receipt,
+        )
+    else:
+        answer, read = agent_describe(doc, user, citations, receipt, steps)
+        owner = {**owners(doc), **owner}
+    evidence = citations + read
+    ids = {item["id"][5:] for item in evidence}
+    kept, dropped = judge(
+        parse(answer), evidence, owner, contents_for(doc, ids), paths_for(doc, ids)
+    )
+    return {
+        "components": kept,
+        "dropped": sum(dropped.values()),
+        "dropped_reasons": dict(dropped),
+        "unreadable": "reply could not be read" in dropped,
+        "evidence": len(citations),
+        "read": len(read),
+        "turns": receipt.get("turns", 1 if receipt else 0),
+        "tool_calls": receipt.get("tool_calls", 0),
+        "prompt_tokens": receipt.get("prompt_tokens", 0),
+        "completion_tokens": receipt.get("completion_tokens", 0),
+        "model": receipt.get("model", ""),
+        "provider": receipt.get("provider", ""),
+        "asked_at": timezone.now().isoformat(),
+    }
+
+
+def agent_question(doc):
+    """The question an agent is asked: each component described, with its files."""
+    lines = ["Describe each component. Its files, as indexed:"]
+    for row in doc.sections["components"]["rows"][:MAX_AI_COMPONENTS]:
+        more = f" and {row['more']} more" if row.get("more") else ""
+        lines.append(f"- {row['name']}: {', '.join(row.get('files', []))}{more}")
+    return "\n".join(lines)
+
+
+def agent_describe(doc, user, citations, receipt, steps=True):
+    """(answer, windows it read) through the harness with the snapshot tools."""
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
+    from .ai import agent_configuration, prompt_size
+
+    app, config, token = agent_configuration(user, doc.application_id, "code_docs")
+    told = INSTRUCTIONS + TOOL_GUIDANCE
+    question = agent_question(doc)
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose="code_docs",
+            scope=ToolScope(
+                user_id=user.pk,
+                app_id=app.pk,
+                purpose="code_docs",
+                snapshot_id=doc.snapshot_id,
+            ),
+            question=question,
+            citations=citations,
+            history=[],
+            emit=lambda event, data: None,
+            max_tokens=DOCS_TOKENS,
+            prompt_characters=prompt_size(question, citations, None, {"instructions": told}),
+            turns=TOOL_TURNS,
+            tool_calls=TOOL_CALLS,
+            instructions=told,
+            timeout=DOCS_TIMEOUT,
+            docs_id=doc.pk if steps else None,
+        )
+    except AgentFailure as failure:
+        raise ValidationError(
+            f"The documentation's model call failed ({failure.kind}). It may have been "
+            "billed by the provider; it is not retried automatically."
+        ) from None
+    receipt.update(
+        {
+            "provider": config.provider,
+            "model": config.model,
+            "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
+            "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
+            "turns": len(result.usages),
+            "tool_calls": len(result.steps),
+        }
+    )
+    held = {(item["id"], item["excerpt"]) for item in citations}
+    read = []
+    for item in result.read:
+        key = (item["id"], item["excerpt"])
+        if not str(item["id"]).startswith("code:") or key in held:
+            continue
+        held.add(key)
+        read.append({"id": item["id"], "title": item["title"], "excerpt": item["excerpt"]})
+    return result.answer, read
 
 
 def run_ai(doc):

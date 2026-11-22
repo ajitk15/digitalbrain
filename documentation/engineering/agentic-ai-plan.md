@@ -55,6 +55,7 @@ what counts as evidence.**
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **On in development and the demo; off in production** - waiting on a paid `review_pack` run |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | **Turn limit done** (answers and receipts no longer lost); graph tool deferred until measured |
 | 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | **Built, on a button** - measured by `learning_upkeep` as it is used |
+| 7 Code documentation agent | "Ask AI to describe components" reads the documented snapshot with Phase 1's tools | 2-3 d | Yes, on a button | `docs_pack` (paid): components, paragraphs and files quoted against one call | **On in development and the demo; off in production** - waiting on a paid `docs_pack` run |
 
 Phases 0-2 (rules) are **about 16-21 days** and make the largest difference on the
 platform's main pipeline. With 3-6, **about 37-48 days**.
@@ -419,21 +420,35 @@ rules alone.
   seeded with it on, like every task.
 - The scorecard's agent probes include three for it.
 
+## Phase 7 - Code documentation agent (built, switched off until measured)
+
+The Documentation tab's AI step was shown the opening sixty lines of three files of each
+of the six largest components, and asked what each component is for. With
+`code_docs_agent_tools` it is a harness run with Phase 1's six snapshot tools over the
+documented snapshot, told each component's files, under its own `code_docs` purpose. A
+read window is evidence (`code:<file id>`), so a paragraph may quote it; the judge is
+unchanged in what it demands - every quote exact, in a window the model was shown, in the
+file as it stands - and widened only in which files count as a component's: any of them,
+not just the three handed over. Steps are `AgentStep` rows with `docs` (migration 0113);
+the badge sits beside the button and the Agent tag on what it described. Measured by
+`docs_pack` (paid) on the application's newest documentation, against one call, on the
+same bar. The scorecard's agent probes include two for it.
+
 ## Switched on in development and the demo
 
-Code Factory's, triage's and code review's tools are on wherever the money is the
-developer's or the demo's - `init_local` writes the three switches into `local.toml`
+Code Factory's, triage's, code review's and code documentation's tools are on wherever the
+money is the developer's or the demo's - `init_local` writes the four switches into `local.toml`
 and the entrypoint into the demonstration's configuration
 (`DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0` to leave them off) - so every agent can be seen at
 work before it is measured. Production is unchanged: a configuration that does not
 name them reads them as off, and each is switched on there only once its pack
-(`factory_pack`, `triage_pack`, `review_pack`) clears the bar. The suite pins them
-off; run with all three on, its only failures were tests written for the one-shot
-path.
+(`factory_pack`, `triage_pack`, `review_pack`, `docs_pack`) clears the bar. The suite
+pins them off; run with the first three on, its only failures were tests written for the
+one-shot path.
 
 ## Measuring what is built
 
-The three tool switches wait on their packs, and Knowledge upkeep on use. Each recorded run
+The four tool switches wait on their packs, and Knowledge upkeep on use. Each recorded run
 (`--record`, and `learning_upkeep --record`) is kept as an `AgentMeasurement` and drawn on
 the agent's page: the newest run as one call against with tools, figure by figure, every
 run's main figure as a trend that marks a new model or pack as a new reference, and the

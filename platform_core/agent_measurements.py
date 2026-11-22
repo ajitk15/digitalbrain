@@ -3,14 +3,14 @@
 Two readings, neither calling a model:
 
 - **Measurements.** What a pack command recorded with `--record` - `factory_pack`,
-  `review_pack`, `triage_pack`, `chat_pack` (paid) and `learning_upkeep` (free) - kept as one
-  `AgentMeasurement` row each beside the JSON file the command already writes under
-  `benchmarks/`. Numbers only: each way's totals as the pack's own `metrics` worked
-  them out, the verdict its own `verdict` gave, the model measured. `comparison` is
-  the latest one drawn as paired bars, `trend` every recorded run of the agent's
-  main figure, one line each way, a new model or a new pack marked as a new
-  reference. `load` reads a JSON record made elsewhere (a development machine) into
-  this database, once.
+  `review_pack`, `triage_pack`, `chat_pack`, `docs_pack` (paid) and `learning_upkeep`
+  (free) - kept as one `AgentMeasurement` row each beside the JSON file the command
+  already writes under `benchmarks/`. Numbers only: each way's totals as the pack's
+  own `metrics` worked them out, the verdict its own `verdict` gave, the model
+  measured. `comparison` is the latest one drawn as paired bars, `trend` every
+  recorded run of the agent's main figure, one line each way, a new model or a new
+  pack marked as a new reference. `load` reads a JSON record made elsewhere (a
+  development machine) into this database, once.
 - **Use.** `use`: the last `ACTIVITY_DAYS` of the agent's `AgentStep` rows - runs,
   tool calls a run, the share of calls that met a limit or a refusal - and, where
   usage reports are on, the receipts of its AI task.
@@ -146,6 +146,22 @@ PACKS = {
             folder="chat",
         ),
         Pack(
+            "docs_pack",
+            "code-docs",
+            "manage.py docs_pack <application id> --as <user> --record",
+            AGAINST,
+            (
+                Figure("components", "Components described", "higher", of="asked"),
+                Figure("paragraphs", "Paragraphs kept", "higher"),
+                Figure("files_quoted", "Files quoted", "higher"),
+                Figure("kept_share", "Paragraphs that kept their quotes", "higher", "%"),
+                *TIMING,
+            ),
+            "Components described",
+            judge="docs_pack",
+            folder="docs",
+        ),
+        Pack(
             "learning_upkeep",
             "draft-a-fix",
             "manage.py learning_upkeep <application id> --record",
@@ -181,6 +197,8 @@ def main_share(pack, totals):
         return _number(totals.get("mrr"))
     if pack.key == "chat_pack":
         return _share(totals.get("cited_expected"), totals.get("questions"))
+    if pack.key == "docs_pack":
+        return _share(totals.get("components"), totals.get("asked"))
     return _number(totals.get("accept_rate")) / 100
 
 

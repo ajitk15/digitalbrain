@@ -27,12 +27,15 @@ import re
 
 from .tools import ToolResult, ToolSpec
 
-#: The purposes these tools serve: Code Factory's implementation chain, and the
-#: AI step of a code review (Phase 4), which reads the review's base snapshot.
-CODE_PURPOSES = frozenset({"plan_drafting", "code_review"})
+#: The purposes these tools serve: Code Factory's implementation chain, the AI
+#: step of a code review (Phase 4), which reads the review's base snapshot, and
+#: code documentation's AI step, which reads the documented snapshot.
+CODE_PURPOSES = frozenset({"plan_drafting", "code_review", "code_docs"})
 #: The purposes whose answers quote what the tools read, so a read is evidence
 #: with an id the model is told, and the answer is checked against its live text.
-QUOTING = frozenset({"code_review"})
+QUOTING = frozenset({"code_review", "code_docs"})
+#: Who read a window, as its evidence title says, for each quoting purpose.
+READ_BY = {"code_review": "read by the reviewer", "code_docs": "read for the documentation"}
 MAX_LISTED = 200
 MAX_LINES = 400
 LINE_CHARACTERS = 400
@@ -124,7 +127,7 @@ def read_file(scope, args):
         [
             {
                 "id": f"code:{found.pk}",
-                "title": f"{path} lines {start}-{end} (read by the reviewer)",
+                "title": f"{path} lines {start}-{end} ({READ_BY[scope.purpose]})",
                 "excerpt": "\n".join(text[start - 1 : end]),
             }
         ]

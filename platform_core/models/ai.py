@@ -203,6 +203,15 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the code documentation whose AI step it served, the same way.
+    docs = models.ForeignKey(
+        "platform_core.CodeDocumentation",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
     phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
@@ -222,6 +231,7 @@ class AgentStep(models.Model):
             models.Index(fields=["triage", "sequence"], name="agent_step_triage"),
             models.Index(fields=["review", "sequence"], name="agent_step_review"),
             models.Index(fields=["candidate", "sequence"], name="agent_step_candidate"),
+            models.Index(fields=["docs", "sequence"], name="agent_step_docs"),
         ]
 
 

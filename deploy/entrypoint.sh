@@ -161,14 +161,15 @@ else
             echo 'code_factory_local_tests = true'
             echo 'code_graph_local_roots = ["/var/lib/digitalbrain/demo"]'
             echo 'connector_secret_directory = "/var/lib/digitalbrain/connectors"'
-            # The demonstration shows every agent at work: Code Factory, triage
-            # and code review read further with read-only tools. Production
+            # The demonstration shows every agent at work: Code Factory, triage,
+            # code review and code documentation read further with read-only tools. Production
             # leaves them off until their paid comparisons clear the bar.
             # DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0 leaves them off here too.
             if [ "${DIGITAL_BRAIN_DEMO_AGENT_TOOLS:-1}" = "1" ]; then
                 echo 'code_factory_agent_tools = true'
                 echo 'serviceops_triage_agent_tools = true'
                 echo 'code_review_agent_tools = true'
+                echo 'code_docs_agent_tools = true'
             fi
         fi
         echo "hosts = [${hosts%, }]"

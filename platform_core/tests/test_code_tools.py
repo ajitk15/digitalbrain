@@ -258,13 +258,13 @@ class CodeToolTests(Fixture, TestCase):
         with self.assertRaises(PermissionDenied):
             self.call(code_tools.LIST_FILES, {"prefix": ""}, self.scope(user=self.viewer))
 
-    def test_the_tools_serve_code_factory_and_code_review_never_chat(self):
+    def test_the_tools_serve_code_factory_review_and_docs_never_chat(self):
         for spec in code_tools.CODE_TOOLS:
             with self.subTest(tool=spec.name):
-                # The whole diff is a review's alone; the snapshot reads serve both.
+                # The whole diff is a review's alone; the snapshot reads serve all three.
                 expected = (
                     {"code_review"} if spec is code_tools.READ_DIFF
-                    else {"plan_drafting", "code_review"}
+                    else {"plan_drafting", "code_review", "code_docs"}
                 )
                 self.assertEqual(spec.purposes, frozenset(expected))
                 self.assertIn(spec, registry.for_scope(self.scope(purpose="code_review")))

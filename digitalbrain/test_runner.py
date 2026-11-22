@@ -29,6 +29,7 @@ def hermetic(settings_holder):
     settings_holder.CODE_FACTORY_AGENT_TOOLS = False
     settings_holder.SERVICEOPS_TRIAGE_AGENT_TOOLS = False
     settings_holder.CODE_REVIEW_AGENT_TOOLS = False
+    settings_holder.CODE_DOCS_AGENT_TOOLS = False
     settings_holder.CONFIG = {
         key: value for key, value in settings_holder.CONFIG.items()
         if key not in {"clamd", "scanner", "redis", "otel", "originals", "web_server"}

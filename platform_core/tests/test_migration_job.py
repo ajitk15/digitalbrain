@@ -239,6 +239,7 @@ class DeploymentTests(SimpleTestCase):
         block = self.entrypoint[start : self.entrypoint.index("\n        fi\n", start)]
         for key in (
             "code_factory_agent_tools", "serviceops_triage_agent_tools", "code_review_agent_tools",
+            "code_docs_agent_tools",
         ):
             self.assertIn(f"echo '{key} = true'", block)
             # Written nowhere else: production reads them as off.

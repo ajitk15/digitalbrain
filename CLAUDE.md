@@ -131,7 +131,7 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, the three agents' tools (accepted in production,
+drive root), `managed_secret_directory`, the four agents' tools (accepted in production,
 where they stay off), `ocr` and `tesseract_path` where Tesseract is
 installed - above the first table, so no table swallows it. A key written down, true or
 false, is never changed. `load_config`'s production refusals are untouched, and
@@ -267,28 +267,49 @@ or is the category it names, findings that do neither counted as noise; the revi
 after) clears Phase 1's bar, with no more noise. The scorecard's agent probes include the
 review tools.
 
-**Development and the hosted demo switch the three agents on; production does not.**
-`init_local.development` writes `code_factory_agent_tools`, `serviceops_triage_agent_tools`
-and `code_review_agent_tools` as true into `local.toml` where it does not mention them (a
-key written down, true or false, is the developer's), and the entrypoint writes them in its
-demonstration block unless `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`. A configuration that names
-none of them - production's - reads all three as off, so a deployment spends more only once
-its own comparison cleared the bar or an operator wrote them down. That is a deliberate
-trade for seeing every agent at work where the money is the developer's or the demo's,
-before it is measured. `digitalbrain/test_runner.py` pins all three off, so a developer's
-config cannot change what the suite asserts; each agent's tests switch it on themselves.
-Run with all three on, the suite's only failures were tests written for the one-shot
-path - a fake of the single call, or the off-by-default behaviour asserted on purpose.
+**Code documentation's AI step may read the snapshot with tools - off in production until
+measured** (`code_docs.describe`/`agent_describe`). With `code_docs_agent_tools = true` (a
+boolean, off unless written down, on in development and the demo, accepted in production),
+"Ask AI to describe components" becomes a harness run over the same material - the opening
+lines of a few files of each of the largest components - with Phase 1's six snapshot tools
+over the documented snapshot (`code_tools.CODE_PURPOSES`, never `read_diff`), each call held
+to the `code_docs` rule, and the question lists each component's files (`agent_question`).
+`read_file` hands back its window as evidence `code:<file id>` (`code_tools.QUOTING`); what
+was read joins the evidence, and `judge` holds every quote, as before, to one window it
+was shown, word for word in the file as it stands, and to a file of the component it
+describes - now any of the component's files (`owners`), not only the ones handed over.
+The cached result's rubric says which way it was made (`-agent`); steps are `AgentStep`
+rows with `docs` (migration 0113). **Turn it on only after `manage.py docs_pack <app> --as
+<user> [--record]`** (paid: the newest documentation's components described one-shot and
+with tools through `describe` itself, nothing stored on the documentation; scored by rules
+- components described, paragraphs kept, files quoted, the share of paragraphs that kept
+their quotes, cost) clears the same bar. The documentation's snapshot is the pack's
+reference. The scorecard's agent probes include two for it.
+
+**Development and the hosted demo switch the four agents on; production does not.**
+`init_local.development` writes `code_factory_agent_tools`, `serviceops_triage_agent_tools`,
+`code_review_agent_tools` and `code_docs_agent_tools` as true into `local.toml` where it
+does not mention them (a key written down, true or false, is the developer's), and the
+entrypoint writes them in its demonstration block unless `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`.
+A configuration that names none of them - production's - reads all four as off, so a
+deployment spends more only once its own comparison cleared the bar or an operator wrote
+them down. That is a deliberate trade for seeing every agent at work where the money is the
+developer's or the demo's, before it is measured. `digitalbrain/test_runner.py` pins all
+four off, so a developer's config cannot change what the suite asserts; each agent's tests
+switch it on themselves. Run with the first three on, the suite's only failures were tests
+written for the one-shot path - a fake of the single call, or the off-by-default behaviour
+asserted on purpose.
 
 **Where an agent runs is said where it runs** (`agent_catalog.py`, `{% agent_badge %}` in
-`templatetags/agent_badges.py`). A closed registry of the five agents - chat, Knowledge
-upkeep, code review, Code Factory, triage - each naming its gateway purpose, the feature
+`templatetags/agent_badges.py`). A closed registry of the six agents - chat, Knowledge
+upkeep, code review, code documentation, Code Factory, triage - each naming its gateway purpose, the feature
 its screen needs, the setting that gives it tools, where it runs and its limits (read from
 the modules that hold them). Its tools are **never written there**: they are
 `registry.for_scope` for its purpose, the list the harness hands the model, and
 `test_agent_catalog` holds the two equal. A badge sits beside
-every control that starts one - Chat's heading, Learned, a review's AI review card, Code
-Factory, an incident's triage button - and opens that agent's page (`agent`) as a popup
+every control that starts one - Chat's heading, Learned, a review's AI review card, a
+repository's "Ask AI to describe components", Code Factory, an incident's triage button -
+and opens that agent's page (`agent`) as a popup
 (`data-modal`): what it does, when and where it runs, its tools with their own descriptions,
 turns and tool calls, its safeguards, and the last `ACTIVITY_DAYS` of its `AgentStep` rows
 here as counts by tool and outcome - never what was asked or read, which is never kept.
