@@ -253,7 +253,9 @@ OPENAI_FETCH_SCHEMA = {
 #: knowledge the same way. Triage reads sources with the same two
 #: (`ops_tools.py` adds its own), held to its own purpose's rule.
 KNOWLEDGE_PURPOSES = frozenset({"chat", "graph_retrieval"})
-SOURCE_PURPOSES = KNOWLEDGE_PURPOSES | {"serviceops_triage"}
+#: Purposes the source tools also serve, each held to its own rule on every call:
+#: triage (Phase 3) and drafting a fix for a Learned question (Phase 6).
+SOURCE_PURPOSES = KNOWLEDGE_PURPOSES | {"serviceops_triage", "knowledge_upkeep"}
 
 SEARCH_KNOWLEDGE = ToolSpec(
     name="search_knowledge",

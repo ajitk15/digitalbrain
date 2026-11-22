@@ -54,7 +54,7 @@ what counts as evidence.**
 | 3 ServiceOps triage agent | Triage asks for neighbourhood, changes, runbooks one hypothesis at a time | 6-8 d | Yes | `triage_pack` against confirmed verdicts (paid) | **Built, off** - waiting on a paid `triage_pack` run |
 | 4 Code review agent | AI review opens dependent files, tests and requirements as needed | 4-5 d | Yes | `review_pack` (paid, new) | **Built, off** - waiting on a paid `review_pack` run |
 | 5 Chat deepening | Graph-walk and version-aware tools, turns sized by budget | 3-4 d | Yes, bounded | Benchmark + drift pack | **Turn limit done** (answers and receipts no longer lost); graph tool deferred until measured |
-| 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | Off |
+| 6 Knowledge upkeep agent | Drafts a fix for a "gap" candidate as a `LearningCandidate` | 4-5 d | Yes, on a button | Accept rate in Learned | **Built, on a button** - measured by `learning_upkeep` as it is used |
 
 Phases 0-2 (rules) are **about 16-21 days** and make the largest difference on the
 platform's main pipeline. With 3-6, **about 37-48 days**.
@@ -379,7 +379,7 @@ benchmark to 15/16 on an AI-enriched version without displacing a direct match; 
 the model may call adds choice, not reach, and nothing measured shows that choice helps.
 Build it when a drift and benchmark run can show it does.
 
-## Phase 6 - Knowledge upkeep agent
+## Phase 6 - Knowledge upkeep agent (built, on a button)
 
 For a Learned "gap" (a complete answer that cited nothing), an owner or contributor
 presses **Draft a fix**. The agent searches sources and proposes either a benchmark
@@ -390,6 +390,34 @@ personal-data scan flags is never copied.
 
 **Measurement:** accept rate in Learned over a month, against candidates built by
 rules alone.
+
+### Status: built, on a button
+
+- **Draft a fix** on a waiting gap or wrong answer in Knowledge → Learned
+  (`learning_draft.draft`), owners and contributors, a plain POST. A harness run under
+  its own purpose and AI task, **Knowledge upkeep** (`knowledge_upkeep`: knowledge write,
+  owner or contributor), with the two source tools, seeded with unpaid keyword search,
+  four turns and one kept back to answer in.
+- **It proposes; a person decides.** The draft is stored on the candidate, never as a
+  source or a benchmark question. A proposed source counts only when the run was shown it
+  and it still verifies, is visible to the person, and holds the quote exactly; the right
+  source named without being read is dropped as a guess. Otherwise it is a note of what
+  is missing, quoted as the AI's, and dropped when the personal-data scan flags it. It
+  pre-fills "Should cite"; the person's own value is what is accepted.
+- **Checked again when shown**: a source changed, retired or restricted since reads as no
+  longer holding.
+- **The output is the existing candidate, not a new one.** The plan said "a
+  `LearningCandidate`"; a second candidate for the same question would be offered twice,
+  so the draft is a field on the one that is waiting.
+- **Measured as planned, by use:** `manage.py learning_upkeep <app> [--days 30]` (free)
+  counts drafted questions accepted, and accepted with the drafted source, against
+  questions decided with no draft. It says when fewer than ten drafted questions were
+  decided, which is too few to judge.
+- **What it costs:** one paid run per press, nothing otherwise. An application made
+  before this release has no Knowledge upkeep task until an owner configures it in AI
+  settings, and the Learned page says so in place of the button; a new application is
+  seeded with it on, like every task.
+- The scorecard's agent probes include three for it.
 
 ## Future enhancements
 

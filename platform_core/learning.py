@@ -9,6 +9,10 @@ learned from its own use. This turns each into a `LearningCandidate`:
 * **Rules write it, never a model.** A candidate's text is put together from
   stored fields. What a model wrote - a plan item's title, triage's statement of
   the cause - is quoted as what the plan or triage said, never stated as fact.
+* **An agent may draft, never decide.** On a waiting question, "Draft a fix"
+  (`learning_draft`) asks an agent for the source it should cite; what it
+  proposes is kept beside the candidate and pre-fills "Should cite", and the
+  person's own answer is still what is accepted.
 * **A person accepts it.** An owner or contributor, audited. A change record or
   an incident learning becomes a source through `workbench.add_knowledge` -
   masking, the personal-data scan and restriction apply as to any other - and
@@ -49,6 +53,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from . import learning_draft
 from .code_knowledge import LEARNED_PREFIX
 from .services import audit
 
@@ -404,6 +409,8 @@ def accept(user, app_id, candidate_id, expected="", note=""):
             audit(user, "benchmark.question_added", question.pk, organization)
             candidate.benchmark = question
             candidate.expected = expected
+            # Whether the person cited what "Draft a fix" proposed, for its measure.
+            learning_draft.outcome(candidate, expected)
         candidate.state = "accepted"
         candidate.decided_by = user
         candidate.decided_at = timezone.now()
@@ -539,10 +546,20 @@ def learned_view(request, pk):
     if request.method == "POST":
         action = request.POST.get("action")
         candidate_id = _uuid(request.POST.get("candidate", ""))
-        if candidate_id is None or action not in {"accept", "reject"}:
+        if candidate_id is None or action not in {"accept", "reject", "draft"}:
             raise PermissionDenied
         form = ExpectedForm(request.POST)
         try:
+            if action == "draft":
+                # A paid agent run on a button, as the person who pressed it.
+                done = learning_draft.draft(request.user, pk, candidate_id)
+                messages.success(
+                    request,
+                    "Drafted. Check what it proposes before you add it to the benchmark."
+                    if (done.draft or {}).get("kind") == "cite"
+                    else "Drafted. It found no source that answers the question.",
+                )
+                return redirect(f"{reverse('learned', args=[pk])}#learned-{candidate_id}")
             if not form.is_valid():
                 raise ValidationError([e for errors in form.errors.values() for e in errors])
             if action == "accept":
@@ -567,13 +584,18 @@ def learned_view(request, pk):
             error, failed = " ".join(refused.messages), str(candidate_id)
     collect(app)
     candidates = LearningCandidate.objects.filter(application=app)
+    waiting = list(candidates.filter(state="open")[:100])
+    for candidate in waiting:
+        # Checked again as it is drawn: a source changed since reads as not holding.
+        candidate.shown_draft = learning_draft.shown(candidate, request.user)
     return render(
         request,
         "learned.html",
         {
             "application": app,
             "grant": grant,
-            "waiting": list(candidates.filter(state="open")[:100]),
+            "waiting": waiting,
+            "draft_problem": learning_draft.drafting_problem(request.user, app),
             "decided": list(
                 candidates.exclude(state="open")
                 .select_related("decided_by", "entry", "benchmark")

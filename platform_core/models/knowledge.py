@@ -823,6 +823,18 @@ class LearningCandidate(models.Model):
     benchmark = models.ForeignKey(
         BenchmarkQuestion, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: What "Draft a fix" proposed for a question (`learning_draft`): a source it
+    #: should cite, verified when written and again when shown, or a note of what
+    #: is missing. A suggestion only - accepting takes the person's own answer.
+    draft = models.JSONField(null=True, blank=True)
+    drafted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="learning_drafts",
+    )
+    drafted_at = models.DateTimeField(null=True, blank=True)
     #: When the record it was built from happened, which is how the inbox sorts.
     signal_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)

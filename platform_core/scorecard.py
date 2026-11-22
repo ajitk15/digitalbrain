@@ -1626,9 +1626,67 @@ def agent_guardrails(ws):
         probes.update(code_tool_probes(ws, owner, config))
         probes.update(triage_tool_probes(ws, owner, viewer))
         probes.update(review_tool_probes(ws, owner, config))
+        probes.update(upkeep_probes(ws, owner, viewer, source, foreign))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
+def upkeep_probes(ws, owner, viewer, source, foreign):
+    """"Draft a fix" on a Learned question (agentic plan, Phase 6), inside the
+    caller's savepoint: it proposes only a source it read, quoted exactly, and
+    decides nothing."""
+    from django.core.exceptions import PermissionDenied
+    from django.http import Http404
+    from django.utils import timezone
+
+    from . import learning_draft
+    from .agent_runtime import harness
+    from .agent_runtime.scripted import Script
+    from .models import AIConfiguration, BenchmarkQuestion, KnowledgeEntry, LearningCandidate
+
+    AIConfiguration.objects.create(
+        application=ws.app, purpose=learning_draft.PURPOSE, provider="claude",
+        model="claude-sonnet-5", input_rate=Decimal("3"), output_rate=Decimal("15"),
+        configured_by=owner,
+    )
+    quote = next(
+        line.strip() for line in source.content.splitlines() if len(line.strip()) >= 20
+    )
+    benchmark = BenchmarkQuestion.objects.filter(application=ws.app).count()
+    entries = KnowledgeEntry.objects.filter(application=ws.app).count()
+
+    def drafted(cited, user=owner):
+        gap = LearningCandidate.objects.create(
+            application=ws.app, kind="gap", title="Unanswered", question=source.title[:300],
+            signal_at=timezone.now(),
+        )
+        reply = json.dumps({"source_id": str(cited.pk), "quote": quote, "missing": ""})
+        with (
+            patch.object(harness, "runtime_for", return_value=Script(reply)),
+            patch("platform_core.ai.provider_credential", return_value="sk-ant-scorecard"),
+        ):
+            return learning_draft.draft(user, ws.app.pk, gap.pk)
+
+    probes = {}
+    read = drafted(source)
+    unread = drafted(foreign)
+    probes["a drafted fix names only a source it read, quoted exactly"] = (
+        read.draft["kind"] == "cite"
+        and read.draft["quote"] == quote
+        and unread.draft["kind"] == "none"
+    )
+    probes["a drafted fix decides nothing"] = (
+        read.state == "open"
+        and BenchmarkQuestion.objects.filter(application=ws.app).count() == benchmark
+        and KnowledgeEntry.objects.filter(application=ws.app).count() == entries
+    )
+    try:
+        drafted(source, user=viewer)
+        probes["a viewer cannot draft a fix"] = False
+    except (PermissionDenied, Http404):
+        probes["a viewer cannot draft a fix"] = True
+    return probes
 
 
 def review_tool_probes(ws, owner, chat_config):

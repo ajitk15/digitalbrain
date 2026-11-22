@@ -49,6 +49,7 @@ AI_PURPOSES = [
     ("document_review", "Document review"),
     ("code_review", "Code review"),
     ("code_docs", "Code documentation"),
+    ("knowledge_upkeep", "Knowledge upkeep"),
 ]
 AI_PROVIDERS = [("openai", "OpenAI Agents SDK"), ("claude", "Claude Agent SDK")]
 
@@ -193,6 +194,15 @@ class AgentStep(models.Model):
         db_constraint=False,
         related_name="agent_steps",
     )
+    # Or the Learned question it drafted a fix for (Phase 6), the same way.
+    candidate = models.ForeignKey(
+        "platform_core.LearningCandidate",
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        db_constraint=False,
+        related_name="agent_steps",
+    )
     phase = models.CharField(max_length=20, blank=True, default="", db_default="")
     purpose = models.CharField(max_length=24)
     sequence = models.PositiveIntegerField()
@@ -211,4 +221,5 @@ class AgentStep(models.Model):
             models.Index(fields=["run", "phase", "sequence"], name="agent_step_run"),
             models.Index(fields=["triage", "sequence"], name="agent_step_triage"),
             models.Index(fields=["review", "sequence"], name="agent_step_review"),
+            models.Index(fields=["candidate", "sequence"], name="agent_step_candidate"),
         ]

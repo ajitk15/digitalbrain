@@ -93,6 +93,11 @@ PURPOSES = {
         # who may change knowledge, as setting a type by hand needs.
         Purpose("document_typing", roles=frozenset({"owner", "contributor"})),
         Purpose("document_review", roles=frozenset({"owner"})),
+        # Drafts the source a Learned question should cite: pressed by someone
+        # who decides what the application knows.
+        Purpose(
+            "knowledge_upkeep", (("knowledge", True),), frozenset({"owner", "contributor"})
+        ),
         # Reads Code Graph's snapshots; pressed by someone who may index them.
         Purpose("code_review", (("code_graph", False), ("code_review", True))),
         Purpose("code_docs", (("code_graph", False), ("code_docs", True))),

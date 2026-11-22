@@ -659,6 +659,28 @@ report with one is refused). `collect` reads at most `BATCH` signals a kind from
 themselves through 0091's `secure` under a `SECURED` list `test_tenancy` reads. The
 scorecard's "Learning loop probes passing" must stay 100%.
 
+**A Learned question may be drafted by an agent, which proposes and never decides**
+(`learning_draft.py`, Phase 6 of the agentic plan). On a waiting gap or wrong answer an
+owner or contributor presses **Draft a fix** (a plain POST, `action=draft` on `learned`,
+synchronous): a harness run under the `knowledge_upkeep` purpose - its own AI task, owner
+or contributor with knowledge write, seeded on for a new application like every task, and
+configured in AI settings for one made before it (`drafting_problem` says so in place of the
+button) - with `search_knowledge`/`fetch_source` (`tools.SOURCE_PURPOSES`), each call held
+to that rule, seeded with what `workbench.retrieve` finds unpaid and keeping a turn back
+(`wrap_up`). The reply is judged by rules (`judged`): a proposed source counts only when
+the run was **shown** it (`AgentResult.citations`, verified), it is answerable, unchanged
+and visible to the person, and the quote is in its text exactly - naming the right source
+without having read it is a guess and is dropped; otherwise a note of what is missing,
+quoted as what the AI said and dropped if the personal-data scan flags it. It is stored on
+`LearningCandidate.draft` (migration 0111, nullable, with `drafted_by`/`drafted_at`),
+audited `learning.drafted`, steps kept as `AgentStep` rows with `candidate`; **it is never
+knowledge or a benchmark question**: it pre-fills "Should cite", and `accept` still takes
+the person's own value, noting `accepted_as_drafted`. `shown` checks it again when the page
+is drawn, a changed, retired or restricted source reading as no longer holding. Measured by
+use, not a pack: `manage.py learning_upkeep <app> [--days]` (free) counts drafted questions
+accepted, and with the drafted source, against questions decided with no draft. The
+scorecard's agent probes include it.
+
 **A rule only adds a check** (`rules.py`, `KnowledgeEntry.rules_by`, migration 0106).
 An owner marks a source - a coding standard, a security design, a control matrix - as
 rules, on its source or document page (`knowledge-rules`, audited `knowledge.rules_on` /

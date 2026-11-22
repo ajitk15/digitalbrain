@@ -147,6 +147,7 @@ SPENDS = {
     "graph_generation": "Only when someone requests an AI graph run",
     "document_typing": "Each new document the rules cannot type",
     "document_review": "Only when an owner asks on a document",
+    "knowledge_upkeep": "Only when someone asks on a Learned question",
     "plan_drafting": "Each Code Factory run",
     "code_review": "Only when someone asks on a review",
     "code_docs": "Only when someone asks on the Documentation tab",
@@ -173,6 +174,7 @@ TASK_GROUPS = [
             ("graph_generation", "knowledge"),
             ("document_typing", "knowledge"),
             ("document_review", "knowledge"),
+            ("knowledge_upkeep", "knowledge"),
         ],
     ),
     (
