@@ -29,7 +29,7 @@ from django.core.exceptions import ValidationError
 from .agent_runtime.credentials import is_oauth_token
 from .agent_runtime.prompts import INSTRUCTIONS
 from .agent_runtime.runtime import ANSWER_TOKENS, evidence_payload, recent_turns
-from .agent_runtime.usage import checked_answer, checked_request_id, claude_usage
+from .agent_runtime.usage import checked_answer, checked_request_id, claude_turn, receipt_usage
 from .claude_agents import TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -108,14 +108,12 @@ def _call(
     if isinstance(usage, dict):
         # A cache count the API did not report is absent, not zero tokens.
         usage = {key: value for key, value in usage.items() if value is not None}
-    inputs, outputs = claude_usage(usage)
+    turn = claude_turn(checked_request_id(message.id), usage)
     answer = checked_answer(
         "".join(block.text for block in message.content if block.type == "text").strip()
     )
-    return {
-        "id": checked_request_id(message.id),
-        "usage": {"prompt_tokens": inputs, "completion_tokens": outputs},
-    }, answer
+    return {"id": turn.request_id, "usage": receipt_usage(turn)}, answer
+
 
 
 #: What a status means for the person reading it. The provider's own message is

@@ -69,6 +69,7 @@ def load_config():
         "code_docs_agent_tools",
         "document_review_agent_tools",
         "claude_messages_agents",
+        "claude_prompt_caching",
         "import_max_files",
         "sharepoint_tenant",
         "sharepoint_client_id",
@@ -160,6 +161,10 @@ def load_config():
         # Accepted in production: the same model, prompt and tools without a
         # subprocess, receipted per turn; switched on once measured.
         raise ImproperlyConfigured("claude_messages_agents must be a boolean.")
+    if type(config.get("claude_prompt_caching", False)) is not bool:
+        # Accepted in production: the model reads the same request; what changes
+        # is that its repeated prefix is billed at the cache rates, receipted.
+        raise ImproperlyConfigured("claude_prompt_caching must be a boolean.")
     if web_server(config) not in {"waitress", "uvicorn"}:
         raise ImproperlyConfigured('web_server must be "waitress" or "uvicorn".')
     if type(config.get("allow_self_approval", False)) is not bool:

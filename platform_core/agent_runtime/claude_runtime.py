@@ -42,7 +42,7 @@ from .prompts import TOOL_INSTRUCTIONS
 from .registry import for_scope
 from .runtime import ANSWER_TOKENS, evidence_payload, recent_turns
 from .tools import run_tool
-from .usage import TurnLimit, TurnUsage, checked_answer, claude_usage
+from .usage import TurnLimit, TurnUsage, checked_answer, claude_turn
 
 SERVER_NAME = "brain"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
@@ -280,13 +280,12 @@ async def run(
     stopped = stopped_at is not None
     text = ("".join(pieces) or "".join(fallback)).strip()
     if out_of_turns(result) and not stopped:
-        inputs, outputs = claude_usage(result.usage)
-        raise TurnLimit([TurnUsage(f"claude-{uuid.uuid4()}", inputs, outputs)], text)
+        raise TurnLimit([claude_turn(f"claude-{uuid.uuid4()}", result.usage)], text)
     if result is None or result.is_error:
         if not (stopped and text):
             raise ValueError("No successful result")
         return [TurnUsage(f"claude-{uuid.uuid4()}", 0, 0)], text
-    inputs, outputs = claude_usage(result.usage)
+    usage = claude_turn(f"claude-{uuid.uuid4()}", result.usage)
     # The streamed text wins when there is more of it than the CLI's summary.
     #
     # `result.result` is the CLI's account of the final assistant message, and a
@@ -304,4 +303,4 @@ async def run(
     summary = result.result if isinstance(result.result, str) else ""
     answer = text if stopped and text else checked_answer(max(text, summary, key=len))
     # Anthropic exposes no transport request ID here, so receipts carry a local run ID.
-    return [TurnUsage(f"claude-{uuid.uuid4()}", inputs, outputs)], answer
+    return [usage], answer

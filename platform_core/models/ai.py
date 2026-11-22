@@ -18,6 +18,11 @@ class AIUsage(models.Model):
     request_id = models.CharField(max_length=160)
     input_tokens = models.PositiveBigIntegerField()
     output_tokens = models.PositiveBigIntegerField()
+    #: Of `input_tokens` - every prompt token - those Anthropic's prompt cache
+    #: served and those it wrote, each priced at its own rate (`ai.cost`). A
+    #: `db_default`, so the release before still inserts receipts.
+    cache_read_tokens = models.PositiveBigIntegerField(default=0, db_default=0)
+    cache_write_tokens = models.PositiveBigIntegerField(default=0, db_default=0)
     amount = models.DecimalField(max_digits=20, decimal_places=8)
     currency = models.CharField(max_length=3, default="USD")
     estimated = models.BooleanField(default=False)

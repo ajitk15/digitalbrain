@@ -31,12 +31,14 @@ from . import test_documents
 from .test_claude_messages import KEY, Transport, sse
 
 
-def turn(number, text="", tool=None, stop=None):
-    """One streamed assistant turn: text, or a call of `tool` = (name, args)."""
+def turn(number, text="", tool=None, stop=None, cache=None):
+    """One streamed assistant turn: text, or a call of `tool` = (name, args);
+    `cache` adds the usage's cache counts."""
     events = [{"type": "message_start", "message": {
         "id": f"msg_{number:02d}", "type": "message", "role": "assistant",
         "model": "claude-sonnet-5", "content": [], "stop_reason": None,
-        "stop_sequence": None, "usage": {"input_tokens": 100, "output_tokens": 1},
+        "stop_sequence": None,
+        "usage": {"input_tokens": 100, "output_tokens": 1, **(cache or {})},
     }}]
     if text:
         events += [
@@ -192,3 +194,80 @@ class MessagesRuntimeTests(TestCase):
             self.run_with(transport)
         self.assertEqual(len(transport.requests), 1)
         self.assertEqual(AIUsage.objects.count(), 1)
+
+
+def markers(body):
+    """Where a request asked the cache to keep what came before."""
+    found = []
+    system = body["system"]
+    if isinstance(system, list):
+        found += [("system", i) for i, block in enumerate(system) if "cache_control" in block]
+    for number, message in enumerate(body["messages"]):
+        content = message["content"]
+        if isinstance(content, list):
+            found += [(number, i) for i, block in enumerate(content)
+                      if "cache_control" in block]
+    return found
+
+
+@override_settings(CLAUDE_MESSAGES_API=True, CLAUDE_MESSAGES_AGENTS=True,
+                   CLAUDE_PROMPT_CACHING=True)
+class PromptCachingTests(TestCase):
+    """The same run with `claude_prompt_caching` on: what is marked, and what it costs."""
+
+    # Borrowed, not inherited: inheriting would run every test above again.
+    setUp = MessagesRuntimeTests.setUp
+    run_with = MessagesRuntimeTests.run_with
+    bodies = MessagesRuntimeTests.bodies
+
+    def test_a_run_with_tools_marks_its_instructions_and_its_newest_message(self):
+        transport = Transport(
+            turn(1, tool=(SEARCH, {"query": "refund deadline"}),
+                 cache={"cache_creation_input_tokens": 60}),
+            turn(2, text="Thirty days.",
+                 cache={"cache_read_input_tokens": 900, "cache_creation_input_tokens": 50}),
+        )
+        result = self.run_with(transport)
+        self.assertEqual(result.answer, "Thirty days.")
+        first, second = self.bodies(transport)
+        # The system prompt is the same words, as a block marked for the cache;
+        # the tools render before it, so the marker keeps them too.
+        self.assertEqual(first["system"], [{
+            "type": "text", "text": TOOL_INSTRUCTIONS, "cache_control": {"type": "ephemeral"},
+        }])
+        self.assertEqual(second["system"], first["system"])
+        self.assertEqual(second["tools"], first["tools"])
+        # The marker moves to the newest message; the one before is sent as it was.
+        self.assertEqual(markers(first), [("system", 0), (0, 0)])
+        self.assertEqual(markers(second), [("system", 0), (2, 0)])
+        self.assertEqual(second["messages"][0]["content"],
+                         [{"type": "text", "text": first["messages"][0]["content"][0]["text"]}])
+        self.assertEqual(json.loads(first["messages"][0]["content"][0]["text"])["question"],
+                         "How long do refunds take?")
+        self.assertEqual(second["messages"][2]["content"][0]["type"], "tool_result")
+        # Each receipt says which prompt tokens the cache wrote and read, and is
+        # priced by them: written at a quarter more, read at a tenth.
+        receipts = {r.request_id: r for r in AIUsage.objects.all()}
+        self.assertEqual(
+            [(r.input_tokens, r.cache_read_tokens, r.cache_write_tokens)
+             for r in (receipts["msg_01"], receipts["msg_02"])],
+            [(160, 0, 60), (1050, 900, 50)],
+        )
+        # $3/M in, $15/M out: 100 plain + 900 read at 0.1 + 50 written at 1.25, 20 out.
+        self.assertEqual(receipts["msg_02"].amount, Decimal("0.00105750"))
+
+    def test_one_turn_marks_nothing(self):
+        # Nothing would be read back: a write there would only cost more.
+        transport = Transport(turn(1, text="From the evidence."))
+        self.run_with(transport, turns=1)
+        body = self.bodies(transport)[0]
+        self.assertEqual(body["system"], TOOL_INSTRUCTIONS)
+        self.assertEqual(markers(body), [])
+
+    def test_off_the_request_is_the_one_sent_before(self):
+        transport = Transport(turn(1, tool=(SEARCH, {"query": "refund"})), turn(2, text="Done."))
+        with override_settings(CLAUDE_PROMPT_CACHING=False):
+            self.run_with(transport)
+        for body in self.bodies(transport):
+            self.assertEqual(body["system"], TOOL_INSTRUCTIONS)
+            self.assertEqual(markers(body), [])

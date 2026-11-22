@@ -131,8 +131,9 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, the five agents' tools and
-`claude_messages_agents` (accepted in production, where they stay off), `ocr` and
+drive root), `managed_secret_directory`, the five agents' tools,
+`claude_messages_agents` and `claude_prompt_caching` (accepted in production, where they
+stay off), `ocr` and
 `tesseract_path` where Tesseract is
 installed - above the first table, so no table swallows it. A key written down, true or
 false, is never changed. `load_config`'s production refusals are untouched, and
@@ -953,6 +954,23 @@ free request — providers bill for calls whose usage we failed to parse. See
 `agent_runtime/usage.py`. Multi-turn answers record one receipt per model turn, each keyed
 on its own provider request ID.
 
+**A cached prompt token is a prompt token, priced at the cache's rate** (`ai.cost`,
+`usage.claude_cache`, `AIUsage.cache_read_tokens`/`cache_write_tokens`, migration 0115).
+`claude_usage` used to fold Anthropic's cache reads and writes into the input count at the
+input rate, because `AIConfiguration` has no cache rate: a read billed at a tenth was
+charged whole and a write billed at a quarter more was charged short - so a budget could
+start a call it could not pay for. `input_tokens` is still every prompt token, so every sum
+of it means what it meant; the receipt now says how many of them the cache served and
+wrote, and prices them from the entered input rate: a write `CACHE_WRITE` (1.25x; an
+hour's, which the usage names in `cache_creation`, `CACHE_WRITE_LONG`, 2x), a read the
+model's `cache_read_share` - a tenth on Claude, `CACHE_READ` names the cheaper ones (Opus
+and Sonnet 5.5 a twentieth, Fable and Mythos 5.1/5.2 a fortieth), and a model that is not
+Claude the whole rate, never below the bill. Cache counts beyond the prompt are refused,
+and they are part of a receipt's replay identity. Every Claude path reports them - the
+CLI caches what it sends, one-shot and agent alike - so **admission reserves a Claude
+prompt as written to the cache** (`gateway.prompt_rate`): the most it can cost. OpenAI's
+automatic caching is still charged at the input rate: over the bill, never under it.
+
 **Traces carry ids and timings only, and are off by default** (`telemetry.py`, an `[otel]`
 table naming an OTLP/HTTP collector; https in production, its credential the mounted
 `otel_authorization`). Three things are spans: a request (`TelemetryMiddleware`, first in
@@ -1572,6 +1590,20 @@ harness raises it after the receipts; Stop runs no further tool; out of turns is
 `final_only` and wrap-up joining. It changes how a run is carried, not what the model is
 shown, but it is measured as any such change is - `chat_pack` (its seconds and cost too)
 and `llm_drift` with the switch off and on - before production relies on it.
+
+**Such a run may read its repeated prefix from Anthropic's prompt cache**
+(`claude_prompt_caching`, a boolean, off unless written down, on in development and the
+demo, accepted in production; `messages_runtime.cached`). Each turn sends again the tools,
+the instructions, the evidence and every tool call and result before it. With the switch
+on, a run **with tools** marks two breakpoints: the system prompt (as one text block - the
+tools render before it, so it keeps them too) and the last block of the newest message, a
+copy each turn so the marker moves forward; the first user turn is sent as a block on
+every turn, so the prefix the cache holds is byte for byte the one sent again. A run with
+no tools - one turn, the wrap-up turn included - marks nothing: nothing would be read back,
+so a write would only cost more. The model reads the same request; what changes is the
+bill, receipted as above, so it is switched on in production once `chat_pack`'s cost says
+so. One-shot calls (`claude_messages._call`) mark nothing: their prompt is their evidence,
+new each call.
 
 **Every AI task starts on** (`ai.SEEDED_DISABLED` is empty, kept as the mechanism). It
 used to list document typing, embeddings and reranking, so a new application had AI

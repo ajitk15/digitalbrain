@@ -181,7 +181,11 @@ class GatewayTests(TestCase):
 
     def test_a_reservation_is_the_most_the_call_can_cost(self):
         config = AIConfiguration.objects.get(application=self.app, purpose="chat")
-        # 3,000 characters is at most 1,001 tokens at $2/M, and 1,000 reply tokens at $10/M.
+        # 3,000 characters is at most 1,001 tokens, each written to Claude's prompt
+        # cache at a quarter over $2/M, and 1,000 reply tokens at $10/M.
+        self.assertEqual(gateway.estimate(config, 3000, 1000), Decimal("0.01250250"))
+        # A provider with no cache to write is reserved at its input rate.
+        config.provider = "openai"
         self.assertEqual(gateway.estimate(config, 3000, 1000), Decimal("0.01200200"))
 
     def test_no_budget_reserves_nothing(self):

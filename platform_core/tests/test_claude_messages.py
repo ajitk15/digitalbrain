@@ -104,9 +104,13 @@ class MessagesAdapterTests(SimpleTestCase):
         sent = json.loads(body["messages"][0]["content"])
         self.assertEqual(sent["question"], "Refund deadline?")
         self.assertEqual(answer, "Thirty days.")
-        # The provider's own id keys the receipt; cache reads are billed input.
+        # The provider's own id keys the receipt; cache reads are prompt tokens,
+        # counted apart so the receipt prices them at the cache rate.
         self.assertEqual(result["id"], "msg_01test")
-        self.assertEqual(result["usage"], {"prompt_tokens": 150, "completion_tokens": 7})
+        self.assertEqual(result["usage"], {
+            "prompt_tokens": 150, "completion_tokens": 7, "cache_read_tokens": 30,
+            "cache_write_tokens": 0, "cache_write_long_tokens": 0,
+        })
 
     def test_missing_usage_is_an_error_not_a_free_request(self):
         transport = Transport((200, reply(usage={"output_tokens": 1})))
@@ -187,6 +191,9 @@ class GatewayTests(TestCase):
         receipt = AIUsage.objects.get()
         self.assertEqual(receipt.request_id, "msg_01test")
         self.assertEqual((receipt.input_tokens, receipt.output_tokens), (150, 7))
+        self.assertEqual((receipt.cache_read_tokens, receipt.cache_write_tokens), (30, 0))
+        # $2/M: 120 at the input rate and the 30 the cache served at a tenth; 7 at $10/M.
+        self.assertEqual(receipt.amount, Decimal("0.00031600"))
         self.assertEqual(receipt.provider, "Anthropic")
 
     def test_an_oauth_token_still_goes_to_the_cli(self):

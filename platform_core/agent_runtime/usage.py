@@ -28,8 +28,14 @@ class TurnUsage:
     """
 
     request_id: str
+    #: Every prompt token, cached or not: what the turn read.
     prompt_tokens: int
     completion_tokens: int
+    #: Of `prompt_tokens`, those read from the prompt cache and those written to
+    #: it (`cache_write_long` of them for an hour), priced apart (`ai.cost`).
+    cache_read: int = 0
+    cache_write: int = 0
+    cache_write_long: int = 0
 
 
 class TurnLimit(RuntimeError):
@@ -99,10 +105,11 @@ def openai_usage(raw, responses_api):
 
 
 def claude_usage(raw):
-    """Normalize a Claude usage mapping, folding cache tokens into the input count.
+    """Normalize a Claude usage mapping: (every prompt token, output tokens).
 
-    Cache reads and writes are billed; the platform prices them at the configured
-    ordinary input rate because there is no separate cache rate in AIConfiguration.
+    `input_tokens` is only what was read at the full rate; cache reads and writes
+    are prompt tokens too, so the prompt is their sum. `claude_cache` says how
+    many of them were which, for the receipt to price apart.
     """
     if not isinstance(raw, dict):
         raise ValueError("Missing usage")
@@ -111,3 +118,43 @@ def claude_usage(raw):
     for key in ("cache_read_input_tokens", "cache_creation_input_tokens"):
         inputs += checked_count(raw.get(key, 0), "Invalid cache tokens")
     return checked_count(inputs), outputs
+
+
+def claude_cache(raw):
+    """(read, written, written for an hour) from a Claude usage mapping.
+
+    A count the API did not report is none. A breakdown by lifetime
+    (`cache_creation`) names the hour-long writes, which cost more; without one
+    every write is the five-minute kind, the only one this platform asks for.
+    """
+    if not isinstance(raw, dict):
+        raise ValueError("Missing usage")
+    read = checked_count(raw.get("cache_read_input_tokens") or 0, "Invalid cache tokens")
+    written = checked_count(raw.get("cache_creation_input_tokens") or 0, "Invalid cache tokens")
+    lifetimes = raw.get("cache_creation")
+    long = 0
+    if isinstance(lifetimes, dict):
+        long = checked_count(lifetimes.get("ephemeral_1h_input_tokens") or 0,
+                             "Invalid cache tokens")
+    if long > written:
+        raise ValueError("Invalid cache tokens")
+    return read, written, long
+
+
+def claude_turn(request_id, raw):
+    """One Claude turn's `TurnUsage`, its cache reads and writes kept apart."""
+    inputs, outputs = claude_usage(raw)
+    read, written, long = claude_cache(raw)
+    return TurnUsage(request_id, inputs, outputs, read, written, long)
+
+
+def receipt_usage(turn):
+    """A one-shot call's usage as `ai.invoke_ai` records it (`result["usage"]`),
+    its cache counts beside."""
+    return {
+        "prompt_tokens": turn.prompt_tokens,
+        "completion_tokens": turn.completion_tokens,
+        "cache_read_tokens": turn.cache_read,
+        "cache_write_tokens": turn.cache_write,
+        "cache_write_long_tokens": turn.cache_write_long,
+    }

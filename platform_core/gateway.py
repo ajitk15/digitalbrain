@@ -148,14 +148,25 @@ def limits():
 CHARACTERS_PER_TOKEN = 3
 
 
+def prompt_rate(config):
+    """The most a prompt token can cost: on Claude, written to the prompt cache
+    (`ai.CACHE_WRITE` times the input rate) - the CLI caches what it sends, and
+    so does a Messages run with `claude_prompt_caching` - else the input rate."""
+    from .ai import CACHE_WRITE
+
+    claude = getattr(config, "provider", "") == "claude"
+    return config.input_rate * (CACHE_WRITE if claude else 1)
+
+
 def estimate(config, prompt_characters, max_tokens):
     """The most a call can cost at the entered rates: every prompt character a
-    third of a token, and the whole reply cap spent."""
+    third of a token, each written to the cache where it can be, and the whole
+    reply cap spent."""
     prompt = Decimal(prompt_characters // CHARACTERS_PER_TOKEN + 1)
     reply = Decimal(max_tokens or 0)
-    return ((prompt * config.input_rate + reply * config.output_rate) / Decimal(1000000)).quantize(
-        Decimal("0.00000001")
-    )
+    return (
+        (prompt * prompt_rate(config) + reply * config.output_rate) / Decimal(1000000)
+    ).quantize(Decimal("0.00000001"))
 
 
 def turn_costs(config, prompt_characters, max_tokens, turns=1, tool_characters=0):

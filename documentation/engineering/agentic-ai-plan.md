@@ -463,6 +463,20 @@ host login still go through the CLI. It changes how a run is carried rather than
 reads, and is measured anyway: `chat_pack` (answers, cost and seconds) and `llm_drift`, with
 the switch off and then on.
 
+## Prompt caching (built, switched off until measured)
+
+A tool-using run sends its tools, instructions and evidence again on every turn, and
+each tool result is sent again on every turn after it. With `claude_prompt_caching` a
+Messages run with tools marks the system prompt and the newest message for Anthropic's
+five-minute cache, so a later turn reads what came before at the model's cache-read rate
+(a tenth of the input rate, less on the newest models) and writes only what the last turn
+added, at a quarter more. A one-turn run marks nothing. The receipts were fixed first:
+cache reads and writes used to be charged at the input rate, a read over its bill and a
+write under it, so each receipt now keeps how many prompt tokens the cache served and
+wrote and prices them apart, and admission reserves a Claude prompt as if all of it were
+written. Measure it with `chat_pack` - its cost per answer, the switch off and then on;
+what the model reads is unchanged.
+
 ## Switched on in development and the demo
 
 Code Factory's, triage's, code review's, code documentation's and document review's tools
@@ -515,7 +529,6 @@ whoever picks it up knows what has to be decided first.
 | **Wider MCP and agent-to-agent** | Outside agents (IDE, Slack, other platforms) call more read tools: `code_search`, `incident_neighbourhood` | Token = user, no token roles, `spend=False` unless gated like `chat_api` |
 | **Agent memory** | What an agent learned on one run helps the next | Only as `LearningCandidate`s a person accepted - never a hidden memory a model writes |
 | **Model routing** | A small model picks tools, a large one writes the answer | Each model priced and receipted; drift measured per model |
-| **Prompt caching** | Cheaper repeated turns over the same snapshot | Receipts must still read cached tokens honestly (`usage.py`) |
 | **Trajectory evaluation** | Score *how* an agent got there (wasted calls, loops), not just the result | A frozen trajectory pack, like the drift pack - a new pack starts a new reference |
 | **Agents on other providers** | Gemini, local models through the same harness | Per-application credential, no shared keys, `AIUsage` parsing that fails closed |
 

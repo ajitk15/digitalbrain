@@ -28,6 +28,21 @@ What it adds over the CLI:
 The client is `claude_messages.client_for`'s: the key and base URL given explicitly,
 no proxy or headers from the environment, no retries. Tools run on the caller's
 thread, as the scripted model's do: they are database reads under the run's scope.
+
+**Prompt caching** (`claude_prompt_caching`, `cached`). Every turn of a run sends
+again what the turns before it sent - the tools, the instructions, the evidence,
+each tool call and its result - and pays the input rate for all of it. With the
+switch on, a run with tools marks two cache breakpoints: the system prompt, which
+caches the tools with it, and the last block of the newest message, which moves
+forward every turn. A later turn then reads everything before its new tool results
+from the cache, at a tenth of the input rate or less, and writes only what the last
+turn added, at a quarter more (`ai.CACHE_WRITE`); the receipts say which tokens
+were which. The marker is not something the model reads - the request is otherwise
+byte for byte the one sent without it - but it changes what a run costs, so it is
+switched on once `chat_pack` shows the cost fall. A run with no tools has one turn
+and nothing to read back, so it marks nothing: a write there would only cost more.
+Below the model's minimum (512 tokens on current models) the API caches nothing
+and charges nothing extra.
 """
 
 import time
@@ -40,7 +55,11 @@ from .prompts import TOOL_INSTRUCTIONS
 from .registry import for_scope
 from .runtime import ANSWER_TOKENS
 from .tools import run_tool
-from .usage import Billed, TurnLimit, TurnUsage, checked_answer, checked_request_id, claude_usage
+from .usage import Billed, TurnLimit, checked_answer, checked_request_id, claude_turn
+
+#: Anthropic's five-minute cache: enough between the turns of one run, and between
+#: runs that share their tools and instructions.
+EPHEMERAL = {"type": "ephemeral"}
 
 #: What a tool the run was not given answers, as the CLI's `dontAsk` refuses it.
 NOT_GIVEN = "That tool is not available."
@@ -63,8 +82,17 @@ def turn_usage(message):
     if isinstance(usage, dict):
         # A cache count the API did not report is absent, not zero tokens.
         usage = {key: value for key, value in usage.items() if value is not None}
-    inputs, outputs = claude_usage(usage)
-    return TurnUsage(checked_request_id(message.id), inputs, outputs)
+    return claude_turn(checked_request_id(message.id), usage)
+
+
+def cached(messages):
+    """`messages` with a cache breakpoint on the last block of the newest one -
+    a copy, so the marker moves forward with the run and earlier messages are
+    sent as they were. Every message's content is a list of blocks by then."""
+    last = dict(messages[-1])
+    content = last["content"]
+    last["content"] = [*content[:-1], {**content[-1], "cache_control": EPHEMERAL}]
+    return [*messages[:-1], last]
 
 
 def blocks(message):
@@ -111,6 +139,8 @@ def run(
     `claude_runtime.run`: with no tools, one turn from the evidence; `final_only`
     keeps the last turn's text alone; out of turns is `TurnLimit` with the usage
     of the turns sent."""
+    from django.conf import settings
+
     from ..claude_messages import client_for, prompt_for
 
     tools = for_scope(scope) if tools is None else list(tools)
@@ -126,11 +156,21 @@ def run(
     }
     if tools:
         request["tools"] = definitions(tools)
+    caching = bool(tools) and settings.CLAUDE_PROMPT_CACHING
+    if caching:
+        # Rendered tools first, then system: a breakpoint here caches both.
+        request["system"] = [
+            {"type": "text", "text": request["system"], "cache_control": EPHEMERAL}
+        ]
+        # Sent as a block on every turn, as the first turn sent it, so the
+        # prefix the cache keeps is byte for byte the one sent again.
+        messages[0]["content"] = [{"type": "text", "text": messages[0]["content"]}]
     try:
         with client_for(token, wall) as client:
             for _ in range(max_turns if tools else 1):
                 pieces = []
-                with client.messages.stream(messages=messages, **request) as stream:
+                sent = cached(messages) if caching else messages
+                with client.messages.stream(messages=sent, **request) as stream:
                     for event in stream:
                         if event.type == "text" and not (cancel is not None and cancel.is_set()):
                             pieces.append(event.text)

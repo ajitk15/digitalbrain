@@ -173,6 +173,12 @@ def development(root):
             "# Off in production until `manage.py chat_pack` and `llm_drift` say so.",
         ),
         (
+            "claude_prompt_caching",
+            "true",
+            "Let those runs read their repeated prefix from Anthropic's prompt cache.\n"
+            "# Off in production until `manage.py chat_pack` shows the cost fall.",
+        ),
+        (
             "ocr",
             "true",
             "Read scanned PDF pages and images with a local Tesseract. Nothing is read by\n"

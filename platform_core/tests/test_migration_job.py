@@ -240,6 +240,7 @@ class DeploymentTests(SimpleTestCase):
         for key in (
             "code_factory_agent_tools", "serviceops_triage_agent_tools", "code_review_agent_tools",
             "code_docs_agent_tools", "document_review_agent_tools", "claude_messages_agents",
+            "claude_prompt_caching",
         ):
             self.assertIn(f"echo '{key} = true'", block)
             # Written nowhere else: production reads them as off.

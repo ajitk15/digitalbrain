@@ -16,7 +16,9 @@ read-only tools (`code_factory_agent_tools`, `serviceops_triage_agent_tools`,
 which spends more per run through the same budget; `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`
 leaves them off. A plain production deployment leaves them off until `factory_pack`,
 `triage_pack`, `review_pack`, `docs_pack` and `document_review_pack` show they clear
-the bar. A mounted configuration wins;
+the bar. The same block runs Claude agents with an API key through the Messages API
+(`claude_messages_agents`) and lets them read their repeated prefix from the prompt
+cache (`claude_prompt_caching`). A mounted configuration wins;
 update an existing mounted file using `production.example.toml` if applicable.
 
 The image contains the demo documents, CarePath source, a locked Linux

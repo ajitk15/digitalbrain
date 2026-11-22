@@ -113,6 +113,11 @@ DOCUMENT_REVIEW_AGENT_TOOLS = bool(CONFIG.get("document_review_agent_tools", Fal
 #: start-up per run, and a receipt per turn under the provider's message id. Off
 #: unless written down until `chat_pack` and `llm_drift` show it answers as well.
 CLAUDE_MESSAGES_AGENTS = bool(CONFIG.get("claude_messages_agents", False))
+#: Such a run marks what it sends again on every turn - its tools, instructions
+#: and the turns so far - for Anthropic's prompt cache (`messages_runtime.cached`),
+#: so a later turn reads it at the cache rate. Off unless written down until
+#: `chat_pack` shows the cost fall.
+CLAUDE_PROMPT_CACHING = bool(CONFIG.get("claude_prompt_caching", False))
 #: More than one server process: chat streams register in the database so Stop
 #: and "is this answer still being written?" reach every process. See
 #: platform_core/agent_runtime/streaming.py.

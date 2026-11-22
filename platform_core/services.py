@@ -533,6 +533,8 @@ def record_ai_usage(
     estimated=False,
     purpose="chat",
     authorized=None,
+    cache_read_tokens=0,
+    cache_write_tokens=0,
 ):
     """Server-side provider adapter boundary; never accepts a browser-supplied bill.
 
@@ -559,8 +561,12 @@ def record_ai_usage(
         raise ValidationError("Cost must be finite and nonnegative.")
     if amount != amount.quantize(Decimal("0.00000001")):
         raise ValidationError("Cost supports at most 8 decimal places.")
-    if any(type(value) is not int or value < 0 for value in [input_tokens, output_tokens]):
+    counts = [input_tokens, output_tokens, cache_read_tokens, cache_write_tokens]
+    if any(type(value) is not int or value < 0 for value in counts):
         raise ValidationError("Token counts must be nonnegative integers.")
+    if cache_read_tokens + cache_write_tokens > input_tokens:
+        # Cache tokens are prompt tokens, counted inside `input_tokens`.
+        raise ValidationError("Cache tokens are more than the prompt.")
     if len(currency) != 3 or not currency.isascii() or not currency.isupper():
         raise ValidationError("Currency must be a three-letter uppercase code.")
     values = dict(
@@ -570,6 +576,8 @@ def record_ai_usage(
         model=model,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
+        cache_read_tokens=cache_read_tokens,
+        cache_write_tokens=cache_write_tokens,
         amount=amount,
         currency=currency,
         estimated=estimated,

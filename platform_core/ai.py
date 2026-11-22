@@ -519,11 +519,52 @@ def seed_application_ai(user, app, provider=None):
     return provider
 
 
-def cost(config, prompt_tokens, completion_tokens):
-    """What a call cost at the owner's entered rates, per million tokens."""
+#: What a prompt token costs against the entered input rate when Anthropic's cache
+#: writes it: five minutes (the only lifetime this platform asks for), an hour.
+CACHE_WRITE = Decimal("1.25")
+CACHE_WRITE_LONG = Decimal("2")
+#: What it costs when the cache serves it, by model: a tenth on Claude models,
+#: less on these. A model not named is priced at a tenth if it is Claude, and at
+#: the whole input rate otherwise - never below what the provider bills.
+CACHE_READ = {
+    "claude-fable-5-2": Decimal("0.025"),
+    "claude-mythos-5-2": Decimal("0.025"),
+    "claude-fable-5-1": Decimal("0.025"),
+    "claude-mythos-5-1": Decimal("0.025"),
+    "claude-opus-5-5": Decimal("0.05"),
+    "claude-sonnet-5-5": Decimal("0.05"),
+}
+CLAUDE_CACHE_READ = Decimal("0.1")
+
+
+def cache_read_share(model):
+    """The share of the input rate a cache read costs on `model`."""
+    model = (model or "").lower()
+    for name, share in CACHE_READ.items():
+        # "claude-opus-5-5[1m]" is Opus 5.5; "claude-opus-5" is not Opus 5.5.
+        if model == name or model.startswith((f"{name}[", f"{name}@", f"{name}-2")):
+            return share
+    return CLAUDE_CACHE_READ if model.startswith("claude-") else Decimal("1")
+
+
+def cost(config, prompt_tokens, completion_tokens, cache_read=0, cache_write=0,
+         cache_write_long=0):
+    """What a call cost at the owner's entered rates, per million tokens.
+
+    `prompt_tokens` is every prompt token; of them, `cache_read` were served by
+    the prompt cache and `cache_write` written to it (`cache_write_long` for an
+    hour), each priced from the input rate (`CACHE_WRITE`, `cache_read_share`).
+    """
+    if cache_write_long > cache_write or cache_read + cache_write > prompt_tokens:
+        raise ValidationError("Cache tokens are more than the prompt.")
+    rate = config.input_rate
+    plain = prompt_tokens - cache_read - cache_write
     return (
         (
-            Decimal(prompt_tokens) * config.input_rate
+            Decimal(plain) * rate
+            + Decimal(cache_read) * rate * cache_read_share(config.model)
+            + Decimal(cache_write - cache_write_long) * rate * CACHE_WRITE
+            + Decimal(cache_write_long) * rate * CACHE_WRITE_LONG
             + Decimal(completion_tokens) * config.output_rate
         )
         / Decimal(1000000)
@@ -610,7 +651,13 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
             purpose=purpose,
             input_tokens=usage["prompt_tokens"],
             output_tokens=usage["completion_tokens"],
-            amount=cost(config, usage["prompt_tokens"], usage["completion_tokens"]),
+            cache_read_tokens=usage.get("cache_read_tokens", 0),
+            cache_write_tokens=usage.get("cache_write_tokens", 0),
+            amount=cost(
+                config, usage["prompt_tokens"], usage["completion_tokens"],
+                usage.get("cache_read_tokens", 0), usage.get("cache_write_tokens", 0),
+                usage.get("cache_write_long_tokens", 0),
+            ),
             estimated=True,
             authorized=app,
         )
@@ -761,7 +808,8 @@ def record_turns(user, app, config, purpose, turns):
     collapsing distinct calls into one row.
     """
     for turn in turns:
-        amount = cost(config, turn.prompt_tokens, turn.completion_tokens)
+        amount = cost(config, turn.prompt_tokens, turn.completion_tokens,
+                      turn.cache_read, turn.cache_write, turn.cache_write_long)
         record_ai_usage(
             actor=user,
             application_id=app.pk,
@@ -771,6 +819,8 @@ def record_turns(user, app, config, purpose, turns):
             purpose=purpose,
             input_tokens=turn.prompt_tokens,
             output_tokens=turn.completion_tokens,
+            cache_read_tokens=turn.cache_read,
+            cache_write_tokens=turn.cache_write,
             amount=amount,
             estimated=True,
             authorized=app,

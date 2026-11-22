@@ -27,7 +27,7 @@ from .agent_runtime.credentials import (
 )
 from .agent_runtime.prompts import INSTRUCTIONS
 from .agent_runtime.runtime import ANSWER_TOKENS, evidence_payload, recent_turns
-from .agent_runtime.usage import checked_answer, claude_usage
+from .agent_runtime.usage import checked_answer, claude_turn, receipt_usage
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +207,7 @@ async def _run(
                     },
                 )
             raise ValueError("No successful result")
-        inputs, outputs = claude_usage(result.usage)
+        turn = claude_turn(f"claude-{uuid.uuid4()}", result.usage)
         # Whichever carries more of the reply.
         #
         # `result.result` is the CLI's account of the final assistant message,
@@ -224,10 +224,7 @@ async def _run(
         summary = result.result if isinstance(result.result, str) else ""
         answer = checked_answer(max("".join(blocks).strip(), summary, key=len))
         # Anthropic exposes no transport request ID here, so receipts carry a local run ID.
-        return {
-            "id": f"claude-{uuid.uuid4()}",
-            "usage": {"prompt_tokens": inputs, "completion_tokens": outputs},
-        }, answer
+        return {"id": turn.request_id, "usage": receipt_usage(turn)}, answer
 
 
 #: Our own failure messages, as the fixed labels the log is allowed to keep. A
