@@ -9,6 +9,7 @@ the ones the button runs.
 
 import json
 import tempfile
+import uuid
 from decimal import Decimal
 from io import StringIO
 from pathlib import Path
@@ -72,6 +73,11 @@ class RunTests(TestCase):
         text = (DOCS / "02-design/data-model.md").read_text(encoding="utf-8")
         self.model = add_knowledge(self.owner, self.app.pk, "data-model.md", text)
         self.nfr = add_knowledge(self.owner, self.app.pk, "non-functional-requirements.xlsx", NFR)
+        # Two more of the pack's documents, so most items are asked; the runbook is
+        # left out, so its two items show what a missing document says.
+        for path in ("03-build/coding-standards.md", "08-quality-samples/escalation-policy.md"):
+            add_knowledge(self.owner, self.app.pk, Path(path).name,
+                          (DOCS / path).read_text(encoding="utf-8"))
 
     def finding(self, other=None):
         return {
@@ -95,8 +101,10 @@ class RunTests(TestCase):
                 return script.run(*args, tools=tools, **kwargs)
 
         def one_call(config, question, citations, token, **kwargs):
-            return ({"id": "one", "usage": {"prompt_tokens": 100, "completion_tokens": 20}},
-                    alone)
+            # Each call its own request id, as a provider's are: one id would make
+            # every later receipt the first one again.
+            return ({"id": f"one-{uuid.uuid4()}",
+                     "usage": {"prompt_tokens": 100, "completion_tokens": 20}}, alone)
 
         with (
             override_settings(DOCUMENT_REVIEW_AGENT_TOOLS=True),
@@ -125,7 +133,8 @@ class RunTests(TestCase):
         alone, tools = record["metrics"]["one_shot"], record["metrics"]["tools"]
         self.assertEqual((alone["found"], alone["linked"], tools["found"], tools["linked"]),
                          (1, 0, 1, 1))
-        self.assertEqual(AIUsage.objects.filter(purpose="document_review").count(), 3)
+        # Three items asked: one call each, and two scripted turns each with tools.
+        self.assertEqual(AIUsage.objects.filter(purpose="document_review").count(), 9)
         # The planted line was reviewed in memory; the stored source is unchanged.
         self.assertEqual(KnowledgeEntry.objects.get(pk=self.model.pk).content, before)
         self.assertTrue(document_review_pack.verdict(record["metrics"]).startswith(
@@ -196,3 +205,14 @@ class NothingComparedRuleTests(SimpleTestCase):
         # A pack of one case says only whether it failed.
         self.assertTrue(nothing_compared({"one_shot": {"asked": 6, "failed": 1}}))
         self.assertFalse(nothing_compared({"one_shot": {"asked": 6, "failed": 0}}))
+        # A rate limit that failed most questions both ways compares nothing; one way
+        # failing most of them is a result, and counts against that way.
+        limited = {"questions": 16, "failed": 15}
+        self.assertTrue(nothing_compared({"one_shot": limited, "tools": limited}))
+        self.assertFalse(nothing_compared({"one_shot": {"questions": 16, "failed": 0},
+                                           "tools": limited}))
+        # Nothing kept to score either way is no comparison either.
+        empty = {"asked": 6, "components": 0, "failed": 0}
+        self.assertTrue(nothing_compared({"one_shot": empty, "tools": empty}))
+        self.assertFalse(nothing_compared({"one_shot": empty,
+                                           "tools": {**empty, "components": 4}}))

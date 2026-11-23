@@ -291,19 +291,25 @@ CASES = ("items", "tickets", "questions", "cases", "changes")
 
 
 def nothing_compared(found):
-    """Whether either way of a pack's totals asked none of its cases: every one
-    failed (`failed`), or there were none."""
-    for totals in (found or {}).values():
-        if not isinstance(totals, dict):
-            continue
+    """Whether a pack's totals compare nothing: either way asked none of its cases
+    (every one failed, or there were none); both ways failed most of them - a
+    provider refusing calls, a rate limit, not an agent being worse; or both ways
+    kept nothing to score (code documentation describing no component either way)."""
+    ways = [totals for totals in (found or {}).values() if isinstance(totals, dict)]
+    mostly_failed = []
+    for totals in ways:
         cases = next((totals[key] for key in CASES if key in totals), None)
         if cases == 0:
             return True
-        failed = totals.get("failed")
+        failed = totals.get("failed") or 0
         # A pack of one case (code documentation) says only whether it failed.
         if failed and (cases is None or failed >= cases):
             return True
-    return False
+        mostly_failed.append(bool(cases) and failed * 2 > cases)
+    if len(ways) > 1 and all(mostly_failed):
+        return True
+    described = [totals["components"] for totals in ways if "components" in totals]
+    return bool(described) and len(described) == len(ways) and not any(described)
 
 
 def state_of(text):
