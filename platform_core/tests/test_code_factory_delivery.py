@@ -1029,6 +1029,106 @@ class OfflineChangeTests(DeliveryGateTests):
         self.assertIn("mount a write-scoped credential", message)
 
 
+class WholeFileAndContentTests(OfflineChangeTests):
+    """A file is changed only if every agent was shown it whole, and a change
+    that does not parse or imports what is not there is refused before it is
+    offered.
+
+    A target cut at 20,000 characters used to go to the implementation as if it
+    were the whole file; asked for the complete new text, it returned one
+    without the end, and the review - shown the same cut - passed it.
+    """
+
+    LARGE = "x = 1\n" * 4_000  # 24,000 characters
+
+    def prepare_with(self, answers, content="original", extra=()):
+        snapshot = self.snapshot(content=content)
+        for path, text in extra:
+            snapshot.files.create(path=path, language="python", content=text, lines=1)
+        with patch("platform_core.code_factory_build.write_credential", return_value=""):
+            with patch("platform_core.ai.invoke_ai", side_effect=answers) as asked:
+                with self.assertRaises(ValidationError) as raised:
+                    prepare(self.owner, self.app.pk, self.run.pk)
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "failed")
+        return " ".join(raised.exception.messages), asked
+
+    def test_a_target_too_large_to_show_whole_is_refused_before_anything_is_paid_for(self):
+        message, asked = self.prepare_with(self.ANSWERS, content=self.LARGE)
+        asked.assert_not_called()
+        self.assertIn("longer than 20,000 characters", message)
+        self.assertEqual(self.run.phases.get(name="work_order").status, "failed")
+
+    def test_a_changed_file_too_large_to_review_whole_is_not_offered(self):
+        from platform_core.models import ProposedChange
+
+        answers = [
+            self.ANSWERS[0],
+            json.dumps({"files": [{"file": "1", "content": self.LARGE}]}),
+        ]
+        message, asked = self.prepare_with(answers)
+        # Work order and implementation; the review was not asked to read it.
+        self.assertEqual(asked.call_count, 2)
+        self.assertIn("longer than the review can be shown whole", message)
+        self.assertFalse(ProposedChange.objects.filter(run=self.run).exists())
+
+    def answered(self, content):
+        return [
+            self.ANSWERS[0],
+            json.dumps({"files": [{"file": "1", "content": content}]}),
+            self.ANSWERS[2],
+        ]
+
+    def test_a_change_that_does_not_parse_is_refused(self):
+        message, _ = self.prepare_with(self.answered("def bound(:\n    return 3\n"))
+        self.assertIn("src/queue.py: does not parse as Python (line 1", message)
+        self.assertEqual(self.run.phases.get(name="verification").status, "failed")
+
+    REPOSITORY = (("src/__init__.py", ""), ("src/retry.py", "def attempts():\n    return 3\n"))
+
+    def test_a_new_import_of_a_name_the_repository_lacks_is_refused(self):
+        message, _ = self.prepare_with(
+            self.answered("from src.retry import backoff\n"), extra=self.REPOSITORY
+        )
+        self.assertIn("imports backoff from src.retry", message)
+        self.assertIn("src/retry.py does not define", message)
+
+    def test_a_new_import_of_what_the_repository_has_is_prepared(self):
+        snapshot = self.snapshot()
+        for path, text in self.REPOSITORY:
+            snapshot.files.create(path=path, language="python", content=text, lines=1)
+        self.ANSWERS = self.answered("from src.retry import attempts\n\nLIMIT = attempts()\n")
+        self.offline()
+        self.run.refresh_from_db()
+        self.assertEqual(self.run.status, "prepared")
+        limits = self.run.phases.get(name="verification").output["limits"]
+        self.assertIn("were parsed (nothing was run)", limits)
+        self.assertIn("newly imports", limits)
+
+
+class WholeFileTests(SimpleTestCase):
+    def test_a_file_too_large_is_shown_as_such_and_not_taken_back(self):
+        from platform_core.code_factory_agents import numbered_files
+
+        files = [
+            {"path": "big.py", "text": "x = 1\n" * 4_000, "sha": "a"},
+            {"path": "small.py", "text": "y = 1\n", "sha": "b"},
+        ]
+        shown = numbered_files(files)
+        self.assertTrue(shown[0]["excerpt"].startswith("TOO LARGE TO CHANGE. This file has 24,000"))
+        self.assertEqual(shown[1]["excerpt"], "y = 1\n")
+        changes = collect_changes(
+            {
+                "files": [
+                    {"file": "1", "content": "x = 2\n"},
+                    {"file": "2", "content": "y = 2\n"},
+                ]
+            },
+            files,
+        )
+        self.assertEqual([change["path"] for change in changes], ["small.py"])
+
+
 class AnnotatedTargetTests(SimpleTestCase):
     """A path the design annotated with the symbol it means.
 

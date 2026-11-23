@@ -256,6 +256,22 @@ def target_paths(plan):
 #: usually a test file that does not exist yet.
 NEW_FILE = "NEW FILE. This path does not exist in the repository. Write it in full."
 
+#: The most of one file an agent is shown. An agent that writes a file returns
+#: it whole, so it may change only a file it was shown whole: a target cut at
+#: this length came back without its end, and nothing downstream could tell -
+#: the elision check looks for markers, and the review was shown the same cut.
+WHOLE_FILE_CHARACTERS = 20_000
+TOO_LARGE = (
+    "TOO LARGE TO CHANGE. This file has {size:,} characters, more than can be shown "
+    "whole, so it cannot be rewritten in this run: leave it out of your answer. "
+    "Its start follows for reference only.\n"
+)
+
+
+def too_large(text):
+    """Whether a file's text is more than an agent can be shown whole."""
+    return len(text or "") > WHOLE_FILE_CHARACTERS
+
 
 def numbered_files(files):
     """Files as the model sees them: by number, never by path.
@@ -270,7 +286,14 @@ def numbered_files(files):
             # Text, not a sha, decides this. A file read from the offline
             # snapshot has no blob sha, and was shown as NEW FILE - so an
             # offline implementation rewrote existing files from nothing.
-            "excerpt": found["text"][:20000] if (found["sha"] or found["text"]) else NEW_FILE,
+            "excerpt": (
+                TOO_LARGE.format(size=len(found["text"]))
+                + found["text"][:WHOLE_FILE_CHARACTERS]
+                if too_large(found["text"])
+                else found["text"]
+                if (found["sha"] or found["text"])
+                else NEW_FILE
+            ),
             "digest": found["sha"] or "",
         }
         for index, found in enumerate(files, start=1)
@@ -300,6 +323,24 @@ def run_work_order(run, token):
     except ValidationError as failure:
         finish_phase(phase, "failed", started, error=" ".join(failure.messages))
         raise
+    large = [item["path"] for item in files if too_large(item["text"])]
+    for path in large:
+        note(
+            run,
+            f"{path} is longer than {WHOLE_FILE_CHARACTERS:,} characters, more than an "
+            "agent can be shown whole, so it cannot be changed in this run.",
+            phase="work_order",
+            level="problem",
+        )
+    if large and len(large) == len(files):
+        message = (
+            "Every file the approved items named is longer than "
+            f"{WHOLE_FILE_CHARACTERS:,} characters, more than an agent can be shown "
+            "whole, so none of them can be changed safely. Nothing was asked of a "
+            "model. Split the file, or approve a plan that changes a smaller one."
+        )
+        finish_phase(phase, "failed", started, error=message)
+        raise ValidationError(message)
     note(
         run,
         f"Work order: deciding what each of the {len(files)} file(s) must end up doing.",
@@ -1184,10 +1225,36 @@ def run_review(run, changes, order, references=None):
     """
     started = time.monotonic()
     phase = start_phase(run, "review")
+    # A file the review cannot be shown whole is not reviewed, so it is not
+    # offered: the reviewer was shown the same cut the author was, and passed
+    # files whose end it never saw. The rest keep the numbers they had, which is
+    # what their work-order intent is looked up by.
+    unread = [change for change in changes if too_large(change["content"])]
+    for change in unread:
+        note(
+            run,
+            f"Rejected {change['path']}: {len(change['content']):,} characters, more "
+            f"than the review can be shown whole ({WHOLE_FILE_CHARACTERS:,}).",
+            phase="review",
+            level="problem",
+        )
+    if len(unread) == len(changes):
+        message = (
+            "Every changed file is longer than the review can be shown whole, so none "
+            "was reviewed and nothing is offered."
+        )
+        finish_phase(
+            phase,
+            "failed",
+            started,
+            error=message,
+            output={"rejected": [{"path": item["path"], "reason": "too large"} for item in unread]},
+        )
+        raise ValidationError(message)
     note(
         run,
-        f"Change review: reading {len(changes)} finished file(s) against the "
-        "approved items.",
+        f"Change review: reading {len(changes) - len(unread)} finished file(s) against "
+        "the approved items.",
         phase="review",
     )
     numbered = [
@@ -1196,11 +1263,12 @@ def run_review(run, changes, order, references=None):
             "title": change["path"],
             "excerpt": (
                 f"MUST END UP: {order.get(str(index), {}).get('intent', 'not stated')}\n"
-                f"{change['content'][:20000]}"
+                f"{change['content']}"
             ),
             "digest": change["sha"] or "",
         }
         for index, change in enumerate(changes, start=1)
+        if not too_large(change["content"])
     ]
     receipt = {}
     try:
@@ -1264,8 +1332,14 @@ def run_review(run, changes, order, references=None):
                 str(entry.get("verdict") or "").lower(),
                 str(entry.get("reason") or "")[:300],
             )
-    kept, dropped = [], []
+    kept = []
+    dropped = [
+        (change["path"], f"longer than the review can be shown whole ({WHOLE_FILE_CHARACTERS:,})")
+        for change in unread
+    ]
     for index, change in enumerate(changes, start=1):
+        if too_large(change["content"]):
+            continue
         verdict, reason = verdicts.get(str(index), ("ok", ""))
         if verdict == "reject":
             dropped.append((change["path"], reason))
@@ -1404,6 +1478,10 @@ def collect_changes(payload, files, agent="implementation"):
         if found["path"] in taken:
             dropped.append(f"{found['path']}: returned twice")
             continue
+        if too_large(found["text"]):
+            # Shown only its start, so whatever came back is missing its end.
+            dropped.append(f"{found['path']}: too large to have been shown whole")
+            continue
         if content == found["text"]:
             # Returned unchanged: committing it would put an empty diff in front
             # of a reviewer and claim work that did not happen.
@@ -1445,14 +1523,63 @@ def _path_problems(change):
         yield ValidationError("contains an elision where code should be.")
 
 
+def content_problems(run, changes, originals):
+    """What parsing the change finds, and what its new imports name that the
+    repository lacks (`code_factory_checks`, by rule; nothing is run).
+
+    Returns (findings, imports_checked). The imports are read against the
+    run's pinned snapshot, so a run with none has only the syntax checked.
+    """
+    from .code_factory_checks import import_problems, syntax_problem
+
+    findings = [
+        problem
+        for change in changes
+        if (
+            problem := syntax_problem(
+                change["path"], change["content"], originals.get(change["path"])
+            )
+        )
+    ]
+    if not run.code_snapshot_id:
+        return findings, False
+    snapshot = run.code_snapshot
+
+    def texts(wanted):
+        return snapshot.files.filter(path__in=wanted).values_list("path", "content")
+
+    findings += import_problems(
+        changes,
+        originals,
+        snapshot.files.values_list("path", flat=True),
+        texts,
+        complete=snapshot.complete,
+    )
+    return findings, True
+
+
+def checked_contents(imports_checked):
+    """What the content checks covered, in words for the phase's record."""
+    return (
+        "Python, JSON and TOML files were parsed (nothing was run)"
+        + (
+            ", and every module and name a changed Python file newly imports from "
+            "this repository was found in the change or the snapshot."
+            if imports_checked
+            else "; imports could not be checked, because the run has no snapshot."
+        )
+    )
+
+
 def run_verification(run, changes, token):
     """Check what is about to be written, before anything is written.
 
     There is no test suite to run: this platform holds knowledge about an
     application, not a checkout of it with a known build command. What it can do
     is refuse a change that is obviously not one - a path nobody read, an elision
-    where code should be, a file that moved underneath us - and say plainly that
-    it did no more than that rather than implying a green build.
+    where code should be, a file that does not parse, an import of something the
+    repository does not have, a file that moved underneath us - and say plainly
+    that it did no more than that rather than implying a green build.
     """
     from .github_write import absent_path, read_file, safe_path
 
@@ -1472,6 +1599,13 @@ def run_verification(run, changes, token):
             for change in changes
             for failure in _path_problems(change)
         ]
+        originals = dict(
+            run.code_snapshot.files.filter(
+                path__in=[change["path"] for change in changes]
+            ).values_list("path", "content")
+        )
+        found, imports_checked = content_problems(run, changes, originals)
+        findings += found
         if findings:
             finish_phase(phase, "failed", started, error="; ".join(findings)[:2000])
             raise ValidationError("; ".join(findings))
@@ -1483,22 +1617,24 @@ def run_verification(run, changes, token):
                 "checked": [change["path"] for change in changes],
                 "created": [],
                 "limits": (
-                    "Paths and elisions were checked. No staleness check was "
-                    "possible: these files came from a pinned snapshot, not from "
-                    "a live repository, and nothing is being written."
+                    "Paths and elisions were checked. "
+                    + checked_contents(imports_checked)
+                    + " No staleness check was possible: these files came from a "
+                    "pinned snapshot, not from a live repository, and nothing is "
+                    "being written."
                 ),
             },
         )
         note(
             run,
-            "Pre-write checks passed on paths and elisions. Staleness could not "
-            "be checked - the files came from a snapshot - and nothing is being "
-            "written anywhere.",
+            "Pre-write checks passed on paths, elisions, syntax and imports. Staleness "
+            "could not be checked - the files came from a snapshot - and nothing is "
+            "being written anywhere.",
             phase="verification",
             level="result",
         )
         return True
-    findings = []
+    findings, originals = [], {}
     for change in changes:
         try:
             safe_path(change["path"])
@@ -1519,6 +1655,10 @@ def run_verification(run, changes, token):
             findings.append(f"{change['path']}: could not be re-read before writing.")
         elif current["sha"] != change["sha"]:
             findings.append(f"{change['path']}: changed in the repository since it was read.")
+        else:
+            originals[change["path"]] = current["text"]
+    found, imports_checked = content_problems(run, changes, originals)
+    findings += found
     if findings:
         finish_phase(phase, "failed", started, error="; ".join(findings)[:2000])
         raise ValidationError("; ".join(findings))
@@ -1531,16 +1671,18 @@ def run_verification(run, changes, token):
             "created": [change["path"] for change in changes if change["sha"] is None],
             "limits": (
                 "Paths, elisions and staleness were checked, and each new path was "
-                "confirmed still absent. No build or test suite was run: this platform "
-                "holds knowledge about the application, not a checkout."
+                "confirmed still absent. "
+                + checked_contents(imports_checked)
+                + " No build or test suite was run: this platform holds knowledge "
+                "about the application, not a checkout."
             ),
         },
     )
     note(
         run,
-        "Pre-write checks passed: every path is safe, nothing was elided, no file "
-        "moved since it was read, and each new path is still absent. No build or "
-        "test suite was run.",
+        "Pre-write checks passed: every path is safe, nothing was elided, every file "
+        "parses, no new import names something missing, no file moved since it was "
+        "read, and each new path is still absent. No build or test suite was run.",
         phase="verification",
         level="result",
     )
