@@ -212,6 +212,28 @@ class MeasurementTests(TestCase):
         self.assertIn("code-factory", out.getvalue())
         self.assertIn("Clears the bar", out.getvalue())
 
+    def test_a_record_kept_by_mistake_is_forgotten_row_and_file(self):
+        with tempfile.TemporaryDirectory() as folder:
+            made = Path(folder) / "factory" / "2026-11-01T1200-claude-sonnet-5.json"
+            made.parent.mkdir()
+            made.write_text(json.dumps(factory_record(
+                WHEN, factory_totals(1, 50.0), factory_totals(1, 50.0)
+            )), encoding="utf-8")
+            agent_measurements.load(self.app, made)
+            out = StringIO()
+            call_command("agent_measurements", str(self.app.pk), "--forget", str(made),
+                         stdout=out)
+            self.assertIn("Forgot", out.getvalue())
+            self.assertIn("1 row(s) and its file", out.getvalue())
+            self.assertFalse(made.exists())
+            self.assertFalse(AgentMeasurement.objects.filter(application=self.app).exists())
+            # Nothing outside a pack's folder is touched.
+            stray = Path(folder) / "elsewhere.json"
+            stray.write_text("{}", encoding="utf-8")
+            with self.assertRaises(ValidationError):
+                agent_measurements.forget(self.app, stray)
+            self.assertTrue(stray.exists())
+
     # Knowledge upkeep, by use -------------------------------------------------------
 
     def upkeep(self, drafted, rules):

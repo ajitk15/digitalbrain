@@ -442,6 +442,26 @@ def load(app, path, user=None):
     return record(app, pack.key, found, user, path)
 
 
+def forget(app, path):
+    """Remove a record kept by mistake: its rows here and its file. The file must be
+    in a pack's folder under `benchmarks/`, as `load` requires. Returns
+    (rows removed, whether the file was removed)."""
+    from .models import AgentMeasurement
+
+    path = Path(path)
+    folders = {pack.folder for pack in PACKS.values() if pack.folder}
+    if path.resolve().parent.name not in folders:
+        named = ", ".join(f"benchmarks/{folder}" for folder in sorted(folders))
+        raise ValidationError(f"{path.name} is not under one of {named}.")
+    removed, _ = AgentMeasurement.objects.filter(
+        application=app, file__in={relative(path), path.name}
+    ).delete()
+    existed = path.is_file()
+    if existed:
+        path.unlink()
+    return removed, existed
+
+
 def measurements(app, agent_key):
     from .models import AgentMeasurement
 
