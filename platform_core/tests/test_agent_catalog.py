@@ -373,8 +373,20 @@ class CatalogTests(TestCase):
         self.assertContains(page, 'class="settings-sidebar"')
         for agent in agent_catalog.agents():
             with self.subTest(agent=agent.key):
+                # One compact row: its name opens its page as a popup, with what it
+                # does, why tools help and each tool it is given.
+                self.assertContains(
+                    page, f'href="{reverse("agent", args=[self.app.pk, agent.key])}" data-modal'
+                )
+                for text in (agent.what, agent.why):
+                    self.assertTrue(text)
+                    self.assertContains(page, escape(text))
+                for tool in agent_catalog.tools(agent):
+                    self.assertContains(page, f"<code title=\"{escape(tool.description)}\">")
+                # Where it is shown is said on its own page.
+                detail = self.client.get(reverse("agent", args=[self.app.pk, agent.key]))
                 for line in agent.shown:
-                    self.assertContains(page, escape(line))
+                    self.assertContains(detail, escape(line))
         # A viewer is led to every screen it may open, and not to Learned.
         self.assertContains(page, reverse("chat", args=[self.app.pk]))
         self.assertNotContains(page, reverse("learned", args=[self.app.pk]))

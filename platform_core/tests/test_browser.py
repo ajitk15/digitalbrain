@@ -1880,6 +1880,17 @@ class AgentBadgeTests(BrowserTestCase):
         dialog.wait_for(state="detached")
         self.assertNoScriptErrors()
 
+    def test_an_agent_named_in_the_agents_list_opens_in_a_popup(self):
+        self.open("agents", self.app.pk)
+        self.page.locator("table.agents-table").wait_for()
+        self.page.locator("a.agents-table-name", has_text="Gap analysis agent").click()
+        dialog = self.page.locator("dialog[open]")
+        dialog.get_by_role("heading", name="Gap analysis agent").wait_for()
+        dialog.locator("code", has_text="search_knowledge").first.wait_for()
+        dialog.locator("[data-modal-close]").click()
+        dialog.wait_for(state="detached")
+        self.assertNoScriptErrors()
+
 
     def test_a_measured_agents_popup_draws_its_comparison(self):
         from datetime import UTC, datetime

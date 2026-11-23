@@ -367,7 +367,7 @@ incident's triage button - and opens that agent's page (`agent`) as a popup
 (`data-modal`): what it does, when and where it runs, its tools with their own descriptions,
 turns and tool calls, its safeguards, and the last `ACTIVITY_DAYS` of its `AgentStep` rows
 here as counts by tool and outcome - never what was asked or read, which is never kept.
-`agents` lists them all. Anyone who can open the application may look; nothing there starts
+`agents` lists them all as one compact table - a row per agent: its name (opening its page as a popup), state, measurement, where it runs (a link) and its runs and steps in `ACTIVITY_DAYS`; what it does with why tools help (`Agent.what`/`why`); and its tools as chips, each titled with its description. Anyone who can open the application may look; nothing there starts
 an agent or changes a setting. A new agent is one registry entry and a badge.
 **The badge forecasts the next run from the checks the run itself makes, in its order**
 (`agent_catalog.status`): Off when its feature or AI settings task is off; "Can't run" when

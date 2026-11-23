@@ -3484,6 +3484,17 @@
   .agents-index > li > a:hover { text-decoration: none; }
   .agents-index > li > a .muted { grid-column: 2; font-size: var(--t-12); }
   .agent-where { padding: var(--s-2) var(--s-3); border-top: 1px solid var(--c-line-soft); font-size: var(--t-13); }
+  /* Settings → AI → Agents: one compact row per agent. */
+  .agents-table { width: 100%; border-collapse: collapse; font-size: var(--t-13); table-layout: auto; }
+  .agents-table th, .agents-table td { padding: var(--s-2); border-bottom: 1px solid var(--c-line-soft); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; }
+  .agents-table thead th { font-size: var(--t-11); font-weight: 600; color: var(--c-ink-2); white-space: nowrap; }
+  .agents-table tbody th { font-weight: 400; text-transform: none; letter-spacing: normal; width: 190px; }
+  .agents-table tbody th .agent-badge, .agents-table tbody th .measure-chip { text-transform: none; margin: 2px 4px 0 0; white-space: nowrap; display: inline-flex; }
+  .agents-table-name { display: block; font-weight: 600; text-transform: none; }
+  .agents-table-what small { display: block; margin-top: 2px; color: var(--c-ink-2); font-size: var(--t-12); }
+  .agents-table-tools { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 3px; width: 210px; }
+  .agents-table-tools code { white-space: nowrap; font-size: var(--t-11); padding: 0 6px; border-radius: 999px; background: var(--c-surface); border: 1px solid var(--c-line-soft); cursor: help; }
+  .agents-table-where { display: block; margin-top: 4px; color: var(--c-ink-2); font-size: var(--t-12); }
   .agent-where .panel-label { margin: 0 0 var(--s-1); }
   .agent-where ul, .agent-shown { margin: 0 0 var(--s-1); padding-left: var(--s-4); color: var(--c-ink-2); }
   .agent-shown { padding-left: var(--s-3); }

@@ -92,6 +92,10 @@ class Agent:
     #: The run phases its steps are kept under, when another agent keeps steps on
     #: the same rows: Code Factory's analysis and its implementation chain.
     phases: tuple = ()
+    #: One line each for the Agents list: what it does, and why tools help it
+    #: where one call over what it was handed would not.
+    what: str = ""
+    why: str = ""
 
 
 def _limits():
@@ -126,6 +130,11 @@ def _agents():
     return (
         Agent(
             key="chat",
+            what="Answers questions from the application's sources.",
+            why=(
+                "Search finds the obvious passages once; tools let it search again with other "
+                "words, or read a source further, when they do not answer."
+            ),
             name="Chat agent",
             purpose="chat",
             feature="chat",
@@ -161,6 +170,11 @@ def _agents():
         ),
         Agent(
             key="draft-a-fix",
+            what="Drafts the source an unanswered question should cite.",
+            why=(
+                "The question already went unanswered, so it searches with other words and "
+                "reads what it finds before proposing one quoted source."
+            ),
             name="Knowledge upkeep agent",
             purpose="knowledge_upkeep",
             feature="knowledge",
@@ -197,6 +211,11 @@ def _agents():
         ),
         Agent(
             key="code-review",
+            what="Reviews a code change for what it breaks.",
+            why=(
+                "A diff hides who calls the changed code; it reads the whole diff and the "
+                "files that depend on it to find a caller or requirement broken."
+            ),
             name="Code review agent",
             purpose="code_review",
             feature="code_review",
@@ -232,6 +251,11 @@ def _agents():
         ),
         Agent(
             key="document-review",
+            what="Reviews a document for clarity, gaps and contradictions.",
+            why=(
+                "One call sees one document, cut short; it searches the other sources "
+                "so a contradiction with them can be found and linked."
+            ),
             name="Document review agent",
             purpose="document_review",
             feature="knowledge",
@@ -268,6 +292,11 @@ def _agents():
         ),
         Agent(
             key="code-docs",
+            what="Describes a repository's largest components.",
+            why=(
+                "A few opening lines say little; it opens the files that show what a "
+                "component is for and follows what depends on them."
+            ),
             name="Code documentation agent",
             purpose="code_docs",
             feature="code_docs",
@@ -305,6 +334,11 @@ def _agents():
         ),
         Agent(
             key="gap-analysis",
+            what="Proposes a Code Factory plan's items from a ticket.",
+            why=(
+                "Retrieval picks the evidence once; it searches for the requirement, "
+                "control or risk that was missed, so each item rests on more."
+            ),
             name="Gap analysis agent",
             purpose="plan_drafting",
             tool_purpose="gap_analysis",
@@ -344,6 +378,11 @@ def _agents():
         ),
         Agent(
             key="code-factory",
+            what="Writes the change an approved plan asks for.",
+            why=(
+                "Files chosen beforehand miss how the code is called and "
+                "tested; it reads that before it writes."
+            ),
             name="Code Factory agent",
             purpose="plan_drafting",
             feature="code_factory",
@@ -380,6 +419,11 @@ def _agents():
         ),
         Agent(
             key="triage",
+            what="Suggests what caused an incident.",
+            why=(
+                "Its evidence pack is one incident's neighbourhood; it can look at a "
+                "similar incident, the runbooks and other sources too."
+            ),
             name="Incident triage agent",
             purpose="serviceops_triage",
             feature="service_ops",
@@ -659,6 +703,8 @@ def agents_view(request, pk):
             "screen_url": screen_url(agent, app, grant),
             "measured": latest.get(agent.key),
             "measurable": pack_for(agent.key) is not None,
+            "tools": tools(agent),
+            "use": activity(agent, app),
         }
         for agent in _agents()
     ]
