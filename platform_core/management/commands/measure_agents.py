@@ -3,6 +3,7 @@
     manage.py measure_agents <application id> --as <username>
     manage.py measure_agents <application id> --as <username> --load-questions
     manage.py measure_agents <application id> --as <username> --run
+    manage.py measure_agents <application id> --as <username> --run --repeat 3
 
 Without --run nothing is spent: it says which packs are ready and what each of the
 others needs. See `platform_core/measure_agents.py`.
@@ -11,7 +12,7 @@ others needs. See `platform_core/measure_agents.py`.
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 
-from platform_core import measure_agents
+from platform_core import agent_measurements, measure_agents
 from platform_core.models import Application, User
 from platform_core.policy import application_for
 
@@ -24,6 +25,10 @@ class Command(BaseCommand):
         parser.add_argument("--as", dest="actor", help="Username the calls are made and charged as")
         parser.add_argument("--run", action="store_true",
                             help="Run every ready pack with --record, then llm_drift (paid)")
+        parser.add_argument("--repeat", type=int, default=1, choices=range(1, 6),
+                            metavar="N",
+                            help="Run each ready pack N times (1-5) and say whether most "
+                                 "of the runs cleared the bar; N times the cost")
         parser.add_argument("--load-questions", action="store_true",
                             help="Add the demo's benchmark questions if there are none (free)")
 
@@ -55,17 +60,24 @@ class Command(BaseCommand):
                               "Nothing was spent; add --run to run them (paid).")
             return
         ran = []
+        repeat = options["repeat"]
         for pack in ready:
-            self.stdout.write(f"\n== {pack}")
-            arguments = [pack, str(app.pk), "--as", user.username, "--record"]
-            if pack == "chat_pack" and self.routed(app):
-                arguments.append("--routed")
-            try:
-                call_command(*arguments, stdout=self.stdout, stderr=self.stderr)
+            states, seen = [], set()
+            for number in range(1, repeat + 1):
+                self.stdout.write(
+                    f"\n== {pack}" + (f" ({number} of {repeat})" if repeat > 1 else "")
+                )
+                state = self.run_pack(app, user, pack, seen)
+                if state == "stopped":
+                    ran.append((pack, "stopped"))
+                    break
+                if state:
+                    states.append(state)
+            else:
                 ran.append((pack, "done"))
-            except CommandError as failure:
-                self.stdout.write(f"stopped: {failure}")
-                ran.append((pack, "stopped"))
+                if repeat > 1:
+                    _, said = agent_measurements.combine(states, repeat)
+                    self.stdout.write(f"{pack}: {said}")
         if drift:
             self.stdout.write("\n== llm_drift")
             try:
@@ -77,6 +89,34 @@ class Command(BaseCommand):
                 ran.append(("llm_drift", "stopped"))
         self.stdout.write("\nRan: " + ", ".join(f"{pack} {state}" for pack, state in ran))
         self.stdout.write("Each verdict is above; recorded ones are on Settings → AI → Agents.")
+
+    def run_pack(self, app, user, pack, seen):
+        """One recorded run of `pack`: the state it was kept with, "" when it compared
+        nothing (and so was not kept), or "stopped". `seen` holds the rows earlier
+        runs kept, so a run in the same clock tick never reads one as its own."""
+        from django.utils import timezone
+
+        from platform_core.models import AgentMeasurement
+
+        since = timezone.now()
+        arguments = [pack, str(app.pk), "--as", user.username, "--record"]
+        if pack == "chat_pack" and self.routed(app):
+            arguments.append("--routed")
+        try:
+            call_command(*arguments, stdout=self.stdout, stderr=self.stderr)
+        except CommandError as failure:
+            self.stdout.write(f"stopped: {failure}")
+            return "stopped"
+        kept = (
+            AgentMeasurement.objects.filter(application=app, pack=pack, created_at__gte=since)
+            .exclude(pk__in=seen)
+            .order_by("-created_at")
+            .first()
+        )
+        if kept is None:
+            return ""
+        seen.add(kept.pk)
+        return kept.verdict
 
     def routed(self, app):
         from platform_core.ai import routing_config

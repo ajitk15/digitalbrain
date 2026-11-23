@@ -870,6 +870,7 @@ def record_turns(user, app, config, purpose, turns):
             output_tokens=turn.completion_tokens,
             cache_read_tokens=turn.cache_read,
             cache_write_tokens=turn.cache_write,
+            turns=turn.turns,
             amount=amount,
             estimated=True,
             authorized=app,

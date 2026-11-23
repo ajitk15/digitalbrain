@@ -36,6 +36,14 @@ class TurnUsage:
     cache_read: int = 0
     cache_write: int = 0
     cache_write_long: int = 0
+    #: The model turns this usage covers: one for a request we can key, the run's
+    #: own count for a Claude CLI run, whose usage arrives once, summed.
+    turns: int = 1
+
+
+def turns_of(usages):
+    """How many model turns `usages` billed - not how many receipts they make."""
+    return sum(usage.turns for usage in usages)
 
 
 class TurnLimit(RuntimeError):
@@ -141,11 +149,16 @@ def claude_cache(raw):
     return read, written, long
 
 
-def claude_turn(request_id, raw):
-    """One Claude turn's `TurnUsage`, its cache reads and writes kept apart."""
+def claude_turn(request_id, raw, turns=1):
+    """One Claude turn's `TurnUsage`, its cache reads and writes kept apart.
+
+    `turns` is how many model turns the usage sums - a CLI run's `num_turns`;
+    anything that is not a positive count reads as one, never as none.
+    """
     inputs, outputs = claude_usage(raw)
     read, written, long = claude_cache(raw)
-    return TurnUsage(request_id, inputs, outputs, read, written, long)
+    turns = turns if type(turns) is int and 1 <= turns <= TOKEN_LIMIT else 1
+    return TurnUsage(request_id, inputs, outputs, read, written, long, turns)
 
 
 def receipt_usage(turn):

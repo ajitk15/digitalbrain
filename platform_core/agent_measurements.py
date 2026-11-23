@@ -33,6 +33,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, Sum
 from django.utils import timezone
 
+from .models.ai import MEASUREMENT_RUNTIMES, MEASUREMENT_VERDICTS
+
 ROOT = Path(__file__).resolve().parent.parent
 
 #: Fewer drafted questions decided than this are too few to judge Knowledge upkeep.
@@ -286,15 +288,46 @@ NOTHING_COMPARED = (
     "Nothing was compared: one way could ask none of the pack's cases here - see each "
     "case's reason above, set up what it names and run it again."
 )
+#: What it says when the tools way never called a tool: it was one call twice, so
+#: whatever it scored says nothing about tools - `docs_pack`'s first real run
+#: "failed the bar" on 12 paragraphs against 13 that way.
+TOOLS_UNUSED = (
+    "Nothing was compared: the tools way never called a tool, so it was one call "
+    "asked twice. Look at what the agent is told about its tools, and run it again."
+)
 #: The count of cases each pack's totals carry, by whatever it calls them.
 CASES = ("items", "tickets", "questions", "cases", "changes")
+
+
+def tools_unused(found):
+    """Whether the tools way asked its cases and never called a tool.
+
+    Only a pack whose totals count tool calls can say; one that does not is never
+    read as unused.
+    """
+    tools = (found or {}).get("tools")
+    if not isinstance(tools, dict) or "tool_calls" not in tools:
+        return False
+    cases = next((tools[key] for key in CASES if key in tools), None)
+    asked = cases is None or (cases or 0) > (tools.get("failed") or 0)
+    return asked and not tools["tool_calls"]
+
+
+def why_nothing_compared(found):
+    """The sentence a verdict gives for a pack run `nothing_compared` refuses."""
+    return TOOLS_UNUSED if tools_unused(found) and not _uncompared(found) else NOTHING_COMPARED
 
 
 def nothing_compared(found):
     """Whether a pack's totals compare nothing: either way asked none of its cases
     (every one failed, or there were none); both ways failed most of them - a
-    provider refusing calls, a rate limit, not an agent being worse; or both ways
-    kept nothing to score (code documentation describing no component either way)."""
+    provider refusing calls, a rate limit, not an agent being worse; both ways
+    kept nothing to score (code documentation describing no component either way);
+    or the tools way never called a tool (`tools_unused`)."""
+    return _uncompared(found) or tools_unused(found)
+
+
+def _uncompared(found):
     ways = [totals for totals in (found or {}).values() if isinstance(totals, dict)]
     mostly_failed = []
     for totals in ways:
@@ -379,6 +412,118 @@ def upkeep(app, days=30):
     }
 
 
+#: How a measured run's calls were carried, as `carried_by` names them.
+RUNTIMES = dict(MEASUREMENT_RUNTIMES)
+
+
+def carried_by(app, pack_key):
+    """How the agent a pack measures would run here now: a `RUNTIMES` key, or ""
+    when it cannot be told (no configuration, no credential, no catalog entry).
+
+    Read as the harness reads it (`harness.runtime_for`), so a pack record says
+    whether its turns went through the CLI - one summed receipt a run, no cache -
+    or the Messages API, which caches only with `claude_prompt_caching` on. The
+    credential is looked at for its kind and never kept.
+    """
+    from django.conf import settings
+    from django.core.exceptions import ImproperlyConfigured
+
+    from . import agent_catalog
+    from .agent_runtime import claude_runtime, messages_runtime, openai_runtime
+    from .agent_runtime.harness import runtime_for
+    from .ai import provider_credential
+    from .models import AIConfiguration
+
+    pack = PACKS.get(pack_key)
+    agent = agent_catalog.get(pack.agent) if pack else None
+    if agent is None:
+        return ""
+    config = AIConfiguration.objects.filter(
+        application=app, purpose=agent.purpose, enabled=True
+    ).first()
+    if config is None:
+        return ""
+    try:
+        runtime = runtime_for(config.provider, provider_credential(config, app))
+    except ImproperlyConfigured:
+        return ""
+    if runtime is messages_runtime:
+        return "messages-cached" if settings.CLAUDE_PROMPT_CACHING else "messages"
+    return {claude_runtime: "cli", openai_runtime: "openai"}.get(runtime, "")
+
+
+def case_receipts(receipts, since, counted):
+    """(turns, prompt tokens, completion tokens, amount) of the receipts one case of
+    a pack run wrote: those of `receipts` written since it started, less any an
+    earlier case already counted (`counted`, updated here).
+
+    A receipt written in the clock tick a case starts in reads as that case's too
+    by time alone; counting the one before it again flipped a test's verdict one
+    run in three, and would add a case's cost to the next on a fast provider.
+    """
+    rows = list(
+        receipts.filter(created_at__gte=since)
+        .exclude(pk__in=counted)
+        .values_list("pk", "turns", "input_tokens", "output_tokens", "amount")
+    )
+    counted.update(row[0] for row in rows)
+    return (
+        sum(row[1] for row in rows),
+        sum(row[2] for row in rows),
+        sum(row[3] for row in rows),
+        sum((row[4] for row in rows), Decimal("0")),
+    )
+
+
+def unused(path):
+    """`path`, or the same name ending -2, -3... when it is taken.
+
+    Pack records are named by the minute; two runs of a quick pack in one minute
+    (`measure_agents --repeat`) wrote the second over the first, and both rows then
+    named one file.
+    """
+    path = Path(path)
+    number = 2
+    found = path
+    while found.exists():
+        found = path.with_name(f"{path.stem}-{number}{path.suffix}")
+        number += 1
+    return found
+
+
+def combine(states, repeat):
+    """(state, sentence) for `repeat` runs of one pack, from the states those that
+    compared something were recorded with.
+
+    Packs are small, so one run is not a verdict: tools clear only when most of the
+    runs asked for cleared - two of three - and a run that compared nothing counts
+    as one that did not clear, never as one left out.
+    """
+    cleared = sum(state == "clears" for state in states)
+    counts = ", ".join(
+        f"{sum(state == key for state in states)} {label.lower()}"
+        for key, label in MEASUREMENT_VERDICTS
+        if any(state == key for state in states)
+    )
+    missing = repeat - len(states)
+    said = f"{counts}{', ' if counts and missing else ''}"
+    said += f"{missing} compared nothing" if missing else ""
+    if cleared * 2 > repeat:
+        return "clears", f"Clears the bar in {cleared} of {repeat} runs ({said})."
+    if not states:
+        return "incomplete", f"No run of {repeat} compared anything."
+    return (
+        "fails" if cleared else max(set(states), key=states.count),
+        f"Does not clear the bar: cleared in {cleared} of {repeat} runs ({said}).",
+    )
+
+
+def stamp(app, pack_key, found):
+    """Write how the run was carried into a pack record before it is saved."""
+    found.setdefault("runtime", carried_by(app, pack_key))
+    return found
+
+
 def record(app, pack_key, found, user=None, path=None):
     """Keep one pack record, written to `path`, as an `AgentMeasurement`. Returns
     (row, created): the same record kept twice is the one row, updated."""
@@ -405,6 +550,8 @@ def record(app, pack_key, found, user=None, path=None):
             "agent": pack.agent,
             "provider": str(found.get("provider") or "")[:80],
             "pack_digest": str(found.get("pack") or "")[:64],
+            "runtime": runtime if (runtime := str(found.get("runtime") or "")) in RUNTIMES
+            else "",
             "metrics": metrics,
             "verdict": state,
             "verdict_text": text[:300],
@@ -589,8 +736,10 @@ TREND_WIDTH, TREND_HEIGHT, TREND_LEFT, TREND_RIGHT, TREND_TOP, TREND_BOTTOM = (
 
 def trend(rows):
     """Every recorded measurement's main figure, one line each way, as SVG
-    coordinates. A model or a pack different from the run before starts a new
-    reference, marked by a dashed line: runs either side of it are not comparable.
+    coordinates. A model, a pack or a runtime different from the run before starts
+    a new reference, marked by a dashed line: runs either side of it are not
+    comparable. A record from before runtimes were kept says nothing, and is not
+    read as a change.
     None with fewer than two measurements."""
     if len(rows) < 2:
         return None
@@ -633,6 +782,8 @@ def trend(rows):
         for index in range(1, len(rows))
         if (rows[index].model, rows[index].pack_digest)
         != (rows[index - 1].model, rows[index - 1].pack_digest)
+        or (rows[index].runtime and rows[index - 1].runtime
+            and rows[index].runtime != rows[index - 1].runtime)
     ]
     return {
         "width": TREND_WIDTH,

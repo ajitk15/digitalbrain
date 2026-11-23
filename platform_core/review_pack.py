@@ -221,10 +221,10 @@ def metrics(details, modes=MODES):
 def verdict(found):
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
-    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+    from .agent_measurements import nothing_compared, why_nothing_compared
 
     if nothing_compared(found):
-        return NOTHING_COMPARED
+        return why_nothing_compared(found)
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["found"] < alone["found"]:
@@ -245,6 +245,8 @@ def save(record):
     RECORDS.mkdir(parents=True, exist_ok=True)
     stamp = record["generated_at"][:16].replace(":", "")
     model = re.sub(r"[^\w.-]+", "-", record["model"] or "model")
-    path = RECORDS / f"{stamp}-{model}.json"
+    from .agent_measurements import unused
+
+    path = unused(RECORDS / f"{stamp}-{model}.json")
     path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

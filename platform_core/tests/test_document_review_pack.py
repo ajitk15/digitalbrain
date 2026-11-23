@@ -216,3 +216,78 @@ class NothingComparedRuleTests(SimpleTestCase):
         self.assertTrue(nothing_compared({"one_shot": empty, "tools": empty}))
         self.assertFalse(nothing_compared({"one_shot": empty,
                                            "tools": {**empty, "components": 4}}))
+
+    def test_a_tools_way_that_called_no_tool_compared_nothing(self):
+        from platform_core.agent_measurements import (
+            NOTHING_COMPARED,
+            TOOLS_UNUSED,
+            nothing_compared,
+            why_nothing_compared,
+        )
+
+        alone = {"asked": 6, "components": 6, "failed": 0, "tool_calls": 0}
+        unused = {"one_shot": alone, "tools": dict(alone)}
+        self.assertTrue(nothing_compared(unused))
+        self.assertEqual(why_nothing_compared(unused), TOOLS_UNUSED)
+        # One call made is a comparison.
+        self.assertFalse(nothing_compared({"one_shot": alone, "tools": {**alone,
+                                                                         "tool_calls": 1}}))
+        # A pack that does not count tool calls is never read as unused.
+        counted = {key: value for key, value in alone.items() if key != "tool_calls"}
+        self.assertFalse(nothing_compared({"one_shot": counted, "tools": counted}))
+        # Every case failed is the older reason, and says so.
+        failed = {"one_shot": alone, "tools": {**alone, "failed": 6, "asked": 6}}
+        self.assertTrue(nothing_compared(failed))
+        self.assertEqual(why_nothing_compared(failed), NOTHING_COMPARED)
+
+    def test_each_pack_verdict_says_why_nothing_was_compared(self):
+        import importlib
+
+        from platform_core.agent_measurements import TOOLS_UNUSED
+
+        for name, cases in (("docs_pack", "asked"), ("factory_pack", "tickets"),
+                            ("review_pack", "changes"), ("chat_pack", "questions"),
+                            ("analysis_pack", "tickets"),
+                            ("document_review_pack", "items"),
+                            ("triage_pack", "cases")):
+            with self.subTest(pack=name):
+                module = importlib.import_module(f"platform_core.{name}")
+                way = {cases: 4, "failed": 0, "tool_calls": 0, "cost": "0.1",
+                       "components": 3}
+                self.assertEqual(module.verdict({"one_shot": way, "tools": dict(way)}),
+                                 TOOLS_UNUSED)
+
+
+class CaseReceiptTests(TestCase):
+    """A case counts the receipts it wrote, never one an earlier case counted."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+
+    def receipt(self, request_id, turns=1):
+        from platform_core.services import record_ai_usage
+
+        record_ai_usage(
+            actor=self.owner, application_id=self.app.pk, provider="Anthropic",
+            model="claude-sonnet-5", request_id=request_id, input_tokens=100,
+            output_tokens=10, amount=Decimal("0.001"), purpose="document_review",
+            turns=turns,
+        )
+
+    def test_a_receipt_in_the_tick_a_case_starts_is_not_counted_twice(self):
+        from django.utils import timezone
+
+        counted = set()
+        since = timezone.now()
+        self.receipt("first")
+        # The next case starts in the same tick as the receipt before it.
+        AIUsage.objects.update(created_at=since)
+        self.assertEqual(document_review_pack.receipts(self.app, self.owner, since, counted),
+                         (1, 100, 10, Decimal("0.001")))
+        self.receipt("second", turns=3)
+        AIUsage.objects.filter(request_id="second").update(created_at=since)
+        self.assertEqual(document_review_pack.receipts(self.app, self.owner, since, counted),
+                         (3, 100, 10, Decimal("0.001")))
+        # Nothing new is nothing, not zero turns read as one.
+        self.assertEqual(document_review_pack.receipts(self.app, self.owner, since, counted),
+                         (0, 0, 0, Decimal("0")))

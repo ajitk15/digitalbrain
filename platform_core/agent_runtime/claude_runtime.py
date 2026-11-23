@@ -280,12 +280,14 @@ async def run(
     stopped = stopped_at is not None
     text = ("".join(pieces) or "".join(fallback)).strip()
     if out_of_turns(result) and not stopped:
-        raise TurnLimit([claude_turn(f"claude-{uuid.uuid4()}", result.usage)], text)
+        used = claude_turn(f"claude-{uuid.uuid4()}", result.usage, result.num_turns)
+        raise TurnLimit([used], text)
     if result is None or result.is_error:
         if not (stopped and text):
             raise ValueError("No successful result")
         return [TurnUsage(f"claude-{uuid.uuid4()}", 0, 0)], text
-    usage = claude_turn(f"claude-{uuid.uuid4()}", result.usage)
+    # One usage for the whole run, summed: it says how many turns it covers.
+    usage = claude_turn(f"claude-{uuid.uuid4()}", result.usage, result.num_turns)
     # The streamed text wins when there is more of it than the CLI's summary.
     #
     # `result.result` is the CLI's account of the final assistant message, and a

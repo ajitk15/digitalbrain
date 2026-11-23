@@ -907,6 +907,7 @@ def agent_review(review, user, citations, receipt, steps=True):
     """(answer, evidence it read) through the harness with the review tools."""
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import agent_configuration, prompt_size
 
     app, config, token = agent_configuration(user, review.application_id, "code_review")
@@ -949,7 +950,7 @@ def agent_review(review, user, citations, receipt, steps=True):
             "model": config.model,
             "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
             "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
-            "turns": len(result.usages),
+            "turns": turns_of(result.usages),
             "tool_calls": len(result.steps),
         }
     )

@@ -145,20 +145,18 @@ def ask(user, app, config, token, question, evidence, mode):
     return result.answer, result.citations, len(result.steps), ""
 
 
-def receipts(app, user, since):
-    """(turns, prompt tokens, completion tokens, amount) the case's receipts recorded."""
-    from django.db.models import Count, Sum
-
+def receipts(app, user, since, counted=None):
+    """(turns, prompt tokens, completion tokens, amount) the case's receipts recorded:
+    since it started, never one an earlier case of this run counted
+    (`agent_measurements.case_receipts`)."""
+    from .agent_measurements import case_receipts
     from .models import AIUsage
 
-    found = AIUsage.objects.filter(
-        application=app, actor=user, purpose__in=RECEIPT_PURPOSES, created_at__gte=since
-    ).aggregate(
-        turns=Count("id"), prompt=Sum("input_tokens"), completion=Sum("output_tokens"),
-        amount=Sum("amount"),
+    return case_receipts(
+        AIUsage.objects.filter(application=app, actor=user, purpose__in=RECEIPT_PURPOSES),
+        since,
+        set() if counted is None else counted,
     )
-    return (found["turns"], found["prompt"] or 0, found["completion"] or 0,
-            found["amount"] or Decimal("0"))
 
 
 def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
@@ -182,6 +180,7 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
             or "Set up Chat searching in AI settings and switch it on to measure routing."
         )
     details = []
+    counted = set()
     for item in found:
         # Found once, as chat finds it, and handed to both ways alike.
         evidence = seeded(app, item.question, user)
@@ -197,7 +196,7 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
                     "id", "title", "source"
                 )
             }
-            turns, prompt, completion, amount = receipts(app, user, since)
+            turns, prompt, completion, amount = receipts(app, user, since, counted)
             details.append({
                 "question": item.question,
                 "expected": item.expected,
@@ -247,10 +246,10 @@ def verdict(found):
     """Whether chat's tools clear the bar against one call, and why not if they do not."""
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
-    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+    from .agent_measurements import nothing_compared, why_nothing_compared
 
     if nothing_compared(found):
-        return NOTHING_COMPARED
+        return why_nothing_compared(found)
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["cited_expected"] < alone["cited_expected"]:
@@ -302,6 +301,8 @@ def save(record):
     RECORDS.mkdir(parents=True, exist_ok=True)
     stamp = record["generated_at"][:16].replace(":", "")
     model = re.sub(r"[^\w.-]+", "-", record["model"] or "model")
-    path = RECORDS / f"{stamp}-{model}.json"
+    from .agent_measurements import unused
+
+    path = unused(RECORDS / f"{stamp}-{model}.json")
     path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

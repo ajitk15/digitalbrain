@@ -117,3 +117,16 @@ class ReceiptTests(TestCase):
         with self.assertRaises(ValidationError):
             self.receipt(cache_read_tokens=-1)
         self.assertFalse(AIUsage.objects.exists())
+
+    def test_a_receipt_says_how_many_turns_it_bills(self):
+        # A CLI run's one receipt covers every turn it took; the default is one.
+        for turns in (0, -1, True, 2.0, None):
+            with self.subTest(turns=turns), self.assertRaises(ValidationError):
+                self.receipt(turns=turns)
+        self.receipt(turns=4)
+        self.assertEqual(AIUsage.objects.get().turns, 4)
+        with self.assertRaises(ValidationError):
+            self.receipt(turns=1)
+        AIUsage.objects.all().delete()
+        self.receipt()
+        self.assertEqual(AIUsage.objects.get().turns, 1)

@@ -144,6 +144,7 @@ def draft(user, app_id, candidate_id):
     candidate with its draft; raises what the gateway or the harness raises."""
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import MissingCredential, agent_configuration, failure_message, prompt_size
     from .models import LearningCandidate
     from .workbench import access
@@ -198,7 +199,7 @@ def draft(user, app_id, candidate_id):
         version=DRAFT_VERSION,
         model=config.model,
         steps=len(result.steps),
-        turns=len(result.usages),
+        turns=turns_of(result.usages),
     )
     with transaction.atomic():
         candidate = (

@@ -23,6 +23,10 @@ class AIUsage(models.Model):
     #: `db_default`, so the release before still inserts receipts.
     cache_read_tokens = models.PositiveBigIntegerField(default=0, db_default=0)
     cache_write_tokens = models.PositiveBigIntegerField(default=0, db_default=0)
+    #: The model turns this receipt bills. One for every provider request we can
+    #: key; more for a Claude CLI run, which reports a whole run's usage once.
+    #: Counting receipts used to read such a run as one turn.
+    turns = models.PositiveIntegerField(default=1, db_default=1)
     amount = models.DecimalField(max_digits=20, decimal_places=8)
     currency = models.CharField(max_length=3, default="USD")
     estimated = models.BooleanField(default=False)
@@ -259,6 +263,13 @@ MEASUREMENT_VERDICTS = [
     ("incomplete", "Not compared"),
     ("too_few", "Too few to judge"),
 ]
+#: How a measured run's calls were carried (`agent_measurements.carried_by`).
+MEASUREMENT_RUNTIMES = [
+    ("cli", "Claude CLI"),
+    ("messages", "Messages API"),
+    ("messages-cached", "Messages API, prompt cache"),
+    ("openai", "OpenAI"),
+]
 
 
 class AgentMeasurement(models.Model):
@@ -283,6 +294,12 @@ class AgentMeasurement(models.Model):
     model = models.CharField(max_length=160, blank=True, default="")
     #: The frozen pack's digest, so a new pack reads as a new reference.
     pack_digest = models.CharField(max_length=64, blank=True, default="")
+    #: How its calls were carried (`agent_measurements.RUNTIMES`): the CLI, the
+    #: Messages API with or without its prompt cache, or OpenAI. A different one
+    #: is a new reference too - the same model costs differently through each.
+    runtime = models.CharField(
+        max_length=16, blank=True, default="", db_default="", choices=MEASUREMENT_RUNTIMES
+    )
     metrics = models.JSONField(default=dict, blank=True)
     verdict = models.CharField(max_length=12, choices=MEASUREMENT_VERDICTS)
     verdict_text = models.CharField(max_length=300, blank=True, default="")

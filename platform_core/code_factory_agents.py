@@ -112,6 +112,7 @@ def agent_answer(
     """
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import agent_configuration, prompt_size
     from .code_factory import output_limit, phase_timeout
 
@@ -157,7 +158,7 @@ def agent_answer(
             "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
             "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
             "request_id": result.usages[-1].request_id if result.usages else "",
-            "turns": len(result.usages),
+            "turns": turns_of(result.usages),
             "tool_calls": len(result.steps),
         }
     )
@@ -170,6 +171,8 @@ def ask_with_tools(run, phase_name, instructions, question, citations, receipt):
     Each tool call is a note on the run, under its phase, so the page shows how
     the answer was reached; each is also an `AgentStep`.
     """
+    from .agent_runtime.usage import turns_of
+
     label = LABELS.get(phase_name, phase_name)
 
     def emit(event, data):
@@ -192,7 +195,7 @@ def ask_with_tools(run, phase_name, instructions, question, citations, receipt):
     note(
         run,
         f"{label}: {len(result.steps)} read(s) of the snapshot over "
-        f"{len(result.usages)} model turn(s).",
+        f"{turns_of(result.usages)} model turn(s).",
         phase=phase_name,
     )
     return result.answer

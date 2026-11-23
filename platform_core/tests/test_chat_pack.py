@@ -154,8 +154,11 @@ class ChatPackTests(TestCase):
             records = Path(folder) / "chat"
             with (
                 patch.object(chat_pack, "RECORDS", records),
-                patch.object(harness, "runtime_for",
-                             return_value=Model("Thirty days [1].", ["Thirty days [1]."])),
+                # The tools way searches: one that called no tool compared nothing.
+                patch.object(harness, "runtime_for", return_value=Model(
+                    "Thirty days [1].",
+                    [[("search_knowledge", {"query": "refund"})], "Thirty days [1]."],
+                )),
                 patch.object(chat_pack, "seeded", return_value=self.evidence(self.policy)),
             ):
                 out = StringIO()

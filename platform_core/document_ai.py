@@ -487,6 +487,7 @@ def agent_review(user, subject, kind, question, steps=True):
     """
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import agent_configuration, prompt_size
 
     app, config, token = agent_configuration(user, subject.application_id, "document_review")
@@ -535,7 +536,7 @@ def agent_review(user, subject, kind, question, steps=True):
         "model": config.model,
         "provider": config.provider,
         "partial": len(subject.content) > MAX_CHARACTERS and not long_read,
-        "turns": len(result.usages),
+        "turns": turns_of(result.usages),
         "tool_calls": len(result.steps),
         "read": len(shown),
     }

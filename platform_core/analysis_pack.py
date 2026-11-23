@@ -118,8 +118,11 @@ def score(items, offered, found, identifiers):
     }
 
 
-def ask_ticket(user, app, entry, version, snapshot, mode):
-    """One ticket one way: (items, offered, found, rejected, failure)."""
+def ask_ticket(user, app, entry, version, snapshot, mode, receipt=None):
+    """One ticket one way: (items, offered, found, rejected, failure).
+
+    `receipt` is filled as `analyse` fills it - with tools, the calls it made.
+    """
     from .code_factory import MANUAL_TICKET_LIMIT, ticket_key
     from .code_factory_analysis import (
         analyse,
@@ -146,7 +149,8 @@ def ask_ticket(user, app, entry, version, snapshot, mode):
         question, graph, extra = gather_evidence(run, question)
         offered = graph + extra
         payload, found = analyse(
-            user, app.pk, question, offered, {}, snapshot_id=run.code_snapshot_id,
+            user, app.pk, question, offered, {} if receipt is None else receipt,
+            snapshot_id=run.code_snapshot_id,
             agent=mode == "tools",
         )
         items, _, rejected = collect_items(run, payload, offered, found)
@@ -156,19 +160,18 @@ def ask_ticket(user, app, entry, version, snapshot, mode):
     return items, offered, unique, rejected, ""
 
 
-def receipts(app, user, since):
-    from django.db.models import Count, Sum
-
+def receipts(app, user, since, counted=None):
+    """(turns, prompt tokens, completion tokens, amount) the case's receipts recorded:
+    since it started, never one an earlier case of this run counted
+    (`agent_measurements.case_receipts`)."""
+    from .agent_measurements import case_receipts
     from .models import AIUsage
 
-    totals = AIUsage.objects.filter(
-        application=app, actor=user, purpose="plan_drafting", created_at__gte=since
-    ).aggregate(
-        turns=Count("id"), prompt=Sum("input_tokens"), completion=Sum("output_tokens"),
-        amount=Sum("amount"),
+    return case_receipts(
+        AIUsage.objects.filter(application=app, actor=user, purpose="plan_drafting"),
+        since,
+        set() if counted is None else counted,
     )
-    return (totals["turns"], totals["prompt"] or 0, totals["completion"] or 0,
-            totals["amount"] or Decimal("0"))
 
 
 def run(user, app, modes=MODES):
@@ -193,6 +196,7 @@ def run(user, app, modes=MODES):
     key = load_key()
     snapshot = snapshot_for(app)
     details = []
+    counted = set()
     for care, identifiers in key.items():
         entry = ticket_for(app, care)
         for mode in modes:
@@ -200,13 +204,14 @@ def run(user, app, modes=MODES):
                 details.append({"ticket": care, "mode": mode, **score([], [], [], identifiers),
                                 "failure": f"No imported ticket here is titled {care}.",
                                 "rejected": 0, "prompt_tokens": 0, "completion_tokens": 0,
-                                "turns": 0, "cost": "0", "seconds": 0.0})
+                                "turns": 0, "tool_calls": 0, "cost": "0", "seconds": 0.0})
                 continue
             since, started = timezone.now(), time.monotonic()
+            receipt = {}
             items, offered, found, rejected, failure = ask_ticket(
-                user, app, entry, version, snapshot, mode
+                user, app, entry, version, snapshot, mode, receipt
             )
-            turns, prompt, completion, amount = receipts(app, user, since)
+            turns, prompt, completion, amount = receipts(app, user, since, counted)
             details.append({
                 "ticket": care,
                 "mode": mode,
@@ -216,6 +221,7 @@ def run(user, app, modes=MODES):
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
                 "turns": turns,
+                "tool_calls": receipt.get("tool_calls", 0),
                 "cost": str(amount),
                 "seconds": round(time.monotonic() - started, 1),
             })
@@ -249,6 +255,7 @@ def metrics(details, modes=MODES):
             "failed": sum(bool(row["failure"]) for row in rows),
             "cost": str(sum((Decimal(row["cost"]) for row in rows), Decimal("0"))),
             "turns": sum(row["turns"] for row in rows),
+            "tool_calls": sum(row.get("tool_calls", 0) for row in rows),
             "seconds": round(sum(row["seconds"] for row in rows), 1),
         }
     return found
@@ -258,10 +265,10 @@ def verdict(found):
     """Whether gap analysis's tools clear the bar against one call, and why not."""
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
-    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+    from .agent_measurements import nothing_compared, why_nothing_compared
 
     if nothing_compared(found):
-        return NOTHING_COMPARED
+        return why_nothing_compared(found)
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["failed"] > alone["failed"]:
@@ -284,6 +291,8 @@ def save(record):
     RECORDS.mkdir(parents=True, exist_ok=True)
     stamp = record["generated_at"][:16].replace(":", "")
     model = re.sub(r"[^\w.-]+", "-", record["model"] or "model")
-    path = RECORDS / f"{stamp}-{model}.json"
+    from .agent_measurements import unused
+
+    path = unused(RECORDS / f"{stamp}-{model}.json")
     path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

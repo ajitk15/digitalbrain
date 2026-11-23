@@ -65,6 +65,7 @@ class Command(BaseCommand):
             # file nor on the agent's page, where it would read as a verdict.
             self.stdout.write("Not recorded: nothing was compared.")
         elif options["record"]:
+            agent_measurements.stamp(app, "analysis_pack", record)
             path = analysis_pack.save(record)
             self.stdout.write(f"Recorded {path}")
             agent_measurements.record(app, "analysis_pack", record, user, path)

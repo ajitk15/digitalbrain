@@ -435,6 +435,7 @@ def analyse(user, app_id, question, citations, receipt, snapshot_id=None, agent=
         return parse_json(answer, "Analysis"), {}
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import agent_configuration, prompt_size
 
     app, config, token = agent_configuration(user, app_id, "plan_drafting")
@@ -472,7 +473,7 @@ def analyse(user, app_id, question, citations, receipt, snapshot_id=None, agent=
         "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
         "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
         "request_id": result.usages[-1].request_id if result.usages else "",
-        "turns": len(result.usages),
+        "turns": turns_of(result.usages),
         "tool_calls": len(result.steps),
     })
     return parse_json(result.answer, "Analysis"), found_evidence(result, len(numbered))

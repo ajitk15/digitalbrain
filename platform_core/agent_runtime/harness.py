@@ -61,7 +61,7 @@ from django.http import Http404
 
 from .registry import for_scope
 from .tools import KNOWLEDGE_PURPOSES, MAX_TOOL_CALLS, RESULT_CHARACTERS, CitationRecorder
-from .usage import Billed, TurnLimit
+from .usage import Billed, TurnLimit, turns_of
 
 logger = logging.getLogger(__name__)
 
@@ -430,7 +430,7 @@ def run_agent(
                     # Priced at the searching model's rates, filed under its task.
                     ai.record_turns(user, app, routed, "chat_search", searches)
                     recorded.extend(searches)
-                    run["turns"] = len(recorded)
+                    run["turns"] = turns_of(recorded)
                     paying.update(config=config, purpose=purpose)
                     # Its words are dropped; the answer is asked over what verified.
                     found = wrapped_up(TurnLimit(searches), kept, attempt, ask=question)
@@ -448,7 +448,7 @@ def run_agent(
                             # Each turn it sent was billed: receipts first, whatever follows.
                             ai.record_turns(user, app, config, purpose, limit.usages)
                             recorded.extend(limit.usages)
-                            run["turns"] = len(recorded)
+                            run["turns"] = turns_of(recorded)
                             usages, answer = wrapped_up(limit, kept, attempt)
                             run["outcome"] = "wrapped_up"
                 except (PermissionDenied, Http404):
@@ -459,7 +459,7 @@ def run_agent(
                     # first, then the run fails as any provider failure does.
                     ai.record_turns(user, app, paying["config"], paying["purpose"],
                                     billed.usages)
-                    run["turns"] = len(recorded) + len(billed.usages)
+                    run["turns"] = turns_of(recorded) + turns_of(billed.usages)
                     run["outcome"] = (
                         "stopped" if cancel is not None and cancel.is_set() else "failed"
                     )
@@ -473,7 +473,7 @@ def run_agent(
                     raise AgentFailure(failure) from None
                 ai.record_turns(user, app, config, purpose, usages)
                 usages = [*recorded, *usages]
-                run["turns"] = len(usages)
+                run["turns"] = turns_of(usages)
                 if cancel is not None and cancel.is_set():
                     # What it wrote before the person's Stop, kept; neither good nor bad.
                     run["outcome"] = "stopped"

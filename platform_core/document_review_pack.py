@@ -93,30 +93,29 @@ def score(findings, item):
     return {"found": bool(hits), "linked": linked}
 
 
-def receipts(app, user, since):
-    from django.db.models import Count, Sum
-
+def receipts(app, user, since, counted=None):
+    """(turns, prompt tokens, completion tokens, amount) the case's receipts recorded:
+    since it started, never one an earlier case of this run counted
+    (`agent_measurements.case_receipts`)."""
+    from .agent_measurements import case_receipts
     from .models import AIUsage
 
-    found = AIUsage.objects.filter(
-        application=app, actor=user, purpose="document_review", created_at__gte=since
-    ).aggregate(
-        turns=Count("id"), prompt=Sum("input_tokens"), completion=Sum("output_tokens"),
-        amount=Sum("amount"),
+    return case_receipts(
+        AIUsage.objects.filter(application=app, actor=user, purpose="document_review"),
+        since,
+        set() if counted is None else counted,
     )
-    return (found["turns"], found["prompt"] or 0, found["completion"] or 0,
-            found["amount"] or Decimal("0"))
 
 
 def ask_item(user, app, item, mode):
-    """One item one way: (findings, kept, dropped, failure)."""
+    """One item one way: (findings, kept, dropped, failure, tool calls)."""
     from .document_ai import UNAVAILABLE, current_kind, review_answer
 
     entry = source_for(app, item["document"])
     if entry is None:
-        return [], 0, 0, f"No source here is {item['document']}."
+        return [], 0, 0, f"No source here is {item['document']}.", 0
     if item["find"] not in entry.content:
-        return [], 0, 0, f"{item['document']} here does not hold the labelled line."
+        return [], 0, 0, f"{item['document']} here does not hold the labelled line.", 0
     subject = SimpleNamespace(
         pk=entry.pk,
         application_id=app.pk,
@@ -127,8 +126,9 @@ def ask_item(user, app, item, mode):
         result = review_answer(user, subject, current_kind(entry), agent=mode == "tools",
                                steps=False)
     except UNAVAILABLE as refused:
-        return [], 0, 0, " ".join(getattr(refused, "messages", [str(refused)]))[:300]
-    return result["findings"], len(result["findings"]), result["dropped"], ""
+        return [], 0, 0, " ".join(getattr(refused, "messages", [str(refused)]))[:300], 0
+    return (result["findings"], len(result["findings"]), result["dropped"], "",
+            result.get("tool_calls", 0))
 
 
 def run(user, app, modes=MODES):
@@ -147,11 +147,12 @@ def run(user, app, modes=MODES):
         application=app, purpose="document_review", enabled=True
     ).first()
     details = []
+    counted = set()
     for key, item in pack["items"].items():
         for mode in modes:
             since, started = timezone.now(), time.monotonic()
-            findings, kept, dropped, failure = ask_item(user, app, item, mode)
-            turns, prompt, completion, amount = receipts(app, user, since)
+            findings, kept, dropped, failure, tool_calls = ask_item(user, app, item, mode)
+            turns, prompt, completion, amount = receipts(app, user, since, counted)
             details.append({
                 "item": key,
                 "mode": mode,
@@ -162,6 +163,7 @@ def run(user, app, modes=MODES):
                 "prompt_tokens": prompt,
                 "completion_tokens": completion,
                 "turns": turns,
+                "tool_calls": tool_calls,
                 "cost": str(amount),
                 "seconds": round(time.monotonic() - started, 1),
             })
@@ -188,6 +190,7 @@ def metrics(details, modes=MODES):
             "failed": sum(bool(row["failure"]) for row in rows),
             "cost": str(sum((Decimal(row["cost"]) for row in rows), Decimal("0"))),
             "turns": sum(row["turns"] for row in rows),
+            "tool_calls": sum(row.get("tool_calls", 0) for row in rows),
             "seconds": round(sum(row["seconds"] for row in rows), 1),
         }
     return found
@@ -197,10 +200,10 @@ def verdict(found):
     """Whether the tools clear the bar against one call, and why not if they do not."""
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
-    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+    from .agent_measurements import nothing_compared, why_nothing_compared
 
     if nothing_compared(found):
-        return NOTHING_COMPARED
+        return why_nothing_compared(found)
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["failed"] > alone["failed"]:
@@ -221,6 +224,8 @@ def save(record):
     RECORDS.mkdir(parents=True, exist_ok=True)
     stamp = record["generated_at"][:16].replace(":", "")
     model = re.sub(r"[^\w.-]+", "-", record["model"] or "model")
-    path = RECORDS / f"{stamp}-{model}.json"
+    from .agent_measurements import unused
+
+    path = unused(RECORDS / f"{stamp}-{model}.json")
     path.write_text(json.dumps(record, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
     return path

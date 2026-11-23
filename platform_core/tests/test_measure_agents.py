@@ -76,6 +76,63 @@ class MeasureAgentsTests(TestCase):
                          stdout=StringIO())
         self.assertEqual(ran, [("chat_pack", str(self.app.pk), "--as", "owner", "--record")])
 
+    def test_repeat_runs_each_pack_and_judges_by_most_of_its_runs(self):
+        from datetime import UTC, datetime, timedelta
+
+        from platform_core.models import AgentMeasurement
+
+        self.configure("chat")
+        call_command("measure_agents", str(self.app.pk), "--as", "owner", "--load-questions",
+                     stdout=StringIO())
+        # Each run keeps what it measured, or nothing when it compared nothing.
+        outcomes = iter(["clears", "", "clears"])
+
+        def pack_run(*args, **kwargs):
+            state = next(outcomes)
+            if state:
+                AgentMeasurement.objects.create(
+                    application=self.app, pack="chat_pack", agent="chat", verdict=state,
+                    generated_at=datetime(2026, 11, 1, tzinfo=UTC)
+                    + timedelta(minutes=AgentMeasurement.objects.count()),
+                )
+
+        out = StringIO()
+        with patch("platform_core.management.commands.measure_agents.call_command",
+                   side_effect=pack_run):
+            call_command("measure_agents", str(self.app.pk), "--as", "owner", "--run",
+                         "--repeat", "3", stdout=out)
+        said = out.getvalue()
+        self.assertIn("== chat_pack (2 of 3)", said)
+        self.assertIn("chat_pack: Clears the bar in 2 of 3 runs (2 clears the bar, "
+                      "1 compared nothing).", said)
+
+    def test_combining_runs_needs_most_of_them_to_clear(self):
+        from platform_core.agent_measurements import combine
+
+        self.assertEqual(combine(["clears", "clears", "fails"], 3)[0], "clears")
+        self.assertEqual(combine(["clears", "no_better", "no_better"], 3)[0], "fails")
+        self.assertEqual(combine(["no_better", "no_better", "fails"], 3)[0], "no_better")
+        # A run that compared nothing counts against, never as left out.
+        self.assertEqual(combine(["clears"], 3)[0], "fails")
+        self.assertEqual(combine([], 3)[0], "incomplete")
+        self.assertEqual(combine(["clears"], 1)[0], "clears")
+        self.assertEqual(combine(["clears", "clears"], 4)[0], "fails")
+
+    def test_a_second_record_in_the_same_minute_does_not_overwrite_the_first(self):
+        import tempfile
+        from pathlib import Path
+
+        from platform_core.agent_measurements import unused
+
+        with tempfile.TemporaryDirectory() as folder:
+            first = Path(folder) / "2026-11-23T1734-claude.json"
+            self.assertEqual(unused(first), first)
+            first.write_text("{}", encoding="utf-8")
+            second = unused(first)
+            self.assertEqual(second.name, "2026-11-23T1734-claude-2.json")
+            second.write_text("{}", encoding="utf-8")
+            self.assertEqual(unused(first).name, "2026-11-23T1734-claude-3.json")
+
     def test_someone_who_cannot_open_the_application_is_refused(self):
         from django.core.management import CommandError
 

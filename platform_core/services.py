@@ -535,6 +535,7 @@ def record_ai_usage(
     authorized=None,
     cache_read_tokens=0,
     cache_write_tokens=0,
+    turns=1,
 ):
     """Server-side provider adapter boundary; never accepts a browser-supplied bill.
 
@@ -564,6 +565,8 @@ def record_ai_usage(
     counts = [input_tokens, output_tokens, cache_read_tokens, cache_write_tokens]
     if any(type(value) is not int or value < 0 for value in counts):
         raise ValidationError("Token counts must be nonnegative integers.")
+    if type(turns) is not int or turns < 1:
+        raise ValidationError("A receipt bills at least one turn.")
     if cache_read_tokens + cache_write_tokens > input_tokens:
         # Cache tokens are prompt tokens, counted inside `input_tokens`.
         raise ValidationError("Cache tokens are more than the prompt.")
@@ -578,6 +581,7 @@ def record_ai_usage(
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,
         cache_write_tokens=cache_write_tokens,
+        turns=turns,
         amount=amount,
         currency=currency,
         estimated=estimated,

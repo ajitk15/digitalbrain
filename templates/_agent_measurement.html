@@ -4,7 +4,7 @@
 {% elif not m.latest %}<p class="measure-verdict measure-none">{% icon "info" 14 %}<span>Not measured here yet. {% if m.pack.paid %}A run of <code>{{ m.pack.command }}</code> compares it with one call on a frozen pack - charges apply - and appears here.{% else %}<code>{{ m.pack.command }}</code> counts how its drafts were decided - free - and appears here.{% endif %}</span></p>
 {% else %}
 <p class="measure-verdict measure-{{ m.latest.verdict }}">{% if m.latest.verdict == 'clears' %}{% icon "check" 14 %}{% elif m.latest.verdict == 'fails' %}{% icon "warning" 14 %}{% else %}{% icon "info" 14 %}{% endif %}<span><strong>{{ m.latest.get_verdict_display }}.</strong> {{ m.latest.verdict_text }}</span></p>
-<p class="muted measure-meta"><small>{{ m.latest.generated_at|date:"M j, Y H:i" }}{% if m.latest.model %} · {{ m.latest.model }}{% endif %} · {{ m.count }} recorded run{{ m.count|pluralize }}{% if m.latest.file %} · <code>{{ m.latest.file }}</code>{% endif %}</small></p>
+<p class="muted measure-meta"><small>{{ m.latest.generated_at|date:"M j, Y H:i" }}{% if m.latest.model %} · {{ m.latest.model }}{% endif %}{% if m.latest.runtime %} · {{ m.latest.get_runtime_display }}{% endif %} · {{ m.count }} recorded run{{ m.count|pluralize }}{% if m.latest.file %} · <code>{{ m.latest.file }}</code>{% endif %}</small></p>
 {% if m.comparison %}<figure class="measure-chart">
 <svg viewBox="0 0 {{ m.comparison.width }} {{ m.comparison.height }}" role="img" aria-labelledby="measure-bars-title measure-bars-desc" focusable="false">
 <title id="measure-bars-title">{{ m.comparison.first }} against {{ m.comparison.second|lower }}, latest run</title>
@@ -19,13 +19,13 @@
 <desc id="measure-trend-desc">{% for point in m.trend.base.points %}{{ point.when|date:"M j" }}: {{ point.value }} {{ m.trend.base.label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}. {% for point in m.trend.agent.points %}{{ point.when|date:"M j" }}: {{ point.value }} {{ m.trend.agent.label|lower }}{% if not forloop.last %}; {% endif %}{% endfor %}.</desc>
 {% for line in m.trend.grid %}<line class="trend-grid" x1="{{ m.trend.left }}" x2="{{ m.trend.right }}" y1="{{ line.y }}" y2="{{ line.y }}"/><text class="trend-axis" x="{{ m.trend.left|add:'-8' }}" y="{{ line.y }}" text-anchor="end" dominant-baseline="middle">{{ line.label }}</text>{% endfor %}
 {% for tick in m.trend.ticks %}<text class="trend-axis" x="{{ tick.x }}" y="{{ m.trend.label_y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>{% endfor %}
-{% for ref in m.trend.references %}<line class="measure-reference" x1="{{ ref.x }}" x2="{{ ref.x }}" y1="{{ m.trend.top }}" y2="{{ m.trend.bottom }}"><title>A different model or pack from here on: a new reference</title></line>{% endfor %}
+{% for ref in m.trend.references %}<line class="measure-reference" x1="{{ ref.x }}" x2="{{ ref.x }}" y1="{{ m.trend.top }}" y2="{{ m.trend.bottom }}"><title>A different model, pack or runtime from here on: a new reference</title></line>{% endfor %}
 {% if m.trend.base.points|length > 1 %}<polyline class="trend-line measure-base" points="{{ m.trend.base.path }}"/>{% endif %}
 {% for point in m.trend.base.points %}<circle class="trend-dot measure-base" cx="{{ point.x }}" cy="{{ point.y }}" r="3.5"><title>{{ point.when|date:"M j, Y" }} {{ m.trend.base.label|lower }}: {{ point.value }}{% if point.model %} ({{ point.model }}){% endif %}</title></circle>{% endfor %}
 {% if m.trend.agent.points|length > 1 %}<polyline class="trend-line measure-agent" points="{{ m.trend.agent.path }}"/>{% endif %}
 {% for point in m.trend.agent.points %}<circle class="trend-dot measure-agent" cx="{{ point.x }}" cy="{{ point.y }}" r="4"><title>{{ point.when|date:"M j, Y" }} {{ m.trend.agent.label|lower }}: {{ point.value }}{% if point.model %} ({{ point.model }}){% endif %}</title></circle>{% endfor %}
 </svg>
-<figcaption><span class="measure-key measure-base"></span>{{ m.trend.base.label }} <span class="measure-key measure-agent"></span>{{ m.trend.agent.label }} <span class="muted">· {{ m.trend.main_label|lower }} as a share, 1.00 the best{% if m.trend.references %}; a dashed line is a new model or pack, and runs either side of it are not comparable{% endif %}</span></figcaption>
+<figcaption><span class="measure-key measure-base"></span>{{ m.trend.base.label }} <span class="measure-key measure-agent"></span>{{ m.trend.agent.label }} <span class="muted">· {{ m.trend.main_label|lower }} as a share, 1.00 the best{% if m.trend.references %}; a dashed line is a new model, pack or runtime, and runs either side of it are not comparable{% endif %}</span></figcaption>
 </figure>{% endif %}
 {% endif %}
 <h2 class="panel-label">Here in the last {{ activity.days }} days</h2>

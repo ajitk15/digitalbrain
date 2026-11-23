@@ -1902,8 +1902,10 @@ class AgentBadgeTests(BrowserTestCase):
         agent_measurements.record(self.app, "factory_pack", {
             "generated_at": datetime(2026, 11, 1, tzinfo=UTC).isoformat(),
             "model": "claude-sonnet-5",
+            # The tools way called tools: one that called none compared nothing.
             "metrics": {"one_shot": {**totals, "fixed": 1, "checks_met": 50.0},
-                        "tools": {**totals, "fixed": 2, "checks_met": 60.0}},
+                        "tools": {**totals, "fixed": 2, "checks_met": 60.0,
+                                  "tool_calls": 6}},
         })
         self.open("plans", self.app.pk)
         # Code Factory's heading carries two badges: gap analysis, then this one.

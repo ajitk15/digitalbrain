@@ -36,19 +36,23 @@ from platform_core.models import (
 from . import test_documents
 
 
-def factory_totals(fixed, checks, cost="0.10", seconds=10.0):
+def factory_totals(fixed, checks, cost="0.10", seconds=10.0, tool_calls=3):
+    # A tools way that called no tool compared nothing, so the fixtures call some.
     return {
         "tickets": 4, "fixed": fixed, "answered": 4, "checks_met": checks,
-        "needs_seen": 50.0, "cost": cost, "turns": 4, "tool_calls": 0, "seconds": seconds,
+        "needs_seen": 50.0, "cost": cost, "turns": 4, "tool_calls": tool_calls,
+        "seconds": seconds,
     }
 
 
-def factory_record(when, one_shot, tools, model="claude-sonnet-5", pack="a" * 64):
+def factory_record(when, one_shot, tools, model="claude-sonnet-5", pack="a" * 64,
+                   runtime=""):
     return {
         "generated_at": when.isoformat(timespec="seconds"),
         "provider": "claude",
         "model": model,
         "pack": pack,
+        "runtime": runtime,
         "snapshot": {"repository": "carepath", "number": 1},
         "metrics": {"one_shot": one_shot, "tools": tools},
         "details": [{"ticket": "CARE-401", "mode": "tools", "read": ["app/models.py"]}],
@@ -105,12 +109,12 @@ class MeasurementTests(TestCase):
             ),
             "review_pack": tuple(
                 {"changes": 4, "found": found, "noise": 0, "cost": "0.1", "turns": 4,
-                 "tool_calls": 0, "seconds": 1.0}
+                 "tool_calls": 2, "seconds": 1.0}
                 for found in (2, 3, 2, 1)
             ),
             "triage_pack": tuple(
                 {"cases": 10, "cause_cited": cited, "cause_first": 1, "mrr": mrr,
-                 "cause_in_evidence": 5, "cost": "0.1", "turns": 4, "tool_calls": 0,
+                 "cause_in_evidence": 5, "cost": "0.1", "turns": 4, "tool_calls": 2,
                  "seconds": 1.0}
                 for cited, mrr in ((5, 0.4), (6, 0.5), (5, 0.4), (4, 0.3))
             ),
@@ -118,13 +122,13 @@ class MeasurementTests(TestCase):
         cases["chat_pack"] = tuple(
             {"questions": 16, "cited_expected": cited, "cited_first": cited, "shown_expected": 16,
              "with_citation": 16, "invented": 0, "failed": 0, "cost": "0.1", "turns": 16,
-             "tool_calls": 0, "seconds": 1.0}
+             "tool_calls": 2, "seconds": 1.0}
             for cited in (10, 12, 10, 8)
         )
         cases["docs_pack"] = tuple(
             {"asked": 6, "components": components, "paragraphs": components * 2,
              "quotes": components * 2, "files_quoted": components, "dropped": 0,
-             "kept_share": 100.0, "failed": 0, "cost": "0.1", "turns": 1, "tool_calls": 0,
+             "kept_share": 100.0, "failed": 0, "cost": "0.1", "turns": 1, "tool_calls": 2,
              "seconds": 1.0}
             for components in (3, 5, 3, 2)
         )
@@ -288,6 +292,52 @@ class MeasurementTests(TestCase):
         self.assertEqual([p["value"] for p in chart["base"]["points"]], [0.5, 0.4, 0.4])
         self.assertEqual(len(chart["references"]), 1)
         self.assertGreater(chart["references"][0]["x"], chart["agent"]["points"][1]["x"])
+
+    def test_a_different_runtime_is_a_new_reference_and_an_unknown_one_is_not(self):
+        rows = [
+            self.keep(factory_totals(1, 50.0), factory_totals(2, 60.0),
+                      when=WHEN + timedelta(days=day), runtime=runtime)
+            for day, runtime in enumerate(("", "cli", "cli", "messages-cached", "nonsense"))
+        ]
+        # "nonsense" is not a runtime, so it is kept as none - never a change.
+        self.assertEqual([row.runtime for row in rows],
+                         ["", "cli", "cli", "messages-cached", ""])
+        chart = agent_measurements.trend(rows)
+        points = chart["agent"]["points"]
+        (reference,) = chart["references"]
+        self.assertTrue(points[2]["x"] < reference["x"] < points[3]["x"])
+        self.assertEqual(rows[3].get_runtime_display(), "Messages API, prompt cache")
+
+    def test_a_pack_record_says_how_its_agent_runs_here(self):
+        from platform_core.agent_runtime import claude_runtime, messages_runtime
+
+        cases = (
+            (claude_runtime, False, "cli"),
+            (messages_runtime, False, "messages"),
+            (messages_runtime, True, "messages-cached"),
+        )
+        for runtime, caching, expected in cases:
+            with (
+                self.subTest(expected=expected),
+                patch("platform_core.ai.provider_credential", return_value="sk-ant-test"),
+                patch("platform_core.agent_runtime.harness.runtime_for",
+                      return_value=runtime) as chosen,
+                override_settings(CLAUDE_PROMPT_CACHING=caching),
+            ):
+                self.assertEqual(agent_measurements.carried_by(self.app, "factory_pack"),
+                                 expected)
+                # Chosen as the harness chooses it, for the agent's own task.
+                self.assertEqual(chosen.call_args.args, ("claude", "sk-ant-test"))
+        # No configuration for the agent's task, or no credential: unknown, not a guess.
+        self.assertEqual(agent_measurements.carried_by(self.app, "document_review_pack"), "")
+        from platform_core.ai import MissingCredential
+
+        with patch("platform_core.ai.provider_credential",
+                   side_effect=MissingCredential("none")):
+            self.assertEqual(agent_measurements.carried_by(self.app, "factory_pack"), "")
+        record = {"runtime": "openai"}
+        self.assertEqual(agent_measurements.stamp(self.app, "factory_pack", record)["runtime"],
+                         "openai")
 
     def test_use_counts_runs_calls_and_problems_from_this_agents_steps(self):
         conversation = ChatConversation.objects.create(

@@ -743,10 +743,45 @@ class RuntimeWiringTests(SimpleTestCase):
         self.assertEqual(str(limit.exception), "TurnLimit")
         usage = limit.exception.usages
         self.assertEqual([(u.prompt_tokens, u.completion_tokens) for u in usage], [(300, 40)])
+        # One summed usage, but it says how many turns it billed.
+        self.assertEqual([u.turns for u in usage], [3])
         # Any other error result still fails as it did.
         with patch.object(claude_runtime, "query", ending("error_during_execution")):
             with self.assertRaises(ProcessError):
                 run()
+
+    def test_a_cli_run_reports_the_turns_it_took_not_one_receipt(self):
+        """The CLI sums a run's usage into one result: its `num_turns` is the count.
+
+        Counting receipts read every CLI run with tools as one turn - a Code
+        Factory pack run with seven tool calls said "1 turn".
+        """
+        import asyncio
+
+        from claude_agent_sdk import ResultMessage
+
+        from platform_core.agent_runtime.usage import claude_turn, turns_of
+
+        async def query(prompt, options):
+            yield ResultMessage(
+                subtype="success", duration_ms=1, duration_api_ms=1, is_error=False,
+                num_turns=5, session_id="s", total_cost_usd=0,
+                usage={"input_tokens": 3, "output_tokens": 2}, result="Answered.",
+            )
+
+        with patch.object(claude_runtime, "query", query):
+            usages, _ = asyncio.run(
+                claude_runtime.run(
+                    "claude-sonnet-5", "q", [], "sk-ant-test", [], self.scope,
+                    CitationRecorder(self.scope), lambda *a: None, max_turns=8,
+                )
+            )
+        self.assertEqual((len(usages), turns_of(usages)), (1, 5))
+        # A count that is not a positive number is one turn, never none.
+        for odd in (0, -2, None, True, "5", 2.0):
+            with self.subTest(odd=odd):
+                raw = {"input_tokens": 1, "output_tokens": 1}
+                self.assertEqual(claude_turn("r", raw, odd).turns, 1)
 
     def test_openai_with_no_tools_is_sent_none_and_one_turn(self):
         from platform_core.agent_runtime.openai_runtime import build_tools
