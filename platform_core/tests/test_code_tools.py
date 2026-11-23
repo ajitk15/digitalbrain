@@ -261,10 +261,11 @@ class CodeToolTests(Fixture, TestCase):
     def test_the_tools_serve_code_factory_review_and_docs_never_chat(self):
         for spec in code_tools.CODE_TOOLS:
             with self.subTest(tool=spec.name):
-                # The whole diff is a review's alone; the snapshot reads serve all three.
+                # The whole diff is a review's alone; the snapshot reads serve the
+                # rest, gap analysis included.
                 expected = (
                     {"code_review"} if spec is code_tools.READ_DIFF
-                    else {"plan_drafting", "code_review", "code_docs"}
+                    else {"plan_drafting", "code_review", "code_docs", "gap_analysis"}
                 )
                 self.assertEqual(spec.purposes, frozenset(expected))
                 self.assertIn(spec, registry.for_scope(self.scope(purpose="code_review")))

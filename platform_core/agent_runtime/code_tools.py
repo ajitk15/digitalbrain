@@ -25,12 +25,12 @@ What holds them, beside everything `tools.run_tool` holds every tool to:
 
 import re
 
-from .tools import ToolResult, ToolSpec
+from .tools import ToolResult, ToolSpec, rule_for
 
 #: The purposes these tools serve: Code Factory's implementation chain, the AI
 #: step of a code review (Phase 4), which reads the review's base snapshot, and
 #: code documentation's AI step, which reads the documented snapshot.
-CODE_PURPOSES = frozenset({"plan_drafting", "code_review", "code_docs"})
+CODE_PURPOSES = frozenset({"plan_drafting", "code_review", "code_docs", "gap_analysis"})
 #: The purposes whose answers quote what the tools read, so a read is evidence
 #: with an id the model is told, and the answer is checked against its live text.
 QUOTING = frozenset({"code_review", "code_docs"})
@@ -54,7 +54,7 @@ def _files(scope):
     from ..models import CodeFile, User
 
     user = User.objects.get(pk=scope.user_id)
-    app, _ = gateway.authorize(user, scope.app_id, scope.purpose)
+    app, _ = gateway.authorize(user, scope.app_id, rule_for(scope.purpose))
     if scope.snapshot_id is None:
         return None
     return CodeFile.objects.filter(

@@ -30,6 +30,7 @@ from platform_core.agent_runtime.tools import (
     RESULT_CHARACTERS,
     SEARCH_KNOWLEDGE,
     STOPPED,
+    TOOL_RULES,
     CitationRecorder,
     ToolResult,
     ToolScope,
@@ -75,7 +76,9 @@ class RegistryTests(SimpleTestCase):
             with self.subTest(tool=name):
                 self.assertEqual(spec.name, name)
                 self.assertTrue(spec.purposes)
-                self.assertLessEqual(spec.purposes, set(gateway.PURPOSES))
+                # A tool scope is a gateway purpose, or one held to one's rule.
+                self.assertLessEqual(spec.purposes, set(gateway.PURPOSES) | set(TOOL_RULES))
+                self.assertLessEqual(set(TOOL_RULES.values()), set(gateway.PURPOSES))
                 for provider in ("claude", "openai"):
                     description, schema = spec.wire(provider)
                     self.assertTrue(description)
@@ -796,7 +799,7 @@ class ScorecardProbeTests(TestCase):
 
         values, probes = agent_guardrails(self.ws)
         self.assertEqual(values, {"agent_probes_passed": 100.0}, probes)
-        self.assertEqual(len(probes), 30)
+        self.assertEqual(len(probes), 33)
         self.assertFalse(AgentStep.objects.exists())
         self.assertFalse(AIUsage.objects.exists())
         self.assertFalse(AIBudget.objects.exists())

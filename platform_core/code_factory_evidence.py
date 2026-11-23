@@ -369,6 +369,9 @@ def ticket_passages(run, item, limit=3):
 ORIGINS = (
     ("ticket", "Ticket"),
     ("knowledge_graph", "Knowledge"),
+    # A passage gap analysis found for itself with its tools: read from a source
+    # and verified, but not through the published version (`code_factory_analysis`).
+    ("knowledge_source", "Found by search"),
     ("code_graph", "Code"),
 )
 

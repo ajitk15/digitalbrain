@@ -167,6 +167,12 @@ def development(root):
             "# production until `manage.py document_review_pack` shows it clears the bar.",
         ),
         (
+            "gap_analysis_agent_tools",
+            "true",
+            "Let Code Factory's gap analysis search the sources and read the code with tools.\n"
+            "# Off in production until `manage.py analysis_pack` shows it clears the bar.",
+        ),
+        (
             "claude_messages_agents",
             "true",
             "Run Claude agents with an API key through the Messages API, not the CLI.\n"

@@ -180,6 +180,23 @@ PACKS = {
             folder="document-review",
         ),
         Pack(
+            "analysis_pack",
+            "gap-analysis",
+            "manage.py analysis_pack <application id> --as <user> --record",
+            AGAINST,
+            (
+                Figure("cited", "Planted identifiers its items cite", "higher", of="expected"),
+                Figure("offered", "In what it was handed", "", of="expected"),
+                Figure("found_more", "More it found itself", "higher"),
+                Figure("evidenced", "Items with evidence", "higher", of="items"),
+                Figure("failed", "Tickets unanswered", "lower"),
+                *TIMING,
+            ),
+            "Planted identifiers its items cite",
+            judge="analysis_pack",
+            folder="analysis",
+        ),
+        Pack(
             "learning_upkeep",
             "draft-a-fix",
             "manage.py learning_upkeep <application id> --record",
@@ -219,6 +236,8 @@ def main_share(pack, totals):
         return _share(totals.get("components"), totals.get("asked"))
     if pack.key == "document_review_pack":
         return _share(totals.get("found"), totals.get("items"))
+    if pack.key == "analysis_pack":
+        return _share(totals.get("cited"), totals.get("expected"))
     return _number(totals.get("accept_rate")) / 100
 
 
@@ -594,11 +613,12 @@ def use(agent, app, days, show_cost=False):
     from .models import AgentStep, AIUsage
 
     since = timezone.now() - timedelta(days=days)
-    steps = (
-        AgentStep.objects.filter(application=app, purpose=agent.purpose, created_at__gte=since)
-        .exclude(**{f"{agent.steps_field}__isnull": True})
-        .values_list(f"{agent.steps_field}_id", "outcome", "duration_ms")
-    )
+    steps = AgentStep.objects.filter(
+        application=app, purpose=agent.purpose, created_at__gte=since
+    ).exclude(**{f"{agent.steps_field}__isnull": True})
+    if agent.phases:
+        steps = steps.filter(phase__in=agent.phases)
+    steps = steps.values_list(f"{agent.steps_field}_id", "outcome", "duration_ms")
     rows = list(steps)
     runs = len({row[0] for row in rows})
     problems = sum(row[1] in PROBLEMS for row in rows)

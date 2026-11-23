@@ -197,6 +197,7 @@ class DevelopmentDefaultsTests(TestCase):
             CONFIG={}, CODE_FACTORY_AGENT_TOOLS=True, SERVICEOPS_TRIAGE_AGENT_TOOLS=True,
             CODE_REVIEW_AGENT_TOOLS=True, CODE_DOCS_AGENT_TOOLS=True,
             DOCUMENT_REVIEW_AGENT_TOOLS=True, CLAUDE_MESSAGES_AGENTS=True,
+            GAP_ANALYSIS_AGENT_TOOLS=True,
             CLAUDE_PROMPT_CACHING=True,
         )
         hermetic(developer)
@@ -209,8 +210,9 @@ class DevelopmentDefaultsTests(TestCase):
                 developer.DOCUMENT_REVIEW_AGENT_TOOLS,
                 developer.CLAUDE_MESSAGES_AGENTS,
                 developer.CLAUDE_PROMPT_CACHING,
+                developer.GAP_ANALYSIS_AGENT_TOOLS,
             ),
-            (False, False, False, False, False, False, False),
+            (False, False, False, False, False, False, False, False),
         )
 
     def test_production_still_refuses_what_development_switches_on(self):
@@ -245,6 +247,7 @@ ACCEPTED_IN_PRODUCTION = {
     "code_review_agent_tools",
     "code_docs_agent_tools",
     "document_review_agent_tools",
+    "gap_analysis_agent_tools",
     "claude_messages_agents",
     "claude_prompt_caching",
 }

@@ -49,9 +49,12 @@ def agent_tag(application, key, calls, link=True):
 
 @register.simple_tag
 def agent_badge_for(application, purpose):
-    """The badge of the agent that runs under an AI settings task, or nothing."""
-    agent = by_purpose(purpose)
-    return agent_badge(application, agent.key) if agent else ""
+    """The badge of each agent that runs under an AI settings task, or nothing."""
+    from django.utils.html import format_html_join
+
+    return format_html_join(
+        "", "{}", ((agent_badge(application, agent.key),) for agent in by_purpose(purpose))
+    )
 
 
 @register.simple_tag

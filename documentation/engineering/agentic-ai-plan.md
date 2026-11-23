@@ -450,6 +450,22 @@ the files - found when a kept contradiction quotes the planted text, linked when
 side is one of them. One call can find a planted line only from inside the document, and
 can never link one.
 
+## Phase 9 - Gap analysis agent (built, switched off until measured)
+
+Analysis is where Code Factory's plan items get their evidence, and it stayed one call
+over what retrieval chose - the published graph's passages, the ticket and the pinned
+code - after Phase 1 gave tools to the agents that run after approval. With
+`gap_analysis_agent_tools` it is a harness run with the source tools and the snapshot
+tools, so an item can rest on a requirement, control or risk the retrieval missed. It
+spends as `plan_drafting` but has a tool scope of its own (`gap_analysis`, held to
+`plan_drafting`'s rule by `tools.TOOL_RULES`), so the implementation, test and review
+agents keep exactly their tools. A passage it found is citable only once it verifies
+against its live source, and the plan shows it as "Found by search", not as the published
+knowledge; what it reads of the code is never cited. Planted-bug evidence recall is already
+100% by rule, so the gain has to show in what the plan rests on: `manage.py analysis_pack`
+scores the planted identifiers the plan's items cite, one call against tools, on the
+scorecard's own answer key.
+
 ## The Messages API runtime (built, switched off until measured)
 
 Every Claude agent ran through the bundled CLI, even with an API key: a subprocess per run
@@ -494,14 +510,15 @@ what the model reads is unchanged.
 
 ## Switched on in development and the demo
 
-Code Factory's, triage's, code review's, code documentation's and document review's tools
-are on wherever the money is the developer's or the demo's - `init_local` writes the five
-switches into `local.toml`
+Code Factory's, triage's, code review's, code documentation's, document review's and gap
+analysis's tools are on wherever the money is the developer's or the demo's - `init_local`
+writes the six switches into `local.toml`
 and the entrypoint into the demonstration's configuration
 (`DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0` to leave them off) - so every agent can be seen at
 work before it is measured. Production is unchanged: a configuration that does not
 name them reads them as off, and each is switched on there only once its pack
-(`factory_pack`, `triage_pack`, `review_pack`, `docs_pack`, `document_review_pack`) clears
+(`factory_pack`, `triage_pack`, `review_pack`, `docs_pack`, `document_review_pack`,
+`analysis_pack`) clears
 the bar. The suite
 pins them off; run with the first three on, its only failures were tests written for the
 one-shot path.

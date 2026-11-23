@@ -142,7 +142,7 @@ def _scoped_application(scope):
         # that names no purpose is chat's, as `ToolScope`'s default says.
         from .. import gateway
 
-        app, _ = gateway.authorize(user, scope.app_id, purpose)
+        app, _ = gateway.authorize(user, scope.app_id, rule_for(purpose))
         return app
     app, _ = access(user, scope.app_id, "knowledge")
     return app
@@ -275,8 +275,19 @@ KNOWLEDGE_PURPOSES = frozenset({"chat", "graph_retrieval"})
 #: triage (Phase 3), drafting a fix for a Learned question (Phase 6) and a
 #: document's AI review, which looks for what other sources say.
 SOURCE_PURPOSES = KNOWLEDGE_PURPOSES | {
-    "serviceops_triage", "knowledge_upkeep", "document_review"
+    "serviceops_triage", "knowledge_upkeep", "document_review", "gap_analysis"
 }
+#: Tool scopes that are not gateway purposes: they choose a run's tools, and each
+#: call is held to the rule of the purpose named here. Code Factory's gap analysis
+#: spends as `plan_drafting` but is given the source tools as well as the code
+#: tools, which the implementation, test and review agents under that purpose are
+#: not - so it needs a scope of its own rather than a wider `plan_drafting`.
+TOOL_RULES = {"gap_analysis": "plan_drafting"}
+
+
+def rule_for(purpose):
+    """The gateway purpose whose rule a tool call in this scope is held to."""
+    return TOOL_RULES.get(purpose, purpose)
 
 SEARCH_KNOWLEDGE = ToolSpec(
     name="search_knowledge",

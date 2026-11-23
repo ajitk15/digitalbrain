@@ -86,12 +86,19 @@ class Agent:
     #: here to a template that draws this agent.
     shown: tuple = ()
     extra: dict = field(default_factory=dict)
+    #: The tool scope that chooses its tools, when it is not its purpose: gap
+    #: analysis spends as `plan_drafting` but is given more (`tools.TOOL_RULES`).
+    tool_purpose: str = ""
+    #: The run phases its steps are kept under, when another agent keeps steps on
+    #: the same rows: Code Factory's analysis and its implementation chain.
+    phases: tuple = ()
 
 
 def _limits():
     from . import (
         code_docs,
         code_factory_agents,
+        code_factory_analysis,
         code_review,
         document_ai,
         learning_draft,
@@ -107,6 +114,9 @@ def _limits():
         "code_docs": (code_docs.TOOL_TURNS, code_docs.TOOL_CALLS),
         "document_review": (document_ai.TOOL_TURNS, document_ai.TOOL_CALLS),
         "plan_drafting": (code_factory_agents.TOOL_TURNS, code_factory_agents.TOOL_CALLS),
+        "gap_analysis": (
+            code_factory_analysis.ANALYSIS_TOOL_TURNS, code_factory_analysis.ANALYSIS_TOOL_CALLS
+        ),
         "serviceops_triage": (serviceops_triage.TOOL_TURNS, serviceops_triage.TOOL_CALLS),
     }
 
@@ -294,6 +304,45 @@ def _agents():
             one_call="Asks once over the opening lines of a few files of each component.",
         ),
         Agent(
+            key="gap-analysis",
+            name="Gap analysis agent",
+            purpose="plan_drafting",
+            tool_purpose="gap_analysis",
+            feature="code_factory",
+            switch="GAP_ANALYSIS_AGENT_TOOLS",
+            trigger="The analysis step of every Code Factory run, after triage reads "
+            "the ticket.",
+            where="On the factory worker lane - the sandbox container in a split "
+            "deployment.",
+            does="Compares what a ticket asks for with what the evidence says exists, "
+            "and proposes the plan's items. Besides the passages retrieval hands it, it "
+            "searches the application's sources for a requirement, control or risk the "
+            "change touches, and reads the run's code to see how what it judges is "
+            "called and tested.",
+            turns=limits["gap_analysis"][0],
+            tool_calls=limits["gap_analysis"][1],
+            steps_field="run",
+            phases=("analysis",),
+            prompt_estimate=20000,
+            screen="plans",
+            screen_label="Code Factory",
+            shown=(
+                "Code Factory: beside its heading.",
+                "A run's Gap analysis step, on the run page.",
+            ),
+            safeguards=(
+                "An item may cite a passage it found only once that passage verifies "
+                "against its live source, and the plan shows it as found by search - not "
+                "as the published knowledge.",
+                "What it reads of the code helps it judge and is never cited.",
+                "Every item it proposes is still reviewed and approved by a person before "
+                "anything is built.",
+            ),
+            measured="manage.py analysis_pack (paid) analyses the planted-bug tickets "
+            "with tools and without, before it is switched on in production.",
+            one_call="Asks once over the evidence retrieval chose.",
+        ),
+        Agent(
             key="code-factory",
             name="Code Factory agent",
             purpose="plan_drafting",
@@ -309,6 +358,7 @@ def _agents():
             turns=limits["plan_drafting"][0],
             tool_calls=limits["plan_drafting"][1],
             steps_field="run",
+            phases=("implementation", "tests", "review"),
             prompt_estimate=60000,
             screen="plans",
             screen_label="Code Factory",
@@ -374,10 +424,8 @@ def get(key):
 
 
 def by_purpose(purpose):
-    for agent in _agents():
-        if agent.purpose == purpose:
-            return agent
-    return None
+    """Every agent that runs under an AI settings task, in registry order."""
+    return [agent for agent in _agents() if agent.purpose == purpose]
 
 
 def for_feature(feature):
@@ -415,7 +463,7 @@ def tools(agent):
     """The tools the harness hands this agent: the registry's own list for its purpose."""
     from .agent_runtime.registry import for_scope
 
-    return for_scope(SimpleNamespace(purpose=agent.purpose))
+    return for_scope(SimpleNamespace(purpose=agent.tool_purpose or agent.purpose))
 
 
 def status(agent, app):
@@ -458,7 +506,7 @@ def status(agent, app):
             f"Its tools are off in this deployment, so it asks once. "
             f"{agent.one_call} An operator turns them on with {setting} = true.",
         )
-    if agent.purpose == "plan_drafting":
+    if agent.key == "code-factory":
         reason = _no_code(app)
         if reason:
             return "one-call", "One call", reason
@@ -553,6 +601,8 @@ def activity(agent, app, days=ACTIVITY_DAYS):
     steps = AgentStep.objects.filter(
         application=app, purpose=agent.purpose, created_at__gte=since
     ).exclude(**{f"{agent.steps_field}__isnull": True})
+    if agent.phases:
+        steps = steps.filter(phase__in=agent.phases)
     rows = list(steps.values_list(f"{agent.steps_field}_id", "tool", "outcome"))
     return {
         "days": days,

@@ -1895,7 +1895,8 @@ class AgentBadgeTests(BrowserTestCase):
                         "tools": {**totals, "fixed": 2, "checks_met": 60.0}},
         })
         self.open("plans", self.app.pk)
-        self.page.locator("a.agent-badge[data-modal]").first.click()
+        # Code Factory's heading carries two badges: gap analysis, then this one.
+        self.page.locator('a.agent-badge[data-modal][href*="/code-factory/"]').click()
         dialog = self.page.locator("dialog[open]")
         dialog.get_by_role("heading", name="Code Factory agent").wait_for()
         dialog.locator("svg rect.measure-bar.measure-agent").first.wait_for()

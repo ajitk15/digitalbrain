@@ -131,7 +131,7 @@ reading the copy from before the move. Nothing is copied back when Docker return
 `DEVELOPMENT` that `local.toml` does not mention - `claude_use_host_login`,
 `allow_demo_reset`, `code_factory_local_write`, `code_factory_local_tests`,
 `code_graph_local_roots` (the folder holding the checkout, or the checkout when that is a
-drive root), `managed_secret_directory`, the five agents' tools,
+drive root), `managed_secret_directory`, the six agents' tools,
 `claude_messages_agents` and `claude_prompt_caching` (accepted in production, where they
 stay off), `ocr` and
 `tesseract_path` where Tesseract is
@@ -312,23 +312,51 @@ scored on found, a kept contradiction quoting the planted text, and linked, its 
 source the item names) clears the same bar. One call can never link. The scorecard's agent
 probes include two for it.
 
-**Development and the hosted demo switch the five agents on; production does not.**
+**Code Factory's gap analysis may search for its own evidence - off in production until
+measured** (`code_factory_analysis.analyse`, `gather_evidence`). Analysis is where a plan
+item gets its evidence, and it was one call over what retrieval chose. With
+`gap_analysis_agent_tools = true` (a boolean, off unless written down, on in development and
+the demo, accepted in production) it is a harness run spending under `plan_drafting`, in a
+**tool scope of its own**, `gap_analysis` (`tools.TOOL_RULES`, `rule_for`: a scope that is
+not a gateway purpose chooses the tools and every call is held to the named purpose's rule) -
+so it is given `search_knowledge`/`fetch_source` and the six snapshot tools while the
+implementation, test and review agents under `plan_drafting` keep exactly theirs. Same
+question, same numbered evidence (`numbered_evidence`), the same instructions plus
+`ANALYSIS_TOOL_GUIDANCE`. A passage a source tool returns is numbered after the evidence, as
+the run numbers it, and an item may cite it by that number (or its source's id) **only once it
+verifies against its live source** (`found_evidence` over `AgentResult.found`): it is stored
+with origin `knowledge_source`, "Found by search" (`FOUND`, `code_factory_evidence.ORIGINS`),
+never as the published knowledge, with the system it came from. What the code tools read
+informs and is never cited. A number it was never shown, or a passage that no longer
+verifies (restricted mid-run, another application's), is refused like any citation. Each
+read is a note under the phase and an `AgentStep` with the run and `analysis`; the catalog
+tells it from Code Factory's own agent by phase (`Agent.phases`, `tool_purpose`). **Turn it
+on only after `manage.py analysis_pack <app> --as <user> [--record]`** (paid: each ticket of
+the scorecard's own answer key, `benchmarks/seeded-evidence.json`, analysed one call and with
+tools through `gather_evidence`/`analyse`/`collect_items` with an empty triage, as the
+scorecard asks it; scored on the planted identifiers the plan's **items cite**, against those
+in what it was handed - the scorecard measures the second, free, at 100% - plus items with
+evidence and cost; nothing is written but receipts) clears the same bar. The scorecard's agent
+probes include three for it.
+
+**Development and the hosted demo switch the six agents on; production does not.**
 `init_local.development` writes `code_factory_agent_tools`, `serviceops_triage_agent_tools`,
-`code_review_agent_tools`, `code_docs_agent_tools` and `document_review_agent_tools` as
+`code_review_agent_tools`, `code_docs_agent_tools`, `document_review_agent_tools` and
+`gap_analysis_agent_tools` as
 true into `local.toml` where it does not mention them (a key written down, true or false, is the developer's), and the
 entrypoint writes them in its demonstration block unless `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`.
-A configuration that names none of them - production's - reads all five as off, so a
+A configuration that names none of them - production's - reads all six as off, so a
 deployment spends more only once its own comparison cleared the bar or an operator wrote
 them down. That is a deliberate trade for seeing every agent at work where the money is the
 developer's or the demo's, before it is measured. `digitalbrain/test_runner.py` pins all
-five off, so a developer's config cannot change what the suite asserts; each agent's tests
+six off, so a developer's config cannot change what the suite asserts; each agent's tests
 switch it on themselves. Run with the first three on, the suite's only failures were tests
 written for the one-shot path - a fake of the single call, or the off-by-default behaviour
 asserted on purpose.
 
 **Where an agent runs is said where it runs** (`agent_catalog.py`, `{% agent_badge %}` in
-`templatetags/agent_badges.py`). A closed registry of the seven agents - chat, Knowledge
-upkeep, code review, document review, code documentation, Code Factory, triage - each naming its gateway purpose, the feature
+`templatetags/agent_badges.py`). A closed registry of the eight agents - chat, Knowledge
+upkeep, code review, document review, code documentation, gap analysis, Code Factory, triage - each naming its gateway purpose, the feature
 its screen needs, the setting that gives it tools, where it runs and its limits (read from
 the modules that hold them). Its tools are **never written there**: they are
 `registry.for_scope` for its purpose, the list the harness hands the model, and

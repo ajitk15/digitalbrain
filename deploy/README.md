@@ -10,12 +10,14 @@ application service. The entrypoint renders `mode = "production"` with
 `demonstration = true`: demo reset, local Code Factory delivery/tests and the
 ServiceOps test workbench are enabled while TLS, secure cookies, scanning and
 the restricted database role remain enabled. Code Factory, ServiceOps triage,
-code review, code documentation and document review also read further with their
-read-only tools (`code_factory_agent_tools`, `serviceops_triage_agent_tools`,
-`code_review_agent_tools`, `code_docs_agent_tools`, `document_review_agent_tools`),
+code review, code documentation, document review and gap analysis also read further
+with their read-only tools (`code_factory_agent_tools`, `serviceops_triage_agent_tools`,
+`code_review_agent_tools`, `code_docs_agent_tools`, `document_review_agent_tools`,
+`gap_analysis_agent_tools`),
 which spends more per run through the same budget; `DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0`
 leaves them off. A plain production deployment leaves them off until `factory_pack`,
-`triage_pack`, `review_pack`, `docs_pack` and `document_review_pack` show they clear
+`triage_pack`, `review_pack`, `docs_pack`, `document_review_pack` and `analysis_pack`
+show they clear
 the bar. The same block runs Claude agents with an API key through the Messages API
 (`claude_messages_agents`) and lets them read their repeated prefix from the prompt
 cache (`claude_prompt_caching`). A mounted configuration wins;

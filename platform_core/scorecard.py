@@ -1629,9 +1629,70 @@ def agent_guardrails(ws):
         probes.update(docs_tool_probes(ws, owner, config))
         probes.update(document_review_probes(ws, owner, config, source, hidden, foreign))
         probes.update(upkeep_probes(ws, owner, viewer, source, foreign))
+        probes.update(gap_analysis_probes(ws, owner, viewer, config, source, hidden, foreign))
         transaction.set_rollback(True)
     passed = sum(bool(ok) for ok in probes.values())
     return {"agent_probes_passed": round(100 * passed / len(probes), 1)}, probes
+
+
+def gap_analysis_probes(ws, owner, viewer, chat_config, source, hidden, foreign):
+    """Code Factory's gap analysis with tools, inside the caller's savepoint: an item
+    cites a passage it found only once it verifies - never another application's or
+    a restricted one - its tools are held to Code Factory's rule, and the agents
+    after approval are not given them."""
+    from django.core.exceptions import PermissionDenied
+    from django.http import Http404
+    from django.test.utils import override_settings
+
+    from .agent_runtime import harness, registry
+    from .agent_runtime.scripted import Script
+    from .agent_runtime.tools import SEARCH_KNOWLEDGE, CitationRecorder, ToolScope, run_tool
+    from .code_factory_analysis import analyse, collect_items
+    from .models import AIConfiguration
+
+    # The code tool probes set Code Factory's model up first, in the same savepoint.
+    AIConfiguration.objects.get_or_create(
+        application=ws.app, purpose="plan_drafting",
+        defaults={"provider": "claude", "model": "claude-sonnet-5",
+                  "input_rate": chat_config.input_rate,
+                  "output_rate": chat_config.output_rate, "configured_by": owner},
+    )
+    item = {"category": "functional", "rubric": "", "title": "t", "explanation": "e",
+            "severity": "low", "evidence": [{"source_id": "1", "quote": "q"}]}
+
+    def cited(other):
+        script = Script([("fetch_source", {"source_id": str(other.pk)})],
+                        json.dumps({"items": [item]}))
+        with (
+            override_settings(GAP_ANALYSIS_AGENT_TOOLS=True),
+            patch.object(harness, "runtime_for", return_value=script),
+            patch("platform_core.ai.provider_credential", return_value="unused"),
+        ):
+            payload, found = analyse(owner, ws.app.pk, "Probe ticket", [], {}, agent=True)
+        items, _, _ = collect_items(None, payload, [], found)
+        return [c["id"] for c in items[0]["citations"]]
+
+    def refused():
+        scope = ToolScope(viewer.pk, ws.app.pk, "gap_analysis")
+        try:
+            run_tool(SEARCH_KNOWLEDGE, scope, {"query": "probe"}, CitationRecorder(scope))
+        except (PermissionDenied, Http404):
+            return True
+        return False
+
+    def names(purpose):
+        return {spec.name for spec in registry.for_scope(ToolScope(owner.pk, ws.app.pk, purpose))}
+
+    return {
+        "gap analysis cites a passage it found only once it verifies": (
+            cited(source) == [str(source.pk)] and cited(hidden) == [] and cited(foreign) == []
+        ),
+        "gap analysis's tools are held to Code Factory's rule": refused(),
+        "Code Factory's agents after approval are not given the source tools": (
+            "search_knowledge" in names("gap_analysis")
+            and "search_knowledge" not in names("plan_drafting")
+        ),
+    }
 
 
 def upkeep_probes(ws, owner, viewer, source, foreign):

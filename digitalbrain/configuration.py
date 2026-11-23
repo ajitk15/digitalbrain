@@ -68,6 +68,7 @@ def load_config():
         "code_review_agent_tools",
         "code_docs_agent_tools",
         "document_review_agent_tools",
+        "gap_analysis_agent_tools",
         "claude_messages_agents",
         "claude_prompt_caching",
         "import_max_files",
@@ -157,6 +158,10 @@ def load_config():
         # Accepted in production too: it reads only this application's sources,
         # as the person who asked may, through the same budget and receipts.
         raise ImproperlyConfigured("document_review_agent_tools must be a boolean.")
+    if type(config.get("gap_analysis_agent_tools", False)) is not bool:
+        # Accepted in production too: it reads this application's sources and the
+        # run's own snapshot, through the same budget and receipts.
+        raise ImproperlyConfigured("gap_analysis_agent_tools must be a boolean.")
     if type(config.get("claude_messages_agents", False)) is not bool:
         # Accepted in production: the same model, prompt and tools without a
         # subprocess, receipted per turn; switched on once measured.

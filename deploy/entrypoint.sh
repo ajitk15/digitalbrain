@@ -162,9 +162,9 @@ else
             echo 'code_graph_local_roots = ["/var/lib/digitalbrain/demo"]'
             echo 'connector_secret_directory = "/var/lib/digitalbrain/connectors"'
             # The demonstration shows every agent at work: Code Factory, triage,
-            # code review, code documentation and document review read further with
-            # read-only tools. Production
-            # leaves them off until their paid comparisons clear the bar.
+            # code review, code documentation, document review and gap analysis read
+            # further with read-only tools. Production leaves them off until their
+            # paid comparisons clear the bar.
             # DIGITAL_BRAIN_DEMO_AGENT_TOOLS=0 leaves them off here too.
             if [ "${DIGITAL_BRAIN_DEMO_AGENT_TOOLS:-1}" = "1" ]; then
                 echo 'code_factory_agent_tools = true'
@@ -172,6 +172,7 @@ else
                 echo 'code_review_agent_tools = true'
                 echo 'code_docs_agent_tools = true'
                 echo 'document_review_agent_tools = true'
+                echo 'gap_analysis_agent_tools = true'
                 echo 'claude_messages_agents = true'
                 echo 'claude_prompt_caching = true'
             fi

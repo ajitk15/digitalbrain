@@ -31,6 +31,7 @@ def hermetic(settings_holder):
     settings_holder.CODE_REVIEW_AGENT_TOOLS = False
     settings_holder.CODE_DOCS_AGENT_TOOLS = False
     settings_holder.DOCUMENT_REVIEW_AGENT_TOOLS = False
+    settings_holder.GAP_ANALYSIS_AGENT_TOOLS = False
     settings_holder.CLAUDE_MESSAGES_AGENTS = False
     settings_holder.CLAUDE_PROMPT_CACHING = False
     settings_holder.CONFIG = {

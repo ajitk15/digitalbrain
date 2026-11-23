@@ -108,6 +108,11 @@ CODE_DOCS_AGENT_TOOLS = bool(CONFIG.get("code_docs_agent_tools", False))
 #: alone. Off unless written down, until the paid document review pack
 #: (`manage.py document_review_pack`) shows it finds more.
 DOCUMENT_REVIEW_AGENT_TOOLS = bool(CONFIG.get("document_review_agent_tools", False))
+#: Code Factory's gap analysis searches the application's sources and reads the
+#: run's code snapshot with tools (`code_factory_analysis.analyse`), instead of one
+#: call over the evidence retrieval chose. Off unless written down, until the paid
+#: analysis pack (`manage.py analysis_pack`) shows its plans rest on more.
+GAP_ANALYSIS_AGENT_TOOLS = bool(CONFIG.get("gap_analysis_agent_tools", False))
 #: A Claude agent run with an API key goes through the Messages API in this
 #: process (`agent_runtime.messages_runtime`) instead of the CLI subprocess: no
 #: start-up per run, and a receipt per turn under the provider's message id. Off

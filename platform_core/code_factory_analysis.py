@@ -5,6 +5,23 @@ limit and receipt; `execute` runs them in order for a claimed run and
 re-resolves the published graph before spending anything (`NO_GRAPH`).
 Split out of `code_factory`, which keeps the gates, the phases, repository
 pinning and `start_run`, and imports nothing from here.
+
+**Gap analysis may search for its own evidence** (`gap_analysis_agent_tools`,
+`analyse`). Analysis is where a plan item gets its evidence, and it was one call
+over what retrieval chose: the published graph's passages for the ticket, the
+ticket itself and the pinned code. With the switch on it is a harness run under
+`plan_drafting`'s rule, in a tool scope of its own (`gap_analysis`,
+`tools.TOOL_RULES`), with the source tools - `search_knowledge`, `fetch_source` -
+and the six snapshot tools, so it can look for a requirement, a control or a risk
+the retrieval missed and see how the code it judges is called. The question, the
+instructions and the numbered evidence are the one call's, plus `ANALYSIS_TOOL_GUIDANCE`.
+A passage a source tool returns is numbered after the evidence, as the run numbers
+it (`CitationRecorder.record`), and an item may cite it by that number - only once
+it verifies against its live source (`AgentResult.found`), labelled "Found by
+search" (`FOUND`) rather than as the published graph's. What the code tools read
+informs and is never cited. Each read is a note under the phase and an
+`AgentStep` with the run and `analysis`; the phase's receipt is the turns'
+totals. Measured by `manage.py analysis_pack` before production relies on it.
 """
 
 import json
@@ -54,6 +71,24 @@ MAX_EXPLANATION_CHARACTERS = 600
 MAX_EVIDENCE_PER_ITEM = 2
 MAX_QUOTE_CHARACTERS = 300
 MAX_ITEM_CHARACTERS = 4000
+
+#: Gap analysis with tools: turns and tool calls, each reserved like any other
+#: agent's - as many as Code Factory's implementation agents are given.
+ANALYSIS_TOOL_TURNS = 8
+ANALYSIS_TOOL_CALLS = 16
+#: Where a passage the analysis found for itself came from, as the plan shows it.
+FOUND = "Found by search"
+ANALYSIS_TOOL_GUIDANCE = (
+    " You may also search this application's knowledge sources and read the run's "
+    "code snapshot with the tools you are given, to find evidence the passages you "
+    "were handed missed - a requirement, a control, a risk or an incident the change "
+    "touches - and to see how the code you judge is called and tested. A passage a "
+    "source search or read returns carries a number like the evidence you were "
+    "handed, and an item may cite it by that number as its source_id. What you read "
+    "of the code helps you judge but cannot be cited: only numbered evidence can. "
+    "Answer, in your last turn, with the JSON object you were asked for and nothing "
+    "else."
+)
 
 #: The item categories as they read when counted in a sentence.
 COUNTED_CATEGORIES = {
@@ -267,7 +302,7 @@ def run_triage(run, body):
     return output
 
 
-def collect_items(run, payload, citations):
+def collect_items(run, payload, citations, found=None):
     """Turn the analysis payload into items, attaching the evidence they cite.
 
     The model says *which* supplied evidence supports an item; it does not re-quote
@@ -287,6 +322,9 @@ def collect_items(run, payload, citations):
     # "source_id": "3" - and a citation that cannot be matched is evidence lost
     # rather than evidence checked.
     supplied = {str(index): citation for index, citation in enumerate(citations, start=1)}
+    # What the analysis found for itself, verified, under the number it was shown
+    # (and its source's id): `analyse`. Never a number the evidence above holds.
+    supplied.update({key: value for key, value in (found or {}).items() if key not in supplied})
     items, verified_total, rejected_total = [], 0, 0
     for entry in (payload.get("items") or [])[:MAX_ITEMS]:
         if not isinstance(entry, dict) or not str(entry.get("title") or "").strip():
@@ -328,31 +366,151 @@ def collect_items(run, payload, citations):
     return items, verified_total, rejected_total
 
 
+def uses_agent_tools():
+    """Whether gap analysis searches for its own evidence (`gap_analysis_agent_tools`)."""
+    from django.conf import settings
+
+    return settings.GAP_ANALYSIS_AGENT_TOOLS
+
+
+def numbered_evidence(citations):
+    """The evidence as the model is shown it: numbered, each title saying where
+    it came from. The stored citation is always the original."""
+    return [
+        {
+            **citation,
+            "id": str(index),
+            "title": f"[{citation.get('origin_label', '')}] {citation.get('title', '')}",
+        }
+        for index, citation in enumerate(citations, start=1)
+    ]
+
+
+def found_evidence(result, shown):
+    """{number or source id: citation} for each passage the run's source tools
+    returned that still verifies, labelled as found by search - numbered as the
+    run numbered it, after the `shown` evidence it was handed."""
+    from .code_factory_evidence import source_system
+    from .models import KnowledgeEntry
+
+    held = {(str(c.get("id")), c.get("excerpt")) for c in result.found}
+    entries = {
+        str(entry.pk): entry
+        for entry in KnowledgeEntry.objects.filter(
+            pk__in=[c.get("id") for c in result.found]
+        ).only("id", "source", "document_id")
+    }
+    found = {}
+    for number, citation in enumerate(result.read, start=shown + 1):
+        key = str(citation.get("id"))
+        if (key, citation.get("excerpt")) not in held:
+            continue
+        labelled = {
+            **citation,
+            "origin": "knowledge_source",
+            "origin_label": FOUND,
+            "system": source_system(entries[key]) if key in entries else "Knowledge",
+        }
+        found[str(number)] = labelled
+        # A model that names the source by its id means its first passage found.
+        found.setdefault(key, labelled)
+    return found
+
+
+def analyse(user, app_id, question, citations, receipt, snapshot_id=None, agent=False,
+            emit=None, run_id=None):
+    """Gap analysis's answer: (payload, found) - found is `found_evidence`'s, empty
+    for one call. `receipt` is filled with the call's, or the turns', totals.
+
+    The one call is `ask` over the numbered evidence, as always. With `agent` it is
+    a harness run with the source and snapshot tools in the `gap_analysis` scope,
+    over the same question and evidence, its instructions plus
+    `ANALYSIS_TOOL_GUIDANCE`; with `run_id` its steps are kept as that run's
+    analysis. `analysis_pack` calls this too, so it measures what a run does.
+    """
+    numbered = numbered_evidence(citations)
+    if not agent:
+        answer = ask(user, app_id, "analysis", ANALYSIS_INSTRUCTIONS, question, numbered,
+                     receipt)
+        return parse_json(answer, "Analysis"), {}
+    from .agent_runtime.harness import AgentFailure, run_agent
+    from .agent_runtime.tools import ToolScope
+    from .ai import agent_configuration, prompt_size
+
+    app, config, token = agent_configuration(user, app_id, "plan_drafting")
+    told = ANALYSIS_INSTRUCTIONS + ANALYSIS_TOOL_GUIDANCE
+    try:
+        result = run_agent(
+            user=user,
+            app=app,
+            config=config,
+            token=token,
+            purpose="plan_drafting",
+            scope=ToolScope(user_id=user.pk, app_id=app.pk, purpose="gap_analysis",
+                            run_id=run_id, snapshot_id=snapshot_id),
+            question=question,
+            citations=numbered,
+            history=[],
+            emit=emit or (lambda event, data: None),
+            max_tokens=output_limit(app.pk),
+            prompt_characters=prompt_size(question, numbered, None, {"instructions": told}),
+            turns=ANALYSIS_TOOL_TURNS,
+            tool_calls=ANALYSIS_TOOL_CALLS,
+            instructions=told,
+            timeout=phase_timeout("analysis"),
+            run_id=run_id,
+            phase="analysis",
+        )
+    except AgentFailure as failure:
+        raise ValidationError(
+            f"Analysis: the model call failed ({failure.kind}). It may have been billed by "
+            "the provider; it is not retried automatically."
+        ) from None
+    receipt.update({
+        "provider": config.provider,
+        "model": config.model,
+        "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
+        "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
+        "request_id": result.usages[-1].request_id if result.usages else "",
+        "turns": len(result.usages),
+        "tool_calls": len(result.steps),
+    })
+    return parse_json(result.answer, "Analysis"), found_evidence(result, len(numbered))
+
+
+def gather_evidence(run, question):
+    """(question, graph passages, the ticket and the code) a run's analysis reads.
+
+    The question gains the pinned code's structure. Every piece of evidence says
+    where it came from: the ticket itself, the knowledge graph (and the system the
+    passage was imported from), or the pinned code snapshot; the model is shown
+    the label in each title. Graph passages keep the first numbers - they are the
+    primary evidence - then the ticket, then the code. `analysis_pack` gathers
+    with this too, so it measures what a run is handed.
+    """
+    code_context = code_context_for(run, question)
+    if code_context:
+        question = f"{question}\n\nPinned code structure:\n{code_context}"
+    graph = labelled_graph_citations(
+        evidence_for(run.application_id, question, run.graph_version, run.requested_by),
+        run.graph_version,
+    )
+    return question, graph, ticket_citation(run) + code_citations(run, question)
+
+
 def run_analysis(run, triage, body):
     started = time.monotonic()
     phase = start_phase(run, "analysis")
     question = evidence_question(run, triage, body)
     if run.code_snapshot_id:
         note(run, "Gap analysis: reading the pinned code snapshot.", phase="analysis")
-    code_context = code_context_for(run, question)
-    if code_context:
-        question = f"{question}\n\nPinned code structure:\n{code_context}"
     note(
         run,
         f"Gap analysis: reading {run.application.name}'s published knowledge "
         f"v{run.graph_version}.",
         phase="analysis",
     )
-    graph = labelled_graph_citations(
-        evidence_for(run.application_id, question, run.graph_version, run.requested_by),
-        run.graph_version,
-    )
-    # Every piece of evidence says where it came from: the ticket itself, the
-    # knowledge graph (and the system the passage was imported from), or the
-    # pinned code snapshot. The model is shown the label in each title.
-    # Graph passages keep the first numbers - they are the primary evidence -
-    # then the ticket, then the code.
-    extra = ticket_citation(run) + code_citations(run, question)
+    question, graph, extra = gather_evidence(run, question)
     citations = graph + extra
     also = f" Also offered: {len(extra)} from the ticket and the code." if extra else ""
     note(
@@ -366,35 +524,44 @@ def run_analysis(run, triage, body):
         phase="analysis",
         level="result" if graph else "check",
     )
+    agent = uses_agent_tools()
     note(
         run,
         "Gap analysis: asking the model to compare what the ticket asks for "
-        "against what the evidence says exists.",
+        "against what the evidence says exists"
+        + (", searching the sources and reading the code for more." if agent else "."),
         phase="analysis",
     )
-    # Numbered for the prompt; the stored citation is always the original.
-    numbered = [
-        {
-            **citation,
-            "id": str(index),
-            "title": f"[{citation.get('origin_label', '')}] {citation.get('title', '')}",
-        }
-        for index, citation in enumerate(citations, start=1)
-    ]
+
+    def emit(event, data):
+        if event == "tool":
+            detail = f" {data['detail']}" if data.get("detail") else ""
+            note(run, f"Gap analysis read: {data['name']}{detail}", phase="analysis")
+
     RunPhase.objects.filter(pk=phase.pk).update(input_digest=digest_of([question, citations]))
     receipt = {}
     try:
-        answer = ask(
+        payload, found = analyse(
             run.requested_by,
             run.application_id,
-            "analysis",
-            ANALYSIS_INSTRUCTIONS,
             question,
-            numbered,
+            citations,
             receipt,
+            snapshot_id=run.code_snapshot_id,
+            agent=agent,
+            emit=emit,
+            run_id=run.pk,
         )
-        payload = parse_json(answer, "Analysis")
-        items, verified_total, rejected_total = collect_items(run, payload, citations)
+        if agent:
+            passages = len({id(citation) for citation in found.values()})
+            note(
+                run,
+                f"Gap analysis: {receipt.get('tool_calls', 0)} search(es) and read(s) over "
+                f"{receipt.get('turns', 0)} model turn(s); {passages} more passage(s) found "
+                "and verified against their sources.",
+                phase="analysis",
+            )
+        items, verified_total, rejected_total = collect_items(run, payload, citations, found)
     except ValidationError as failure:
         finish_phase(
             phase,

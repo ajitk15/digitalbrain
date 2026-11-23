@@ -37,7 +37,7 @@ from . import test_documents
 
 SWITCHES = dict.fromkeys(
     ("CODE_FACTORY_AGENT_TOOLS", "SERVICEOPS_TRIAGE_AGENT_TOOLS", "CODE_REVIEW_AGENT_TOOLS",
-     "CODE_DOCS_AGENT_TOOLS", "DOCUMENT_REVIEW_AGENT_TOOLS"), True
+     "CODE_DOCS_AGENT_TOOLS", "DOCUMENT_REVIEW_AGENT_TOOLS", "GAP_ANALYSIS_AGENT_TOOLS"), True
 )
 
 
@@ -84,7 +84,9 @@ class CatalogTests(TestCase):
                 self.assertTrue(tools)
                 self.assertEqual(
                     [t.name for t in tools],
-                    [t.name for t in for_scope(ToolScope("u", "a", agent.purpose))],
+                    [t.name for t in for_scope(
+                        ToolScope("u", "a", agent.tool_purpose or agent.purpose)
+                    )],
                 )
 
     # State ----------------------------------------------------------------
