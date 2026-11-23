@@ -782,17 +782,25 @@ def owners(doc):
     }
 
 
-def judge(payload, citations, owner, contents, paths=None):
+def judge(payload, citations, owner, contents, paths=None, numbered=None):
     """Keep paragraphs whose every quote is in the file it names, in that component.
 
     `citations` may hold more than one window of a file - the opening lines handed
     over and those an agent read - and a quote must be in one of them, and in the
     file as it stands.
+
+    A quote may name its evidence by id or by the number the prompt gave it
+    (`evidence_payload` shows both, and its `source` field is the number), as code
+    review's `judge` accepts. Only the first `numbered` citations - those handed
+    over, in the prompt's order - have a number; a window an agent read is named
+    by its id alone.
     """
     by_id = {}
     for item in citations:
         held = by_id.setdefault(item["id"], {**item, "windows": []})
         held["windows"].append(item["excerpt"])
+    shown = citations if numbered is None else citations[:numbered]
+    by_number = {str(index + 1): item["id"] for index, item in enumerate(shown)}
     if payload is None or not isinstance(payload.get("components"), list):
         return [], Counter({"reply could not be read": 1})
     names = set(owner.values())
@@ -812,6 +820,10 @@ def judge(payload, citations, owner, contents, paths=None):
             checked = []
             for raw in quotes[:3]:
                 source = raw.get("source") if isinstance(raw, dict) else None
+                if not isinstance(source, str | int) or isinstance(source, bool):
+                    source = None
+                elif source not in by_id:
+                    source = by_number.get(str(source))
                 excerpt = raw.get("text") if isinstance(raw, dict) else None
                 cited = by_id.get(source)
                 content = contents.get(source, "")
@@ -911,7 +923,8 @@ def describe(doc, user, citations, owner, agent=False, steps=True):
     evidence = citations + read
     ids = {item["id"][5:] for item in evidence}
     kept, dropped = judge(
-        parse(answer), evidence, owner, contents_for(doc, ids), paths_for(doc, ids)
+        parse(answer), evidence, owner, contents_for(doc, ids), paths_for(doc, ids),
+        numbered=len(citations),
     )
     return {
         "components": kept,
@@ -943,6 +956,7 @@ def agent_describe(doc, user, citations, receipt, steps=True):
     """(answer, windows it read) through the harness with the snapshot tools."""
     from .agent_runtime.harness import AgentFailure, run_agent
     from .agent_runtime.tools import ToolScope
+    from .agent_runtime.usage import turns_of
     from .ai import agent_configuration, prompt_size
 
     app, config, token = agent_configuration(user, doc.application_id, "code_docs")
@@ -984,7 +998,7 @@ def agent_describe(doc, user, citations, receipt, steps=True):
             "model": config.model,
             "prompt_tokens": sum(turn.prompt_tokens for turn in result.usages),
             "completion_tokens": sum(turn.completion_tokens for turn in result.usages),
-            "turns": len(result.usages),
+            "turns": turns_of(result.usages),
             "tool_calls": len(result.steps),
         }
     )

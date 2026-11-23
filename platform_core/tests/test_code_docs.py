@@ -12,7 +12,7 @@ import json
 from decimal import Decimal
 from unittest.mock import patch
 
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -407,3 +407,61 @@ class CodeDocsAgentTests(TestCase):
             process_next_docs_ai()
         # Asked again one-shot: the agent's cached answer is not this one's.
         self.assertEqual(calls, ["Describe each component."])
+
+
+class QuoteSourceTests(SimpleTestCase):
+    """A quote may name its evidence by id or by the number the prompt gave it.
+
+    `evidence_payload` shows each piece as `source: <number>` beside its `id`, so a
+    model copying the field it sees names a number. Read as the id alone, every
+    such quote was dropped - `docs_pack` kept 0 of 23 paragraphs both ways.
+    """
+
+    FILE = "def export(patients):\n    return [p for p in patients if p.consented]\n"
+    READ = "def helper():\n    return 'read by the agent'\n"
+
+    def setUp(self):
+        self.citations = [
+            {"id": "code:a", "title": "Component api: care/export.py", "excerpt": self.FILE},
+            {"id": "code:b", "title": "Component api: care/helper.py", "excerpt": "x = 1"},
+        ]
+        self.owner = {"code:a": "api", "code:b": "api"}
+        self.contents = {"code:a": self.FILE, "code:b": self.READ}
+
+    def judged(self, source, text="return [p for p in patients", citations=None, numbered=None):
+        payload = {"components": [{"name": "api", "paragraphs": [
+            {"text": "Exports patients.", "quotes": [{"source": source, "text": text}]},
+        ]}]}
+        return code_docs.judge(payload, citations or self.citations, self.owner,
+                               self.contents, numbered=numbered)
+
+    def test_a_quote_naming_its_evidence_by_number_is_kept_under_its_id(self):
+        for source in (1, "1"):
+            kept, dropped = self.judged(source)
+            self.assertEqual(dropped, {}, source)
+            (quote,) = kept[0]["paragraphs"][0]["quotes"]
+            self.assertEqual((quote["source"], quote["path"], quote["line"]),
+                             ("code:a", "care/export.py", 2))
+
+    def test_the_id_still_works(self):
+        kept, dropped = self.judged("code:a")
+        self.assertEqual((len(kept), dropped), (1, {}))
+
+    def test_a_number_names_only_what_the_prompt_numbered(self):
+        read = {"id": "code:b", "title": "Component api: care/helper.py", "excerpt": self.READ}
+        citations = [*self.citations, read]
+        # Number 3 is the agent's read, which the prompt never numbered.
+        kept, dropped = self.judged(3, "return 'read by the agent'", citations, numbered=2)
+        self.assertEqual((kept, dropped), ([], {"quote not found": 1}))
+        kept, _ = self.judged("code:b", "return 'read by the agent'", citations, numbered=2)
+        self.assertEqual(len(kept), 1)
+
+    def test_a_number_past_the_evidence_or_not_a_number_is_dropped(self):
+        for source in (9, "0", True, None, ["code:a"], {"id": "code:a"}):
+            kept, dropped = self.judged(source)
+            self.assertEqual((kept, dropped), ([], {"quote not found": 1}), source)
+
+    def test_a_number_holds_the_quote_to_that_evidence(self):
+        # Evidence 2 does not hold export's words, so naming it drops the quote.
+        kept, dropped = self.judged(2)
+        self.assertEqual((kept, dropped), ([], {"quote not found": 1}))
