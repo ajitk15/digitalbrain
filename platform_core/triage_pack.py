@@ -148,6 +148,7 @@ def metrics(details, modes=MODES):
         ranks = [row["rank"] for row in rows if row["rank"]]
         found[mode] = {
             "cases": len(rows),
+            "failed": sum(bool(row["failure"]) for row in rows),
             "cause_cited": len(ranks),
             "cause_first": sum(rank == 1 for rank in ranks),
             "mrr": round(sum(1 / rank for rank in ranks) / max(1, len(rows)), 3),
@@ -164,6 +165,10 @@ def verdict(found):
     """Whether tools clear the bar against one-shot, and why not if they do not."""
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
+    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+
+    if nothing_compared(found):
+        return NOTHING_COMPARED
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["cause_cited"] < alone["cause_cited"]:

@@ -151,3 +151,48 @@ class RunTests(TestCase):
         AIConfiguration.objects.filter(purpose="document_review").delete()
         with self.assertRaises(ValidationError):
             document_review_pack.run(self.owner, self.app)
+
+
+class NothingComparedTests(TestCase):
+    """A pack that could ask none of its cases here says so and records nothing:
+    "no better" from a run that compared nothing would be a verdict on the agent's
+    page that no comparison made."""
+
+    def setUp(self):
+        test_documents.DocumentTests.setUp(self)
+        AIConfiguration.objects.create(
+            application=self.app, purpose="document_review", provider="claude",
+            model="claude-sonnet-5", input_rate=Decimal("3"), output_rate=Decimal("15"),
+            configured_by=self.owner,
+        )
+
+    def test_no_document_here_is_nothing_compared_and_nothing_recorded(self):
+        record = document_review_pack.run(self.owner, self.app)
+        self.assertEqual(record["metrics"]["tools"]["failed"],
+                         record["metrics"]["tools"]["items"])
+        self.assertTrue(document_review_pack.verdict(record["metrics"]).startswith(
+            "Nothing was compared"
+        ))
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(document_review_pack, "RECORDS", Path(folder)):
+                out = StringIO()
+                call_command("document_review_pack", str(self.app.pk), "--as", "owner",
+                             "--record", stdout=out)
+                self.assertEqual(list(Path(folder).iterdir()), [])
+        self.assertIn("Not recorded: nothing was compared.", out.getvalue())
+        self.assertFalse(AgentMeasurement.objects.exists())
+        self.assertFalse(AIUsage.objects.exists())
+
+
+class NothingComparedRuleTests(SimpleTestCase):
+    def test_either_way_with_every_case_failed_or_none_is_nothing_compared(self):
+        from platform_core.agent_measurements import nothing_compared
+
+        asked = {"items": 5, "failed": 1}
+        self.assertFalse(nothing_compared({"one_shot": asked, "tools": asked}))
+        self.assertTrue(nothing_compared({"one_shot": asked,
+                                          "tools": {"items": 5, "failed": 5}}))
+        self.assertTrue(nothing_compared({"one_shot": {"cases": 0}, "tools": {"cases": 0}}))
+        # A pack of one case says only whether it failed.
+        self.assertTrue(nothing_compared({"one_shot": {"asked": 6, "failed": 1}}))
+        self.assertFalse(nothing_compared({"one_shot": {"asked": 6, "failed": 0}}))

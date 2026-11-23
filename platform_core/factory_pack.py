@@ -234,6 +234,7 @@ def metrics(details, modes=MODES):
             "tickets": len(rows),
             "fixed": sum(row["fixed"] for row in rows),
             "answered": sum(row["answered"] for row in rows),
+            "failed": sum(bool(row["failure"]) for row in rows),
             "checks_met": round(100 * sum(c["met"] for c in checks) / max(1, len(checks)), 1),
             "needs_seen": round(
                 100 * sum(len(row["needs_seen"]) for row in rows) / max(1, needs), 1
@@ -252,6 +253,10 @@ def verdict(found):
 
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
+    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+
+    if nothing_compared(found):
+        return NOTHING_COMPARED
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["fixed"] < alone["fixed"]:

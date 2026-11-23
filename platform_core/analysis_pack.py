@@ -258,6 +258,10 @@ def verdict(found):
     """Whether gap analysis's tools clear the bar against one call, and why not."""
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
+    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+
+    if nothing_compared(found):
+        return NOTHING_COMPARED
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["failed"] > alone["failed"]:

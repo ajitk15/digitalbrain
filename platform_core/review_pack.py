@@ -209,6 +209,7 @@ def metrics(details, modes=MODES):
             "changes": len(rows),
             "found": sum(row["found"] for row in rows),
             "noise": sum(row["noise"] for row in rows),
+            "failed": sum(bool(row["failure"]) for row in rows),
             "cost": str(sum((Decimal(row["cost"]) for row in rows), Decimal("0"))),
             "turns": sum(row["turns"] for row in rows),
             "tool_calls": sum(row["tool_calls"] for row in rows),
@@ -220,6 +221,10 @@ def metrics(details, modes=MODES):
 def verdict(found):
     if not {"one_shot", "tools"} <= set(found):
         return "Run both ways to compare."
+    from .agent_measurements import NOTHING_COMPARED, nothing_compared
+
+    if nothing_compared(found):
+        return NOTHING_COMPARED
     alone, tools = found["one_shot"], found["tools"]
     reasons = []
     if tools["found"] < alone["found"]:

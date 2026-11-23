@@ -57,7 +57,11 @@ class Command(BaseCommand):
                 f"turns, ${found['cost']}, {found['seconds']} s"
             )
         self.stdout.write(document_review_pack.verdict(record["metrics"]))
-        if options["record"]:
+        if options["record"] and agent_measurements.nothing_compared(record["metrics"]):
+            # A run that compared nothing is not a measurement: kept neither as a
+            # file nor on the agent's page, where it would read as a verdict.
+            self.stdout.write("Not recorded: nothing was compared.")
+        elif options["record"]:
             path = document_review_pack.save(record)
             self.stdout.write(f"Recorded {path}")
             agent_measurements.record(app, "document_review_pack", record, user, path)

@@ -280,6 +280,32 @@ def numbers_only(metrics, modes):
     return kept
 
 
+#: What a pack's verdict says when one way could ask nothing: never "no better",
+#: which would put a judgement on an agent's page that no comparison made.
+NOTHING_COMPARED = (
+    "Nothing was compared: one way could ask none of the pack's cases here - see each "
+    "case's reason above, set up what it names and run it again."
+)
+#: The count of cases each pack's totals carry, by whatever it calls them.
+CASES = ("items", "tickets", "questions", "cases", "changes")
+
+
+def nothing_compared(found):
+    """Whether either way of a pack's totals asked none of its cases: every one
+    failed (`failed`), or there were none."""
+    for totals in (found or {}).values():
+        if not isinstance(totals, dict):
+            continue
+        cases = next((totals[key] for key in CASES if key in totals), None)
+        if cases == 0:
+            return True
+        failed = totals.get("failed")
+        # A pack of one case (code documentation) says only whether it failed.
+        if failed and (cases is None or failed >= cases):
+            return True
+    return False
+
+
 def state_of(text):
     """The verdict a pack's `verdict` wrote, as one of `MEASUREMENT_VERDICTS`."""
     for start, state in (

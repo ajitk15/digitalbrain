@@ -71,7 +71,11 @@ class Command(BaseCommand):
         self.stdout.write(chat_pack.verdict(record["metrics"]))
         if routing := chat_pack.routing_verdict(record["metrics"]):
             self.stdout.write(f"Searching with {record['routing_model']}: {routing}")
-        if options["record"]:
+        if options["record"] and agent_measurements.nothing_compared(record["metrics"]):
+            # A run that compared nothing is not a measurement: kept neither as a
+            # file nor on the agent's page, where it would read as a verdict.
+            self.stdout.write("Not recorded: nothing was compared.")
+        elif options["record"]:
             path = chat_pack.save(record)
             self.stdout.write(f"Recorded {path}")
             agent_measurements.record(app, "chat_pack", record, user, path)
