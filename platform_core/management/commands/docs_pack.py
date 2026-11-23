@@ -51,6 +51,11 @@ class Command(BaseCommand):
                 f"({row['kept_share']}% kept their quotes), {row['tool_calls']} reads, "
                 f"{row['turns']} turns, ${row['cost']}, {row['seconds']} s"
             )
+            dropped = ", ".join(
+                f"{count} {reason}" for reason, count in sorted(row["dropped_reasons"].items())
+            )
+            if dropped and not row["failure"]:
+                said += f"; dropped: {dropped}"
             self.stdout.write(f"{row['mode']}: {said}")
         self.stdout.write(docs_pack.verdict(record["metrics"]))
         if options["record"] and agent_measurements.nothing_compared(record["metrics"]):

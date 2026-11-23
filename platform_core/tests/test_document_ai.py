@@ -559,3 +559,18 @@ class DocumentReviewAgentTests(TestCase):
         call.assert_called_once()
         self.assertEqual(found["findings"], [])
         self.assertNotIn("tool_calls", found)
+
+
+class ReplyReadingTests(SimpleTestCase):
+    def test_a_sentence_or_fence_around_the_object_is_cut_away(self):
+        from platform_core.document_ai import parse
+
+        for reply in ('{"type": "adr"}', '```json\n{"type": "adr"}\n```',
+                      'Here is the JSON:\n{"type": "adr"}\nThat is all.'):
+            self.assertEqual(parse(reply), {"type": "adr"})
+
+    def test_nothing_is_repaired(self):
+        from platform_core.document_ai import parse
+
+        for reply in ('{"type": "adr"', "no object here", '["adr"]', None):
+            self.assertIsNone(parse(reply))

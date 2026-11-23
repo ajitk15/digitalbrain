@@ -66,6 +66,9 @@ class DocsPackTests(TestCase):
         alone, tools = record["metrics"]["one_shot"], record["metrics"]["tools"]
         # One call saw two lines of the file, so its quote was not in front of it.
         self.assertEqual((alone["components"], alone["paragraphs"], alone["dropped"]), (0, 0, 1))
+        # The file says why, so a run that kept nothing can be read.
+        first = next(row for row in record["details"] if row["mode"] == "one_shot")
+        self.assertEqual(first["dropped_reasons"], {"quote not found": 1})
         self.assertEqual((tools["components"], tools["paragraphs"], tools["files_quoted"]),
                          (1, 1, 1))
         self.assertEqual((alone["kept_share"], tools["kept_share"]), (0.0, 100.0))
@@ -99,6 +102,8 @@ class DocsPackTests(TestCase):
                              stdout=out)
             self.assertTrue(list(records.glob("*.json")))
         self.assertIn("Kept for its agent's page", out.getvalue())
+        self.assertIn("one_shot: described 0/", out.getvalue())
+        self.assertIn("dropped: 1 quote not found", out.getvalue())
         row = AgentMeasurement.objects.get()
         self.assertEqual((row.agent, row.pack, row.verdict), ("code-docs", "docs_pack", "clears"))
 

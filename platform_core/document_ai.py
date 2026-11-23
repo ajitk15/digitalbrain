@@ -145,10 +145,17 @@ def keep(entry, user, task, rubric, result):
 
 
 def parse(answer):
-    """The model's JSON object, or None."""
+    """The model's JSON object, or None.
+
+    A fence or a sentence around the object is cut away (`graph_ai.answer_object`,
+    which extraction already reads with): a reply that said "Here is the JSON:"
+    first was read as no reply at all. Nothing is repaired - the object must
+    still parse, and every quote in it is checked as before.
+    """
+    from .graph_ai import answer_object
+
     try:
-        text = str(answer).strip().removeprefix("```json").removeprefix("```")
-        payload = json.loads(text.removesuffix("```").strip())
+        payload = json.loads(answer_object(str(answer)))
     except (ValueError, TypeError):
         return None
     return payload if isinstance(payload, dict) else None

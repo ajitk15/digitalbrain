@@ -125,6 +125,36 @@ class GapAnalysisTests(TestCase):
         phase = run.phases.get(name="analysis")
         self.assertEqual((phase.citations_verified, phase.citations_rejected), (1, 1))
 
+    def test_a_passage_found_after_the_first_twenty_four_may_be_cited(self):
+        # `AgentResult.found` stops at 24 passages; a run that read more had every
+        # later one refused although it verified. Six searches of five first.
+        for group in range(6):
+            for n in range(5):
+                add_knowledge(self.owner, self.app.pk, f"Filler {group}-{n}",
+                              f"Section {n} of folio{group} covers nothing in particular.")
+        searches = [("search_knowledge", {"query": f"folio{group}", "limit": 8})
+                    for group in range(6)]
+
+        class Later(Analyst):
+            def run(self, model, question, citations, *args, tools=None, **kwargs):
+                self.cite = str(len(citations) + 31)
+                return super().run(model, question, citations, *args, tools=tools, **kwargs)
+
+        analyst = Later()
+        original = Script.__init__
+
+        def searches_first(script, steps, answer, *a, **k):
+            original(script, [*searches, *steps], answer, *a, **k)
+
+        with patch.object(Script, "__init__", searches_first):
+            run = self.run_with(analyst)
+        item = PlanItem.objects.get(plan=run.plan)
+        self.assertEqual([c["origin"] for c in item.citations],
+                         ["knowledge_graph", "knowledge_source"])
+        self.assertEqual(item.citations[1]["id"], str(self.policy.pk))
+        phase = run.phases.get(name="analysis")
+        self.assertEqual((phase.citations_verified, phase.citations_rejected), (2, 0))
+
     def test_a_number_it_was_never_shown_is_refused(self):
         run = self.run_with(Analyst(cite="99"))
         phase = run.phases.get(name="analysis")

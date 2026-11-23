@@ -192,7 +192,11 @@ name only. `agent_runtime/scripted.py` is a model that follows a script, never s
 by configuration, so every guardrail is tested with no provider; the scorecard's "Agent
 guardrail probes passing" must stay 100%. A new tool is one registry entry with its
 purposes, read-only, scoped by `ToolScope` (`run_id`/`snapshot_id` for a run pinned to
-one snapshot) - never a write.
+one snapshot) - never a write. **What a run found is everything it read that verifies**
+(`CitationRecorder.found_citations`, `AgentResult.found`), bounded only by the tool budget:
+it used to stop at 24 passages, so a run of twelve calls of five had every later passage
+refused when cited - a measured gap analysis lost ten citations on one ticket that way, and
+a document's other source, a review's requirement and triage's hypotheses had the same cut.
 
 **Code Factory's agents may read the snapshot with tools - off in production until measured**
 (`agent_runtime/code_tools.py`, `code_factory_agents.consult`, Phase 1). With

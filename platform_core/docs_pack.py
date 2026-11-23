@@ -142,6 +142,9 @@ def run(user, app, modes=MODES, repository=""):
             "mode": mode,
             **score(result, asked),
             "unreadable": bool(result.get("unreadable")),
+            # Why paragraphs were dropped, by the judge's fixed reasons - what a
+            # run that kept nothing needs to say. No text of the reply.
+            "dropped_reasons": result.get("dropped_reasons") or {},
             "failure": failure,
             "prompt_tokens": prompt,
             "completion_tokens": completion,

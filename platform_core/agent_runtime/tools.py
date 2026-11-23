@@ -367,15 +367,21 @@ class CitationRecorder:
         review's diffs and snapshot files, which are not knowledge sources)."""
         return list(self._citations[self.seeded :])
 
-    def found_citations(self, limit=24):
+    def found_citations(self):
         """What the tools found, beyond the evidence the run was seeded with,
-        verified against live sources: an agent's own reading, in the order read."""
+        verified against live sources: an agent's own reading, in the order read.
+
+        All of it - the tool budget is the bound. It used to stop at 24, so a run
+        that read more (twelve calls of five passages is sixty) had every later
+        passage refused when it cited one, although it verified: gap analysis,
+        a document's other source, a review's requirement and triage's
+        hypotheses alike. A measured gap analysis refused ten citations on one
+        ticket that way.
+        """
         from ..models import User
 
         viewer = User.objects.filter(pk=self.scope.user_id).first()
-        return verify_citations(self.scope.app_id, self._citations[self.seeded :], viewer)[
-            :limit
-        ]
+        return verify_citations(self.scope.app_id, self._citations[self.seeded :], viewer)
 
     def verified_citations(self):
         """Drop anything the database no longer backs, then renumber."""
