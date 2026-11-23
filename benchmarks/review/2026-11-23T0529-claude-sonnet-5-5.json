@@ -1,0 +1,146 @@
+{
+ "generated_at": "2026-11-23T05:29:24+00:00",
+ "provider": "claude",
+ "model": "claude-sonnet-5-5",
+ "pack": "48de53d8c074644f38c41edf5c80c93f5fa50b6b6b2ae6d95c107253f7cb43d4",
+ "snapshot": {
+  "repository": "carepath",
+  "number": 1
+ },
+ "metrics": {
+  "one_shot": {
+   "changes": 4,
+   "found": 2,
+   "noise": 7,
+   "failed": 0,
+   "cost": "0.04408800",
+   "turns": 4,
+   "tool_calls": 0,
+   "seconds": 28.7
+  },
+  "tools": {
+   "changes": 4,
+   "found": 2,
+   "noise": 3,
+   "failed": 0,
+   "cost": "0.09665400",
+   "turns": 4,
+   "tool_calls": 3,
+   "seconds": 34.8
+  }
+ },
+ "details": [
+  {
+   "change": "rename-consent-current",
+   "mode": "one_shot",
+   "found": false,
+   "findings": 2,
+   "noise": 2,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01101200",
+   "seconds": 6.5
+  },
+  {
+   "change": "rename-consent-current",
+   "mode": "tools",
+   "found": false,
+   "findings": 1,
+   "noise": 1,
+   "dropped": 1,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 2,
+   "cost": "0.03869400",
+   "seconds": 10.0
+  },
+  {
+   "change": "audit-reason-required",
+   "mode": "one_shot",
+   "found": true,
+   "findings": 3,
+   "noise": 2,
+   "dropped": 1,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01451800",
+   "seconds": 7.5
+  },
+  {
+   "change": "audit-reason-required",
+   "mode": "tools",
+   "found": true,
+   "findings": 1,
+   "noise": 0,
+   "dropped": 2,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.02085800",
+   "seconds": 10.0
+  },
+  {
+   "change": "abnormal-arguments-swapped",
+   "mode": "one_shot",
+   "found": false,
+   "findings": 2,
+   "noise": 2,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01065600",
+   "seconds": 8.9
+  },
+  {
+   "change": "abnormal-arguments-swapped",
+   "mode": "tools",
+   "found": false,
+   "findings": 1,
+   "noise": 1,
+   "dropped": 1,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 1,
+   "cost": "0.02533600",
+   "seconds": 7.4
+  },
+  {
+   "change": "consent-history-unbounded",
+   "mode": "one_shot",
+   "found": true,
+   "findings": 2,
+   "noise": 1,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.00790200",
+   "seconds": 5.8
+  },
+  {
+   "change": "consent-history-unbounded",
+   "mode": "tools",
+   "found": true,
+   "findings": 2,
+   "noise": 1,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01176600",
+   "seconds": 7.4
+  }
+ ]
+}
