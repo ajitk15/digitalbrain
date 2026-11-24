@@ -119,6 +119,24 @@ how it was run.
 
 ## Phase B - Spend less per run (2-4 d build, then paid measurement)
 
+**Built, not yet measured:** a code tool's exact repeat is answered with a note
+(`ToolSpec.once`), `read_file` points at a target handed over whole (`SHOWN_WHOLE`) and at
+lines already returned (`ALREADY_READ`), each a `repeat` step (migration 0118) - the tool is
+still run first, so every repeat is authorized and budgeted like any call. Code Factory's
+`TOOL_GUIDANCE` says the numbered files are in front of the model and to read one function by
+`find_symbol` and a line range. A scorecard probe holds it (34 agent probes, 100%).
+
+**Left as it was, on purpose:** the default window stays `MAX_LINES` (400) - the guard
+removes the re-reads that drove the cost, and a smaller window is a second change to what the
+model reads, to measure on its own. Chat's and triage's tools do not take the repeat rule.
+
+**Waiting on your go-ahead:** `factory_pack --record` three times (about $2 at the last
+run's figures; `measure_agents --run --repeat 3` would run every ready pack), then the Messages runtime and
+prompt caching on an application with an API-key credential. The cost bar (decision 1) is
+still open.
+
+The original plan for this phase follows.
+
 Addresses finding 2 directly. None of it changes what may be written or cited.
 
 - **A run remembers what it was shown** (`code_tools`, on `CitationRecorder` or the scope's

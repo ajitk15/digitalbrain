@@ -46,6 +46,16 @@ MAX_CALLERS = 30
 
 NO_SNAPSHOT = "This run has no code snapshot to read."
 NO_FILE = "No file with that path is in this run's snapshot."
+#: A read of a file the run was handed whole: it is in the evidence already.
+SHOWN_WHOLE = (
+    "{path} is in your evidence in full, as source {number}, exactly as indexed. "
+    "Read it there rather than again."
+)
+#: A read of lines this run's tools already returned.
+ALREADY_READ = (
+    "Lines {start}-{end} of {path} were returned earlier in this run and are above, "
+    "unchanged. Read a different range if you need more."
+)
 
 
 def _files(scope):
@@ -91,7 +101,11 @@ def list_files(scope, args):
     return ToolResult("\n".join(lines), found=True)
 
 
-def read_file(scope, args):
+def read_file(scope, args, recorder=None):
+    """Numbered lines of one file - or, with the run's `recorder`, a short note
+    when the run already holds them: a file it was handed whole (Code Factory's
+    targets; never for a quoting purpose, whose evidence ids differ) or lines a
+    read this run returned. Each such note is a `repeat` step."""
     files = _files(scope)
     if files is None:
         return ToolResult(NO_SNAPSHOT)
@@ -107,6 +121,17 @@ def read_file(scope, args):
     end = min(end, last) if isinstance(end, int) and end >= start else last
     if start > len(text):
         return ToolResult(f"{path} has {len(text)} lines.", found=False)
+    if recorder is not None:
+        number = (
+            None if scope.purpose in QUOTING else recorder.shown_whole(path, found.content)
+        )
+        if number is not None:
+            return ToolResult(SHOWN_WHOLE.format(path=path, number=number), found=True,
+                              repeat=True)
+        if recorder.already_read(path, start, end):
+            return ToolResult(ALREADY_READ.format(start=start, end=end, path=path),
+                              found=True, repeat=True)
+        recorder.note_read(path, start, end)
     shown = [
         f"{number:>5} | {line[:LINE_CHARACTERS]}"
         for number, line in enumerate(text[start - 1 : end], start=start)
@@ -295,6 +320,7 @@ LIST_FILES = ToolSpec(
     schema=_schema(prefix=("string", "Folder prefix, such as src/app/; empty for all.")),
     detail=("prefix", 120),
     purposes=CODE_PURPOSES,
+    once=True,
 )
 
 READ_FILE = ToolSpec(
@@ -311,6 +337,8 @@ READ_FILE = ToolSpec(
     ),
     detail=("path", 160),
     purposes=CODE_PURPOSES,
+    once=True,
+    remembers=True,
 )
 
 SEARCH_CODE = ToolSpec(
@@ -326,6 +354,7 @@ SEARCH_CODE = ToolSpec(
     ),
     detail=("query", 120),
     purposes=CODE_PURPOSES,
+    once=True,
 )
 
 FIND_SYMBOL = ToolSpec(
@@ -335,6 +364,7 @@ FIND_SYMBOL = ToolSpec(
     schema=_schema(name=("string", "The function or class name.")),
     detail=("name", 120),
     purposes=CODE_PURPOSES,
+    once=True,
 )
 
 CALLERS = ToolSpec(
@@ -344,6 +374,7 @@ CALLERS = ToolSpec(
     schema=_schema(path=("string", "The file's path, as list_files shows it.")),
     detail=("path", 160),
     purposes=CODE_PURPOSES,
+    once=True,
 )
 
 TESTS_FOR = ToolSpec(
@@ -353,6 +384,7 @@ TESTS_FOR = ToolSpec(
     schema=_schema(path=("string", "The file's path, as list_files shows it.")),
     detail=("path", 160),
     purposes=CODE_PURPOSES,
+    once=True,
 )
 
 READ_DIFF = ToolSpec(
@@ -365,6 +397,7 @@ READ_DIFF = ToolSpec(
     schema=_schema(path=("string", "The changed file's path.")),
     detail=("path", 160),
     purposes=frozenset({"code_review"}),
+    once=True,
 )
 
 CODE_TOOLS = (LIST_FILES, READ_FILE, SEARCH_CODE, FIND_SYMBOL, CALLERS, TESTS_FOR, READ_DIFF)

@@ -222,6 +222,17 @@ dependencies in front of the model, cost) says it clears the plan's bar: no fewe
 no fewer checks met, at most `COST_BAR` (2x) the cost. The labels are tested against the
 CarePath code, so a check cannot describe a bug that is not there; they are a proxy, and
 CarePath's own suite is the proof. The scorecard's agent probes include the code tools.
+**A run never pays twice for what it holds** (`ToolSpec.once`, `remembers`,
+`CitationRecorder.shown_whole`/`already_read`, step outcome `repeat`, migration 0118). Every
+later turn re-sends every earlier result, and a measured run read a target it was handed whole
+three times (174,970 prompt tokens against 18,570 one call). So a code tool's exact repeat is
+answered `REPEATED`, `read_file` of a target handed over whole points at its evidence number
+(`SHOWN_WHOLE`; not for a quoting purpose, whose evidence ids differ), and lines already
+returned are `ALREADY_READ`. **A repeat is still a call**: the tool runs first - authorized,
+read - and only what the model is shown changes, so a grant revoked since refuses it; it
+counts against the tool budget. Chat's and triage's tools are not `once`: what those models
+read is measured for drift first. `TOOL_GUIDANCE` says the numbered files are in front of the
+model already. Measure it with `factory_pack`, as every change to what a model reads is.
 
 **ServiceOps triage may look past its pack with tools - off in production until measured**
 (`agent_runtime/ops_tools.py`, `serviceops_triage.ask_model`, Phase 3). With

@@ -146,6 +146,7 @@ AGENT_STEP_OUTCOMES = [
     ("stopped", "After Stop"),
     ("refused", "Access ended"),
     ("failed", "Failed"),
+    ("repeat", "Already shown"),
 ]
 
 

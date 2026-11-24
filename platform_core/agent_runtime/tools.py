@@ -23,6 +23,7 @@ into text for the model and carries on; the harness raises it again once the run
 ends, so the answer is never kept.
 """
 
+import json
 import re
 import time
 import uuid
@@ -52,6 +53,13 @@ BUDGET_EXHAUSTED = (
     "The search budget for this answer is used up. Answer with the evidence you already have."
 )
 STOPPED = "This answer was stopped. Do not call any more tools."
+#: The answer to a call this run already made, word for word: its result is in
+#: front of the model already. Sending it again cost a whole result on every
+#: turn after - a measured Code Factory run read one file three times.
+REPEATED = (
+    "You made this exact call earlier in this run; its result is above, unchanged. "
+    "Use it rather than asking again."
+)
 CUT = "\n\n[The rest of this result was cut.]"
 
 
@@ -87,6 +95,9 @@ class ToolResult:
     citations: list = field(default_factory=list)
     found: bool | None = None
     numbered: Callable | None = None
+    #: The run already holds what was asked: `text` says where, and the step is a
+    #: `repeat` rather than a read.
+    repeat: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,6 +121,15 @@ class ToolSpec:
     openai_schema: dict | None = None
     detail: tuple = ()
     purposes: frozenset = field(default_factory=frozenset)
+    #: Handed the run's recorder as a third argument, to answer a read the run
+    #: already holds (`CitationRecorder.shown_whole`, `already_read`) with a note.
+    remembers: bool = False
+    #: The same call a second time in one run is answered `REPEATED` rather than
+    #: with its result again. Still run first - authorized, read - so a grant
+    #: revoked since refuses it as it refuses any call; only what the model is
+    #: shown changes. The code tools set it; chat's and triage's do not, since
+    #: what those models read is measured for drift first.
+    once: bool = False
 
     def wire(self, provider):
         """(description, schema) as this provider is shown them."""
@@ -335,6 +355,10 @@ class CitationRecorder:
         self.steps = []
         self._citations = []
         self.seeded = 0
+        #: Each call made, as (tool, arguments), so the same call is not run twice.
+        self.asked = set()
+        #: {path: [(first line, last line), ...]} a file tool returned this run.
+        self.windows = {}
 
     @property
     def exhausted(self):
@@ -354,6 +378,37 @@ class CitationRecorder:
             self._citations.append(citation)
             numbers.append(len(self._citations))
         return numbers
+
+    def shown_whole(self, path, content):
+        """The evidence number a file was handed over under whole, or None.
+
+        Code Factory hands each target file over whole, under its number, with
+        the path as its title (`code_factory_agents.numbered_files`) and its
+        intent above it - so the excerpt ends with the file. A file cut to a
+        window, or marked too large, never matches.
+        """
+        if not content:
+            return None
+        for number, item in enumerate(self._citations[: self.seeded], 1):
+            if item.get("title") == path and str(item.get("excerpt") or "").endswith(content):
+                return number
+        return None
+
+    def already_read(self, path, first, last):
+        """Whether every line from `first` to `last` of `path` was returned already."""
+        reach = first - 1
+        for start, end in sorted(self.windows.get(path, [])):
+            if end <= reach:
+                continue
+            if start > reach + 1:
+                return False
+            reach = end
+            if reach >= last:
+                return True
+        return False
+
+    def note_read(self, path, first, last):
+        self.windows.setdefault(path, []).append((first, last))
 
     def seed(self, citations):
         """Pre-load evidence computed before the run, without spending budget."""
@@ -575,6 +630,8 @@ def run_tool(spec, scope, args, recorder):
     if recorder.exhausted:
         _step(recorder, spec, args, "budget", started)
         return BUDGET_EXHAUSTED
+    asked = getattr(recorder, "asked", None) if spec.once else None
+    call = (spec.name, json.dumps(args, sort_keys=True, default=str))
     with telemetry.span(
         "agent tool",
         tool=spec.name,
@@ -582,7 +639,7 @@ def run_tool(spec, scope, args, recorder):
         application_id=scope.app_id,
     ) as traced:
         try:
-            result = spec.run(scope, args)
+            result = spec.run(scope, args, recorder) if spec.remembers else spec.run(scope, args)
         except (PermissionDenied, Http404) as refused:
             if hasattr(recorder, "revoked") and recorder.revoked is None:
                 recorder.revoked = refused
@@ -592,15 +649,22 @@ def run_tool(spec, scope, args, recorder):
         except Exception:
             _step(recorder, spec, args, "failed", started)
             raise
+        # Counted against the budget like any call, so a model that repeats itself
+        # still runs out; its citations are the ones it already has.
         numbers = recorder.record(result)
+        repeat = result.repeat or (asked is not None and call in asked)
+        if repeat and not result.repeat:
+            result = ToolResult(REPEATED, result.citations, True, repeat=True)
         text = result.text
         if result.numbered is not None and numbers and len(numbers) == len(result.citations):
             text = result.numbered(numbers)
         text = shown_to_model(getattr(scope, "purpose", "chat"), text)
         if len(text) > RESULT_CHARACTERS:
             text = text[: RESULT_CHARACTERS - len(CUT)] + CUT
+        if asked is not None:
+            asked.add(call)
         found = bool(result.citations) if result.found is None else result.found
-        outcome = "found" if found else "nothing"
+        outcome = "repeat" if result.repeat else "found" if found else "nothing"
         traced.set(outcome=outcome)
         _step(recorder, spec, args, outcome, started, text, len(result.citations))
     return text

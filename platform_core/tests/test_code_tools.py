@@ -14,7 +14,7 @@ from django.http import Http404
 from django.test import TestCase, override_settings
 
 from platform_core import code_factory_agents
-from platform_core.agent_runtime import code_tools, harness, registry
+from platform_core.agent_runtime import code_tools, harness, registry, tools
 from platform_core.agent_runtime.code_tools import NO_FILE, NO_SNAPSHOT
 from platform_core.agent_runtime.scripted import Script
 from platform_core.agent_runtime.tools import CitationRecorder, ToolScope, run_tool
@@ -176,6 +176,78 @@ class CodeToolTests(Fixture, TestCase):
         )
         self.assertIn("lines 1-5 of 5", whole)
         self.assertNotIn("more lines", whole)
+
+    def test_a_run_never_pays_twice_for_what_it_already_holds(self):
+        """A measured Code Factory run read a target it was handed whole three
+        times; every result is sent again on every later turn."""
+        recorder = CitationRecorder(self.scope())
+        recorder.seed([{"id": "1", "title": "src/app/export.py",
+                        "excerpt": "MUST END UP: consent checked\n" + EXPORT}])
+
+        def read(args, spec=code_tools.READ_FILE):
+            return run_tool(spec, recorder.scope, args, recorder)
+
+        # The file handed over whole is pointed at, not sent again.
+        text = read({"path": "src/app/export.py"})
+        self.assertEqual(text, code_tools.SHOWN_WHOLE.format(path="src/app/export.py",
+                                                             number=1))
+        # A window is read once; the same lines again, or lines inside it, are a note.
+        first = read({"path": "src/app/consent.py", "start_line": 1, "end_line": 6})
+        self.assertIn("    4 | def consent_given(patient):", first)
+        self.assertIn("Lines 1-6 of src/app/consent.py were returned earlier",
+                      read({"path": "src/app/consent.py", "start_line": 1, "end_line": 6}))
+        inside = read({"path": "src/app/consent.py", "start_line": 2, "end_line": 5})
+        self.assertIn("Lines 2-5 of src/app/consent.py were returned earlier", inside)
+        # Lines past what was read are read; then two windows cover the whole file.
+        more = read({"path": "src/app/consent.py", "start_line": 5, "end_line": 9})
+        self.assertIn("    8 | class ConsentError(Exception):", more)
+        self.assertIn("were returned earlier",
+                      read({"path": "src/app/consent.py", "start_line": 1, "end_line": 0}))
+        # Every call is a step and counts against the budget; a note cites nothing.
+        self.assertEqual([step["outcome"] for step in recorder.steps],
+                         ["repeat", "found", "repeat", "repeat", "found", "repeat"])
+        self.assertEqual(recorder.calls, 6)
+        self.assertEqual(recorder.read_citations(), [])
+
+    def test_a_file_cut_or_too_large_or_for_a_quoting_purpose_is_read(self):
+        for excerpt in (EXPORT[:20], "TOO LARGE TO CHANGE.\n" + EXPORT[:20]):
+            recorder = CitationRecorder(self.scope())
+            recorder.seed([{"id": "1", "title": "src/app/export.py", "excerpt": excerpt}])
+            text = run_tool(code_tools.READ_FILE, recorder.scope,
+                            {"path": "src/app/export.py"}, recorder)
+            self.assertIn("lines 1-5 of 5", text)
+        # A review quotes what it read by its own evidence id, so it reads the file.
+        recorder = CitationRecorder(self.scope(purpose="code_review"))
+        recorder.seed([{"id": "code:x", "title": "src/app/export.py", "excerpt": EXPORT}])
+        text = run_tool(code_tools.READ_FILE, recorder.scope, {"path": "src/app/export.py"},
+                        recorder)
+        self.assertIn("Evidence id code:", text)
+
+    def test_the_same_call_to_a_code_tool_is_answered_once(self):
+        recorder = CitationRecorder(self.scope())
+        args = {"query": "consent export"}
+        first = run_tool(code_tools.SEARCH_CODE, recorder.scope, args, recorder)
+        self.assertNotEqual(first, tools.REPEATED)
+        self.assertEqual(run_tool(code_tools.SEARCH_CODE, recorder.scope, dict(args), recorder),
+                         tools.REPEATED)
+        # Other arguments are another call.
+        self.assertNotEqual(
+            run_tool(code_tools.SEARCH_CODE, recorder.scope, {"query": "consent"}, recorder),
+            tools.REPEATED,
+        )
+        self.assertEqual([step["outcome"] for step in recorder.steps][1], "repeat")
+        # Only the code tools: chat's and triage's are shown what they always were.
+        self.assertEqual({spec.name for spec in registry.TOOLS.values() if spec.once},
+                         {spec.name for spec in code_tools.CODE_TOOLS})
+
+    def test_a_repeat_is_still_authorized_like_any_call(self):
+        recorder = CitationRecorder(self.scope())
+        args = {"path": "src/app/consent.py", "start_line": 1, "end_line": 3}
+        run_tool(code_tools.READ_FILE, recorder.scope, args, recorder)
+        ApplicationGrant.objects.filter(application=self.app, user=self.owner).delete()
+        with self.assertRaises((PermissionDenied, Http404)):
+            run_tool(code_tools.READ_FILE, recorder.scope, args, recorder)
+        self.assertEqual(recorder.steps[-1]["outcome"], "refused")
 
     def test_a_read_is_held_to_a_window(self):
         with patch.object(code_tools, "MAX_LINES", 3):

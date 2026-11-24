@@ -61,7 +61,9 @@ TOOL_GUIDANCE = (
     " You may also read the rest of the repository, as it was indexed, with the tools "
     "you are given: list files, read a file by line, search, find where a symbol is "
     "defined, see what depends on a file and which tests cover it. Use them to check "
-    "how the code you work on is called and tested before you answer. Reading changes "
+    "how the code you work on is called and tested before you answer. The numbered "
+    "files are in front of you in full already: do not read them again. To look at one "
+    "function elsewhere, find it with find_symbol and read only its lines. Reading changes "
     "nothing, and you can still change only the numbered files. Answer, in your last "
     "turn, with the JSON object you were asked for and nothing else."
 )

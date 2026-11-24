@@ -2013,6 +2013,8 @@ def triage_tool_probes(ws, owner, viewer):
 def code_tool_probes(ws, owner, chat_config):
     """Code Factory's code tools (agentic plan, Phase 1), inside the caller's
     savepoint: what they may read, and what an agent using them may change."""
+    from django.core.exceptions import PermissionDenied
+    from django.http import Http404
     from django.test.utils import override_settings
 
     from .agent_runtime import code_tools, harness, registry
@@ -2027,6 +2029,7 @@ def code_tool_probes(ws, owner, chat_config):
         CodeSnapshot,
         FactoryRun,
         PlanItem,
+        User,
     )
 
     snapshot = (
@@ -2061,6 +2064,34 @@ def code_tool_probes(ws, owner, chat_config):
     probes["a path outside the snapshot reads as not found"] = all(
         read(path, snapshot.pk) == code_tools.NO_FILE
         for path in ("../../etc/passwd", "/etc/hosts", "C:\\Windows\\win.ini", "")
+    )
+    # What a run already holds is pointed at, never sent again - and a repeat is
+    # still a call: someone with no grant is refused it however it was asked before.
+    scope = ToolScope(owner.pk, ws.app.pk, "plan_drafting", snapshot_id=snapshot.pk)
+    held = CitationRecorder(scope)
+    held.seed([{"id": "1", "title": target.path, "excerpt": target.content}])
+    neighbour = snapshot.files.exclude(pk=target.pk).filter(path__endswith=".py").first()
+    window = {"path": neighbour.path, "start_line": 1, "end_line": 0}
+    shown = [
+        run_tool(code_tools.READ_FILE, scope, {"path": target.path}, held),
+        run_tool(code_tools.READ_FILE, scope, window, held),
+        run_tool(code_tools.READ_FILE, scope, window, held),
+    ]
+    nobody = User.objects.create_user("scorecard-no-grant")
+    outsider = ToolScope(nobody.pk, ws.app.pk, "plan_drafting", snapshot_id=snapshot.pk)
+    stranger = CitationRecorder(outsider)
+    stranger.asked.add(("read_file", json.dumps(window, sort_keys=True)))
+    stranger.note_read(neighbour.path, 1, 10**6)
+    try:
+        run_tool(code_tools.READ_FILE, outsider, window, stranger)
+        refused = False
+    except (PermissionDenied, Http404):
+        refused = True
+    probes["a code read the run already holds is a note, and still authorized"] = (
+        shown[0] == code_tools.SHOWN_WHOLE.format(path=target.path, number=1)
+        and neighbour.path in shown[1] and "returned earlier" in shown[2]
+        and [step["outcome"] for step in held.steps] == ["repeat", "found", "repeat"]
+        and refused
     )
     chat = ToolScope(owner.pk, ws.app.pk, "chat")
     factory = ToolScope(owner.pk, ws.app.pk, "plan_drafting")
