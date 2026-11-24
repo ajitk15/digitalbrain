@@ -27,7 +27,7 @@ from .agent_runtime.credentials import (
 )
 from .agent_runtime.prompts import INSTRUCTIONS
 from .agent_runtime.runtime import ANSWER_TOKENS, evidence_payload, recent_turns
-from .agent_runtime.usage import checked_answer, claude_turn, receipt_usage
+from .agent_runtime.usage import Billed, checked_answer, claude_turn, receipt_usage
 
 logger = logging.getLogger(__name__)
 
@@ -174,16 +174,26 @@ async def _run(
         )
         result = None
         blocks = []
-        async with asyncio.timeout(timeout):
-            async for message in query(prompt=prompt, options=options):
-                if isinstance(message, ResultMessage):
-                    result = message
-                elif isinstance(message, AssistantMessage):
-                    # Collected because `result.result` cannot be relied on to
-                    # carry the whole reply; see the answer selection below.
-                    blocks.extend(
-                        block.text for block in message.content if isinstance(block, TextBlock)
-                    )
+        try:
+            async with asyncio.timeout(timeout):
+                async for message in query(prompt=prompt, options=options):
+                    if isinstance(message, ResultMessage):
+                        result = message
+                    elif isinstance(message, AssistantMessage):
+                        # Collected because `result.result` cannot be relied on to
+                        # carry the whole reply; see the answer selection below.
+                        blocks.extend(
+                            block.text for block in message.content
+                            if isinstance(block, TextBlock)
+                        )
+        except claude_agent_sdk.ProcessError as failure:
+            # An error result, then a non-zero exit: the SDK raises it as
+            # `ResultError` after handing over the result, whose usage says what
+            # was billed. Kept, so `invoke_ai` writes its receipt.
+            cost = error_bill(result)
+            if cost:
+                raise Billed(cost, failure) from None
+            raise
         if result is None or result.is_error:
             # The structured fields only - never `result.result` or `errors`,
             # which are provider prose and may carry request details. These are
@@ -206,6 +216,9 @@ async def _run(
                         "max_tokens": max_tokens,
                     },
                 )
+            cost = error_bill(result)
+            if cost:
+                raise Billed(cost, ValueError("No successful result"))
             raise ValueError("No successful result")
         turn = claude_turn(f"claude-{uuid.uuid4()}", result.usage)
         # Whichever carries more of the reply.
@@ -227,6 +240,26 @@ async def _run(
         return {"id": turn.request_id, "usage": receipt_usage(turn)}, answer
 
 
+def error_bill(result):
+    """An error result's usage as the call's one `TurnUsage`, or none when it
+    cannot be read - then the call fails as it always did."""
+    if result is None or not isinstance(getattr(result, "usage", None), dict):
+        return []
+    try:
+        return [claude_turn(f"claude-{uuid.uuid4()}", result.usage, result.num_turns)]
+    except ValueError:
+        return []
+
+
+class BilledFailure(ValidationError):
+    """A one-shot call that failed after the provider billed it: what a person is
+    told, as any failed call tells them, and `usages` for the receipt."""
+
+    def __init__(self, message, usages):
+        super().__init__(message)
+        self.usages = list(usages)
+
+
 #: Our own failure messages, as the fixed labels the log is allowed to keep. A
 #: rejected answer and a missing result used to be one indistinguishable
 #: "ValueError" line - which is how an over-strict answer limit went unseen.
@@ -239,6 +272,13 @@ FAILURE_KINDS = {
 def completion(config, question, citations, token, history=None, **options):
     try:
         return asyncio.run(_run(config.model, question, citations, token, history, **options))
+    except Billed as billed:
+        logger.warning(
+            "claude_completion_failed",
+            extra={"failure_kind": FAILURE_KINDS.get(str(billed.cause), "billed")},
+        )
+        log_result_failure(billed.cause, options.get("max_tokens"))
+        raise BilledFailure(diagnosis(billed.cause), billed.usages) from None
     except (ClaudeSDKError, TimeoutError, OSError, ValueError, TypeError) as failure:
         # The operator needs the real text to debug; the user must never see it.
         # The log formatter keeps no exception message (it may carry provider

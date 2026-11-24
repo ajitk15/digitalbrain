@@ -647,27 +647,42 @@ def invoke_ai(user, app_id, purpose, question, citations, history=None, receipt=
         prompt_characters=prompt_size(question, citations, history, options),
         max_tokens=options.get("max_tokens") or default_reply_tokens(),
     ):
-        result, answer = adapter(config, question, citations, token, history=history, **options)
+        def receipt_for(request_id, usage, turns=1):
+            record_ai_usage(
+                actor=user,
+                application_id=app.pk,
+                provider="OpenAI" if config.provider == "openai" else "Anthropic",
+                model=config.model,
+                request_id=request_id,
+                purpose=purpose,
+                input_tokens=usage["prompt_tokens"],
+                output_tokens=usage["completion_tokens"],
+                cache_read_tokens=usage.get("cache_read_tokens", 0),
+                cache_write_tokens=usage.get("cache_write_tokens", 0),
+                turns=turns,
+                amount=cost(
+                    config, usage["prompt_tokens"], usage["completion_tokens"],
+                    usage.get("cache_read_tokens", 0), usage.get("cache_write_tokens", 0),
+                    usage.get("cache_write_long_tokens", 0),
+                ),
+                estimated=True,
+                authorized=app,
+            )
+
+        from .agent_runtime.usage import receipt_usage
+        from .claude_agents import BilledFailure
+
+        try:
+            result, answer = adapter(config, question, citations, token, history=history,
+                                     **options)
+        except BilledFailure as failed:
+            # The call failed after it was billed: its receipt first, then the
+            # failure, as a caller has always been shown it.
+            for turn in failed.usages:
+                receipt_for(turn.request_id, receipt_usage(turn), turn.turns)
+            raise
         usage = result["usage"]
-        record_ai_usage(
-            actor=user,
-            application_id=app.pk,
-            provider="OpenAI" if config.provider == "openai" else "Anthropic",
-            model=config.model,
-            request_id=result["id"],
-            purpose=purpose,
-            input_tokens=usage["prompt_tokens"],
-            output_tokens=usage["completion_tokens"],
-            cache_read_tokens=usage.get("cache_read_tokens", 0),
-            cache_write_tokens=usage.get("cache_write_tokens", 0),
-            amount=cost(
-                config, usage["prompt_tokens"], usage["completion_tokens"],
-                usage.get("cache_read_tokens", 0), usage.get("cache_write_tokens", 0),
-                usage.get("cache_write_long_tokens", 0),
-            ),
-            estimated=True,
-            authorized=app,
-        )
+        receipt_for(result["id"], usage)
     # A grant revoked while the model was answering keeps the receipt and loses
     # the answer: the same rule, read again.
     gateway.authorize(user, app_id, purpose)

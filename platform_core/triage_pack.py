@@ -78,13 +78,16 @@ def score(hypotheses, cause_id):
     return None
 
 
-def ask_case(user, app, incident, cause, mode, config):
-    from .ai import cost
+def ask_case(user, app, incident, cause, mode, config, counted=None):
+    from django.utils import timezone
+
+    from .agent_measurements import case_receipts
+    from .models import AIUsage
     from .serviceops_triage import _parsed_hypotheses, ask_model, evidence_pack
 
     pack, _ = evidence_pack(app, incident, own_confirmed=False)
     receipt, failure, answer, extra = {}, "", "", []
-    started = time.monotonic()
+    started, since = time.monotonic(), timezone.now()
     try:
         answer, extra = ask_model(user, app, incident, pack, receipt, agent=mode == "tools")
     except (ValidationError, ImproperlyConfigured, OSError, TimeoutError) as refused:
@@ -92,6 +95,17 @@ def ask_case(user, app, incident, cause, mode, config):
     hypotheses = _parsed_hypotheses(answer, pack + extra) if answer else []
     cause_id = str(cause.pk)
     rank = score(hypotheses, cause_id)
+    # What the case cost is what its receipts say - the bill, cache reads and
+    # writes priced apart - never tokens priced here: the CLI writes every one-call
+    # prompt to the hour's cache at twice the input rate and a tool run reads most
+    # of its prompt back at a tenth, so pricing tokens read one call at about half
+    # its bill and tools at about half again over theirs. A run that failed after
+    # it was billed is counted too.
+    turns, prompt, completion, spent = case_receipts(
+        AIUsage.objects.filter(application=app, actor=user, purpose="serviceops_triage"),
+        since,
+        set() if counted is None else counted,
+    )
     return {
         "incident": str(incident.pk),
         "title": incident.title[:120],
@@ -101,15 +115,11 @@ def ask_case(user, app, incident, cause, mode, config):
         "cause_in_pack": any(row["id"] == cause_id for row in pack),
         "cause_read": any(row["id"] == cause_id for row in extra),
         "failure": failure,
-        "prompt_tokens": receipt.get("prompt_tokens", 0),
-        "completion_tokens": receipt.get("completion_tokens", 0),
-        "turns": receipt.get("turns", 1 if receipt else 0),
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "turns": turns,
         "tool_calls": receipt.get("tool_calls", 0),
-        "cost": str(
-            cost(config, receipt["prompt_tokens"], receipt["completion_tokens"])
-            if config and receipt
-            else 0
-        ),
+        "cost": str(spent),
         "seconds": round(time.monotonic() - started, 1),
     }
 
@@ -127,8 +137,9 @@ def run(user, app, modes=MODES, limit=MAX_CASES):
     config = AIConfiguration.objects.filter(
         application=app, purpose="serviceops_triage", enabled=True
     ).first()
+    counted = set()
     details = [
-        ask_case(user, app, incident, cause, mode, config)
+        ask_case(user, app, incident, cause, mode, config, counted)
         for incident, cause in found
         for mode in modes
     ]

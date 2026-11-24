@@ -140,11 +140,14 @@ def score(change, findings, snapshot):
     return bool(met), len(findings) - len(met)
 
 
-def review_change(user, app, snapshot, key, change, mode, config):
-    from .ai import cost
-    from .code_review import material, review_answer
+def review_change(user, app, snapshot, key, change, mode, config, counted=None):
+    from django.utils import timezone
 
-    started = time.monotonic()
+    from .agent_measurements import case_receipts
+    from .code_review import material, review_answer
+    from .models import AIUsage
+
+    started, since = time.monotonic(), timezone.now()
     review = build(user, app, snapshot, change)
     failure, result = "", {}
     try:
@@ -156,10 +159,16 @@ def review_change(user, app, snapshot, key, change, mode, config):
         review.delete()
     findings = result.get("findings", [])
     found, noise = score(change, findings, snapshot) if not failure else (False, 0)
-    spent = (
-        cost(config, result.get("prompt_tokens", 0), result.get("completion_tokens", 0))
-        if config and result
-        else 0
+    # What the case cost is what its receipts say - the bill, cache reads and
+    # writes priced apart - never tokens priced here: the CLI writes every one-call
+    # prompt to the hour's cache at twice the input rate and a tool run reads most
+    # of its prompt back at a tenth, so pricing tokens read one call at about half
+    # its bill and tools at about half again over theirs. A run that failed after
+    # it was billed is counted too.
+    turns, _, _, spent = case_receipts(
+        AIUsage.objects.filter(application=app, actor=user, purpose="code_review"),
+        since,
+        set() if counted is None else counted,
     )
     return {
         "change": key,
@@ -170,7 +179,7 @@ def review_change(user, app, snapshot, key, change, mode, config):
         "dropped": result.get("dropped", 0),
         "read": result.get("read", 0),
         "failure": failure,
-        "turns": result.get("turns", 0),
+        "turns": turns,
         "tool_calls": result.get("tool_calls", 0),
         "cost": str(spent),
         "seconds": round(time.monotonic() - started, 1),
@@ -185,8 +194,9 @@ def run(user, app, modes=MODES):
     config = AIConfiguration.objects.filter(
         application=app, purpose="code_review", enabled=True
     ).first()
+    counted = set()
     details = [
-        review_change(user, app, snapshot, key, change, mode, config)
+        review_change(user, app, snapshot, key, change, mode, config, counted)
         for key, change in pack["changes"].items()
         for mode in modes
     ]

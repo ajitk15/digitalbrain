@@ -42,7 +42,7 @@ from .prompts import TOOL_INSTRUCTIONS
 from .registry import for_scope
 from .runtime import ANSWER_TOKENS, evidence_payload, recent_turns
 from .tools import run_tool
-from .usage import TurnLimit, TurnUsage, checked_answer, claude_turn
+from .usage import Billed, TurnLimit, TurnUsage, checked_answer, claude_turn
 
 SERVER_NAME = "brain"
 TOOL_PREFIX = f"mcp__{SERVER_NAME}__"
@@ -173,6 +173,22 @@ def stream_text(message):
     return piece if isinstance(piece, str) else ""
 
 
+def billed(result):
+    """The usage an error result carries, as the run's one `TurnUsage`, or none.
+
+    The CLI ends a failed run - an API error, an output limit - with an error
+    result that still says what the run's turns cost, then exits non-zero. Those
+    turns were billed; reading the usage is what gives them a receipt. A result
+    whose usage cannot be read gives nothing, and the run fails as it did.
+    """
+    if result is None or not isinstance(getattr(result, "usage", None), dict):
+        return []
+    try:
+        return [claude_turn(f"claude-{uuid.uuid4()}", result.usage, result.num_turns)]
+    except ValueError:
+        return []
+
+
 def out_of_turns(result):
     """Whether the CLI's result says the run used every turn it was allowed."""
     return result is not None and getattr(result, "subtype", "") == "error_max_turns"
@@ -271,11 +287,16 @@ async def run(
                             and asyncio.get_running_loop().time() - stopped_at > DRAIN_AFTER_STOP
                         ):
                             break
-        except claude_agent_sdk.ProcessError:
+        except claude_agent_sdk.ProcessError as failure:
             # The CLI ends a run at its turn limit with an error result and then
             # exits non-zero, which the SDK raises after handing over the result.
             # That result carries the run's usage, so it is kept, not lost.
             if not out_of_turns(result):
+                # Any other error result too: a live Code Factory run ended in an
+                # API error after 16 s of billed turns and left no receipt.
+                cost = billed(result)
+                if cost:
+                    raise Billed(cost, failure) from None
                 raise
     stopped = stopped_at is not None
     text = ("".join(pieces) or "".join(fallback)).strip()
@@ -284,6 +305,9 @@ async def run(
         raise TurnLimit([used], text)
     if result is None or result.is_error:
         if not (stopped and text):
+            cost = billed(result)
+            if cost:
+                raise Billed(cost, ValueError("No successful result"))
             raise ValueError("No successful result")
         return [TurnUsage(f"claude-{uuid.uuid4()}", 0, 0)], text
     # One usage for the whole run, summed: it says how many turns it covers.

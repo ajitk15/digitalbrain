@@ -38,7 +38,7 @@ from platform_core.agent_runtime.tools import (
     run_tool,
     shape,
 )
-from platform_core.agent_runtime.usage import TurnLimit
+from platform_core.agent_runtime.usage import Billed, TurnLimit
 from platform_core.models import (
     AgentStep,
     AIAdmission,
@@ -745,10 +745,35 @@ class RuntimeWiringTests(SimpleTestCase):
         self.assertEqual([(u.prompt_tokens, u.completion_tokens) for u in usage], [(300, 40)])
         # One summed usage, but it says how many turns it billed.
         self.assertEqual([u.turns for u in usage], [3])
-        # Any other error result still fails as it did.
+        # Any other error result fails too - with its bill, which a live Code
+        # Factory run lost: 16 s of turns, no receipt.
         with patch.object(claude_runtime, "query", ending("error_during_execution")):
-            with self.assertRaises(ProcessError):
+            with self.assertRaises(Billed) as failed:
                 run()
+        self.assertIsInstance(failed.exception.cause, ProcessError)
+        self.assertEqual([(u.prompt_tokens, u.completion_tokens, u.turns)
+                          for u in failed.exception.usages], [(300, 40, 3)])
+
+    def test_a_cli_error_result_with_no_readable_usage_fails_as_it_did(self):
+        import asyncio
+
+        from claude_agent_sdk import ProcessError, ResultMessage
+
+        for usage in (None, {"input_tokens": "lots"}):
+            async def query(prompt, options, usage=usage):
+                yield ResultMessage(
+                    subtype="error_during_execution", duration_ms=1, duration_api_ms=1,
+                    is_error=True, num_turns=2, session_id="s", total_cost_usd=0,
+                    usage=usage, result=None,
+                )
+                raise ProcessError("exit", exit_code=1)
+
+            with self.subTest(usage=usage), patch.object(claude_runtime, "query", query):
+                with self.assertRaises(ProcessError):
+                    asyncio.run(claude_runtime.run(
+                        "claude-sonnet-5", "q", [], "sk-ant-test", [], self.scope,
+                        CitationRecorder(self.scope), lambda *a: None, max_turns=3,
+                    ))
 
     def test_a_cli_run_reports_the_turns_it_took_not_one_receipt(self):
         """The CLI sums a run's usage into one result: its `num_turns` is the count.

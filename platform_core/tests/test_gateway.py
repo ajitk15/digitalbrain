@@ -120,6 +120,26 @@ class GatewayTests(TestCase):
             self.ask()
         self.assertFalse(AIAdmission.objects.exists())
 
+    def test_a_call_that_failed_after_it_was_billed_keeps_its_receipt(self):
+        from platform_core.agent_runtime.usage import TurnUsage
+        from platform_core.claude_agents import BilledFailure
+
+        billed = BilledFailure("Claude returned an error.",
+                               [TurnUsage("claude-failed", 1200, 30, 0, 1100, 0, 2)])
+        with (
+            patch("platform_core.claude_agents.completion", side_effect=billed),
+            self.assertRaises(ValidationError),
+        ):
+            self.ask()
+        receipt = AIUsage.objects.get(application=self.app)
+        self.assertEqual(
+            (receipt.request_id, receipt.input_tokens, receipt.output_tokens,
+             receipt.cache_write_tokens, receipt.turns),
+            ("claude-failed", 1200, 30, 1100, 2),
+        )
+        self.assertGreater(receipt.amount, 0)
+        self.assertFalse(AIAdmission.objects.exists())
+
     @override_settings(AI_GATEWAY={**GATEWAY, "max_calls_per_application": 1})
     def test_a_full_application_waits_then_is_told_nothing_was_sent(self):
         self.in_flight()

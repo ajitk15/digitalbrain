@@ -82,6 +82,45 @@ class ClaudeSDKTests(SimpleTestCase):
                     self.call()
 
 
+class BilledFailureTests(ClaudeSDKTests):
+    """An error result still says what the call cost; the failure carries it."""
+
+    def test_an_error_result_then_an_exit_fails_with_its_bill(self):
+        from claude_agent_sdk import ProcessError
+
+        from platform_core.claude_agents import BilledFailure
+
+        async def fake_query(*, prompt, options):
+            result = self.result()
+            result.is_error = True
+            result.subtype = "error_during_execution"
+            yield result
+            raise ProcessError("exit", exit_code=1)
+
+        with patch("platform_core.claude_agents.query", side_effect=fake_query):
+            with self.assertRaises(BilledFailure) as failed:
+                self.call()
+        self.assertEqual([(u.prompt_tokens, u.completion_tokens, u.cache_read)
+                          for u in failed.exception.usages], [(13, 4, 3)])
+
+    def test_an_error_result_with_no_readable_usage_has_no_bill(self):
+        from claude_agent_sdk import ProcessError
+
+        from platform_core.claude_agents import BilledFailure
+
+        async def fake_query(*, prompt, options):
+            result = self.result()
+            result.is_error = True
+            result.usage = None
+            yield result
+            raise ProcessError("exit", exit_code=1)
+
+        with patch("platform_core.claude_agents.query", side_effect=fake_query):
+            with self.assertRaises(ValidationError) as failed:
+                self.call()
+        self.assertNotIsInstance(failed.exception, BilledFailure)
+
+
 class TruncatedResultTests(SimpleTestCase):
     """The CLI's summary is not always the whole reply.
 

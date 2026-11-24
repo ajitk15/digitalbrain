@@ -17,6 +17,7 @@ from platform_core.agent_runtime import harness
 from platform_core.agent_runtime.scripted import Script
 from platform_core.models import AIConfiguration, AIUsage, FactoryRun, RunEvent
 from platform_core.scorecard import CAREPATH_CODE, code_snapshot
+from platform_core.services import record_ai_usage
 
 from . import test_documents
 from .test_code_tools import SETTINGS
@@ -159,6 +160,13 @@ class PackRunTests(TestCase):
             asked.update(question=question, citations=citations, phase=phase)
             receipt.update(provider="claude", model="claude-sonnet-5", prompt_tokens=1000,
                            completion_tokens=200, request_id="r")
+            # As a real call does: a receipt, which is what the pack prices from.
+            record_ai_usage(
+                actor=user, application_id=app_id, provider="Anthropic",
+                model="claude-sonnet-5", request_id="r", purpose="plan_drafting",
+                input_tokens=1000, output_tokens=200, cache_write_tokens=1000,
+                amount=Decimal("0.006"),
+            )
             return json.dumps({"files": []})
 
         script = Script(
@@ -187,12 +195,16 @@ class PackRunTests(TestCase):
         self.assertEqual((by_mode["tools"]["turns"], by_mode["tools"]["tool_calls"]), (2, 2))
         self.assertEqual(record["metrics"]["tools"]["fixed"], 1)
         self.assertEqual(record["metrics"]["one_shot"]["fixed"], 0)
+        # Each way is what its receipts billed, not its tokens priced here.
         self.assertEqual(Decimal(by_mode["one_shot"]["cost"]), Decimal("0.006"))
+        tools_bill = sum(receipt.amount for receipt in AIUsage.objects.filter(
+            purpose="plan_drafting").exclude(request_id="r"))
+        self.assertEqual(Decimal(by_mode["tools"]["cost"]), tools_bill)
         self.assertIn("clear the bar", factory_pack.verdict(record["metrics"]))
         # Nothing is written but the receipts: no run, no notes.
         self.assertFalse(FactoryRun.objects.exists())
         self.assertFalse(RunEvent.objects.exists())
-        self.assertEqual(AIUsage.objects.filter(purpose="plan_drafting").count(), 2)
+        self.assertEqual(AIUsage.objects.filter(purpose="plan_drafting").count(), 3)
         self.assertEqual(record["snapshot"], {"repository": "carepath", "number": 1})
 
     def test_a_refused_call_is_a_row_not_a_crash(self):

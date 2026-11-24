@@ -295,6 +295,14 @@ class TriagePackTests(Fixture):
             prompt["evidence"] = " ".join(c["excerpt"] for c in citations)
             options["receipt"].update(prompt_tokens=1000, completion_tokens=200,
                                       provider="claude", model="claude-sonnet-5", request_id="r")
+            # As a real call does: a receipt, which is what the pack prices from.
+            from platform_core.services import record_ai_usage
+
+            record_ai_usage(
+                actor=user, application_id=app_id, provider="Anthropic",
+                model="claude-sonnet-5", request_id="r", purpose=purpose,
+                input_tokens=1000, output_tokens=200, amount=Decimal("0.006"),
+            )
             return json.dumps({"hypotheses": []})
 
         with patch("platform_core.ai.invoke_ai", side_effect=one_shot):
