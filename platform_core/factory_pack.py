@@ -35,6 +35,8 @@ from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 PACK = ROOT / "benchmarks" / "factory-pack.json"
 RECORDS = ROOT / "benchmarks" / "factory"
@@ -162,9 +164,9 @@ def ask_ticket(user, app, snapshot, item, mode):
     return answer, receipt, read, [reference["path"] for reference in references], held
 
 
+@measuring
 def run(user, app, modes=MODES):
     """Every ticket every way. Returns the record `save` writes."""
-    from django.utils import timezone
 
     from .agent_measurements import case_receipts
     from .models import AIConfiguration, AIUsage
@@ -179,7 +181,7 @@ def run(user, app, modes=MODES):
     billed = AIUsage.objects.filter(application=app, actor=user, purpose="plan_drafting")
     for key, item in pack["tickets"].items():
         for mode in modes:
-            started, since = time.monotonic(), timezone.now()
+            started, since = time.monotonic(), mark()
             try:
                 answer, receipt, read, references, held = ask_ticket(
                     user, app, snapshot, item, mode

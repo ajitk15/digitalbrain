@@ -57,6 +57,8 @@ from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS = ROOT / "benchmarks" / "chat"
 MODES = ("one_shot", "tools")
@@ -159,9 +161,9 @@ def receipts(app, user, since, counted=None):
     )
 
 
+@measuring
 def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
     """Every question every way. Returns the record `save` writes."""
-    from django.utils import timezone
 
     from .ai import chat_configuration, routing_config, routing_problem
     from .models import KnowledgeEntry
@@ -185,7 +187,7 @@ def run(user, app, modes=MODES, limit=MAX_QUESTIONS):
         # Found once, as chat finds it, and handed to both ways alike.
         evidence = seeded(app, item.question, user)
         for mode in modes:
-            since, started = timezone.now(), time.monotonic()
+            since, started = mark(), time.monotonic()
             answer, citations, tool_calls, failure = ask(
                 user, app, config, token, item.question, evidence, mode
             )

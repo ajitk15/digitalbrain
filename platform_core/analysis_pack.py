@@ -42,6 +42,8 @@ from types import SimpleNamespace
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 KEY = ROOT / "benchmarks" / "seeded-evidence.json"
 CODE_KEY = ROOT / "benchmarks" / "code-evidence.json"
@@ -174,9 +176,9 @@ def receipts(app, user, since, counted=None):
     )
 
 
+@measuring
 def run(user, app, modes=MODES):
     """Every ticket every way. Returns the record `save` writes."""
-    from django.utils import timezone
 
     from .code_factory import NO_GRAPH
     from .graphs import published_revision
@@ -206,7 +208,7 @@ def run(user, app, modes=MODES):
                                 "rejected": 0, "prompt_tokens": 0, "completion_tokens": 0,
                                 "turns": 0, "tool_calls": 0, "cost": "0", "seconds": 0.0})
                 continue
-            since, started = timezone.now(), time.monotonic()
+            since, started = mark(), time.monotonic()
             receipt = {}
             items, offered, found, rejected, failure = ask_ticket(
                 user, app, entry, version, snapshot, mode, receipt

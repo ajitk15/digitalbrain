@@ -32,6 +32,8 @@ from pathlib import Path
 
 from django.core.exceptions import PermissionDenied, ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS = ROOT / "benchmarks" / "docs"
 MODES = ("one_shot", "tools")
@@ -111,9 +113,9 @@ def ask(doc, user, mode):
         return {}, " ".join(getattr(refused, "messages", [str(refused)]))[:300]
 
 
+@measuring
 def run(user, app, modes=MODES, repository=""):
     """Every way, over the newest documentation. Returns the record `save` writes."""
-    from django.utils import timezone
 
     from .code_docs import MAX_AI_COMPONENTS, can_write, configured, material
     from .models import AIConfiguration
@@ -134,7 +136,7 @@ def run(user, app, modes=MODES, repository=""):
     details = []
     counted = set()
     for mode in modes:
-        since, started = timezone.now(), time.monotonic()
+        since, started = mark(), time.monotonic()
         result, failure = ask(doc, user, mode)
         turns, prompt, completion, amount = receipts(app, user, since, counted)
         details.append({

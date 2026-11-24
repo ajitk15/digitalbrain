@@ -31,6 +31,8 @@ from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 PACK = ROOT / "benchmarks" / "review-pack.json"
 RECORDS = ROOT / "benchmarks" / "review"
@@ -141,13 +143,12 @@ def score(change, findings, snapshot):
 
 
 def review_change(user, app, snapshot, key, change, mode, config, counted=None):
-    from django.utils import timezone
 
     from .agent_measurements import case_receipts
     from .code_review import material, review_answer
     from .models import AIUsage
 
-    started, since = time.monotonic(), timezone.now()
+    started, since = time.monotonic(), mark()
     review = build(user, app, snapshot, change)
     failure, result = "", {}
     try:
@@ -186,6 +187,7 @@ def review_change(user, app, snapshot, key, change, mode, config, counted=None):
     }
 
 
+@measuring
 def run(user, app, modes=MODES):
     from .models import AIConfiguration
 

@@ -32,6 +32,8 @@ from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured, ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS = ROOT / "benchmarks" / "triage"
 MODES = ("one_shot", "tools")
@@ -79,7 +81,6 @@ def score(hypotheses, cause_id):
 
 
 def ask_case(user, app, incident, cause, mode, config, counted=None):
-    from django.utils import timezone
 
     from .agent_measurements import case_receipts
     from .models import AIUsage
@@ -87,7 +88,7 @@ def ask_case(user, app, incident, cause, mode, config, counted=None):
 
     pack, _ = evidence_pack(app, incident, own_confirmed=False)
     receipt, failure, answer, extra = {}, "", "", []
-    started, since = time.monotonic(), timezone.now()
+    started, since = time.monotonic(), mark()
     try:
         answer, extra = ask_model(user, app, incident, pack, receipt, agent=mode == "tools")
     except (ValidationError, ImproperlyConfigured, OSError, TimeoutError) as refused:
@@ -124,6 +125,7 @@ def ask_case(user, app, incident, cause, mode, config, counted=None):
     }
 
 
+@measuring
 def run(user, app, modes=MODES, limit=MAX_CASES):
     """Every case every way. Returns the record `save` writes."""
     from .models import AIConfiguration

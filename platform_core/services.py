@@ -1,5 +1,6 @@
 """Transactional writes for administration and immutable AI usage receipts."""
 
+import contextvars
 import hashlib
 from contextvars import ContextVar
 from decimal import Decimal
@@ -518,6 +519,12 @@ def remove_member(actor, organization, target):
     return len(grants), revoked
 
 
+#: The ids of receipts written in this context, while something collects them - a
+#: measurement pack's run (`agent_measurements.measuring`), so each case counts the
+#: receipts its own calls wrote and never one another request wrote meanwhile.
+RECEIPTS_WRITTEN = contextvars.ContextVar("receipts_written", default=None)
+
+
 @transaction.atomic
 def record_ai_usage(
     *,
@@ -597,6 +604,9 @@ def record_ai_usage(
     if not created and any(getattr(receipt, key) != value for key, value in values.items()):
         raise ValidationError("Conflicting accounting for an existing provider request.")
     if created:
+        written = RECEIPTS_WRITTEN.get()
+        if written is not None:
+            written.append(receipt.pk)
         audit(actor, "ai.usage_recorded", receipt.pk, app.product.portfolio.organization)
         from .telemetry import current
 

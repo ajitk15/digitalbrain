@@ -452,17 +452,67 @@ def carried_by(app, pack_key):
     return {claude_runtime: "cli", openai_runtime: "openai"}.get(runtime, "")
 
 
+@dataclass(frozen=True)
+class Mark:
+    """Where a case of a pack run started: the receipts written before it in this
+    run (`index`, None when nothing collects them) and when."""
+
+    index: int | None
+    since: datetime
+
+
+def measuring(run):
+    """Collect the receipts a pack's `run` writes, in its own context, so each case
+    is billed by id (`mark`, `case_receipts`).
+
+    By time alone a case also counted any receipt written meanwhile under the same
+    person and purpose: a measured factory run on a development machine whose
+    server was in use took in three of that person's own Code Factory calls.
+    Another process writes into another context, so its receipts are never here.
+    """
+    import functools
+
+    @functools.wraps(run)
+    def collecting(*args, **kwargs):
+        from .services import RECEIPTS_WRITTEN
+
+        token = RECEIPTS_WRITTEN.set([])
+        try:
+            return run(*args, **kwargs)
+        finally:
+            RECEIPTS_WRITTEN.reset(token)
+
+    return collecting
+
+
+def mark():
+    """Where the next case starts, for `case_receipts`."""
+    from .services import RECEIPTS_WRITTEN
+
+    written = RECEIPTS_WRITTEN.get()
+    return Mark(None if written is None else len(written), timezone.now())
+
+
 def case_receipts(receipts, since, counted):
     """(turns, prompt tokens, completion tokens, amount) of the receipts one case of
-    a pack run wrote: those of `receipts` written since it started, less any an
-    earlier case already counted (`counted`, updated here).
+    a pack run wrote, less any an earlier case already counted (`counted`, updated
+    here). `since` is the case's `mark`: inside `measuring`, the receipts its own
+    calls wrote, by id; otherwise - or given a time - those of `receipts` written
+    since it started.
 
     A receipt written in the clock tick a case starts in reads as that case's too
     by time alone; counting the one before it again flipped a test's verdict one
     run in three, and would add a case's cost to the next on a fast provider.
     """
+    from .services import RECEIPTS_WRITTEN
+
+    written = RECEIPTS_WRITTEN.get()
+    if isinstance(since, Mark) and since.index is not None and written is not None:
+        receipts = receipts.filter(pk__in=written[since.index :])
+    else:
+        receipts = receipts.filter(created_at__gte=getattr(since, "since", since))
     rows = list(
-        receipts.filter(created_at__gte=since)
+        receipts
         .exclude(pk__in=counted)
         .values_list("pk", "turns", "input_tokens", "output_tokens", "amount")
     )

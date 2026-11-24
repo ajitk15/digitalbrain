@@ -37,6 +37,8 @@ from types import SimpleNamespace
 
 from django.core.exceptions import ValidationError
 
+from .agent_measurements import mark, measuring
+
 ROOT = Path(__file__).resolve().parent.parent
 PACK = ROOT / "benchmarks" / "document-review-pack.json"
 RECORDS = ROOT / "benchmarks" / "document-review"
@@ -131,9 +133,9 @@ def ask_item(user, app, item, mode):
             result.get("tool_calls", 0))
 
 
+@measuring
 def run(user, app, modes=MODES):
     """Every item every way. Returns the record `save` writes."""
-    from django.utils import timezone
 
     from .document_ai import configured
     from .models import AIConfiguration
@@ -150,7 +152,7 @@ def run(user, app, modes=MODES):
     counted = set()
     for key, item in pack["items"].items():
         for mode in modes:
-            since, started = timezone.now(), time.monotonic()
+            since, started = mark(), time.monotonic()
             findings, kept, dropped, failure, tool_calls = ask_item(user, app, item, mode)
             turns, prompt, completion, amount = receipts(app, user, since, counted)
             details.append({

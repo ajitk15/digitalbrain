@@ -291,3 +291,22 @@ class CaseReceiptTests(TestCase):
         # Nothing new is nothing, not zero turns read as one.
         self.assertEqual(document_review_pack.receipts(self.app, self.owner, since, counted),
                          (0, 0, 0, Decimal("0")))
+
+    def test_inside_a_pack_run_a_case_counts_only_its_own_receipts(self):
+        """A development server in use wrote receipts under the same person and
+        purpose while a pack ran; by time, a case took them in as its own."""
+        import contextvars
+
+        from platform_core.agent_measurements import mark, measuring
+
+        @measuring
+        def run():
+            since, counted = mark(), set()
+            self.receipt("mine", turns=2)
+            # Another request - another process, here a context of its own - writes
+            # its receipt meanwhile: same person, same purpose, same moment.
+            contextvars.Context().run(self.receipt, "someone-else")
+            return document_review_pack.receipts(self.app, self.owner, since, counted)
+
+        self.assertEqual(run(), (2, 100, 10, Decimal("0.001")))
+        self.assertEqual(AIUsage.objects.count(), 2)
