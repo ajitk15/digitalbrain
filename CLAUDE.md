@@ -259,6 +259,18 @@ rows with `triage` (migration 0109). **Turn it on only after `manage.py triage_p
 incident, asked one-shot and with tools over its pack without that confirmation, scored by
 whether and where a kept hypothesis cites the confirmed cause, and cost) clears the same
 bar as Phase 1. The scorecard's agent probes include the triage tools.
+**Where no cause was confirmed, triage is measured against labels** (`benchmarks/triage-pack.json`,
+`triage_pack --load-incidents` and `--labelled`, Phase D of `agentic-ai-next-plan.md`).
+Fourteen CarePath incidents and changes, written exactly as `connectors.sync` stores a
+ServiceNow import - title, the connector's header, text, at its `incident.do` or
+`change_request.do` address - added once through `add_knowledge` (unchanged is skipped, a
+changed pack record retired and added again; new sources rebuild the graph, which with
+automatic AI on is a paid build). Five open incidents each name the record that is their cause,
+with distractors: a change on another CI, one outside `ops_graph.BEFORE_WINDOW`, and a second
+change before the same incident. `test_triage_labelled` holds every label to the records as
+`ops_graph.plan` links them. A labelled run records the pack's digest, so it is a reference of
+its own; `measure_agents` runs it labelled where nobody confirmed a cause. The labels were
+drafted from the documents, not by a person.
 
 **A code review's AI step may read further with tools - off in production until measured**
 (`code_review.review_answer`/`agent_review`, Phase 4). With `code_review_agent_tools = true`
@@ -282,7 +294,8 @@ against CarePath - applied to the application's CarePath snapshot as a temporary
 asked one-shot and with tools, scored by whether a kept finding quotes a file the label names
 or is the category it names, findings that do neither counted as noise; the review is removed
 after) clears Phase 1's bar, with no more noise. The scorecard's agent probes include the
-review tools.
+review tools. It also clears when it finds as many as one call with at most `NOISE_CREDIT` (a
+half) of its noise - a judgement set after the first clean run, which sits on it.
 
 **Code documentation's AI step may read the snapshot with tools - off in production until
 measured** (`code_docs.describe`/`agent_describe`). With `code_docs_agent_tools = true` (a
@@ -422,7 +435,11 @@ trend with a dashed line where the model or pack digest changed - a new referenc
 comparison - and the last `ACTIVITY_DAYS` of use from `AgentStep` (runs, calls a run, the
 share that met a limit or a refusal, median call). Spend and the Cost row are shown only
 where `usage_reports` is on, the rule AI costs already follows; the index carries a
-"Measured" chip. Server-drawn SVG like `graph_trend.chart`. `manage.py agent_measurements
+"Measured" chip. Server-drawn SVG like `graph_trend.chart`. **A run's own page lists its tool
+calls** (`_agent_steps.html`, `agent_catalog.step_rows`): Code Factory's agent page per phase, a
+code review and a triage run - tool, the argument shape as words (`shape_text`: lengths,
+numbers and ids, never text), outcome, size, time and how many were repeats - to anyone who
+may open the page, since a step holds nothing that was asked or read. `manage.py agent_measurements
 <app> --load <file>` keeps a record made on another machine (the folder under `benchmarks/`
 names its pack), and `--forget <file>` removes one kept by mistake - its row and its file. A measurement switches nothing on: tools stay an operator's setting. **`manage.py measure_agents <app> --as <user>` checks every pack at once** (`measure_agents.py`, free): each pack's own prerequisite - the task configured, the planted files' snapshot, documentation with components, the CarePath documents, benchmark questions, confirmed incident causes - and what to set up for each one not ready; `--load-questions` copies the demo's benchmark questions into an application with none; `--run` runs every ready pack with `--record` (chat with `--routed` when Chat searching routes), then `llm_drift --record`. **A run that compared nothing is not a measurement** (`nothing_compared`: either way failed every case or had none - a pack's documents or tickets not in this application; both ways failed most cases - a provider's rate limit failed 15 of 16 chat questions both ways on the first real run; or both ways kept nothing to score - code documentation describing no component either way): every pack's `verdict` says `NOTHING_COMPARED` rather than "no better", and `--record` keeps neither the file nor the row. **Nor is a tools way that never called a tool** (`tools_unused`, `TOOLS_UNUSED`): it was one call asked twice - `docs_pack`'s first real run "failed" that way - so every pack counts its tools way's `tool_calls`. **Every record says how it was carried** (`carried_by`, `stamp`, `AgentMeasurement.runtime`): `cli`, `messages`, `messages-cached` or `openai`, read as `harness.runtime_for` reads it; a different runtime is a new reference on the trend, as a model or pack is, since the same model costs differently through each. A case's receipts are counted once and **by id** (`measuring` on every pack's `run`, `mark`, `case_receipts`, `services.RECEIPTS_WRITTEN`): `record_ai_usage` notes each receipt it writes while a pack runs, in that run's context, so a case totals only what its own calls wrote - by time alone a receipt written in the tick the next case started was counted again, and a development server in use added that person's own Code Factory calls to a measured run. Runs an hour apart start cold: the CLI writes to the hour-long prompt cache, so a rerun inside the hour reads one call's prompt back at a tenth, which a fresh ticket never does. **Every pack's cost is its receipts' amount** - the bill - never tokens priced in the pack: `factory_pack`, `review_pack` and `triage_pack` priced tokens at the input rate, which ignored the prompt cache - the CLI writes every one-call prompt to the hour's cache at twice the rate and a tool run reads most of its prompt back at a tenth - so one call read at about half its bill and tools at about 1.4x theirs, and a run that failed after it was billed cost nothing. **`--run --repeat N` (1-5) runs each pack N times** and `combine` says whether most runs cleared - two of three; a run that compared nothing counts against - since four or five cases are not a verdict. A second record in the same minute is named `-2` (`unused`), never written over the first.
 

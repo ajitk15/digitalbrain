@@ -71,6 +71,105 @@
         "category": "requirement"
       },
       "because": "NFR-06 bounds every list endpoint at the configured page size; this removes the bound."
+    },
+    "referral-move-arguments-swapped": {
+      "title": "Take the proposed status first in can_move",
+      "edits": [
+        {
+          "path": "src/carepath/domain/referral_state.py",
+          "find": "def can_move(current: ReferralStatus, proposed: ReferralStatus) -> bool:",
+          "replace": "def can_move(proposed: ReferralStatus, current: ReferralStatus) -> bool:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/services/referrals.py"
+        ],
+        "uses": "can_move(current, proposed)"
+      },
+      "because": "services/referrals.transition still calls can_move(current, proposed), so every transition is checked backwards."
+    },
+    "principal-lookup-renamed": {
+      "title": "Rename principal_for to principal_from_token",
+      "edits": [
+        {
+          "path": "src/carepath/security/auth.py",
+          "find": "def principal_for(token: str) -> Principal | None:",
+          "replace": "def principal_from_token(token: str) -> Principal | None:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/api/deps.py"
+        ],
+        "uses": "principal_for("
+      },
+      "because": "api/deps.caller still calls principal_for, which no longer exists, so every authenticated request fails."
+    },
+    "bundle-arguments-swapped": {
+      "title": "Take the limit before the patient in bundle_for",
+      "edits": [
+        {
+          "path": "src/carepath/fhir.py",
+          "find": "def bundle_for(connection: sqlite3.Connection, patient_id: str, limit: int) -> dict:",
+          "replace": "def bundle_for(connection: sqlite3.Connection, limit: int, patient_id: str) -> dict:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/api/routes_fhir.py"
+        ],
+        "uses": "bundle_for(connection, patient_id, limit)"
+      },
+      "because": "routes_fhir.export_everything still passes the patient id where the limit now goes."
+    },
+    "phi-redact-renamed": {
+      "title": "Rename phi.redact to scrub",
+      "edits": [
+        {
+          "path": "src/carepath/security/phi.py",
+          "find": "def redact(text: str) -> str:",
+          "replace": "def scrub(text: str) -> str:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/logging_setup.py"
+        ],
+        "uses": "redact(record.getMessage())"
+      },
+      "because": "The JSON log formatter still calls redact, which no longer exists: every log line fails, and with it the PHI redaction NFR-04 relies on."
+    },
+    "mrn-issuer-required": {
+      "title": "Require the issuing system when validating an MRN",
+      "edits": [
+        {
+          "path": "src/carepath/domain/identifiers.py",
+          "find": "def valid_mrn(value: str) -> str:",
+          "replace": "def valid_mrn(value: str, issuer: str) -> str:"
+        }
+      ],
+      "expect": {
+        "paths": [
+          "src/carepath/services/patients.py"
+        ],
+        "uses": "valid_mrn(payload.mrn)"
+      },
+      "because": "services/patients.register still calls valid_mrn with the MRN alone, and the issuer is now required."
+    },
+    "encounter-listing-unbounded": {
+      "title": "Let the encounter listing return any number of encounters",
+      "edits": [
+        {
+          "path": "src/carepath/api/routes_encounters.py",
+          "find": "    limit: int = Query(default=50, le=settings.max_page_size),\n    connection=Depends(unit_of_work),\n    principal: Principal = Depends(require(Permission.ENCOUNTER_READ)),",
+          "replace": "    limit: int = Query(default=50),\n    connection=Depends(unit_of_work),\n    principal: Principal = Depends(require(Permission.ENCOUNTER_READ)),"
+        }
+      ],
+      "expect": {
+        "category": "requirement"
+      },
+      "because": "NFR-06 bounds every list endpoint at the configured page size; this removes the encounter listing's bound."
     }
   }
 }

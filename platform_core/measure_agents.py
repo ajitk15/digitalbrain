@@ -81,12 +81,12 @@ def _documents(app):
         and item["find"] in entry.content
     ]
     if not here:
+        names = ", ".join(sorted({item["document"] for item in items.values()}))
         raise ValidationError(
-            "None of the CarePath documents it plants a contradiction in is here "
-            "(data-model.md, operations-runbook.txt, coding-standards.md, escalation-policy.md). "
+            f"None of the CarePath documents it plants a contradiction in is here ({names}). "
             "Upload documentation/demo/docs on Knowledge → Documents."
         )
-    return f"{len(here)} of its {len(items)} documents are here"
+    return f"{len(here)} of its {len(items)} planted contradictions have their document here"
 
 
 def _analysis(app):
@@ -130,12 +130,24 @@ def _cases(app):
     from . import triage_pack
 
     found = triage_pack.cases(app)
-    if not found:
-        raise ValidationError(
-            "No incident has a cause a person confirmed: triage incidents and record "
-            "verdicts first."
-        )
-    return f"{len(found)} incidents with a confirmed cause"
+    if found:
+        return f"{len(found)} incidents with a confirmed cause"
+    labelled = triage_pack.labelled_cases(app)
+    if labelled:
+        return f"{len(labelled)} labelled incidents (run with --labelled)"
+    raise ValidationError(
+        "No incident has a cause a person confirmed: triage incidents and record "
+        "verdicts first, or load the labelled CarePath incidents with "
+        "`triage_pack <app> --as <user> --load-incidents`."
+    )
+
+
+def triage_labelled(app):
+    """Whether triage is measured against the pack's labels here: no cause a person
+    confirmed, and the labelled incidents loaded."""
+    from . import triage_pack
+
+    return not triage_pack.cases(app) and bool(triage_pack.labelled_cases(app))
 
 
 def checks():

@@ -1054,6 +1054,10 @@ def serviceops_run(request, pk, run_id):
     stale = run.status in FINISHED and (
         not run.incident.active or pick_run(app, run.incident, str(run.pk), request.user) is None
     )
+    from .agent_catalog import step_rows
+    from .models import AgentStep
+
+    steps, repeated = step_rows(AgentStep.objects.filter(triage_id=run.pk).order_by("sequence"))
     return render(
         request,
         "serviceops_run.html",
@@ -1061,6 +1065,8 @@ def serviceops_run(request, pk, run_id):
             "application": app,
             "grant": grant,
             "view": "runs",
+            "steps": steps,
+            "steps_repeated": repeated,
             "incident": run.incident,
             "incident_number": incident_fields.get("Number", ""),
             "stale": stale,

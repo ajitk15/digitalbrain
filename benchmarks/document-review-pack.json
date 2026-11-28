@@ -40,6 +40,46 @@
       "replace": "| Consent missing before export | Information Governance | 30 working days | BR-05 |",
       "planted": "30 working days",
       "others": ["operations-runbook", "escalation-policy-copy"]
+    },
+    "adr-rotation-stretched": {
+      "path": "02-design/adr/0002-static-token-directory.md",
+      "document": "0002-static-token-directory.md",
+      "find": "- No expiry beyond a 90-day rotation. A leaked token is valid until someone removes its digest.",
+      "replace": "- No expiry beyond a 365-day rotation. A leaked token is valid until someone removes its digest.",
+      "planted": "365-day rotation",
+      "others": ["operations-runbook", "security-design"]
+    },
+    "transaction-ceiling-relaxed": {
+      "path": "06-operate/operations-runbook.txt",
+      "document": "operations-runbook.txt",
+      "find": "held open past the 2s ceiling",
+      "replace": "held open past the 30s ceiling",
+      "planted": "30s ceiling",
+      "others": ["incident-2026-08-14-postmortem"]
+    },
+    "secrets-readable-by-all": {
+      "path": "05-release/deployment-runbook.md",
+      "document": "deployment-runbook.md",
+      "find": "Secrets mounted on the target namespace as files, owner-only (NFR-07)",
+      "replace": "Secrets mounted on the target namespace as files, readable by every user in the container (NFR-07)",
+      "planted": "readable by every user in the container",
+      "others": ["security-design", "operations-runbook"]
+    },
+    "withdrawn-consent-deleted": {
+      "path": "02-design/data-model.md",
+      "document": "data-model.md",
+      "find": "| Consent | Same as the patient record. Withdrawn consent is retained, not deleted | Evidence of the decision |",
+      "replace": "| Consent | Same as the patient record. Withdrawn consent is deleted after 30 days | Evidence of the decision |",
+      "planted": "deleted after 30 days",
+      "others": ["user-stories", "release-notes-1.0.0"]
+    },
+    "correlation-on-failures-only": {
+      "path": "06-operate/operations-runbook.txt",
+      "document": "operations-runbook.txt",
+      "find": "Every response carries x-correlation-id.",
+      "replace": "Only failed responses carry x-correlation-id.",
+      "planted": "Only failed responses carry",
+      "others": ["user-stories", "architecture", "api-specification"]
     }
   }
 }

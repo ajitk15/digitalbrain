@@ -77,6 +77,34 @@ class PackLabelTests(SimpleTestCase):
                 review_pack.load_pack()
 
 
+class NoiseCreditTests(SimpleTestCase):
+    """Finding as much with at most half the noise clears; nothing else changes."""
+
+    def way(self, found, noise, cost="0.10", tool_calls=4):
+        return {"changes": 10, "found": found, "noise": noise, "failed": 0, "cost": cost,
+                "turns": 10, "tool_calls": tool_calls, "seconds": 1.0}
+
+    def test_as_many_found_with_half_the_noise_clears(self):
+        said = review_pack.verdict({"one_shot": self.way(5, 6), "tools": self.way(5, 3)})
+        self.assertTrue(said.startswith("Tools clear the bar: they find as much"), said)
+
+    def test_less_noise_but_not_half_or_none_to_begin_with_is_no_better(self):
+        for alone, tools in ((6, 4), (0, 0)):
+            with self.subTest(alone=alone, tools=tools):
+                said = review_pack.verdict(
+                    {"one_shot": self.way(5, alone), "tools": self.way(5, tools)}
+                )
+                self.assertTrue(said.startswith("Tools are no better"), said)
+
+    def test_the_credit_never_covers_a_miss_or_the_cost_bar(self):
+        missed = review_pack.verdict({"one_shot": self.way(5, 6), "tools": self.way(4, 0)})
+        dear = review_pack.verdict(
+            {"one_shot": self.way(5, 6), "tools": self.way(5, 0, cost="0.30")}
+        )
+        for said in (missed, dear):
+            self.assertTrue(said.startswith("Tools do not clear the bar"), said)
+
+
 @override_settings(**SETTINGS)
 class Fixture(TestCase):
     def setUp(self):

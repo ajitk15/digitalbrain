@@ -22,6 +22,7 @@
 {% elif name == 'delivery' %}{% if output.branch %}<p>Branch <code>{{ output.branch }}</code>{% if output.pull_request %} · <a href="{{ output.pull_request }}" target="_blank" rel="noreferrer noopener">draft pull request {% icon "external" 12 %}</a>{% endif %}</p>{% endif %}
 {% endif %}
 {% if events %}<h3>Log</h3><ol class="run-log">{% for event in events %}<li class="run-line run-line-{{ event.level }}"><span class="run-time">{{ event.at|date:"H:i:s" }}</span><span class="run-message">{{ event.message }}</span></li>{% endfor %}</ol>{% endif %}
+{% include "_agent_steps.html" %}
 {% if can_rerun %}<form method="post" class="agent-rerun">{% csrf_token %}<p class="muted">Rerunning starts the implementation agents again from the work order, because each one works from the one before. Nothing is written to the repository.</p><button class="button" type="submit">{% icon "refresh" 13 %}Rerun the implementation agents</button></form>{% elif phase.status == 'failed' and name == 'delivery' %}<p class="muted">Opening the pull request writes to the repository, so it is tried again from the summary on the run page, where it asks first.</p>{% endif %}
 </section>{% else %}<p class="muted">This agent has not run yet in this run.</p>{% endif %}
 <div class="actions"><a class="button secondary" href="{% url 'run-detail' application.pk run.pk %}#stage-4" data-modal-close>Close</a></div>

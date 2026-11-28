@@ -1,0 +1,253 @@
+{
+  "about": "Phase D of documentation/engineering/agentic-ai-next-plan.md: CarePath incidents and changes, written as a ServiceNow import would store them, each open incident labelled with the record that is its cause. DEMONSTRATION ARTIFACT - synthetic content only, grounded in documentation/demo/docs/06-operate (the operations runbook OPS-CAREPATH-002 and the INC-2026-0814 postmortem). Loaded once into an application by `manage.py triage_pack <app> --as <user> --load-incidents`; scored by `triage_pack ... --labelled`. A new pack starts a new reference: do not edit casually.",
+  "base_url": "https://carepath.service-now.example",
+  "records": [
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0010814",
+      "title": "Patient search exhausted the database connection",
+      "fields": {
+        "Number": "INC0010814",
+        "State": "Resolved",
+        "Priority": "2 - High",
+        "Impact": "2 - Medium",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-08-14T14:02:00Z",
+        "Resolved": "2026-08-14T14:47:00Z",
+        "Close code": "Solved (Permanently)",
+        "Close notes": "GET /patients passed its limit to the database unbounded. A single-letter family name prefix with limit=100000 read the whole patient table and held a transaction past the 2s ceiling, which blocked every write behind it on the single SQLite writer. Restarted carepath-api-blue to clear the held transactions. Follow-up A-1: clamp limit on GET /patients to the maximum page size, as encounters, referrals and consent already do."
+      },
+      "text": "For 45 minutes roughly 60% of requests returned 5xx and two clinics could not open patient records. The p95 latency alert fired at 14:03, three minutes before the error rate crossed 1%. Ingress logs showed three long-running GET /patients requests from one coordinator browsing the cohort."
+    },
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0011201",
+      "title": "Patient records failing to open, 5xx rising",
+      "fields": {
+        "Number": "INC0011201",
+        "State": "New",
+        "Priority": "2 - High",
+        "Impact": "2 - Medium",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-11-02T10:05:00Z"
+      },
+      "text": "Since about 10:00 around half of requests fail with 5xx and the ward reports that patient records will not open. The p95 latency alert fired at 09:58. Ingress shows several long-running GET /patients requests from the cohort report job."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030112",
+      "title": "Allow larger patient search pages for the cohort report",
+      "fields": {
+        "Number": "CHG0030112",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Start": "2026-11-02T08:30:00Z",
+        "End": "2026-11-02T08:45:00Z",
+        "Change type": "Normal"
+      },
+      "text": "Raises the limit GET /patients accepts to 50,000 so the nightly cohort report can read the patient list in one page. The page-size clamp added after INC-2026-0814 (action A-1) is removed for this endpoint only."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030113",
+      "title": "Renew the TLS certificate on the CarePath ingress",
+      "fields": {
+        "Number": "CHG0030113",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-ingress",
+        "Start": "2026-11-02T07:00:00Z",
+        "End": "2026-11-02T07:10:00Z",
+        "Change type": "Standard"
+      },
+      "text": "Replaces the certificate for carepath.riverside.example before it expires. No application change."
+    },
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0011202",
+      "title": "Readiness failing while liveness still answers",
+      "fields": {
+        "Number": "INC0011202",
+        "State": "In Progress",
+        "Priority": "2 - High",
+        "Impact": "2 - Medium",
+        "Service": "CarePath",
+        "CI": "carepath-data",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-11-05T22:20:00Z"
+      },
+      "text": "/health/ready has returned 503 since about 22:10 while /health/live still answers, so the process is up and the database is not. Writes fail with 'database or disk is full'. The orchestrator has not restarted the instances."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030121",
+      "title": "Keep 30 daily snapshots on the carepath-data volume",
+      "fields": {
+        "Number": "CHG0030121",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-data",
+        "Start": "2026-11-05T20:00:00Z",
+        "End": "2026-11-05T20:20:00Z",
+        "Change type": "Normal"
+      },
+      "text": "Raises snapshot retention on the carepath-data volume from 7 daily snapshots to 30, for the restore rehearsal. The snapshots are kept on the same volume as the database."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030122",
+      "title": "Move the nightly snapshot from 02:00 to 22:00",
+      "fields": {
+        "Number": "CHG0030122",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-data",
+        "Start": "2026-11-03T21:00:00Z",
+        "End": "2026-11-03T21:05:00Z",
+        "Change type": "Standard"
+      },
+      "text": "Takes the nightly snapshot of carepath-data at 22:00 instead of 02:00, outside the overnight batch window."
+    },
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0011203",
+      "title": "Audit write failed on patient record reads",
+      "fields": {
+        "Number": "INC0011203",
+        "State": "In Progress",
+        "Priority": "1 - Critical",
+        "Impact": "1 - High",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-11-09T11:42:00Z"
+      },
+      "text": "Reads of patient records return 500. Every request that should write an audit event logs 'permission denied for table audit_event'. The service has been taken out of the pool, as the runbook requires when an audit write fails, and Information Governance has been told."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030131",
+      "title": "Restrict the CarePath database role to the tables it uses",
+      "fields": {
+        "Number": "CHG0030131",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Start": "2026-11-09T11:00:00Z",
+        "End": "2026-11-09T11:15:00Z",
+        "Change type": "Normal"
+      },
+      "text": "Revokes every privilege the application role does not need. The role keeps SELECT, INSERT and UPDATE on patient, encounter, referral, consent and consent_history; everything else is revoked."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030132",
+      "title": "Rotate the partner API tokens for the quarter",
+      "fields": {
+        "Number": "CHG0030132",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Start": "2026-11-09T09:00:00Z",
+        "End": "2026-11-09T09:20:00Z",
+        "Change type": "Standard"
+      },
+      "text": "The 90-day rotation from ADR-0002: new token digests added in a first deployment and the old ones removed in a second, as the runbook says."
+    },
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0011204",
+      "title": "Partner exports refused with 401",
+      "fields": {
+        "Number": "INC0011204",
+        "State": "New",
+        "Priority": "3 - Moderate",
+        "Impact": "2 - Medium",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-11-12T09:15:00Z"
+      },
+      "text": "Riverside Health's export client has received 401 for every request since about 09:00. They have not been given a new token since last quarter. Other API callers are unaffected."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030141",
+      "title": "Finish the partner token rotation in one deployment",
+      "fields": {
+        "Number": "CHG0030141",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Start": "2026-11-12T08:50:00Z",
+        "End": "2026-11-12T08:55:00Z",
+        "Change type": "Standard"
+      },
+      "text": "Adds the new partner token digests and removes the old ones in the same deployment, to complete this quarter's rotation in a single change."
+    },
+    {
+      "table": "change_request",
+      "sys_id": "carepath-pack-chg-0030142",
+      "title": "Raise the export rate limit for the quarterly submission",
+      "fields": {
+        "Number": "CHG0030142",
+        "State": "Closed",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Start": "2026-11-11T16:00:00Z",
+        "End": "2026-11-11T16:10:00Z",
+        "Change type": "Standard"
+      },
+      "text": "Raises the per-partner export rate limit from 60 to 240 requests a minute for the quarterly submission window."
+    },
+    {
+      "table": "incident",
+      "sys_id": "carepath-pack-inc-0011205",
+      "title": "Patient records hang while a coordinator browses the cohort",
+      "fields": {
+        "Number": "INC0011205",
+        "State": "New",
+        "Priority": "2 - High",
+        "Impact": "2 - Medium",
+        "Service": "CarePath",
+        "CI": "carepath-api-blue",
+        "Environment": "Production",
+        "Assignment group": "CarePath Platform",
+        "Opened": "2026-11-20T14:05:00Z"
+      },
+      "text": "A coordinator browsing the cohort by family name reports that the browser hangs; she has retried twice. Error rate is climbing and writes are queueing. Ingress shows three long-running GET /patients requests with a very large limit."
+    }
+  ],
+  "cases": {
+    "INC0011201": {
+      "cause": "CHG0030112",
+      "why": "The change two hours before removed the page-size clamp on GET /patients that INC0010814's follow-up added; the ingress change is on another CI."
+    },
+    "INC0011202": {
+      "cause": "CHG0030121",
+      "why": "Thirty snapshots kept on the database's own volume fill it; the snapshot move is outside the two-day window and changes timing, not space."
+    },
+    "INC0011203": {
+      "cause": "CHG0030131",
+      "why": "The role change kept no privilege on audit_event, which the error names; the token rotation on the same CI that morning was done the way the runbook says."
+    },
+    "INC0011204": {
+      "cause": "CHG0030141",
+      "why": "Swapping old and new digests in one deployment leaves a holder with no working token, which the runbook warns against; the rate-limit change does not refuse with 401."
+    },
+    "INC0011205": {
+      "cause": "INC0010814",
+      "why": "No change precedes it; the resolved incident describes the same unbounded GET /patients read and its fix."
+    }
+  }
+}

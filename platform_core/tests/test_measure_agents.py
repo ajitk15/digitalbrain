@@ -59,7 +59,7 @@ class MeasureAgentsTests(TestCase):
                 ).read_text(encoding="utf-8")
         add_knowledge(self.owner, self.app.pk, "docs/02-design/data-model.md", text)
         self.assertEqual(self.said()["document_review_pack"],
-                         (True, "1 of its 5 documents are here"))
+                         (True, "2 of its 10 planted contradictions have their document here"))
 
     def test_without_run_nothing_is_spent_and_with_run_only_ready_packs_run(self):
         self.configure("chat")

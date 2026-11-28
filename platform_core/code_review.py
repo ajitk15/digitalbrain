@@ -1208,6 +1208,10 @@ def code_review(request, pk, review_id):
     revision, passages = (
         requirements(review, request.user) if review.status == "ready" else (None, [])
     )
+    from .agent_catalog import step_rows
+    from .models import AgentStep
+
+    steps, repeated = step_rows(AgentStep.objects.filter(review_id=review.pk).order_by("sequence"))
     return render(
         request,
         "code_review_detail.html",
@@ -1215,6 +1219,8 @@ def code_review(request, pk, review_id):
             "application": app,
             "grant": grant,
             "review": review,
+            "steps": steps,
+            "steps_repeated": repeated,
             "files": review.files.all(),
             "summary": review.summary or {},
             "revision": revision,

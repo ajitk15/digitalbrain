@@ -207,7 +207,26 @@ The original plan for this phase follows.
 
 Every switch stays an operator's line in the configuration. A measurement switches nothing.
 
-## Phase D - Make triage measurable (3-4 d, then paid)
+## Phase D - Make triage measurable (3-4 d, then paid) - built and tested
+
+**Built and tested** (all five gates clean):
+`benchmarks/triage-pack.json`, fourteen CarePath records as a ServiceNow import stores
+them - six incidents and eight changes, grounded in the operations runbook and the
+INC-2026-0814 postmortem - with five open incidents each labelled with the record that is
+its cause: four changes and one resolved incident. Each changed cause starts within the
+operations graph's two days before its incident on the same CI; the distractors are a
+change on another CI, one 49 hours early, and two more changes on the same CI in the same
+window. `triage_pack --load-incidents` adds them once, through `add_knowledge`, exactly as
+`connectors.sync` would (skipped when unchanged, retired and added again when the pack
+changed); `--labelled` scores against the labels and records the pack's digest, so it is a
+reference of its own; `measure_agents` reads triage as ready with the pack loaded and runs
+it labelled. `tests/test_triage_labelled.py` tests each label against the records as
+`ops_graph.plan` links them. **The labels were drafted by Claude from the documents, not by
+a person: read them before a verdict counts.**
+
+**Still to do:** load the pack into CarePathDev (it rebuilds the
+graph, which with automatic AI on is one paid build); run `triage_pack --labelled` three
+times (paid).
 
 `triage_pack` scores against causes people confirmed, which a demo does not have. Two ways:
 
@@ -222,7 +241,24 @@ Every switch stays an operator's line in the configuration. A measurement switch
 
 Done when: triage has a recorded measurement and a verdict on the demo.
 
-## Phase E - Grow the packs (4-6 d, labels by a person)
+## Phase E - Grow the packs (4-6 d, labels by a person) - partly done
+
+**Built and tested:** `review-pack.json` 4 -> 10 changes - two signatures swapped
+(`can_move`, `bundle_for`), two renames (`principal_for`, `phi.redact`), a new required
+argument (`valid_mrn`) and the encounter listing's NFR-06 bound removed; each edit applies
+once and each file a finding must quote still makes the call it breaks, checked against the
+CarePath code. `document-review-pack.json` 5 -> 10 items - ADR-0002's rotation, the
+runbook's 2 s ceiling and its correlation id, the deployment runbook's owner-only secrets,
+the data model's withdrawn consent - each contradicted by a document checked to say so
+(security design, postmortem, user stories, release notes). `review_pack.verdict` credits
+less noise: as many found with at most half the noise (`NOISE_CREDIT`), inside the cost bar,
+clears. **That half was set after seeing the one clean run (3 against 6), which sits on it -
+a judgement to confirm.** Both packs' digests changed, so each is a new reference.
+
+**Not done, and why:** the factory pack stays at four. Its tickets are CarePath's only
+planted code bugs (CARE-401's fix is written, CARE-437's has no location, CARE-444 changes no
+code); six more need six new bugs planted in the demo code, which also changes the
+scorecard's answer key and the demo scripts - a decision about the demo, not a label.
 
 Four tickets or four changes cannot tell a real gain from one lucky answer (finding 8).
 
@@ -232,7 +268,15 @@ Four tickets or four changes cannot tell a real gain from one lucky answer (find
 - Review's verdict gains noise as a figure that must not rise *and* a "fewer noise" credit,
   so an agent that finds the same and says less can clear at the cost bar.
 
-## Phase F - Show and score the trajectory (free, 3-4 d)
+## Phase F - Show and score the trajectory (free, 3-4 d) - built and tested
+
+**Built and tested:** `_agent_steps.html` lists a run's tool calls - tool, argument
+shape (`agent_catalog.shape_text`: lengths, numbers and ids only), outcome, size, time - on
+Code Factory's agent page per phase, a code review's page and a triage run's page
+(`agent_catalog.step_rows`), with how many were repeats. Shown to anyone who can open the
+page, as the agent pages already show counts: a shape holds nothing that was asked or read.
+Repeats are already counted in production: `harness.measured` reports every step by its
+outcome, `repeat` included. **Not done:** a drafted fix's steps on Learned.
 
 `AgentStep` rows exist for every agent; nothing reads them per run.
 
@@ -244,7 +288,11 @@ Four tickets or four changes cannot tell a real gain from one lucky answer (find
   past the budget. Shown in the agent page's activity and as a `harness.measured` counter by
   outcome, so finding 2 is watched in production rather than discovered in a pack.
 
-## Phase G - Next capabilities (after A-F; each its own decision)
+## Phase G - Next capabilities (after A-F; each its own decision) - not started
+
+Each item below changes an invariant or what a model may do, so none is built until it is
+decided: running tests as a tool is a third exception to "never runs the code it writes",
+propose tools create records, and scheduled agents spend unattended.
 
 The first plan's "Future enhancements" stand. In the order the measurements argue for:
 
@@ -260,7 +308,10 @@ The first plan's "Future enhancements" stand. In the order the measurements argu
    on, stopped by revocation, budgeted like automatic AI.
 4. `graph_walk` for chat stays deferred until a benchmark and drift run say choice helps.
 
-## Clean-up in the agent layer (2 d, any time)
+## Clean-up in the agent layer (2 d, any time) - deferred until it can be tested
+
+Folding `run_agent`'s link ids changes the harness every agent runs through, for nothing a
+person sees; written without its tests it would be the riskiest change here, so it waits.
 
 - `run_agent` takes seven link ids (`message_id`, `run_id`, `triage_id`, `review_id`,
   `candidate_id`, `docs_id`, `entry_id`) and `keep_steps` mirrors them; each new agent adds a

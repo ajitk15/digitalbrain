@@ -102,6 +102,8 @@ class Command(BaseCommand):
         arguments = [pack, str(app.pk), "--as", user.username, "--record"]
         if pack == "chat_pack" and self.routed(app):
             arguments.append("--routed")
+        if pack == "triage_pack" and measure_agents.triage_labelled(app):
+            arguments.append("--labelled")
         try:
             call_command(*arguments, stdout=self.stdout, stderr=self.stderr)
         except CommandError as failure:

@@ -73,9 +73,11 @@ class RunTests(TestCase):
         text = (DOCS / "02-design/data-model.md").read_text(encoding="utf-8")
         self.model = add_knowledge(self.owner, self.app.pk, "data-model.md", text)
         self.nfr = add_knowledge(self.owner, self.app.pk, "non-functional-requirements.xlsx", NFR)
-        # Two more of the pack's documents, so most items are asked; the runbook is
-        # left out, so its two items show what a missing document says.
-        for path in ("03-build/coding-standards.md", "08-quality-samples/escalation-policy.md"):
+        # More of the pack's documents, so most items are asked; the operations
+        # runbook is left out, so its four items show what a missing document says.
+        for path in ("03-build/coding-standards.md", "08-quality-samples/escalation-policy.md",
+                     "05-release/deployment-runbook.md",
+                     "02-design/adr/0002-static-token-directory.md"):
             add_knowledge(self.owner, self.app.pk, Path(path).name,
                           (DOCS / path).read_text(encoding="utf-8"))
 
@@ -133,8 +135,8 @@ class RunTests(TestCase):
         alone, tools = record["metrics"]["one_shot"], record["metrics"]["tools"]
         self.assertEqual((alone["found"], alone["linked"], tools["found"], tools["linked"]),
                          (1, 0, 1, 1))
-        # Three items asked: one call each, and two scripted turns each with tools.
-        self.assertEqual(AIUsage.objects.filter(purpose="document_review").count(), 9)
+        # Six items asked: one call each, and two scripted turns each with tools.
+        self.assertEqual(AIUsage.objects.filter(purpose="document_review").count(), 18)
         # The planted line was reviewed in memory; the stored source is unchanged.
         self.assertEqual(KnowledgeEntry.objects.get(pk=self.model.pk).content, before)
         self.assertTrue(document_review_pack.verdict(record["metrics"]).startswith(

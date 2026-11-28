@@ -36,7 +36,117 @@ from .agent_measurements import mark, measuring
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORDS = ROOT / "benchmarks" / "triage"
+#: Labelled CarePath incidents and changes, for an application with no causes a
+#: person confirmed (Phase D of `agentic-ai-next-plan.md`): each open incident
+#: names the record that is its cause.
+PACK = ROOT / "benchmarks" / "triage-pack.json"
 MODES = ("one_shot", "tools")
+#: The header lines a ServiceNow import writes for each table, in its order
+#: (`connector_kinds.servicenow_records`), so a loaded record is stored exactly as
+#: an imported one and the operations layer reads it the same way.
+HEADERS = {
+    "incident": (
+        "Incident",
+        ("Number", "State", "Priority", "Impact", "Service", "CI", "Environment",
+         "Assignment group", "Opened", "Resolved", "Close code", "Close notes", "Problem",
+         "Caused by change"),
+    ),
+    "change_request": (
+        "Change", ("Number", "State", "Service", "CI", "Start", "End", "Change type")
+    ),
+}
+
+
+def load_pack():
+    return json.loads(PACK.read_text(encoding="utf-8"))
+
+
+def pack_digest(pack):
+    import hashlib
+
+    return hashlib.sha256(json.dumps(pack, sort_keys=True).encode()).hexdigest()
+
+
+def record_source(pack, record):
+    """The record's address, as the ServiceNow connector builds it."""
+    from urllib.parse import quote
+
+    return (
+        f"{pack['base_url']}/nav_to.do?uri={quote(record['table'])}.do%3Fsys_id%3D"
+        f"{quote(record['sys_id'])}"
+    )
+
+
+def record_content(record):
+    """The record's stored text: its title, its header, its text - as `sync` writes it."""
+    from .connector_kinds import incident_header
+
+    kind, labels = HEADERS[record["table"]]
+    fields = record.get("fields") or {}
+    pairs = [("Type", kind)] + [(label, fields.get(label, "")) for label in labels]
+    header = incident_header(pairs)
+    body = f"{header}\n\n{record.get('text', '')}".strip()
+    return f"{record['title']}\n\n{body}"
+
+
+def load_incidents(user, app, pack=None):
+    """Add the pack's incidents and changes to `app` once, as an import would.
+
+    Returns (added, unchanged). A record already held unchanged at its address is
+    left alone; one the pack changed is retired and added again, as `sync` does,
+    so loading twice adds nothing. Each is an ordinary source, through
+    `add_knowledge` - masking, the personal-data scan, a graph refresh - so adding
+    sources may start the application's automatic AI build, which is paid.
+    """
+    import hashlib
+
+    from .masking import stored_content
+    from .models import KnowledgeEntry
+    from .workbench import access, add_knowledge
+
+    pack = pack or load_pack()
+    access(user, app.pk, "service_ops", write=True)
+    added = unchanged = 0
+    for record in pack["records"]:
+        source = record_source(pack, record)
+        content = record_content(record)
+        digest = hashlib.sha256(stored_content(app.pk, content).encode()).hexdigest()
+        existing = KnowledgeEntry.objects.filter(application=app, source=source, active=True)
+        if existing.filter(digest=digest).exists():
+            unchanged += 1
+            continue
+        existing.update(active=False)
+        add_knowledge(user, app.pk, record["title"], content, source=source)
+        added += 1
+    return added, unchanged
+
+
+def labelled_cases(app, pack=None):
+    """[(incident, cause)] for each of the pack's cases whose incident and labelled
+    cause are both loaded here, answerable and unchanged since they were stored."""
+    from .models import KnowledgeEntry
+    from .serviceops import verified
+
+    pack = pack or load_pack()
+    by_number = {record["fields"]["Number"]: record for record in pack["records"]}
+
+    def held(number):
+        record = by_number.get(number)
+        if record is None:
+            return None
+        entry = (
+            KnowledgeEntry.objects.filter(application=app, source=record_source(pack, record))
+            .answerable()
+            .first()
+        )
+        return entry if entry is not None and verified(entry) else None
+
+    found = []
+    for number, label in pack["cases"].items():
+        incident, cause = held(number), held(label["cause"])
+        if incident is not None and cause is not None:
+            found.append((incident, cause))
+    return found
 #: Tools are worth turning on only at no more than this many times the one-shot
 #: cost, and no worse on what is scored - Phase 1's bar.
 COST_BAR = 2
@@ -126,15 +236,25 @@ def ask_case(user, app, incident, cause, mode, config, counted=None):
 
 
 @measuring
-def run(user, app, modes=MODES, limit=MAX_CASES):
-    """Every case every way. Returns the record `save` writes."""
+def run(user, app, modes=MODES, limit=MAX_CASES, labelled=False):
+    """Every case every way. Returns the record `save` writes.
+
+    `labelled` scores against `PACK`'s labels instead of the causes people
+    confirmed: the pack's digest is then the record's `pack`, so a labelled run is
+    a different reference from one against verdicts."""
     from .models import AIConfiguration
 
-    found = cases(app, limit)
+    pack = load_pack() if labelled else None
+    found = labelled_cases(app, pack)[:limit] if labelled else cases(app, limit)
+    if not found and labelled:
+        raise ValidationError(
+            "The labelled incidents are not here: load them with --load-incidents first."
+        )
     if not found:
         raise ValidationError(
             "No incident here has a cause people confirmed. Confirm causes on ServiceOps "
-            "first - the pack measures triage against them."
+            "first - the pack measures triage against them - or load the labelled "
+            "incidents with --load-incidents and run with --labelled."
         )
     config = AIConfiguration.objects.filter(
         application=app, purpose="serviceops_triage", enabled=True
@@ -149,6 +269,8 @@ def run(user, app, modes=MODES, limit=MAX_CASES):
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "provider": getattr(config, "provider", ""),
         "model": getattr(config, "model", ""),
+        "labels": "pack" if labelled else "verdicts",
+        **({"pack": pack_digest(pack)} if labelled else {}),
         "metrics": metrics(details, modes),
         "details": details,
     }

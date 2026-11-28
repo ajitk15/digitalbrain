@@ -460,6 +460,25 @@ class AgentPopupTests(TestCase):
         run.refresh_from_db()
         self.assertEqual(run.status, "failed")
 
+    def test_the_agent_page_lists_its_tool_calls_by_shape(self):
+        from platform_core.models import AgentStep
+
+        run = self.failed_review()
+        for sequence, outcome in ((1, "found"), (2, "repeat")):
+            AgentStep.objects.create(
+                application=self.app, run=run, phase="review", purpose="plan_drafting",
+                sequence=sequence, tool="read_file", arguments={"path": {"characters": 31}},
+                outcome=outcome, result_characters=480, duration_ms=9,
+            )
+        page = self.client.get(reverse("run-agent", args=[self.app.pk, run.pk, "review"]))
+        self.assertContains(page, "<h3>Tool calls</h3>", html=False)
+        self.assertContains(page, "path: 31 characters", count=2)
+        self.assertContains(page, "Already shown")
+        self.assertContains(page, "1 call asked for what the run already held")
+        # Another phase's steps are not this agent's.
+        other = reverse("run-agent", args=[self.app.pk, run.pk, "tests"])
+        self.assertNotContains(self.client.get(other), "Tool calls")
+
     def test_an_unknown_agent_is_not_found(self):
         run = self.run_pipeline()
         response = self.client.get(reverse("run-agent", args=[self.app.pk, run.pk, "triage"]))

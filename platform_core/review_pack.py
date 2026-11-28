@@ -39,6 +39,11 @@ RECORDS = ROOT / "benchmarks" / "review"
 MODES = ("one_shot", "tools")
 #: Phase 1's bar: tools only at no more than this many times the one-shot cost.
 COST_BAR = 2
+#: Finding as many changes as one call with at most this share of its noise clears
+#: the bar too: a review that says less and misses nothing more is a better review.
+#: Set to a half after the first clean run (3 against 6), so that run sits on it -
+#: a judgement to confirm, not a measured threshold.
+NOISE_CREDIT = 0.5
 
 
 def load_pack():
@@ -249,6 +254,12 @@ def verdict(found):
     if reasons:
         return "Tools do not clear the bar: " + "; ".join(reasons) + "."
     if tools["found"] == alone["found"]:
+        if alone["noise"] and tools["noise"] <= alone["noise"] * NOISE_CREDIT:
+            return (
+                f"Tools clear the bar: they find as much as one call with "
+                f"{tools['noise']} findings that are noise against {alone['noise']}. Switch "
+                "code_review_agent_tools on."
+            )
         return "Tools are no better than one-shot on this pack: leave them off."
     return "Tools clear the bar: switch code_review_agent_tools on."
 

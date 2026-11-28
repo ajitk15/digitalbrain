@@ -657,6 +657,45 @@ def activity(agent, app, days=ACTIVITY_DAYS):
     }
 
 
+def shape_text(arguments):
+    """An argument shape (`tools.shape`) as words: "path: 31 characters, start_line: 1".
+
+    The shape is all a step keeps - a number or a flag as it was, an id, a
+    length - so this can never show what was asked.
+    """
+    parts = []
+    for name, value in sorted((arguments or {}).items()):
+        if isinstance(value, dict) and "characters" in value:
+            parts.append(f"{name}: {value['characters']} characters")
+        elif isinstance(value, dict) and "id" in value:
+            parts.append(f"{name}: an id")
+        elif isinstance(value, bool | int | float):
+            parts.append(f"{name}: {value}")
+    return ", ".join(parts)
+
+
+def step_rows(steps):
+    """(rows, repeated) for a page's list of one run's tool calls: each step's
+    tool, argument shape, outcome, size and time, and how many were repeats."""
+    from .models import AGENT_STEP_OUTCOMES
+
+    outcomes = dict(AGENT_STEP_OUTCOMES)
+    rows = [
+        {
+            "sequence": step.sequence,
+            "tool": step.tool,
+            "arguments": shape_text(step.arguments),
+            "outcome": outcomes.get(step.outcome, step.outcome),
+            "characters": step.result_characters,
+            "citations": step.citations,
+            "duration_ms": step.duration_ms,
+        }
+        for step in steps
+    ]
+    repeated = sum(step.outcome == "repeat" for step in steps)
+    return rows, repeated
+
+
 def calls(field, owners, phase=None):
     """{owner id: tool calls} from `AgentStep` rows linked by `field` - how much an
     agent did to make each of `owners`, in one query."""

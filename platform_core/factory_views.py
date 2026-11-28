@@ -861,6 +861,12 @@ def run_agent(request, pk, run_id, name):
                 request, "The implementation agents are running again. Watch them below."
             )
         return redirect(f"{reverse('run-detail', args=[pk, run.pk])}#stage-4")
+    from .agent_catalog import step_rows
+    from .models import AgentStep
+
+    steps, repeated = step_rows(
+        AgentStep.objects.filter(run_id=run.pk, phase=name).order_by("sequence")
+    )
     return render(
         request,
         "run_agent.html",
@@ -868,6 +874,8 @@ def run_agent(request, pk, run_id, name):
             "application": app,
             "run": run,
             "name": name,
+            "steps": steps,
+            "steps_repeated": repeated,
             "agent_calls": agent_calls_by_phase(run).get(name, 0),
             "label": labels[name],
             "explained": AGENT_EXPLAINED[name],

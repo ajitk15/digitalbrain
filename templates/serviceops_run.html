@@ -19,6 +19,7 @@
 
 <h2 class="panel-label">Ideas to check</h2>
 {% include "_triage_hypotheses.html" with readonly=True %}
+{% include "_agent_steps.html" %}
 {% endif %}
 </div>
 <div class="actions"><a class="button secondary" href="{% url 'serviceops' application.pk %}?incident={{ incident.pk }}&amp;run={{ run.pk }}" data-modal-close>Close</a></div>

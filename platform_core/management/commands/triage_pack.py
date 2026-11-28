@@ -3,9 +3,16 @@
     manage.py triage_pack <application id> --as <username>
     manage.py triage_pack <application id> --as <username> --record
     manage.py triage_pack <application id> --as <username> --only tools --limit 10
+    manage.py triage_pack <application id> --as <username> --load-incidents
+    manage.py triage_pack <application id> --as <username> --labelled --record
 
 Each case is sent through the application's ServiceOps configuration, credential
 and monthly budget, receipted as usual. See `platform_core/triage_pack.py`.
+
+`--load-incidents` adds `benchmarks/triage-pack.json`'s CarePath incidents and
+changes as ordinary sources and calls no model itself - but new sources rebuild the
+graph, which with automatic AI on is a paid build. `--labelled` measures triage
+against that pack's labels instead of causes people confirmed.
 """
 
 from django.core.exceptions import ImproperlyConfigured, PermissionDenied, ValidationError
@@ -25,17 +32,35 @@ class Command(BaseCommand):
         parser.add_argument("--record", action="store_true", help="Save under benchmarks/triage/")
         parser.add_argument("--only", choices=triage_pack.MODES, help="Run one way only")
         parser.add_argument("--limit", type=int, default=triage_pack.MAX_CASES)
+        parser.add_argument("--load-incidents", action="store_true",
+                            help="Add the labelled CarePath incidents and changes (no model "
+                                 "call; may start a paid automatic graph build)")
+        parser.add_argument("--labelled", action="store_true",
+                            help="Score against the pack's labels, not confirmed causes")
 
     def handle(self, *args, **options):
         app = Application.objects.filter(pk=options["application"] or None).first()
         user = User.objects.filter(username=options["actor"] or "", is_active=True).first()
         if app is None or user is None:
             raise CommandError("Name an application and --as an active user, who is charged.")
+        if options["load_incidents"]:
+            try:
+                added, unchanged = triage_pack.load_incidents(user, app)
+            except (ValidationError, ImproperlyConfigured) as failure:
+                raise CommandError(
+                    " ".join(getattr(failure, "messages", [str(failure)]))
+                ) from None
+            except (PermissionDenied, Http404):
+                refused = f"{user.username} may not add ServiceOps records here."
+                raise CommandError(refused) from None
+            self.stdout.write(f"Labelled incidents: {added} record(s) added, {unchanged} "
+                              "already here unchanged.")
+            return
         if not 1 <= options["limit"] <= triage_pack.MAX_CASES:
             raise CommandError(f"--limit must be between 1 and {triage_pack.MAX_CASES}.")
         modes = (options["only"],) if options["only"] else triage_pack.MODES
         try:
-            record = triage_pack.run(user, app, modes, options["limit"])
+            record = triage_pack.run(user, app, modes, options["limit"], options["labelled"])
         except (ValidationError, ImproperlyConfigured) as failure:
             raise CommandError(" ".join(getattr(failure, "messages", [str(failure)]))) from None
         except (PermissionDenied, Http404):
