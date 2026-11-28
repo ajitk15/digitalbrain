@@ -937,7 +937,7 @@ def agent_review(review, user, citations, receipt, steps=True):
             tool_calls=TOOL_CALLS,
             instructions=told,
             timeout=REVIEW_TIMEOUT,
-            review_id=review.pk if steps else None,
+            steps_for=("review", review.pk) if steps else None,
         )
     except AgentFailure as failure:
         raise ValidationError(

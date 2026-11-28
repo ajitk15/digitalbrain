@@ -42,3 +42,27 @@ class StepRowTests(SimpleTestCase):
         self.assertEqual(repeated, 1)
         self.assertEqual(rows[0]["arguments"], "path: 31 characters")
         self.assertEqual((rows[2]["characters"], rows[2]["duration_ms"]), (0, 12))
+
+
+class StepOwnerTests(SimpleTestCase):
+    """One `steps_for` pair names what a run's steps belong to (it was seven ids)."""
+
+    def test_every_name_links_a_model_with_that_link_on_agent_steps(self):
+        from platform_core.agent_runtime.harness import STEP_OWNERS, step_owner
+        from platform_core.models import AgentStep
+
+        fields = {field.name for field in AgentStep._meta.get_fields()}
+        for name in STEP_OWNERS:
+            with self.subTest(name=name):
+                self.assertIn(name, fields)
+                self.assertIs(AgentStep._meta.get_field(name).related_model, step_owner(name))
+
+    def test_an_unknown_owner_is_refused_rather_than_its_steps_lost(self):
+        from platform_core.agent_runtime.harness import keep_steps
+
+        with self.assertRaises(ValueError):
+            keep_steps(SimpleNamespace(pk=1), "chat", [{"sequence": 1}], ("incident", 7))
+        # Nothing to keep, or nothing it belongs to, is simply nothing kept.
+        self.assertEqual(keep_steps(SimpleNamespace(pk=1), "chat", [], ("run", 7)), 0)
+        self.assertEqual(keep_steps(SimpleNamespace(pk=1), "chat", [{}], None), 0)
+        self.assertEqual(keep_steps(SimpleNamespace(pk=1), "chat", [{}], ("run", None)), 0)

@@ -181,25 +181,17 @@ def measured(purpose, provider, run, steps):
         )
 
 
-def keep_steps(
-    app,
-    purpose,
-    steps,
-    message_id=None,
-    run_id=None,
-    phase="",
-    triage_id=None,
-    review_id=None,
-    candidate_id=None,
-    docs_id=None,
-    entry_id=None,
-):
-    """Write a run's steps as `AgentStep` rows, for the chat message, the Code
-    Factory run (and phase), the triage run, the review, the Learned question, the
-    code documentation or the reviewed source they belong to; a failure here never
-    fails the run."""
+#: What a run's steps may belong to: `AgentStep`'s link to each, by the name a
+#: caller gives it (`steps_for=("run", pk)`). One argument where there were seven
+#: ids, of which only one was ever set; a new agent adds one name here and its
+#: column.
+STEP_OWNERS = ("message", "run", "triage", "review", "candidate", "docs", "entry")
+
+
+def step_owner(name):
+    """The model a `steps_for` name links to; refused outright when unknown, since
+    steps written for nothing would be lost without a word."""
     from ..models import (
-        AgentStep,
         ChatMessage,
         CodeDocumentation,
         CodeReview,
@@ -209,22 +201,32 @@ def keep_steps(
         TriageRun,
     )
 
-    owners = [
-        (model, pk, field)
-        for model, pk, field in (
-            (ChatMessage, message_id, "message_id"),
-            (FactoryRun, run_id, "run_id"),
-            (TriageRun, triage_id, "triage_id"),
-            (CodeReview, review_id, "review_id"),
-            (LearningCandidate, candidate_id, "candidate_id"),
-            (CodeDocumentation, docs_id, "docs_id"),
-            (KnowledgeEntry, entry_id, "entry_id"),
-        )
-        if pk is not None
-    ]
-    if not steps or not owners:
+    models = {
+        "message": ChatMessage,
+        "run": FactoryRun,
+        "triage": TriageRun,
+        "review": CodeReview,
+        "candidate": LearningCandidate,
+        "docs": CodeDocumentation,
+        "entry": KnowledgeEntry,
+    }
+    if name not in STEP_OWNERS:
+        raise ValueError(f"Agent steps cannot belong to {name!r}.")
+    return models[name]
+
+
+def keep_steps(app, purpose, steps, steps_for=None, phase=""):
+    """Write a run's steps as `AgentStep` rows for what they belong to -
+    `steps_for`, a (`STEP_OWNERS` name, id) pair: the chat message, the Code
+    Factory run (and `phase`), the triage run, the review, the Learned question,
+    the code documentation or the reviewed source. None keeps nothing. A failure
+    here never fails the run."""
+    from ..models import AgentStep
+
+    if not steps or steps_for is None or steps_for[1] is None:
         return 0
-    owner, pk, field = owners[0]
+    name, pk = steps_for
+    owner, field = step_owner(name), f"{name}_id"
     try:
         with transaction.atomic():
             # What the steps describe may be gone by now - a message removed by
@@ -276,14 +278,8 @@ def run_agent(
     tool_calls=MAX_TOOL_CALLS,
     instructions=None,
     timeout=None,
-    message_id=None,
-    run_id=None,
+    steps_for=None,
     phase="",
-    triage_id=None,
-    review_id=None,
-    candidate_id=None,
-    docs_id=None,
-    entry_id=None,
     wrap_up=False,
     routing=True,
 ):
@@ -299,8 +295,9 @@ def run_agent(
 
     `instructions` and `timeout` replace chat's for an agent that is not chat
     (Code Factory); `tool_calls` is the most tool calls its whole run may make,
-    and so part of what admission reserves. Its steps are kept for the chat
-    message (`message_id`) or the run and phase (`run_id`, `phase`) it served.
+    and so part of what admission reserves. Its steps are kept for what it
+    served: `steps_for`, a (`STEP_OWNERS` name, id) pair - ("message", pk) for a
+    chat answer, ("run", pk) and `phase` for a Code Factory phase - or nothing.
 
     Raises what admission raises (busy, over budget, disabled) before anything
     is sent, `AgentFailure` when the provider or runtime fails, and the refusal
@@ -311,6 +308,8 @@ def run_agent(
     # The caller has usually authorized already (`ai.chat_configuration`); asking
     # again here means no agent can be started by a caller that forgot.
     gateway.authorize(user, app.pk, purpose)
+    if steps_for is not None:
+        step_owner(steps_for[0])
     runtime = runtime_for(config.provider, token)
     tools = for_scope(scope)
     recorder = CitationRecorder(scope, cancel=cancel)
@@ -478,19 +477,7 @@ def run_agent(
                     # What it wrote before the person's Stop, kept; neither good nor bad.
                     run["outcome"] = "stopped"
         finally:
-            keep_steps(
-                app,
-                purpose,
-                recorder.steps,
-                message_id,
-                run_id,
-                phase,
-                triage_id,
-                review_id,
-                candidate_id,
-                docs_id,
-                entry_id,
-            )
+            keep_steps(app, purpose, recorder.steps, steps_for, phase)
         if recorder.revoked is not None:
             run["outcome"] = "refused"
             raise recorder.revoked

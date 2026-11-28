@@ -510,7 +510,7 @@ def agent_review(user, subject, kind, question, steps=True):
             turns=TOOL_TURNS,
             tool_calls=TOOL_CALLS,
             instructions=told,
-            entry_id=subject.pk if steps else None,
+            steps_for=("entry", subject.pk) if steps else None,
         )
     except AgentFailure as failure:
         raise ValidationError(

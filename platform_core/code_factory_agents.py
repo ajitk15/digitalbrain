@@ -145,7 +145,7 @@ def agent_answer(
             tool_calls=TOOL_CALLS,
             instructions=told,
             timeout=phase_timeout(phase_name),
-            run_id=run_id,
+            steps_for=("run", run_id),
             phase=phase_name,
         )
     except AgentFailure as failure:

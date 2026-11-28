@@ -183,7 +183,7 @@ def draft(user, app_id, candidate_id):
             turns=TOOL_TURNS,
             tool_calls=TOOL_CALLS,
             instructions=INSTRUCTIONS,
-            candidate_id=candidate.pk,
+            steps_for=("candidate", candidate.pk),
             wrap_up=True,
         )
     except AgentFailure as failure:

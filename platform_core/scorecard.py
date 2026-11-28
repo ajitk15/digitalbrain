@@ -1518,7 +1518,7 @@ def agent_guardrails(ws):
                     scope=ToolScope(user_id=user.pk, app_id=ws.app.pk), question="q",
                     citations=[], history=[], emit=lambda *a: None, cancel=cancel,
                     max_tokens=1024, prompt_characters=200,
-                    message_id=message.pk if steps else None, wrap_up=bool(then),
+                    steps_for=("message", message.pk) if steps else None, wrap_up=bool(then),
                 )
             return script, result
 

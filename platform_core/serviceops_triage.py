@@ -959,7 +959,7 @@ def ask_model(user, app, incident, pack, receipt, triage_id=None, agent=None):
             tool_calls=TOOL_CALLS,
             instructions=told,
             timeout=TRIAGE_TIMEOUT,
-            triage_id=triage_id,
+            steps_for=("triage", triage_id),
         )
     except AgentFailure as failure:
         raise ValidationError(

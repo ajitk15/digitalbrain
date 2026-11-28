@@ -311,7 +311,7 @@ class HarnessTests(TestCase):
                 max_tokens=1024,
                 prompt_characters=200,
                 turns=turns_asked,
-                message_id=self.message.pk if message else None,
+                steps_for=("message", self.message.pk) if message else None,
                 wrap_up=wrap_up,
             )
         return script, result

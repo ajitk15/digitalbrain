@@ -988,7 +988,7 @@ def agent_describe(doc, user, citations, receipt, steps=True):
             tool_calls=TOOL_CALLS,
             instructions=told,
             timeout=DOCS_TIMEOUT,
-            docs_id=doc.pk if steps else None,
+            steps_for=("docs", doc.pk) if steps else None,
         )
     except AgentFailure as failure:
         raise ValidationError(

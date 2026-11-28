@@ -117,7 +117,7 @@ class MessagesRuntimeTests(TestCase):
         planted = {"ANTHROPIC_API_KEY": "sk-ant-api03-operator",
                    "ANTHROPIC_CUSTOM_HEADERS": "X-Leak: operator"}
         with patch.dict(os.environ, planted):
-            result = self.run_with(transport, message_id=None)
+            result = self.run_with(transport, steps_for=None)
         self.assertEqual(result.answer, "Thirty days.")
         self.assertEqual({c["id"] for c in result.citations}, {str(self.source.pk)})
         first, second = self.bodies(transport)

@@ -224,7 +224,18 @@ it labelled. `tests/test_triage_labelled.py` tests each label against the record
 `ops_graph.plan` links them. **The labels were drafted by Claude from the documents, not by
 a person: read them before a verdict counts.**
 
-**Still to do:** load the pack into CarePathDev (it rebuilds the
+**Measured on CarePathOps** (CarePathDev has ServiceOps off; triage there is claude-sonnet-5,
+CLI, host login), `benchmarks/triage/2026-11-28T1106-claude-sonnet-5.json`: one call cited
+the labelled cause 5/5, first every time; with tools 4/5 (MRR 0.8), at 2.02x the cost. **Leave
+off.** The pack cannot show tools a gain: every labelled cause was already in the evidence
+pack triage is handed (5/5), so one call has the answer in front of it. Runs 2 and 3 were not
+made - they could only tie. The next version of the pack needs causes the pack does not
+hand over: a change outside the two-day window or on a related CI that only the incident's
+text points to, a cause in a runbook passage, a lead in another incident's neighbourhood.
+An earlier attempt the same day was refused by the host login's usage limit after three
+cases and recorded nothing.
+
+**Was still to do:** load the pack into CarePathDev (it rebuilds the
 graph, which with automatic AI on is one paid build); run `triage_pack --labelled` three
 times (paid).
 
@@ -308,10 +319,13 @@ The first plan's "Future enhancements" stand. In the order the measurements argu
    on, stopped by revocation, budgeted like automatic AI.
 4. `graph_walk` for chat stays deferred until a benchmark and drift run say choice helps.
 
-## Clean-up in the agent layer (2 d, any time) - deferred until it can be tested
+## Clean-up in the agent layer (2 d, any time) - link ids folded
 
-Folding `run_agent`'s link ids changes the harness every agent runs through, for nothing a
-person sees; written without its tests it would be the riskiest change here, so it waits.
+`run_agent` and `keep_steps` take one `steps_for=(name, id)` pair (`harness.STEP_OWNERS`,
+`step_owner`) where they took seven ids, of which only one was ever set; an unknown name is
+refused rather than its steps dropped. Every caller and test moved to it. **Not done:** one
+shared cost bar for the packs - each still carries its own `COST_BAR`, and a shared one
+should follow the cost-bar decision rather than precede it.
 
 - `run_agent` takes seven link ids (`message_id`, `run_id`, `triage_id`, `review_id`,
   `candidate_id`, `docs_id`, `entry_id`) and `keep_steps` mirrors them; each new agent adds a

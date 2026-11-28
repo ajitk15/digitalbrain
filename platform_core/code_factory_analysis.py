@@ -459,7 +459,7 @@ def analyse(user, app_id, question, citations, receipt, snapshot_id=None, agent=
             tool_calls=ANALYSIS_TOOL_CALLS,
             instructions=told,
             timeout=phase_timeout("analysis"),
-            run_id=run_id,
+            steps_for=("run", run_id),
             phase="analysis",
         )
     except AgentFailure as failure:
