@@ -260,6 +260,13 @@ Its onboarding is ServiceOps' own:
    | Incident assignment groups | `CAREOPS` | *blank* |
 
    Sync both: eleven incidents and two changes.
+
+   For the labelled triage scenarios as well - six incidents, eight changes and two
+   knowledge articles, from `benchmarks/triage-pack.json` - run
+   `create_servicenow_records.py --instance <url> --user <an account that may create
+   records> --password-file <file> --knowledge-base <title> --dry-run`, then again
+   without `--dry-run`, and sync. A third connector on table `kb_knowledge` imports
+   the articles.
 4. **Knowledge:** the same `carepathdocs/tree/main` link, then generate and
    publish. Triage reaches the deployment runbook through the component an
    incident is on.
