@@ -1,0 +1,147 @@
+{
+ "generated_at": "2026-11-24T12:05:32+00:00",
+ "provider": "claude",
+ "model": "claude-sonnet-5-5",
+ "pack": "48de53d8c074644f38c41edf5c80c93f5fa50b6b6b2ae6d95c107253f7cb43d4",
+ "snapshot": {
+  "repository": "carepath",
+  "number": 1
+ },
+ "metrics": {
+  "one_shot": {
+   "changes": 4,
+   "found": 2,
+   "noise": 6,
+   "failed": 0,
+   "cost": "0.06920600",
+   "turns": 4,
+   "tool_calls": 0,
+   "seconds": 31.0
+  },
+  "tools": {
+   "changes": 4,
+   "found": 2,
+   "noise": 3,
+   "failed": 0,
+   "cost": "0.09875820",
+   "turns": 12,
+   "tool_calls": 8,
+   "seconds": 38.6
+  }
+ },
+ "details": [
+  {
+   "change": "rename-consent-current",
+   "mode": "one_shot",
+   "found": false,
+   "findings": 2,
+   "noise": 2,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01816800",
+   "seconds": 10.2
+  },
+  {
+   "change": "rename-consent-current",
+   "mode": "tools",
+   "found": false,
+   "findings": 1,
+   "noise": 1,
+   "dropped": 0,
+   "read": 1,
+   "failure": "",
+   "turns": 6,
+   "tool_calls": 5,
+   "cost": "0.03978440",
+   "seconds": 11.6
+  },
+  {
+   "change": "audit-reason-required",
+   "mode": "one_shot",
+   "found": true,
+   "findings": 2,
+   "noise": 1,
+   "dropped": 1,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.02163600",
+   "seconds": 7.9
+  },
+  {
+   "change": "audit-reason-required",
+   "mode": "tools",
+   "found": true,
+   "findings": 1,
+   "noise": 0,
+   "dropped": 1,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.02125000",
+   "seconds": 9.5
+  },
+  {
+   "change": "abnormal-arguments-swapped",
+   "mode": "one_shot",
+   "found": false,
+   "findings": 2,
+   "noise": 2,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01817200",
+   "seconds": 7.1
+  },
+  {
+   "change": "abnormal-arguments-swapped",
+   "mode": "tools",
+   "found": true,
+   "findings": 2,
+   "noise": 1,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 2,
+   "tool_calls": 1,
+   "cost": "0.01937440",
+   "seconds": 7.9
+  },
+  {
+   "change": "consent-history-unbounded",
+   "mode": "one_shot",
+   "found": true,
+   "findings": 2,
+   "noise": 1,
+   "dropped": 0,
+   "read": 0,
+   "failure": "",
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.01123000",
+   "seconds": 5.8
+  },
+  {
+   "change": "consent-history-unbounded",
+   "mode": "tools",
+   "found": false,
+   "findings": 1,
+   "noise": 1,
+   "dropped": 1,
+   "read": 1,
+   "failure": "",
+   "turns": 3,
+   "tool_calls": 2,
+   "cost": "0.01834940",
+   "seconds": 9.6
+  }
+ ],
+ "runtime": "cli"
+}

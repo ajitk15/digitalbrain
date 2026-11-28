@@ -159,7 +159,41 @@ Addresses finding 2 directly. None of it changes what may be written or cited.
 Done when: CARE-431 with tools sends under half its 174,970 prompt tokens, and the factory
 pack is re-run three times.
 
-## Phase C - Decide the switches (operator, paid re-runs)
+## Phase C - Decide the switches (operator, paid re-runs) - decided
+
+Judged only on runs that are **clean** - billed by their receipts, each case by its own
+receipts, started cold (no prompt cache warm from a run inside the hour) - on CarePathDev,
+claude-sonnet-5-5 through the CLI on the host login. Runs that were not are left out and
+named.
+
+| Agent | Clean runs | Result | Decision |
+|---|---|---|---|
+| **Code Factory** | `2026-11-24T1057`, `T1204` | Both clear: fixed 3/4 against 2/4, checks met 100% against 60%, at 1.13x and 1.15x the cost | **Clears** - two clean runs of two, a majority of three whatever a third says. An operator may write `code_factory_agent_tools = true` |
+| **Document review** | `2026-11-23T0532`, `T1647` | Both clear: 4/5 found and 3/5 linked against 2-3 found and none linked, at about 2x | **Clears**. An operator may write `document_review_agent_tools = true`. Its cost sits at the 2x bar: re-check it when the bar is decided |
+| Code review | `2026-11-24T1205` | Found 2/4 both ways; noise 3 against 6, at 1.43x | **Leave off.** No more found; less noise is not yet something the verdict credits - Phase E |
+| Code documentation | `2026-11-24T1206` | With the new guidance the agent read (5 reads) but kept 11 paragraphs against 14, at 1.39x | **Leave off.** It now uses its tools and still describes less |
+| Gap analysis | `2026-11-23T1644` | 22/25 cited both ways, nothing more found | **Leave off** |
+| Chat | `2026-11-23T1710` | Clears by one question; chat always answers with tools | **No switch.** Re-measure with the next `chat_pack` |
+| Model routing | `2026-11-23T1710 --routed` | More searches (21 against 9), one citation fewer, not cheaper | **Stays seeded off.** The searching model's tool budget was not changed |
+| Triage | none | No confirmed causes | Phase D |
+
+**Left out:** `2026-11-24T0331` (priced by tokens, before the bill fix - one call read at
+$0.18 against a $0.32 bill), `T1058` (inside the hour of `T1057`, so one call read its
+prompt from the cache at a tenth, and three of the person's own Code Factory calls were
+counted before cases were billed by id), and the 24 November rounds of document review and
+chat, which the provider refused with HTTP 429 - the host login's usage limit - and which
+compared nothing and recorded nothing. Rounds 2 and 3 never ran: the background job ended
+in its hour's pause.
+
+**Found on the way:** CARE-431 with tools ran out of its 8 turns in both clean factory runs
+(`TurnLimit`; its turns now have a receipt). The one run where it did not (`T1058`) fixed
+4/4. A turn kept back to answer in, as chat's `wrap_up` keeps one, is the next thing to try
+for Code Factory - measured with `factory_pack`, since it changes what the model is asked.
+
+**Nothing was switched.** No production configuration names these switches today, the
+hosted demo already turns all six on, and a measurement switches nothing on its own.
+
+The original plan for this phase follows.
 
 | Agent | Proposed action | After |
 |---|---|---|

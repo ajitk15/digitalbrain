@@ -1,0 +1,83 @@
+{
+ "generated_at": "2026-11-24T12:06:05+00:00",
+ "provider": "claude",
+ "model": "claude-sonnet-5-5",
+ "pack": "515fe2decd98d93880e4aa65484558defd28e34a99016fb2161f20e1236e542c",
+ "snapshot": {
+  "repository": "carepath",
+  "number": 1
+ },
+ "metrics": {
+  "one_shot": {
+   "asked": 6,
+   "components": 6,
+   "paragraphs": 14,
+   "quotes": 29,
+   "files_quoted": 18,
+   "dropped": 0,
+   "kept_share": 100.0,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07492000",
+   "seconds": 14.0,
+   "failed": 0
+  },
+  "tools": {
+   "asked": 6,
+   "components": 6,
+   "paragraphs": 11,
+   "quotes": 22,
+   "files_quoted": 17,
+   "dropped": 0,
+   "kept_share": 100.0,
+   "turns": 6,
+   "tool_calls": 5,
+   "cost": "0.10444550",
+   "seconds": 15.8,
+   "failed": 0
+  }
+ },
+ "details": [
+  {
+   "mode": "one_shot",
+   "asked": 6,
+   "components": 6,
+   "paragraphs": 14,
+   "quotes": 29,
+   "files_quoted": 18,
+   "dropped": 0,
+   "kept_share": 100.0,
+   "unreadable": false,
+   "dropped_reasons": {},
+   "failure": "",
+   "prompt_tokens": 13651,
+   "completion_tokens": 2032,
+   "turns": 1,
+   "tool_calls": 0,
+   "read": 0,
+   "cost": "0.07492000",
+   "seconds": 14.0
+  },
+  {
+   "mode": "tools",
+   "asked": 6,
+   "components": 6,
+   "paragraphs": 11,
+   "quotes": 22,
+   "files_quoted": 17,
+   "dropped": 0,
+   "kept_share": 100.0,
+   "unreadable": false,
+   "dropped_reasons": {},
+   "failure": "",
+   "prompt_tokens": 36643,
+   "completion_tokens": 2385,
+   "turns": 6,
+   "tool_calls": 5,
+   "read": 3,
+   "cost": "0.10444550",
+   "seconds": 15.8
+  }
+ ],
+ "runtime": "cli"
+}

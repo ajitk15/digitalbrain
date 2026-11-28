@@ -1,0 +1,304 @@
+{
+ "generated_at": "2026-11-24T10:57:06+00:00",
+ "provider": "claude",
+ "model": "claude-sonnet-5-5",
+ "pack": "990f523598d51d1e6a1408887471f6c568cc7fdd830f6045501be241ec9a3352",
+ "snapshot": {
+  "repository": "carepath",
+  "number": 1
+ },
+ "metrics": {
+  "one_shot": {
+   "tickets": 4,
+   "fixed": 2,
+   "answered": 2,
+   "failed": 0,
+   "checks_met": 60.0,
+   "needs_seen": 44.4,
+   "cost": "0.31859000",
+   "turns": 4,
+   "tool_calls": 0,
+   "seconds": 57.7
+  },
+  "tools": {
+   "tickets": 4,
+   "fixed": 3,
+   "answered": 3,
+   "failed": 1,
+   "checks_met": 100.0,
+   "needs_seen": 33.3,
+   "cost": "0.36119530",
+   "turns": 16,
+   "tool_calls": 4,
+   "seconds": 45.4
+  }
+ },
+ "details": [
+  {
+   "ticket": "CARE-412",
+   "mode": "one_shot",
+   "answered": false,
+   "changed": [],
+   "expect": [
+    {
+     "path": "src/carepath/api/routes_patients.py",
+     "symbol": "search_patients",
+     "text": "max_page_size",
+     "met": false
+    }
+   ],
+   "forbid": [],
+   "fixed": false,
+   "failure": "",
+   "needs_seen": [],
+   "needs": [
+    "src/carepath/api/routes_consent.py",
+    "src/carepath/config.py"
+   ],
+   "read": [],
+   "prompt_tokens": 18549,
+   "completion_tokens": 509,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07928200",
+   "seconds": 29.3
+  },
+  {
+   "ticket": "CARE-412",
+   "mode": "tools",
+   "answered": true,
+   "changed": [
+    "src/carepath/api/routes_patients.py"
+   ],
+   "expect": [
+    {
+     "path": "src/carepath/api/routes_patients.py",
+     "symbol": "search_patients",
+     "text": "max_page_size",
+     "met": true
+    }
+   ],
+   "forbid": [],
+   "fixed": true,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/api/routes_consent.py"
+   ],
+   "needs": [
+    "src/carepath/api/routes_consent.py",
+    "src/carepath/config.py"
+   ],
+   "read": [
+    "src/carepath/api/routes_consent.py",
+    "src/carepath/api/routes_patients.py"
+   ],
+   "prompt_tokens": 103098,
+   "completion_tokens": 1297,
+   "turns": 5,
+   "tool_calls": 4,
+   "cost": "0.10555760",
+   "seconds": 14.3
+  },
+  {
+   "ticket": "CARE-425",
+   "mode": "one_shot",
+   "answered": true,
+   "changed": [
+    "src/carepath/services/referrals.py"
+   ],
+   "expect": [
+    {
+     "path": "src/carepath/services/referrals.py",
+     "symbol": "transition",
+     "text": "record(",
+     "met": true
+    }
+   ],
+   "forbid": [],
+   "fixed": true,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/security/audit.py"
+   ],
+   "needs": [
+    "src/carepath/security/audit.py",
+    "src/carepath/services/consent.py"
+   ],
+   "read": [],
+   "prompt_tokens": 14515,
+   "completion_tokens": 1747,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07552600",
+   "seconds": 10.8
+  },
+  {
+   "ticket": "CARE-425",
+   "mode": "tools",
+   "answered": true,
+   "changed": [
+    "src/carepath/services/referrals.py"
+   ],
+   "expect": [
+    {
+     "path": "src/carepath/services/referrals.py",
+     "symbol": "transition",
+     "text": "record(",
+     "met": true
+    }
+   ],
+   "forbid": [],
+   "fixed": true,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/security/audit.py"
+   ],
+   "needs": [
+    "src/carepath/security/audit.py",
+    "src/carepath/services/consent.py"
+   ],
+   "read": [],
+   "prompt_tokens": 15943,
+   "completion_tokens": 1377,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07054140",
+   "seconds": 7.6
+  },
+  {
+   "ticket": "CARE-418",
+   "mode": "one_shot",
+   "answered": true,
+   "changed": [
+    "src/carepath/services/risk.py"
+   ],
+   "expect": [],
+   "forbid": [
+    {
+     "path": "src/carepath/services/risk.py",
+     "symbol": "score_for",
+     "text": "given_name",
+     "met": true
+    },
+    {
+     "path": "src/carepath/services/risk.py",
+     "symbol": "score_for",
+     "text": "born %s",
+     "met": true
+    }
+   ],
+   "fixed": true,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/logging_setup.py"
+   ],
+   "needs": [
+    "src/carepath/logging_setup.py",
+    "src/carepath/security/phi.py"
+   ],
+   "read": [],
+   "prompt_tokens": 16566,
+   "completion_tokens": 1340,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07966000",
+   "seconds": 8.0
+  },
+  {
+   "ticket": "CARE-418",
+   "mode": "tools",
+   "answered": true,
+   "changed": [
+    "src/carepath/services/risk.py"
+   ],
+   "expect": [],
+   "forbid": [
+    {
+     "path": "src/carepath/services/risk.py",
+     "symbol": "score_for",
+     "text": "given_name",
+     "met": true
+    },
+    {
+     "path": "src/carepath/services/risk.py",
+     "symbol": "score_for",
+     "text": "born %s",
+     "met": true
+    }
+   ],
+   "fixed": true,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/logging_setup.py"
+   ],
+   "needs": [
+    "src/carepath/logging_setup.py",
+    "src/carepath/security/phi.py"
+   ],
+   "read": [],
+   "prompt_tokens": 17990,
+   "completion_tokens": 1242,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.07737940",
+   "seconds": 7.4
+  },
+  {
+   "ticket": "CARE-431",
+   "mode": "one_shot",
+   "answered": false,
+   "changed": [],
+   "expect": [
+    {
+     "path": "src/carepath/api/routes_patients.py",
+     "symbol": "read_patient",
+     "text": "PatientSummary",
+     "met": false
+    }
+   ],
+   "forbid": [],
+   "fixed": false,
+   "failure": "",
+   "needs_seen": [
+    "src/carepath/schemas.py",
+    "src/carepath/security/rbac.py"
+   ],
+   "needs": [
+    "src/carepath/schemas.py",
+    "src/carepath/security/phi.py",
+    "src/carepath/security/rbac.py"
+   ],
+   "read": [],
+   "prompt_tokens": 18569,
+   "completion_tokens": 985,
+   "turns": 1,
+   "tool_calls": 0,
+   "cost": "0.08412200",
+   "seconds": 9.6
+  },
+  {
+   "ticket": "CARE-431",
+   "mode": "tools",
+   "answered": false,
+   "changed": [],
+   "expect": [],
+   "forbid": [],
+   "fixed": false,
+   "failure": "Implementation: the model call failed (TurnLimit). It may have been billed by the provider; it is not retried automatically.",
+   "needs_seen": [],
+   "needs": [
+    "src/carepath/schemas.py",
+    "src/carepath/security/phi.py",
+    "src/carepath/security/rbac.py"
+   ],
+   "read": [],
+   "prompt_tokens": 171511,
+   "completion_tokens": 1025,
+   "turns": 9,
+   "tool_calls": 0,
+   "cost": "0.10771690",
+   "seconds": 16.1
+  }
+ ],
+ "runtime": "cli"
+}
